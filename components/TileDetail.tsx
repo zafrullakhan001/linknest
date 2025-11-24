@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Tile, Link, LinkSection, COLOR_STYLES, THEME_COLORS, ThemeColor, POPULAR_EMOJIS } from '../types';
-import { suggestLinksForTile } from '../services/geminiService';
 
 interface TileDetailProps {
   tile: Tile;
@@ -38,7 +37,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
   // View State
   const [searchTerm, setSearchTerm] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [isSuggesting, setIsSuggesting] = useState(false);
 
   const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
 
@@ -119,39 +117,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
           }
           return s;
       }));
-  };
-
-  const handleSuggestMore = async () => {
-      setIsSuggesting(true);
-      try {
-          // Gather all existing URLs for context
-          const allUrls = editSections.flatMap(s => s.links.map(l => l.url));
-          const suggestions = await suggestLinksForTile(editTitle, allUrls);
-          
-          if (suggestions.length > 0) {
-              const newLinks = suggestions.map(s => ({
-                  id: generateId(),
-                  label: s.label,
-                  url: s.url
-              }));
-
-              // Add to the last section, or create a new "Suggestions" section
-              if (editSections.length > 0) {
-                  const lastSection = editSections[editSections.length - 1];
-                  setEditSections(editSections.map(s => 
-                      s.id === lastSection.id ? { ...s, links: [...s.links, ...newLinks] } : s
-                  ));
-              } else {
-                  setEditSections([{ id: generateId(), title: 'Suggestions', links: newLinks }]);
-              }
-          } else {
-              alert("Could not generate suggestions.");
-          }
-      } catch(e) {
-          alert("Error generating suggestions.");
-      } finally {
-          setIsSuggesting(false);
-      }
   };
 
   const handleCopy = (e: React.MouseEvent, text: string, id: string) => {
@@ -482,14 +447,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                       placeholder="<p>Welcome to my page!</p>"
                   />
                </div>
-               
-               <button
-                  onClick={handleSuggestMore}
-                  disabled={isSuggesting}
-                  className="w-full bg-violet-50 dark:bg-violet-600/20 hover:bg-violet-100 dark:hover:bg-violet-600/30 border border-violet-200 dark:border-violet-500/50 text-violet-600 dark:text-violet-300 py-3 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2"
-                >
-                  {isSuggesting ? 'Thinking...' : '✨ AI Suggest Links'}
-               </button>
            </div>
         </div>
 
