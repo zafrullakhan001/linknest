@@ -34,6 +34,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [currentPassword, setCurrentPassword] = useState('');
   const [adminNewPassword, setAdminNewPassword] = useState('');
   const [adminPasswordLoading, setAdminPasswordLoading] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
   const loadPendingUsers = async () => {
     try {
@@ -69,6 +71,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setSettingsLoading(true);
       const loadedSettings = await settingsService.getSettings();
       setSettings(loadedSettings);
+      // Set preview if logo image exists
+      if (loadedSettings.logo_image) {
+        setLogoPreview(loadedSettings.logo_image);
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to load settings');
     } finally {
@@ -472,7 +478,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </label>
                         <div className="flex gap-3">
                           <button
-                            onClick={() => setSettings({ ...settings, logo_type: 'icon' })}
+                            onClick={() => {
+                              setSettings({ ...settings, logo_type: 'icon' });
+                              setLogoPreview(null);
+                            }}
                             className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                               settings.logo_type === 'icon'
                                 ? 'bg-brand-600 text-white'
@@ -482,7 +491,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             Icon/Emoji
                           </button>
                           <button
-                            onClick={() => setSettings({ ...settings, logo_type: 'image' })}
+                            onClick={() => {
+                              setSettings({ ...settings, logo_type: 'image' });
+                              if (settings.logo_image) {
+                                setLogoPreview(settings.logo_image);
+                              }
+                            }}
                             className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                               settings.logo_type === 'image'
                                 ? 'bg-brand-600 text-white'
@@ -510,18 +524,173 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Enter an emoji or icon character</p>
                         </div>
                       ) : (
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            Logo Image URL
-                          </label>
-                          <input
-                            type="text"
-                            value={settings.logo_image}
-                            onChange={(e) => setSettings({ ...settings, logo_image: e.target.value })}
-                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                            placeholder="https://example.com/logo.png"
-                          />
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Enter a URL to your logo image</p>
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                              Logo Image
+                            </label>
+                            
+                            {/* Image Preview */}
+                            {(logoPreview || settings.logo_image) && (
+                              <div className="mb-3 p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg">
+                                <div className="flex items-center gap-3">
+                                  <img 
+                                    src={logoPreview || settings.logo_image} 
+                                    alt="Logo preview" 
+                                    className="w-16 h-16 object-contain rounded border border-slate-200 dark:border-slate-700"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).style.display = 'none';
+                                    }}
+                                  />
+                                  <div className="flex-1">
+                                    <p className="text-xs text-slate-600 dark:text-slate-400">Current logo preview</p>
+                                    {settings.logo_image && (
+                                      <button
+                                        onClick={() => {
+                                          setSettings({ ...settings, logo_image: '' });
+                                          setLogoPreview(null);
+                                        }}
+                                        className="mt-1 text-xs text-red-600 dark:text-red-400 hover:underline"
+                                      >
+                                        Remove logo
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* File Upload */}
+                            <div className="mb-3">
+                              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                                Upload Logo Image
+                              </label>
+                              <div className="relative">
+                                <input
+                                  type="file"
+                                  accept="image/jpeg,image/jpg,image/png,image/gif,image/svg+xml,image/webp"
+                                  onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    
+                                    // Validate file size (2MB)
+                                    if (file.size > 2 * 1024 * 1024) {
+                                      setError('File size too large. Maximum size: 2MB');
+                                      e.target.value = '';
+                                      return;
+                                    }
+                                    
+                                    // Validate dimensions (skip for SVG)
+                                    const isSVG = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
+                                    const objectUrl = URL.createObjectURL(file);
+                                    
+                                    if (isSVG) {
+                                      // For SVG, just show preview and upload
+                                      setLogoPreview(objectUrl);
+                                      try {
+                                        setLogoUploading(true);
+                                        setError('');
+                                        const url = await settingsService.uploadLogo(file);
+                                        setSettings({ ...settings, logo_image: url });
+                                        setLogoPreview(null); // Clear preview after upload
+                                        URL.revokeObjectURL(objectUrl);
+                                      } catch (err: any) {
+                                        setError(err.message || 'Failed to upload logo');
+                                        setLogoPreview(null);
+                                        URL.revokeObjectURL(objectUrl);
+                                      } finally {
+                                        setLogoUploading(false);
+                                        e.target.value = '';
+                                      }
+                                    } else {
+                                      // For raster images, validate dimensions
+                                      const img = new Image();
+                                      
+                                      img.onload = async () => {
+                                        const maxWidth = 512;
+                                        const maxHeight = 512;
+                                        const minWidth = 32;
+                                        const minHeight = 32;
+                                        
+                                        if (img.width > maxWidth || img.height > maxHeight) {
+                                          setError(`Image dimensions too large. Maximum: ${maxWidth}x${maxHeight}px. Your image: ${img.width}x${img.height}px`);
+                                          URL.revokeObjectURL(objectUrl);
+                                          e.target.value = '';
+                                          return;
+                                        }
+                                        
+                                        if (img.width < minWidth || img.height < minHeight) {
+                                          setError(`Image dimensions too small. Minimum: ${minWidth}x${minHeight}px. Your image: ${img.width}x${img.height}px`);
+                                          URL.revokeObjectURL(objectUrl);
+                                          e.target.value = '';
+                                          return;
+                                        }
+                                        
+                                        // Show preview
+                                        setLogoPreview(objectUrl);
+                                        
+                                        // Upload file
+                                        try {
+                                          setLogoUploading(true);
+                                          setError('');
+                                          const url = await settingsService.uploadLogo(file);
+                                          setSettings({ ...settings, logo_image: url });
+                                          setLogoPreview(null); // Clear preview after upload
+                                          URL.revokeObjectURL(objectUrl);
+                                        } catch (err: any) {
+                                          setError(err.message || 'Failed to upload logo');
+                                          setLogoPreview(null);
+                                          URL.revokeObjectURL(objectUrl);
+                                        } finally {
+                                          setLogoUploading(false);
+                                          e.target.value = '';
+                                        }
+                                      };
+                                      
+                                      img.onerror = () => {
+                                        setError('Invalid image file');
+                                        URL.revokeObjectURL(objectUrl);
+                                        e.target.value = '';
+                                      };
+                                      
+                                      img.src = objectUrl;
+                                    }
+                                  }}
+                                  disabled={logoUploading}
+                                  className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                />
+                              </div>
+                              {logoUploading && (
+                                <div className="mt-2 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                  Uploading...
+                                </div>
+                              )}
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                Allowed: JPEG, PNG, GIF, SVG, WebP | Max size: 2MB | Dimensions: 32x32px to 512x512px
+                              </p>
+                            </div>
+                            
+                            {/* URL Input (Alternative) */}
+                            <div>
+                              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                                Or enter Logo Image URL
+                              </label>
+                              <input
+                                type="text"
+                                value={settings.logo_image}
+                                onChange={(e) => {
+                                  setSettings({ ...settings, logo_image: e.target.value });
+                                  setLogoPreview(e.target.value || null);
+                                }}
+                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                placeholder="https://example.com/logo.png"
+                              />
+                            </div>
+                          </div>
                         </div>
                       )}
 

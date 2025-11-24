@@ -1,18 +1,83 @@
+# Enable directory access and file serving
+Options -Indexes +FollowSymLinks
+
 # Enable PHP for API routes
 <IfModule mod_rewrite.c>
     RewriteEngine On
+    RewriteBase /linknest/
+    
+    # FIRST: Allow direct access to dist/ directory and its files (including assets)
+    RewriteCond %{REQUEST_URI} ^/linknest/dist/
+    RewriteRule . - [L]
+    
+    # Allow direct access to uploads/ directory
+    RewriteCond %{REQUEST_URI} ^/linknest/uploads/
+    RewriteRule . - [L]
+    
+    # SECOND: Serve static assets from dist/assets/ (rewrite /assets/ to /dist/assets/)
+    RewriteCond %{REQUEST_URI} ^/linknest/assets/
+    RewriteRule ^assets/(.*)$ dist/assets/$1 [L]
     
     # Route API requests to api/index.php
-    # Match /api/* but not /api/index.php (to avoid loops)
+    # Handle both /linknest/api/ and /api/ paths
     RewriteCond %{REQUEST_URI} ^/linknest/api/
     RewriteCond %{REQUEST_URI} !^/linknest/api/index\.php
     RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteRule ^api/(.*)$ api/index.php [L,QSA]
+    RewriteRule ^api/(.*)$ api/index.php?path=$1 [L,QSA]
     
-    # Frontend routes - serve index.html for SPA
+    # Also handle /api/ requests (for production when base path is /linknest/)
+    # This allows frontend to call /api/ and it gets rewritten to /linknest/api/
+    RewriteCond %{REQUEST_URI} ^/api/
+    RewriteCond %{REQUEST_URI} !^/api/index\.php
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{DOCUMENT_ROOT}/linknest/api/index.php -f
+    RewriteRule ^api/(.*)$ /linknest/api/index.php?path=$1 [L,QSA]
+    
+    # Block direct access to source files in production
+    RewriteCond %{DOCUMENT_ROOT}/linknest/dist/index.html -f
+    RewriteCond %{REQUEST_URI} \.(tsx?|jsx?)$
+    RewriteCond %{REQUEST_URI} !^/linknest/dist
+    RewriteCond %{REQUEST_URI} !^/linknest/api
+    RewriteRule . - [F,L]
+    
+    # PRODUCTION MODE: If dist/index.html exists, always serve from dist/
+    RewriteCond %{DOCUMENT_ROOT}/linknest/dist/index.html -f
+    
+    # Explicitly handle root path - serve dist/index.html
+    RewriteCond %{REQUEST_URI} ^/linknest/?$
+    RewriteRule ^(.*)$ dist/index.html [L]
+    
+    # Block direct access to root index.html in production (redirect to dist)
+    RewriteCond %{REQUEST_URI} ^/linknest/index\.html?$
+    RewriteRule ^index\.html?$ dist/index.html [L,R=301]
+    
+    # Serve other static files from dist/ if they exist
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} !^/linknest/api
+    RewriteCond %{REQUEST_URI} !^/linknest/dist
+    RewriteCond %{DOCUMENT_ROOT}/linknest/dist%{REQUEST_URI} -f
+    RewriteRule ^(.*)$ dist/$1 [L]
+    
+    # Production: Force serve dist/index.html for all other SPA routes
+    RewriteCond %{DOCUMENT_ROOT}/linknest/dist/index.html -f
+    RewriteCond %{REQUEST_URI} !^/linknest/api
+    RewriteCond %{REQUEST_URI} !^/linknest/dist
+    RewriteCond %{REQUEST_URI} !^/linknest/?$
+    RewriteCond %{REQUEST_URI} !\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule . dist/index.html [L]
+    
+    # DEVELOPMENT MODE: Only serve root index.html if dist doesn't exist
+    RewriteCond %{DOCUMENT_ROOT}/linknest/dist/index.html !-f
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_URI} !^/linknest/api
     RewriteRule . index.html [L]
 </IfModule>
 
+# DirectoryIndex: Prefer dist/index.html in production
+<IfModule mod_dir.c>
+    DirectoryIndex dist/index.html index.html
+</IfModule>

@@ -34,6 +34,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
   // Temporary State for Adding Links (keyed by section ID)
   const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string }>>({});
 
+  // State for Editing Links (keyed by link ID)
+  const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
+  const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string }>>({});
+
   // View State
   const [searchTerm, setSearchTerm] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -128,6 +132,46 @@ export const TileDetail: React.FC<TileDetailProps> = ({
               return { ...s, links: s.links.filter(l => l.id !== linkId) };
           }
           return s;
+      }));
+  };
+
+  const handleStartEditLink = (link: Link) => {
+      setEditingLinkId(link.id);
+      setEditLinkState({
+          [link.id]: { label: link.label, url: link.url }
+      });
+  };
+
+  const handleCancelEditLink = () => {
+      setEditingLinkId(null);
+      setEditLinkState({});
+  };
+
+  const handleUpdateLink = (sectionId: string, linkId: string) => {
+      const state = editLinkState[linkId];
+      if (!state || !state.label.trim() || !state.url.trim()) return;
+
+      setEditSections(editSections.map(s => {
+          if (s.id !== sectionId) return s;
+          
+          return {
+              ...s,
+              links: s.links.map(l => 
+                  l.id === linkId 
+                      ? { ...l, label: state.label, url: state.url.startsWith('http') ? state.url : `https://${state.url}` }
+                      : l
+              )
+          };
+      }));
+
+      setEditingLinkId(null);
+      setEditLinkState({});
+  };
+
+  const updateEditLinkState = (linkId: string, field: 'label' | 'url', value: string) => {
+      setEditLinkState(prev => ({
+          ...prev,
+          [linkId]: { ...prev[linkId], [field]: value }
       }));
   };
 
@@ -547,45 +591,94 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     <p className="text-slate-400 dark:text-slate-600 text-sm italic py-2">No links in this section yet.</p>
                                 )}
                                 {section.links.map((link, linkIndex) => (
-                                    <div key={link.id} className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
-                                        {/* Link Reorder Buttons */}
-                                        <div className="flex flex-col gap-0.5">
-                                            <button
-                                                onClick={() => handleMoveLink(section.id, link.id, 'up')}
-                                                disabled={linkIndex === 0}
-                                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-0.5"
-                                                title="Move Up"
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
-                                                </svg>
-                                            </button>
-                                            <button
-                                                onClick={() => handleMoveLink(section.id, link.id, 'down')}
-                                                disabled={linkIndex === section.links.length - 1}
-                                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-0.5"
-                                                title="Move Down"
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                                                </svg>
-                                            </button>
+                                    editingLinkId === link.id ? (
+                                        // Edit Mode
+                                        <div key={link.id} className="flex flex-col gap-2 bg-slate-50 dark:bg-slate-900 p-3 rounded-lg border border-brand-500 dark:border-brand-500/50">
+                                            <div className="flex gap-2 items-center">
+                                                <input
+                                                    type="text"
+                                                    value={editLinkState[link.id]?.label || ''}
+                                                    onChange={(e) => updateEditLinkState(link.id, 'label', e.target.value)}
+                                                    placeholder="Link Label"
+                                                    className="flex-1 min-w-0 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    value={editLinkState[link.id]?.url || ''}
+                                                    onChange={(e) => updateEditLinkState(link.id, 'url', e.target.value)}
+                                                    placeholder="https://..."
+                                                    className="flex-1 min-w-0 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors font-mono"
+                                                />
+                                            </div>
+                                            <div className="flex gap-2 justify-end">
+                                                <button
+                                                    onClick={handleCancelEditLink}
+                                                    className="px-3 py-1.5 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    onClick={() => handleUpdateLink(section.id, link.id)}
+                                                    disabled={!editLinkState[link.id]?.label?.trim() || !editLinkState[link.id]?.url?.trim()}
+                                                    className="px-3 py-1.5 text-sm bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded transition-colors"
+                                                >
+                                                    Save
+                                                </button>
+                                            </div>
                                         </div>
-                                        <div className="w-8 h-8 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sm">🔗</div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{link.label}</div>
-                                            <div className="text-xs text-slate-500 truncate font-mono">{link.url}</div>
+                                    ) : (
+                                        // View Mode
+                                        <div key={link.id} className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
+                                            {/* Link Reorder Buttons */}
+                                            <div className="flex flex-col gap-0.5">
+                                                <button
+                                                    onClick={() => handleMoveLink(section.id, link.id, 'up')}
+                                                    disabled={linkIndex === 0}
+                                                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-0.5"
+                                                    title="Move Up"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
+                                                    </svg>
+                                                </button>
+                                                <button
+                                                    onClick={() => handleMoveLink(section.id, link.id, 'down')}
+                                                    disabled={linkIndex === section.links.length - 1}
+                                                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-0.5"
+                                                    title="Move Down"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                            <div className="w-8 h-8 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sm">🔗</div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{link.label}</div>
+                                                <div className="text-xs text-slate-500 truncate font-mono">{link.url}</div>
+                                            </div>
+                                            <div className="flex gap-1">
+                                                <button
+                                                    onClick={() => handleStartEditLink(link)}
+                                                    className="p-1.5 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
+                                                    title="Edit Link"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                                                    </svg>
+                                                </button>
+                                                <button
+                                                    onClick={() => handleRemoveLinkFromSection(section.id, link.id)}
+                                                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
+                                                    title="Delete Link"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                        <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                                    </svg>
+                                                </button>
+                                            </div>
                                         </div>
-                                        <button
-                                            onClick={() => handleRemoveLinkFromSection(section.id, link.id)}
-                                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
-                                            title="Delete Link"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                                            </svg>
-                                        </button>
-                                    </div>
+                                    )
                                 ))}
                              </div>
 

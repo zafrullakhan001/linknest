@@ -22,7 +22,6 @@ if (!file_exists(DB_DIR)) {
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
-header('Content-Type: application/json');
 
 // Handle preflight requests
 if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -204,6 +203,7 @@ function requireAuth() {
 // Helper function to send JSON response
 function sendJSON($data, $statusCode = 200) {
     http_response_code($statusCode);
+    header('Content-Type: application/json');
     echo json_encode($data);
     exit;
 }

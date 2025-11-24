@@ -48,6 +48,25 @@ export const settingsService = {
     }
   },
 
+  async uploadLogo(file: File): Promise<string> {
+    const formData = new FormData();
+    formData.append('logo', file);
+
+    const response = await fetch(`${API_BASE}/settings/upload-logo`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to upload logo');
+    }
+    
+    return data.url;
+  },
+
   async changeAdminPassword(currentPassword: string, newPassword: string): Promise<void> {
     const response = await fetch(`${API_BASE}/auth/change-admin-password`, {
       method: 'PUT',
