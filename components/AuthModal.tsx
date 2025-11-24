@@ -13,6 +13,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   
   const { login, register } = useAuth();
@@ -22,18 +23,31 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
     setLoading(true);
 
     try {
       if (mode === 'login') {
         await login(username, password);
+        onClose();
+        setUsername('');
+        setEmail('');
+        setPassword('');
       } else {
-        await register(username, email, password);
+        const result = await register(username, email, password);
+        if (result.pending) {
+          setSuccess(result.message || 'Registration successful! Your account is pending admin approval.');
+          setUsername('');
+          setEmail('');
+          setPassword('');
+          // Don't close modal, show success message
+        } else {
+          onClose();
+          setUsername('');
+          setEmail('');
+          setPassword('');
+        }
       }
-      onClose();
-      setUsername('');
-      setEmail('');
-      setPassword('');
     } catch (err: any) {
       setError(err.message || 'An error occurred');
     } finally {
@@ -61,6 +75,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         {error && (
           <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
             {error}
+          </div>
+        )}
+
+        {success && (
+          <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg text-emerald-600 dark:text-emerald-400 text-sm">
+            {success}
           </div>
         )}
 

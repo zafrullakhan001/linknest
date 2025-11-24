@@ -2,12 +2,30 @@ export interface User {
   id: number;
   username: string;
   email: string;
+  is_admin?: boolean;
+  is_approved?: boolean;
+}
+
+export interface PendingUser {
+  id: number;
+  username: string;
+  email: string;
+  created_at: number;
+}
+
+export interface AllUser {
+  id: number;
+  username: string;
+  email: string;
+  is_admin: boolean;
+  is_approved: boolean;
+  created_at: number;
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 export const authService = {
-  async register(username: string, email: string, password: string): Promise<User> {
+  async register(username: string, email: string, password: string): Promise<{ pending: boolean; message?: string }> {
     const response = await fetch(`${API_BASE}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -21,7 +39,7 @@ export const authService = {
       throw new Error(data.error || 'Registration failed');
     }
     
-    return data.user;
+    return { pending: data.pending || false, message: data.message };
   },
 
   async login(username: string, password: string): Promise<User> {
@@ -59,6 +77,106 @@ export const authService = {
       return data.user || null;
     } catch (error) {
       return null;
+    }
+  },
+
+  // Admin functions
+  async getPendingUsers(): Promise<PendingUser[]> {
+    const response = await fetch(`${API_BASE}/auth/pending`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to fetch pending users');
+    }
+    
+    return data.users || [];
+  },
+
+  async approveUser(userId: number): Promise<void> {
+    const response = await fetch(`${API_BASE}/auth/approve/${userId}`, {
+      method: 'PUT',
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to approve user');
+    }
+  },
+
+  async rejectUser(userId: number): Promise<void> {
+    const response = await fetch(`${API_BASE}/auth/reject/${userId}`, {
+      method: 'PUT',
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to reject user');
+    }
+  },
+
+  async getAllUsers(): Promise<AllUser[]> {
+    const response = await fetch(`${API_BASE}/auth/all`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to fetch users');
+    }
+    
+    return data.users || [];
+  },
+
+  async resetUserPassword(userId: number, newPassword: string): Promise<void> {
+    const response = await fetch(`${API_BASE}/auth/reset-password/${userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ new_password: newPassword })
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to reset password');
+    }
+  },
+
+  async deleteUser(userId: number): Promise<void> {
+    const response = await fetch(`${API_BASE}/auth/delete/${userId}`, {
+      method: 'PUT',
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to delete user');
+    }
+  },
+
+  async changeAdminPassword(currentPassword: string, newPassword: string): Promise<void> {
+    const response = await fetch(`${API_BASE}/auth/change-admin-password`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to change password');
     }
   }
 };

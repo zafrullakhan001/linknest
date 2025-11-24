@@ -54,8 +54,35 @@ function initDatabase() {
             username TEXT UNIQUE NOT NULL,
             email TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
+            is_admin INTEGER DEFAULT 0,
+            is_approved INTEGER DEFAULT 0,
             created_at INTEGER NOT NULL
         )');
+        
+        // Migrate existing users table if needed (add new columns)
+        try {
+            $db->exec('ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0');
+        } catch (PDOException $e) {
+            // Column already exists, ignore
+        }
+        try {
+            $db->exec('ALTER TABLE users ADD COLUMN is_approved INTEGER DEFAULT 0');
+        } catch (PDOException $e) {
+            // Column already exists, ignore
+        }
+        
+        // Note: New users require admin approval. Existing users in old databases
+        // will need to be manually approved by admin through the admin panel.
+        
+        // Create default admin account if it doesn't exist
+        $stmt = $db->prepare('SELECT id FROM users WHERE is_admin = 1 LIMIT 1');
+        $stmt->execute();
+        if (!$stmt->fetch()) {
+            // Default admin credentials: admin / admin123
+            $adminPassword = password_hash('admin123', PASSWORD_DEFAULT);
+            $db->exec("INSERT INTO users (username, email, password_hash, is_admin, is_approved, created_at) 
+                       VALUES ('admin', 'admin@linknest.local', '$adminPassword', 1, 1, " . time() . ")");
+        }
         
         // Create tiles table
         $db->exec('CREATE TABLE IF NOT EXISTS tiles (
@@ -88,6 +115,28 @@ function initDatabase() {
             FOREIGN KEY (section_id) REFERENCES sections(id) ON DELETE CASCADE
         )');
         
+        // Create settings table
+        $db->exec('CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        )');
+        
+        // Initialize default settings if they don't exist
+        $defaultSettings = [
+            ['app_name', 'LinkNest', time()],
+            ['page_title', 'LinkNest', time()],
+            ['spaces_title', 'My Spaces', time()],
+            ['logo_type', 'icon', time()], // 'icon' or 'image'
+            ['logo_icon', '🔗', time()], // emoji or icon identifier
+            ['logo_image', '', time()], // URL or base64 image
+        ];
+        
+        foreach ($defaultSettings as $setting) {
+            $stmt = $db->prepare('INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+            $stmt->execute($setting);
+        }
+        
         return $db;
     } catch (PDOException $e) {
         http_response_code(500);
@@ -112,11 +161,33 @@ function getAuthenticatedUser() {
     }
     
     $db = getDB();
-    $stmt = $db->prepare('SELECT id, username, email FROM users WHERE id = ?');
+    $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved FROM users WHERE id = ?');
     $stmt->execute([$_SESSION['user_id']]);
     $user = $stmt->fetch();
     
+    if ($user) {
+        // Convert integer to boolean
+        $user['is_admin'] = (bool)$user['is_admin'];
+        $user['is_approved'] = (bool)$user['is_approved'];
+    }
+    
     return $user ?: null;
+}
+
+// Helper function to check if user is admin
+function requireAdmin() {
+    $user = getAuthenticatedUser();
+    if (!$user) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Authentication required']);
+        exit;
+    }
+    if (!$user['is_admin']) {
+        http_response_code(403);
+        echo json_encode(['error' => 'Admin access required']);
+        exit;
+    }
+    return $user;
 }
 
 // Helper function to require authentication

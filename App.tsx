@@ -5,7 +5,9 @@ import { TileGrid } from './components/TileGrid';
 import { TileDetail } from './components/TileDetail';
 import { Navigation } from './components/Navigation';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { SettingsProvider } from './contexts/SettingsContext';
 import { AuthModal } from './components/AuthModal';
+import { AdminPanel } from './components/AdminPanel';
 
 // Simple Hash Router implementation
 const useHashRoute = () => {
@@ -129,6 +131,28 @@ const AppContent: React.FC = () => {
         onAuthRequired={() => setAuthModalOpen(true)}
       />
     );
+  } else if (route === '#/admin') {
+    if (user?.is_admin) {
+      content = (
+        <AdminPanel 
+          onUserApproved={() => {
+            // Refresh tiles if needed
+            const loadData = async () => {
+              try {
+                const stored = await getTiles();
+                setTiles(stored);
+              } catch (error) {
+                console.error('Failed to load tiles:', error);
+              }
+            };
+            loadData();
+          }}
+        />
+      );
+    } else {
+      window.location.hash = '#/';
+      content = null;
+    }
   } else if (route.startsWith('#/tile/')) {
     const tileId = route.split('/tile/')[1];
     const tile = tiles.find((t) => t.id === tileId);
@@ -169,21 +193,23 @@ const AppContent: React.FC = () => {
         onLoginClick={() => setAuthModalOpen(true)}
       />
       <main className="flex-grow container mx-auto px-4 py-8 max-w-6xl">
-        {!isAuthenticated && (
-          <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-center">
-            <p className="text-sm text-blue-700 dark:text-blue-300">
-              👋 <strong>Guest Mode:</strong> You're viewing all public links. 
+        {content}
+      </main>
+      {!isAuthenticated && (
+        <div className="container mx-auto px-4 max-w-6xl pb-4">
+          <div className="p-2.5 bg-slate-100/50 dark:bg-slate-800/30 border border-slate-200/50 dark:border-slate-700/50 rounded-md text-center">
+            <p className="text-xs text-slate-600 dark:text-slate-400">
+              👋 Guest Mode: You're viewing all public links. 
               <button 
                 onClick={() => setAuthModalOpen(true)}
-                className="ml-2 text-blue-600 dark:text-blue-400 hover:underline font-semibold"
+                className="ml-1.5 text-slate-700 dark:text-slate-300 hover:underline"
               >
                 Sign in to edit
               </button>
             </p>
           </div>
-        )}
-        {content}
-      </main>
+        </div>
+      )}
       <footer className="py-6 text-center text-slate-400 dark:text-slate-500 text-sm">
         <p>© {new Date().getFullYear()} LinkNest. Built with React, Tailwind & Gemini.</p>
       </footer>
@@ -198,7 +224,9 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <AuthProvider>
-      <AppContent />
+      <SettingsProvider>
+        <AppContent />
+      </SettingsProvider>
     </AuthProvider>
   );
 };

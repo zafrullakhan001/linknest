@@ -1,15 +1,17 @@
 import React from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
 
 interface NavigationProps {
   darkMode: boolean;
   toggleTheme: () => void;
-  user: { id: number; username: string; email: string } | null;
+  user: { id: number; username: string; email: string; is_admin?: boolean } | null;
   onLoginClick: () => void;
 }
 
 export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme, user, onLoginClick }) => {
   const { logout } = useAuth();
+  const { settings } = useSettings();
 
   const handleLogout = async () => {
     try {
@@ -27,19 +29,36 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme, u
           onClick={() => window.location.hash = '#/'}
           className="flex items-center gap-2 group cursor-pointer"
         >
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-white">
-              <path fillRule="evenodd" d="M19.902 4.098a3.75 3.75 0 00-5.304 0l-4.5 4.5a3.75 3.75 0 001.035 6.037.75.75 0 01-.646 1.353 5.25 5.25 0 01-1.449-8.45l4.5-4.5a5.25 5.25 0 117.424 7.424l-1.757 1.757a.75.75 0 11-1.06-1.06l1.757-1.757a3.75 3.75 0 000-5.304zm-7.389 4.267a.75.75 0 011-.353 5.25 5.25 0 011.449 8.45l-4.5 4.5a5.25 5.25 0 11-7.424-7.424l1.757-1.757a.75.75 0 111.06 1.06l-1.757 1.757a3.75 3.75 0 105.304 5.304l4.5-4.5a3.75 3.75 0 00-1.035-6.037.75.75 0 01.646-1.353z" clipRule="evenodd" />
-            </svg>
-          </div>
+          {settings.logo_type === 'image' && settings.logo_image ? (
+            <img 
+              src={settings.logo_image} 
+              alt={settings.app_name}
+              className="w-8 h-8 rounded-lg object-contain group-hover:scale-105 transition-transform"
+            />
+          ) : (
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform text-lg">
+              {settings.logo_icon || '🔗'}
+            </div>
+          )}
           <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-800 to-slate-500 dark:from-white dark:to-slate-400">
-            LinkNest
+            {settings.app_name || 'LinkNest'}
           </span>
         </div>
 
         <div className="flex items-center gap-3">
           {user ? (
             <>
+              {user.is_admin && (
+                <button
+                  onClick={() => window.location.hash = '#/admin'}
+                  className="px-3 py-1.5 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path fillRule="evenodd" d="M9.293 2.293a1 1 0 011.414 0l7 7A1 1 0 0117 11h-1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3a1 1 0 00-1-1H9a1 1 0 00-1 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-6H3a1 1 0 01-.707-1.707l7-7z" clipRule="evenodd" />
+                  </svg>
+                  Admin
+                </button>
+              )}
               <span className="text-sm text-slate-600 dark:text-slate-400 hidden sm:inline">
                 {user.username}
               </span>

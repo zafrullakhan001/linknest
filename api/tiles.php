@@ -47,15 +47,9 @@ function handleGetTiles() {
     $user = getAuthenticatedUser();
     $db = getDB();
     
-    if ($user) {
-        // Authenticated: get user's tiles
-        $stmt = $db->prepare('SELECT * FROM tiles WHERE user_id = ? ORDER BY created_at DESC');
-        $stmt->execute([$user['id']]);
-    } else {
-        // Guest: get all public tiles (all tiles for now, can be filtered later)
-        $stmt = $db->prepare('SELECT * FROM tiles ORDER BY created_at DESC');
-        $stmt->execute();
-    }
+    // All users (authenticated and guests) see all tiles - shared public repository
+    $stmt = $db->prepare('SELECT * FROM tiles ORDER BY created_at DESC');
+    $stmt->execute();
     
     $tiles = [];
     
@@ -212,13 +206,13 @@ function handleCreateTile() {
 }
 
 function handleUpdateTile($tileId) {
-    $user = requireAuth();
+    $user = requireAuth(); // Any authenticated user can edit any tile
     $data = getJSONInput();
     
     $db = getDB();
     
-    // Verify ownership
-    $checkStmt = $db->prepare('SELECT user_id FROM tiles WHERE id = ?');
+    // Verify tile exists
+    $checkStmt = $db->prepare('SELECT id FROM tiles WHERE id = ?');
     $checkStmt->execute([$tileId]);
     $tile = $checkStmt->fetch();
     
@@ -226,9 +220,7 @@ function handleUpdateTile($tileId) {
         sendJSON(['error' => 'Tile not found'], 404);
     }
     
-    if ($tile['user_id'] != $user['id']) {
-        sendJSON(['error' => 'Unauthorized'], 403);
-    }
+    // All authenticated users can edit any tile - shared public repository
     
     // Update tile
     $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ? WHERE id = ?');
@@ -279,11 +271,11 @@ function handleUpdateTile($tileId) {
 }
 
 function handleDeleteTile($tileId) {
-    $user = requireAuth();
+    $user = requireAuth(); // Any authenticated user can delete any tile
     $db = getDB();
     
-    // Verify ownership
-    $checkStmt = $db->prepare('SELECT user_id FROM tiles WHERE id = ?');
+    // Verify tile exists
+    $checkStmt = $db->prepare('SELECT id FROM tiles WHERE id = ?');
     $checkStmt->execute([$tileId]);
     $tile = $checkStmt->fetch();
     
@@ -291,9 +283,7 @@ function handleDeleteTile($tileId) {
         sendJSON(['error' => 'Tile not found'], 404);
     }
     
-    if ($tile['user_id'] != $user['id']) {
-        sendJSON(['error' => 'Unauthorized'], 403);
-    }
+    // All authenticated users can delete any tile - shared public repository
     
     // Delete tile (cascade will delete sections and links)
     $stmt = $db->prepare('DELETE FROM tiles WHERE id = ?');

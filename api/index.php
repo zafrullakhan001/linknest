@@ -38,6 +38,9 @@ if (empty($path) || $path === '/') {
 } elseif (strpos($path, '/tiles') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 6); // Remove '/tiles'
     require __DIR__ . '/tiles.php';
+} elseif (strpos($path, '/settings') === 0) {
+    $_SERVER['PATH_INFO'] = substr($path, 9); // Remove '/settings'
+    require __DIR__ . '/settings.php';
 } else {
     http_response_code(404);
     header('Content-Type: application/json');

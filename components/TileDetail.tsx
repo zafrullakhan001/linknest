@@ -81,6 +81,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
       setEditSections(editSections.map(s => s.id === sectionId ? { ...s, title: newTitle } : s));
   };
 
+  const handleMoveSection = (sectionId: string, direction: 'up' | 'down') => {
+      const index = editSections.findIndex(s => s.id === sectionId);
+      if (index === -1) return;
+      
+      const newIndex = direction === 'up' ? index - 1 : index + 1;
+      if (newIndex < 0 || newIndex >= editSections.length) return;
+      
+      const newSections = [...editSections];
+      [newSections[index], newSections[newIndex]] = [newSections[newIndex], newSections[index]];
+      setEditSections(newSections);
+  };
+
   // Link Management
   const updateNewLinkState = (sectionId: string, field: 'label' | 'url', value: string) => {
       setNewLinkState(prev => ({
@@ -116,6 +128,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
               return { ...s, links: s.links.filter(l => l.id !== linkId) };
           }
           return s;
+      }));
+  };
+
+  const handleMoveLink = (sectionId: string, linkId: string, direction: 'up' | 'down') => {
+      setEditSections(editSections.map(s => {
+          if (s.id !== sectionId) return s;
+          
+          const index = s.links.findIndex(l => l.id === linkId);
+          if (index === -1) return s;
+          
+          const newIndex = direction === 'up' ? index - 1 : index + 1;
+          if (newIndex < 0 || newIndex >= s.links.length) return s;
+          
+          const newLinks = [...s.links];
+          [newLinks[index], newLinks[newIndex]] = [newLinks[newIndex], newLinks[index]];
+          return { ...s, links: newLinks };
       }));
   };
 
@@ -469,7 +497,30 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 {editSections.map((section, index) => (
                     <div key={section.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm dark:shadow-black/20">
                         {/* Section Header */}
-                        <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 flex gap-4 items-center">
+                        <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 flex gap-2 items-center">
+                            {/* Reorder Buttons */}
+                            <div className="flex flex-col gap-0.5">
+                                <button
+                                    onClick={() => handleMoveSection(section.id, 'up')}
+                                    disabled={index === 0}
+                                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-1"
+                                    title="Move Up"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
+                                    </svg>
+                                </button>
+                                <button
+                                    onClick={() => handleMoveSection(section.id, 'down')}
+                                    disabled={index === editSections.length - 1}
+                                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-1"
+                                    title="Move Down"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                                    </svg>
+                                </button>
+                            </div>
                             <div className="text-slate-400 dark:text-slate-500 font-mono text-sm">#{index + 1}</div>
                             <input
                                 type="text"
@@ -495,8 +546,31 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 {section.links.length === 0 && (
                                     <p className="text-slate-400 dark:text-slate-600 text-sm italic py-2">No links in this section yet.</p>
                                 )}
-                                {section.links.map(link => (
-                                    <div key={link.id} className="flex items-center gap-3 bg-slate-50 dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
+                                {section.links.map((link, linkIndex) => (
+                                    <div key={link.id} className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
+                                        {/* Link Reorder Buttons */}
+                                        <div className="flex flex-col gap-0.5">
+                                            <button
+                                                onClick={() => handleMoveLink(section.id, link.id, 'up')}
+                                                disabled={linkIndex === 0}
+                                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-0.5"
+                                                title="Move Up"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
+                                                </svg>
+                                            </button>
+                                            <button
+                                                onClick={() => handleMoveLink(section.id, link.id, 'down')}
+                                                disabled={linkIndex === section.links.length - 1}
+                                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-0.5"
+                                                title="Move Down"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                                                </svg>
+                                            </button>
+                                        </div>
                                         <div className="w-8 h-8 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sm">🔗</div>
                                         <div className="flex-1 min-w-0">
                                             <div className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{link.label}</div>
@@ -505,6 +579,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         <button
                                             onClick={() => handleRemoveLinkFromSection(section.id, link.id)}
                                             className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
+                                            title="Delete Link"
                                         >
                                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                                                 <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />

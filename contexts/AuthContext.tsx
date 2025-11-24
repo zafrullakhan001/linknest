@@ -30,8 +30,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const register = async (username: string, email: string, password: string) => {
-    const user = await authService.register(username, email, password);
-    setUser(user);
+    const result = await authService.register(username, email, password);
+    // Don't set user if pending approval
+    if (!result.pending) {
+      // This shouldn't happen with new approval system, but handle it
+      const user = await authService.getCurrentUser();
+      setUser(user);
+    }
+    return result;
   };
 
   const logout = async () => {

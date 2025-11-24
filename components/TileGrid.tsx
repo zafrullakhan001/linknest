@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Tile, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS } from '../types';
 import { generateTileContent, GeneratedTileContent } from '../services/geminiService';
+import { useSettings } from '../contexts/SettingsContext';
 
 interface TileGridProps {
   tiles: Tile[];
@@ -21,6 +22,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   isAuthenticated = false,
   onAuthRequired
 }) => {
+  const { settings } = useSettings();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -160,7 +162,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       {/* Compact Header Section */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">My Spaces</h1>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{settings.spaces_title || 'My Spaces'}</h1>
           {tiles.length > 0 && (
             <span className="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-400">
               {tiles.length}
