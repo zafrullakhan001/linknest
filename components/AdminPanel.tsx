@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { authService, PendingUser, AllUser } from '../services/authService';
 import { settingsService, AppSettings } from '../services/settingsService';
+import { databaseService } from '../services/databaseService';
 import { useSettings } from '../contexts/SettingsContext';
 
 interface AdminPanelProps {
@@ -9,7 +10,7 @@ interface AdminPanelProps {
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const { refreshSettings } = useSettings();
-  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings'>('pending');
+  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database'>('pending');
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
   const [allUsers, setAllUsers] = useState<AllUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,6 +37,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [adminPasswordLoading, setAdminPasswordLoading] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  
+  // Database export/import state
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
 
   const loadPendingUsers = async () => {
     try {
@@ -221,6 +227,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           }`}
         >
           Settings
+        </button>
+        <button
+          onClick={() => setActiveTab('database')}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+            activeTab === 'database'
+              ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          Database
         </button>
       </div>
 
@@ -416,6 +432,162 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {/* Database Tab */}
+          {activeTab === 'database' && (
+            <div className="space-y-6">
+              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Database Export & Import</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                  Export your database as a JSON file for backup or import it to restore data on a new instance.
+                </p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Export Section */}
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="text-base font-semibold text-slate-900 dark:text-white mb-2">Export Database</h4>
+                      <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                        Download all database data (users, tiles, sections, links, settings) as a JSON file.
+                      </p>
+                      <button
+                        onClick={async () => {
+                          try {
+                            setExporting(true);
+                            setError('');
+                            await databaseService.exportDatabase();
+                            alert('Database exported successfully!');
+                          } catch (err: any) {
+                            setError(err.message || 'Failed to export database');
+                          } finally {
+                            setExporting(false);
+                          }
+                        }}
+                        disabled={exporting}
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                      >
+                        {exporting ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Exporting...
+                          </>
+                        ) : (
+                          <>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                              <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
+                              <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+                            </svg>
+                            Export Database
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Import Section */}
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="text-base font-semibold text-slate-900 dark:text-white mb-2">Import Database</h4>
+                      <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                        Import a previously exported JSON file. This will replace all existing data.
+                      </p>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                            Select JSON File
+                          </label>
+                          <input
+                            type="file"
+                            accept=".json,application/json"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                setImportFile(file);
+                                setError('');
+                              }
+                            }}
+                            className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer"
+                          />
+                          {importFile && (
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                              Selected: {importFile.name}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          onClick={async () => {
+                            if (!importFile) {
+                              setError('Please select a JSON file to import');
+                              return;
+                            }
+
+                            if (!confirm('WARNING: This will replace ALL existing data in the database. Are you sure you want to continue?')) {
+                              return;
+                            }
+
+                            try {
+                              setImporting(true);
+                              setError('');
+                              const result = await databaseService.importDatabase(importFile);
+                              setImportFile(null);
+                              alert(`Database imported successfully!\n\nImported:\n- Users: ${result.imported.users}\n- Tiles: ${result.imported.tiles}\n- Sections: ${result.imported.sections}\n- Links: ${result.imported.links}\n- Settings: ${result.imported.settings}`);
+                              // Reload data after import
+                              await loadData();
+                              await loadSettings();
+                            } catch (err: any) {
+                              setError(err.message || 'Failed to import database');
+                            } finally {
+                              setImporting(false);
+                            }
+                          }}
+                          disabled={importing || !importFile}
+                          className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                        >
+                          {importing ? (
+                            <>
+                              <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Importing...
+                            </>
+                          ) : (
+                            <>
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                <path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 3.129a.75.75 0 001.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 101.09 1.03l2.955-3.129V13.25z" />
+                                <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+                              </svg>
+                              Import Database
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                  <div className="flex gap-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5">
+                      <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                    </svg>
+                    <div>
+                      <p className="text-sm font-semibold text-amber-800 dark:text-amber-300 mb-1">Important Notes</p>
+                      <ul className="text-xs text-amber-700 dark:text-amber-400 space-y-1 list-disc list-inside">
+                        <li>Export creates a complete backup of all database tables</li>
+                        <li>Import will replace ALL existing data - use with caution</li>
+                        <li>Always export before importing to avoid data loss</li>
+                        <li>The exported file contains sensitive information - keep it secure</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           )}

@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     container_name: linknest
     ports:
-      - "80:80"
+      - "8000:80"
     volumes:
       - ./data:/var/www/html/data
       - ./uploads:/var/www/html/uploads

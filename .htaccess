@@ -1,6 +1,28 @@
 # Enable directory access and file serving
 Options -Indexes +FollowSymLinks
 
+# Set proper MIME types for JavaScript modules
+<IfModule mod_mime.c>
+    # JavaScript files
+    AddType application/javascript .js
+    AddType application/javascript .mjs
+    AddType text/javascript .js .mjs
+    
+    # TypeScript files (for development)
+    AddType application/javascript .ts
+    AddType application/javascript .tsx
+    AddType text/javascript .ts .tsx
+    
+    # JSON files
+    AddType application/json .json
+    
+    # CSS files
+    AddType text/css .css
+    
+    # HTML files
+    AddType text/html .html .htm
+</IfModule>
+
 # Enable PHP for API routes
 <IfModule mod_rewrite.c>
     RewriteEngine On

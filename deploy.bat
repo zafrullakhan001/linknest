@@ -145,7 +145,7 @@ if %errorLevel% equ 0 (
     echo Deployment Successful!
     echo ==========================================
     echo.
-    echo Application is running at: http://localhost:8080
+    echo Application is running at: http://localhost:8000
     echo.
     echo Default admin credentials:
     echo   Username: admin
@@ -161,7 +161,7 @@ if %errorLevel% equ 0 (
     echo.
     echo Press any key to open the application in your browser...
     pause >nul
-    start http://localhost:8080
+    start http://localhost:8000
 ) else (
     echo.
     echo ERROR: Container failed to start.
@@ -171,4 +171,5 @@ if %errorLevel% equ 0 (
     pause
     exit /b 1
 )
+
 

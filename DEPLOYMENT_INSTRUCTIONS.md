@@ -34,7 +34,7 @@ This document explains how to deploy LinkNest from a bundled zip file.
    - You'll see "Deployment Successful!" when done
 
 4. **Access the Application**
-   - Open your browser and go to: `http://localhost:8080`
+   - Open your browser and go to: `http://localhost:8000`
    - Default login:
      - Username: `admin`
      - Password: `admin123`
@@ -46,9 +46,9 @@ This document explains how to deploy LinkNest from a bundled zip file.
 - Make sure Docker Desktop is started
 - Wait for Docker Desktop to fully initialize (whale icon in system tray)
 
-**Port 8080 already in use:**
+**Port 8000 already in use:**
 - Edit `docker-compose.yml`
-- Change `"8080:80"` to another port like `"8081:80"`
+- Change `"8000:80"` to another port like `"8001:80"`
 
 **Build fails:**
 - Check internet connection (needs to download Docker images)
@@ -57,7 +57,7 @@ This document explains how to deploy LinkNest from a bundled zip file.
 
 **Container won't start:**
 - Check logs: `docker compose logs`
-- Ensure port 8080 is not blocked by firewall
+- Ensure port 8000 is not blocked by firewall
 
 ## For Linux/Mac Users
 
@@ -88,7 +88,7 @@ This document explains how to deploy LinkNest from a bundled zip file.
    ```
 
 4. **Access the Application**
-   - Open browser: `http://localhost:8080`
+   - Open browser: `http://localhost:8000`
    - Default login: `admin` / `admin123`
 
 ## Useful Commands
@@ -146,7 +146,7 @@ For production, use the production compose file:
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-This runs on port 80 (standard HTTP port).
+This runs on port 8000.
 
 ## Support
 
@@ -163,4 +163,5 @@ If you encounter issues:
 2. **Don't expose port 80/8080 to the internet without proper security**
 3. **Regularly backup your data folder**
 4. **Keep Docker images updated**
+
 

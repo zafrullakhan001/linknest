@@ -37,6 +37,48 @@ switch ($method) {
         sendJSON(['error' => 'Method not allowed'], 405);
 }
 
+/**
+ * Detect if we're running in XAMPP (with /linknest/ prefix) or Docker/production (without prefix)
+ * Returns true if we need the /linknest/ prefix, false otherwise
+ */
+function needsLinknestPrefix() {
+    // Check REQUEST_URI for /linknest/ path
+    $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+    if (strpos($requestUri, '/linknest/') !== false) {
+        return true;
+    }
+    
+    // Check SCRIPT_NAME
+    $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
+    if (strpos($scriptName, '/linknest/') !== false) {
+        return true;
+    }
+    
+    // Check if we're in a subdirectory (XAMPP typically uses /linknest/)
+    // Docker typically serves from root
+    return false;
+}
+
+/**
+ * Normalize a logo URL to work in the current environment
+ * Always stores as /uploads/filename, but returns with correct prefix for current environment
+ */
+function normalizeLogoUrl($url) {
+    if (empty($url)) {
+        return $url;
+    }
+    
+    // Remove any existing /linknest/ prefix to get the base path
+    $normalized = preg_replace('#^/linknest/uploads/#', '/uploads/', $url);
+    
+    // If we need the /linknest/ prefix for this environment, add it
+    if (needsLinknestPrefix() && strpos($normalized, '/uploads/') === 0) {
+        $normalized = '/linknest' . $normalized;
+    }
+    
+    return $normalized;
+}
+
 function handleGetSettings() {
     // Settings are public (for display), but only admins can update
     $db = getDB();
@@ -47,6 +89,11 @@ function handleGetSettings() {
     $settings = [];
     foreach ($rows as $row) {
         $settings[$row['key']] = $row['value'];
+    }
+    
+    // Normalize logo_image URL for current environment
+    if (isset($settings['logo_image']) && !empty($settings['logo_image'])) {
+        $settings['logo_image'] = normalizeLogoUrl($settings['logo_image']);
     }
     
     sendJSON(['settings' => $settings]);
@@ -117,19 +164,21 @@ function handleUploadLogo() {
         sendJSON(['error' => 'Failed to save uploaded file'], 500);
     }
     
-    // Generate URL (relative to the application root)
-    // Check if we're in Docker (no /linknest/ in path) or XAMPP (with /linknest/)
-    $basePath = (strpos($_SERVER['REQUEST_URI'] ?? '', '/linknest/') !== false) ? '/linknest/uploads/' : '/uploads/';
-    $url = $basePath . $filename;
+    // Always store as /uploads/filename (without environment prefix)
+    // The URL will be normalized when returned based on current environment
+    $url = '/uploads/' . $filename;
     
-    // Update settings with the new logo URL
+    // Update settings with the new logo URL (stored without prefix)
     $db = getDB();
     $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
     $stmt->execute(['logo_image', $url, time()]);
     
+    // Return normalized URL for current environment
+    $normalizedUrl = normalizeLogoUrl($url);
+    
     sendJSON([
         'success' => true,
-        'url' => $url,
+        'url' => $normalizedUrl,
         'message' => 'Logo uploaded successfully'
     ]);
 }
@@ -152,6 +201,11 @@ function handleUpdateSettings() {
             $allowedKeys = ['app_name', 'page_title', 'spaces_title', 'logo_type', 'logo_icon', 'logo_image'];
             if (!in_array($key, $allowedKeys)) {
                 continue; // Skip invalid keys
+            }
+            
+            // Normalize logo_image URL before storing (remove environment prefix)
+            if ($key === 'logo_image' && !empty($value)) {
+                $value = preg_replace('#^/linknest/uploads/#', '/uploads/', $value);
             }
             
             $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');

@@ -43,13 +43,58 @@ export const TileGrid: React.FC<TileGridProps> = ({
     return Array.from(new Set(tiles.map(t => t.group || 'General'))).sort();
   }, [tiles]);
 
-  // Filter and Group Tiles
+  // Filter and Group Tiles - Global search across all content
   const groupedTiles = useMemo(() => {
-    const filtered = tiles.filter(t => 
-      t.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (t.group || '').toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    if (!searchTerm.trim()) {
+      // No search term - return all tiles grouped normally
+      const groups: Record<string, Tile[]> = {};
+      tiles.forEach(tile => {
+        const groupName = tile.group || 'General';
+        if (!groups[groupName]) {
+          groups[groupName] = [];
+        }
+        groups[groupName].push(tile);
+      });
+      return groups;
+    }
+
+    const searchLower = searchTerm.toLowerCase();
+    
+    // Global search: check title, description, group, section titles, link labels, and link URLs
+    const filtered = tiles.filter(t => {
+      // Check tile-level properties
+      if (
+        t.title.toLowerCase().includes(searchLower) || 
+        t.description.toLowerCase().includes(searchLower) ||
+        (t.group || '').toLowerCase().includes(searchLower)
+      ) {
+        return true;
+      }
+      
+      // Check sections and links within the tile
+      if (t.sections && t.sections.length > 0) {
+        for (const section of t.sections) {
+          // Check section title
+          if (section.title.toLowerCase().includes(searchLower)) {
+            return true;
+          }
+          
+          // Check links in this section
+          if (section.links && section.links.length > 0) {
+            for (const link of section.links) {
+              if (
+                link.label.toLowerCase().includes(searchLower) ||
+                link.url.toLowerCase().includes(searchLower)
+              ) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+      
+      return false;
+    });
 
     const groups: Record<string, Tile[]> = {};
     
@@ -163,11 +208,6 @@ export const TileGrid: React.FC<TileGridProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{settings.spaces_title || 'My Spaces'}</h1>
-          {tiles.length > 0 && (
-            <span className="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-400">
-              {tiles.length}
-            </span>
-          )}
         </div>
         
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">

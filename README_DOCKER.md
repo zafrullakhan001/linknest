@@ -17,7 +17,7 @@ This script will:
 3. Build the Docker image
 4. Start the application
 
-The application will be available at `http://localhost:8080`
+The application will be available at `http://localhost:8000`
 
 ## Manual Deployment
 
@@ -57,8 +57,8 @@ docker compose up -d --build
 ### Step 5: Access Application
 
 Open your browser and navigate to:
-- Development: `http://localhost:8080`
-- Production: `http://localhost:80` (if using production compose file)
+- Development: `http://localhost:8000`
+- Production: `http://localhost:8000`
 
 ## Docker Commands
 
@@ -108,7 +108,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 This will:
-- Run on port 80 (standard HTTP port)
+- Run on port 8000
 - Set restart policy to `always`
 - Include health checks
 
@@ -145,7 +145,7 @@ chmod -R 755 data uploads
 Edit `docker-compose.yml` and change the port mapping:
 ```yaml
 ports:
-  - "8080:80"  # Change 8080 to any available port
+  - "8000:80"  # Change 8000 to any available port (e.g., "8001:80")
 ```
 
 ### Rebuild after code changes

@@ -38,6 +38,16 @@ export default defineConfig(({ mode }) => {
               // Route to index.php with path as query parameter
               return `/api/index.php?path=${encodeURIComponent(apiPath)}`;
             }
+          },
+          '/uploads': {
+            target: 'http://localhost/linknest',
+            changeOrigin: true,
+            secure: false
+          },
+          '/linknest/uploads': {
+            target: 'http://localhost',
+            changeOrigin: true,
+            secure: false
           }
         }
       },

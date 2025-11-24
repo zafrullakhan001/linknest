@@ -133,7 +133,7 @@ if $DOCKER_CMD ps | grep -q linknest; then
     echo -e "Deployment Successful!${NC}"
     echo -e "${GREEN}=========================================="
     echo ""
-    echo -e "Application is running at: ${GREEN}http://localhost:8080${NC}"
+    echo -e "Application is running at: ${GREEN}http://localhost:8000${NC}"
     echo ""
     echo -e "Default admin credentials:"
     echo -e "  Username: ${GREEN}admin${NC}"

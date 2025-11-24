@@ -1,6 +1,32 @@
 # Enable directory access and file serving
 Options -Indexes +FollowSymLinks
 
+# Set proper MIME types for JavaScript modules - MUST be before rewrite rules
+<IfModule mod_mime.c>
+    # JavaScript files
+    AddType application/javascript .js
+    AddType application/javascript .mjs
+    
+    # TypeScript files (for development/source maps) - set MIME type even if blocked
+    AddType application/javascript .ts
+    AddType application/javascript .tsx
+    
+    # JSON files
+    AddType application/json .json
+    
+    # CSS files
+    AddType text/css .css
+    
+    # HTML files
+    AddType text/html .html .htm
+</IfModule>
+
+# Force MIME type for all JavaScript/TypeScript files
+<FilesMatch "\.(js|mjs|ts|tsx)$">
+    ForceType application/javascript
+    Header set Content-Type "application/javascript; charset=utf-8"
+</FilesMatch>
+
 # Enable PHP for API routes
 <IfModule mod_rewrite.c>
     RewriteEngine On
@@ -14,8 +40,14 @@ Options -Indexes +FollowSymLinks
     RewriteRule . - [L]
     
     # SECOND: Serve static assets from dist/assets/ (rewrite /assets/ to /dist/assets/)
+    # This must come BEFORE the dist/ rule to catch /assets/ requests
     RewriteCond %{REQUEST_URI} ^/assets/
-    RewriteRule ^assets/(.*)$ dist/assets/$1 [L]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^assets/(.*)$ dist/assets/$1 [L,T=application/javascript]
+    
+    # Also handle direct requests to /dist/assets/ (allow direct access)
+    RewriteCond %{REQUEST_URI} ^/dist/assets/
+    RewriteRule . - [L]
     
     # Route API requests to api/index.php
     RewriteCond %{REQUEST_URI} ^/api/
@@ -23,23 +55,42 @@ Options -Indexes +FollowSymLinks
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^api/(.*)$ api/index.php?path=$1 [L,QSA]
     
-    # Block direct access to source files in production
+    # Redirect /index.tsx to dist/index.html (serve compiled version)
+    RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
+    RewriteCond %{REQUEST_URI} ^/index\.tsx$
+    RewriteRule ^index\.tsx$ /dist/index.html [L,R=301]
+    
+    # Block direct access to other source files in production (return 404)
     RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
     RewriteCond %{REQUEST_URI} \.(tsx?|jsx?)$
     RewriteCond %{REQUEST_URI} !^/dist
     RewriteCond %{REQUEST_URI} !^/api
-    RewriteRule . - [F,L]
+    RewriteCond %{REQUEST_URI} !^/assets
+    RewriteCond %{REQUEST_URI} !^/index\.tsx$
+    RewriteRule . - [R=404,L]
     
     # PRODUCTION MODE: If dist/index.html exists, always serve from dist/
+    # Handle root path FIRST - serve dist/index.html
     RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
-    
-    # Explicitly handle root path - serve dist/index.html
     RewriteCond %{REQUEST_URI} ^/?$
-    RewriteRule ^(.*)$ dist/index.html [L]
+    RewriteRule ^(.*)$ /dist/index.html [L]
     
-    # Block direct access to root index.html in production (redirect to dist)
-    RewriteCond %{REQUEST_URI} ^/index\.html?$
-    RewriteRule ^index\.html?$ dist/index.html [L,R=301]
+    # Also handle empty request URI explicitly
+    RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
+    RewriteCond %{REQUEST_URI} ^$
+    RewriteRule ^(.*)$ /dist/index.html [L]
+    
+    # Block access to source index.html in production
+    RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
+    RewriteCond %{REQUEST_URI} ^/index\.(html|tsx)$
+    RewriteCond %{REQUEST_URI} !^/dist/
+    RewriteRule ^index\.(html|tsx)$ dist/index.html [L,R=301]
+    
+    # Block direct access to root index.html or index.tsx in production (redirect to dist)
+    RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
+    RewriteCond %{REQUEST_URI} ^/index\.(html|tsx)$
+    RewriteCond %{REQUEST_URI} !^/dist/
+    RewriteRule ^index\.(html|tsx)$ dist/index.html [L,R=301]
     
     # Serve other static files from dist/ if they exist
     RewriteCond %{REQUEST_FILENAME} !-f
