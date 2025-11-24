@@ -168,7 +168,7 @@ const AppContent: React.FC = () => {
         user={user}
         onLoginClick={() => setAuthModalOpen(true)}
       />
-      <main className="flex-grow w-full px-4 sm:px-6 lg:px-8 py-6">
+      <main className="flex-grow container mx-auto px-4 py-8 max-w-6xl">
         {!isAuthenticated && (
           <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-center">
             <p className="text-sm text-blue-700 dark:text-blue-300">

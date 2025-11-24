@@ -240,8 +240,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
               <div className="h-px bg-slate-200 dark:bg-slate-700 flex-1"></div>
             </div>
             
-            {/* Fluid Grid - More columns on larger screens */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-3">
+            {/* Grid with wider tiles */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {groupedTiles[groupName].map((tile, tileIndex) => {
                 const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
                 const linkCount = tile.sections?.reduce((acc, section) => acc + section.links.length, 0) || 0;
