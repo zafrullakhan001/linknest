@@ -118,7 +118,9 @@ function handleUploadLogo() {
     }
     
     // Generate URL (relative to the application root)
-    $url = '/linknest/uploads/' . $filename;
+    // Check if we're in Docker (no /linknest/ in path) or XAMPP (with /linknest/)
+    $basePath = (strpos($_SERVER['REQUEST_URI'] ?? '', '/linknest/') !== false) ? '/linknest/uploads/' : '/uploads/';
+    $url = $basePath . $filename;
     
     // Update settings with the new logo URL
     $db = getDB();
