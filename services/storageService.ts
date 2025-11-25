@@ -123,7 +123,10 @@ export const saveTileArrangement = async (arrangement: Array<{ tileId: string; p
     });
 
     if (!response.ok) {
-      throw new Error('Failed to save tile arrangement');
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      const errorMsg = errorData.details || errorData.error || 'Failed to save tile arrangement';
+      console.error("Failed to save tile arrangement:", errorData);
+      throw new Error(errorMsg);
     }
   } catch (e) {
     console.error("Failed to save tile arrangement", e);
@@ -159,7 +162,10 @@ export const saveCategoryArrangement = async (categories: Array<{ categoryName: 
     });
 
     if (!response.ok) {
-      throw new Error('Failed to save category arrangement');
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      const errorMsg = errorData.details || errorData.error || 'Failed to save category arrangement';
+      console.error("Failed to save category arrangement:", errorData);
+      throw new Error(errorMsg);
     }
   } catch (e) {
     console.error("Failed to save category arrangement", e);

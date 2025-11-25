@@ -3,22 +3,6 @@ import { Tile, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS } from '..
 import { generateTileContent, GeneratedTileContent } from '../services/geminiService';
 import { useSettings } from '../contexts/SettingsContext';
 import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement } from '../services/storageService';
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 
 interface TileGridProps {
   tiles: Tile[];
@@ -149,6 +133,10 @@ interface SortableTileProps {
   onTileClick: (tileId: string) => void;
   onDeleteTile: (e: React.MouseEvent, tileId: string) => void;
   onMoveToCategory?: (tileId: string, categoryName: string) => void;
+  onMoveLeft?: (tileId: string) => void;
+  onMoveRight?: (tileId: string) => void;
+  canMoveLeft?: boolean;
+  canMoveRight?: boolean;
   availableCategories: string[];
   groupIndex: number;
   tileIndex: number;
@@ -160,34 +148,26 @@ const SortableTile: React.FC<SortableTileProps> = ({
   onTileClick,
   onDeleteTile,
   onMoveToCategory,
+  onMoveLeft,
+  onMoveRight,
+  canMoveLeft = false,
+  canMoveRight = false,
   availableCategories,
   groupIndex,
   tileIndex
 }) => {
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: tile.id });
 
   const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
   const linkCount = tile.sections?.reduce((acc, section) => acc + section.links.length, 0) || 0;
   const currentCategory = tile.group || 'General';
 
   const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
     animationDelay: `${(groupIndex * 50) + (tileIndex * 20)}ms`,
   };
 
   return (
     <div
-      ref={setNodeRef}
       style={style}
       onClick={() => onTileClick(tile.id)}
       role="button"
@@ -204,21 +184,51 @@ const SortableTile: React.FC<SortableTileProps> = ({
         hover:shadow-lg hover:shadow-brand-500/10 dark:hover:shadow-brand-500/5
         hover:-translate-y-0.5 transition-all duration-200 
         flex flex-col h-full min-h-[140px] cursor-pointer
-        ${isDragging ? 'z-50' : ''}
       `}
     >
-      {/* Drag Handle - Only visible for authenticated users - positioned at top center */}
-      {isAuthenticated && (
-        <div
-          {...attributes}
-          {...listeners}
-          className="absolute top-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing z-10 p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700"
-          onClick={(e) => e.stopPropagation()}
-          title="Drag to rearrange"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-400">
-            <path d="M7 2a2 2 0 1 1 0 4a2 2 0 0 1 0-4zM7 8a2 2 0 1 1 0 4a2 2 0 0 1 0-4zM7 14a2 2 0 1 1 0 4a2 2 0 0 1 0-4zM13 2a2 2 0 1 1 0 4a2 2 0 0 1 0-4zM13 8a2 2 0 1 1 0 4a2 2 0 0 1 0-4zM13 14a2 2 0 1 1 0 4a2 2 0 0 1 0-4z" />
-          </svg>
+      {/* Arrow Buttons for Reordering - Only visible for authenticated users */}
+      {isAuthenticated && (onMoveLeft || onMoveRight) && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 z-10">
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (onMoveLeft && canMoveLeft) {
+                onMoveLeft(tile.id);
+              }
+            }}
+            disabled={!canMoveLeft}
+            className={`p-1 rounded-md transition-all ${
+              canMoveLeft
+                ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
+                : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
+            }`}
+            title="Move left"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+              <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
+            </svg>
+          </button>
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (onMoveRight && canMoveRight) {
+                onMoveRight(tile.id);
+              }
+            }}
+            disabled={!canMoveRight}
+            className={`p-1 rounded-md transition-all ${
+              canMoveRight
+                ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
+                : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
+            }`}
+            title="Move right"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+              <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+            </svg>
+          </button>
         </div>
       )}
 
@@ -363,14 +373,6 @@ export const TileGrid: React.FC<TileGridProps> = ({
   // Category order state
   const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
 
-  // Drag and drop sensors
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
   // Load global category arrangement on mount (works for all users)
   useEffect(() => {
     const loadCategoryOrder = async () => {
@@ -420,13 +422,29 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const groupedTiles = useMemo(() => {
     if (!searchTerm.trim()) {
       // No search term - return all tiles grouped normally
+      // IMPORTANT: Preserve the order of tiles as they come from the API
+      // The API already returns tiles in the correct order based on arrangement
       const groups: Record<string, Tile[]> = {};
+      
+      // Debug: Log tile order from API
+      if (tiles.length > 0) {
+        console.log('Tiles from API (first 5):', tiles.slice(0, 5).map(t => ({ id: t.id, group: t.group || 'General', title: t.title })));
+      }
+      
       tiles.forEach(tile => {
         const groupName = tile.group || 'General';
         if (!groups[groupName]) {
           groups[groupName] = [];
         }
+        // Push tiles in the order they appear (preserving API order)
         groups[groupName].push(tile);
+      });
+      
+      // Debug: Log grouped tiles order
+      Object.keys(groups).forEach(cat => {
+        if (groups[cat].length > 0) {
+          console.log(`Category "${cat}" tiles order:`, groups[cat].map(t => ({ id: t.id, title: t.title })));
+        }
       });
       
       // Apply global category order if available (works for all users)
@@ -616,17 +634,51 @@ export const TileGrid: React.FC<TileGridProps> = ({
       // Update local state
       onUpdateTiles(updatedTiles);
 
-      // Save arrangement to backend
+      // Save arrangement to backend - preserve order within each category
       try {
-        const arrangement = updatedTiles.map((tile, index) => ({
-          tileId: tile.id,
-          position: index,
-          groupName: tile.group || 'General'
-        }));
+        // Group tiles by category and assign positions within each category
+        const grouped: Record<string, Tile[]> = {};
+        updatedTiles.forEach(tile => {
+          const group = tile.group || 'General';
+          if (!grouped[group]) {
+            grouped[group] = [];
+          }
+          grouped[group].push(tile);
+        });
+
+        // Build arrangement preserving order within each category
+        const arrangement: Array<{ tileId: string; position: number; groupName: string }> = [];
+        let globalPosition = 0;
+        
+        // Use categoryOrder if available, otherwise use alphabetical
+        const orderedCategories = categoryOrder.length > 0 
+          ? categoryOrder.filter(cat => grouped[cat])
+          : Object.keys(grouped).sort();
+        
+        // Add any categories not in categoryOrder
+        Object.keys(grouped).forEach(cat => {
+          if (!orderedCategories.includes(cat)) {
+            orderedCategories.push(cat);
+          }
+        });
+
+        orderedCategories.forEach(categoryName => {
+          const categoryTiles = grouped[categoryName] || [];
+          categoryTiles.forEach(tile => {
+            arrangement.push({
+              tileId: tile.id,
+              position: globalPosition++,
+              groupName: categoryName
+            });
+          });
+        });
+
         await saveTileArrangement(arrangement);
       } catch (error) {
         console.error('Failed to save tile arrangement:', error);
         // Revert on error
+        const errorMsg = error instanceof Error ? error.message : 'Failed to save tile arrangement. Please try again.';
+        alert(errorMsg);
         onUpdateTiles(tiles);
       }
     } catch (error) {
@@ -687,7 +739,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
       console.error('Failed to save category arrangement:', error);
       // Revert state on error
       setCategoryOrder(categoryOrder);
-      alert('Failed to save category order. Please try again.');
+      const errorMsg = error instanceof Error ? error.message : 'Failed to save category order. Please try again.';
+      alert(errorMsg);
     }
   }, [tiles, isAuthenticated, categoryOrder]);
 
@@ -743,66 +796,55 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
   }, [tiles, isAuthenticated, onUpdateTiles, categoryOrder]);
 
-  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+  const handleMoveTile = useCallback(async (tileId: string, direction: 'left' | 'right') => {
     if (!isAuthenticated) return;
 
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
+    // Work directly with the flat tiles array, which reflects the current visual order
+    const currentIndex = tiles.findIndex(t => t.id === tileId);
+    if (currentIndex === -1) return;
 
-    // Check if this is a category drag
-    const activeId = String(active.id);
-    const overId = String(over.id);
-    
-    // Tile rearrangement (tile dropped on another tile)
-    const activeTile = tiles.find(t => t.id === active.id);
-    const overTile = tiles.find(t => t.id === over.id);
-    
-    if (!activeTile || !overTile) return;
+    const targetIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= tiles.length) {
+      return; // Already at the edge
+    }
 
-    // Get current grouped tiles
-    const currentGroups: Record<string, Tile[]> = {};
-    tiles.forEach(tile => {
-      const groupName = tile.group || 'General';
-      if (!currentGroups[groupName]) {
-        currentGroups[groupName] = [];
-      }
-      currentGroups[groupName].push(tile);
-    });
+    const currentTile = tiles[currentIndex];
+    const targetTile = tiles[targetIndex];
 
     // Only allow reordering within the same category
-    const activeGroup = activeTile.group || 'General';
-    const overGroup = overTile.group || 'General';
-
-    // Prevent moving tiles between categories via drag
-    if (activeGroup !== overGroup) {
+    const currentGroup = currentTile.group || 'General';
+    const targetGroup = targetTile.group || 'General';
+    if (currentGroup !== targetGroup) {
       return;
     }
 
-    // Create new tiles array with updated order
-    const newTiles = [...tiles];
-    const activeIndex = newTiles.findIndex(t => t.id === active.id);
-    const overIndex = newTiles.findIndex(t => t.id === over.id);
+    // Swap the two tiles in the flat array
+    const reorderedTiles = [...tiles];
+    [reorderedTiles[currentIndex], reorderedTiles[targetIndex]] = [
+      reorderedTiles[targetIndex],
+      reorderedTiles[currentIndex],
+    ];
 
-    // Reorder tiles
-    const reorderedTiles = arrayMove(newTiles, activeIndex, overIndex);
-    
-    // Update local state
+    // Update local state immediately for visual feedback
     onUpdateTiles(reorderedTiles);
 
-    // Save arrangement to backend
+    // Save arrangement to backend using the new flat order
     try {
-      const arrangement = reorderedTiles.map((tile, index) => ({
-        tileId: tile.id,
-        position: index,
-        groupName: tile.group || 'General'
-      }));
+      const arrangement: Array<{ tileId: string; position: number; groupName: string }> =
+        reorderedTiles.map((tile, index) => ({
+          tileId: tile.id,
+          position: index,
+          groupName: tile.group || 'General',
+        }));
+
       await saveTileArrangement(arrangement);
     } catch (error) {
       console.error('Failed to save tile arrangement:', error);
+      alert('Failed to save tile order: ' + (error instanceof Error ? error.message : 'Unknown error'));
       // Revert on error
       onUpdateTiles(tiles);
     }
-  }, [tiles, isAuthenticated, onUpdateTiles, categoryOrder]);
+  }, [tiles, isAuthenticated, onUpdateTiles]);
 
   return (
     <div className="w-full space-y-6">
@@ -872,58 +914,61 @@ export const TileGrid: React.FC<TileGridProps> = ({
       )}
 
       {/* Tiles Grid - Full Width with More Columns */}
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext items={tiles.map(t => t.id)}>
-          <div className="space-y-8">
-            {Object.keys(groupedTiles).map((groupName, groupIndex) => {
-              const groupTiles = groupedTiles[groupName];
-              // Use the actual display order (which respects categoryOrder)
-              const categoryKeys = Object.keys(groupedTiles);
-              const canMoveUp = groupIndex > 0;
-              const canMoveDown = groupIndex < categoryKeys.length - 1;
-              
-              return (
-                <Category
-                  key={groupName}
-                  categoryName={groupName}
-                  tileCount={groupTiles.length}
-                  isAuthenticated={isAuthenticated}
-                  groupIndex={groupIndex}
-                  canMoveUp={canMoveUp}
-                  canMoveDown={canMoveDown}
-                  onMoveUp={() => handleMoveCategory(groupName, 'up')}
-                  onMoveDown={() => handleMoveCategory(groupName, 'down')}
-                  onDeleteCategory={handleDeleteCategory}
-                >
-                  {/* Grid with wider tiles */}
-                  {groupTiles.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                      {groupTiles.map((tile, tileIndex) => (
-                        <SortableTile
-                          key={tile.id}
-                          tile={tile}
-                          isAuthenticated={isAuthenticated}
-                          onTileClick={handleTileClick}
-                          onDeleteTile={handleDeleteTile}
-                          onMoveToCategory={handleMoveTileToCategory}
-                          availableCategories={allCategories}
-                          groupIndex={groupIndex}
-                          tileIndex={tileIndex}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="py-8 text-center text-slate-400 dark:text-slate-500 text-sm italic">
-                      No tiles in this category. Use the menu to move tiles here.
-                    </div>
-                  )}
-                </Category>
-              );
-            })}
+      <div className="space-y-8">
+        {Object.keys(groupedTiles).map((groupName, groupIndex) => {
+          const groupTiles = groupedTiles[groupName];
+          // Use the actual display order (which respects categoryOrder)
+          const categoryKeys = Object.keys(groupedTiles);
+          const canMoveUp = groupIndex > 0;
+          const canMoveDown = groupIndex < categoryKeys.length - 1;
+          
+          return (
+            <Category
+              key={groupName}
+              categoryName={groupName}
+              tileCount={groupTiles.length}
+              isAuthenticated={isAuthenticated}
+              groupIndex={groupIndex}
+              canMoveUp={canMoveUp}
+              canMoveDown={canMoveDown}
+              onMoveUp={() => handleMoveCategory(groupName, 'up')}
+              onMoveDown={() => handleMoveCategory(groupName, 'down')}
+              onDeleteCategory={handleDeleteCategory}
+            >
+              {/* Grid with wider tiles */}
+              {groupTiles.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {groupTiles.map((tile, tileIndex) => {
+                    const canMoveLeft = tileIndex > 0;
+                    const canMoveRight = tileIndex < groupTiles.length - 1;
+                    
+                    return (
+                      <SortableTile
+                        key={tile.id}
+                        tile={tile}
+                        isAuthenticated={isAuthenticated}
+                        onTileClick={handleTileClick}
+                        onDeleteTile={handleDeleteTile}
+                        onMoveToCategory={handleMoveTileToCategory}
+                        onMoveLeft={() => handleMoveTile(tile.id, 'left')}
+                        onMoveRight={() => handleMoveTile(tile.id, 'right')}
+                        canMoveLeft={canMoveLeft}
+                        canMoveRight={canMoveRight}
+                        availableCategories={allCategories}
+                        groupIndex={groupIndex}
+                        tileIndex={tileIndex}
+                      />
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="py-8 text-center text-slate-400 dark:text-slate-500 text-sm italic">
+                  No tiles in this category. Use the menu to move tiles here.
+                </div>
+              )}
+            </Category>
+          );
+        })}
         
         {/* Compact Empty State */}
         {tiles.length === 0 && isAuthenticated && (
@@ -958,8 +1003,6 @@ export const TileGrid: React.FC<TileGridProps> = ({
           </div>
         )}
           </div>
-        </SortableContext>
-      </DndContext>
 
       {/* Compact Add Tile Modal */}
       {isModalOpen && (

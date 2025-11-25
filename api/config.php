@@ -93,9 +93,28 @@ function initDatabase() {
             emoji TEXT,
             theme_color TEXT,
             "group" TEXT,
+            position INTEGER DEFAULT 0,
             created_at INTEGER NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )');
+        
+        // Migrate existing tiles table to add position column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $hasPosition = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'position') {
+                    $hasPosition = true;
+                    break;
+                }
+            }
+            if (!$hasPosition) {
+                $db->exec('ALTER TABLE tiles ADD COLUMN position INTEGER DEFAULT 0');
+            }
+        } catch (PDOException $e) {
+            // Column might already exist or migration might fail on some environments; ignore
+            error_log('Tiles position migration warning: ' . $e->getMessage());
+        }
         
         // Create sections table
         $db->exec('CREATE TABLE IF NOT EXISTS sections (
@@ -122,9 +141,10 @@ function initDatabase() {
         )');
         
         // Create tile_arrangements table for global tile ordering
-        // user_id is NULL for global arrangements, or user_id for user-specific (if needed in future)
+        // user_id is 0 for global arrangements, or user_id for user-specific (if needed in future)
+        // Using 0 instead of NULL because SQLite doesn't allow NULL in composite PRIMARY KEY
         $db->exec('CREATE TABLE IF NOT EXISTS tile_arrangements (
-            user_id INTEGER,
+            user_id INTEGER NOT NULL DEFAULT 0,
             tile_id TEXT NOT NULL,
             position INTEGER NOT NULL,
             group_name TEXT,
@@ -133,31 +153,121 @@ function initDatabase() {
         )');
         
         // Create category_arrangements table for global category/group ordering
-        // user_id is NULL for global arrangements, or user_id for user-specific (if needed in future)
+        // user_id is 0 for global arrangements, or user_id for user-specific (if needed in future)
+        // Using 0 instead of NULL because SQLite doesn't allow NULL in composite PRIMARY KEY
         $db->exec('CREATE TABLE IF NOT EXISTS category_arrangements (
-            user_id INTEGER,
+            user_id INTEGER NOT NULL DEFAULT 0,
             category_name TEXT NOT NULL,
             position INTEGER NOT NULL,
             PRIMARY KEY (user_id, category_name)
         )');
         
-        // Migrate existing table structure to support NULL user_id (global arrangements)
+        // Migrate existing tables if they exist with NULL user_id
+        // SQLite doesn't allow NULL in composite PRIMARY KEY, so we need to migrate to use 0 instead
+        // Only migrate once by checking if migration flag exists in settings
         try {
-            // Check if user_id column exists and if it has NOT NULL constraint
-            $tableInfo = $db->query("PRAGMA table_info(tile_arrangements)")->fetchAll();
-            $userIdColumn = null;
-            foreach ($tableInfo as $column) {
-                if ($column['name'] === 'user_id') {
-                    $userIdColumn = $column;
-                    break;
+            $migrationCheck = $db->query("SELECT value FROM settings WHERE key = 'arrangements_migrated'")->fetch();
+            if (!$migrationCheck) {
+                // Migration not done yet - perform it
+                $migrationSuccess = true;
+                
+                // Migrate category_arrangements table first (simpler, no foreign keys)
+                $catTableExists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='category_arrangements'")->fetch();
+                if ($catTableExists) {
+                    try {
+                        // Try to update NULL values first
+                        $db->exec('UPDATE category_arrangements SET user_id = 0 WHERE user_id IS NULL');
+                        
+                        // Check if we need to recreate the table
+                        $tableInfo = $db->query("PRAGMA table_info(category_arrangements)")->fetchAll();
+                        $hasNotNull = false;
+                        foreach ($tableInfo as $col) {
+                            if ($col['name'] === 'user_id' && $col['notnull'] == 1) {
+                                $hasNotNull = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!$hasNotNull) {
+                            // Recreate table with proper schema (NO FOREIGN KEYS)
+                            $db->beginTransaction();
+                            try {
+                                $db->exec('CREATE TABLE category_arrangements_new (
+                                    user_id INTEGER NOT NULL DEFAULT 0,
+                                    category_name TEXT NOT NULL,
+                                    position INTEGER NOT NULL,
+                                    PRIMARY KEY (user_id, category_name)
+                                )');
+                                $db->exec('INSERT INTO category_arrangements_new (user_id, category_name, position) 
+                                           SELECT COALESCE(user_id, 0), category_name, position FROM category_arrangements');
+                                $db->exec('DROP TABLE category_arrangements');
+                                $db->exec('ALTER TABLE category_arrangements_new RENAME TO category_arrangements');
+                                $db->commit();
+                            } catch (PDOException $migrateError) {
+                                $db->rollBack();
+                                error_log('Category arrangements migration failed: ' . $migrateError->getMessage());
+                                // Try to at least fix NULL values
+                                try {
+                                    $db->exec('UPDATE category_arrangements SET user_id = 0 WHERE user_id IS NULL');
+                                } catch (PDOException $updateError) {
+                                    // Ignore
+                                }
+                            }
+                        }
+                    } catch (PDOException $e) {
+                        error_log('Category arrangements migration failed: ' . $e->getMessage());
+                        $migrationSuccess = false;
+                    }
+                }
+                
+                // Migrate tile_arrangements table
+                if ($migrationSuccess) {
+                    $tileTableExists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='tile_arrangements'")->fetch();
+                    if ($tileTableExists) {
+                        try {
+                            $db->exec('UPDATE tile_arrangements SET user_id = 0 WHERE user_id IS NULL');
+                            
+                            $tableInfo = $db->query("PRAGMA table_info(tile_arrangements)")->fetchAll();
+                            $hasNotNull = false;
+                            foreach ($tableInfo as $col) {
+                                if ($col['name'] === 'user_id' && $col['notnull'] == 1) {
+                                    $hasNotNull = true;
+                                    break;
+                                }
+                            }
+                            
+                            if (!$hasNotNull) {
+                                $db->beginTransaction();
+                                $db->exec('CREATE TABLE tile_arrangements_new (
+                                    user_id INTEGER NOT NULL DEFAULT 0,
+                                    tile_id TEXT NOT NULL,
+                                    position INTEGER NOT NULL,
+                                    group_name TEXT,
+                                    PRIMARY KEY (user_id, tile_id),
+                                    FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
+                                )');
+                                $db->exec('INSERT INTO tile_arrangements_new (user_id, tile_id, position, group_name) 
+                                           SELECT COALESCE(user_id, 0), tile_id, position, group_name FROM tile_arrangements');
+                                $db->exec('DROP TABLE tile_arrangements');
+                                $db->exec('ALTER TABLE tile_arrangements_new RENAME TO tile_arrangements');
+                                $db->commit();
+                            }
+                        } catch (PDOException $e) {
+                            error_log('Tile arrangements migration failed: ' . $e->getMessage());
+                            $migrationSuccess = false;
+                        }
+                    }
+                }
+                
+                // Mark migration as complete
+                if ($migrationSuccess) {
+                    $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+                    $stmt->execute(['arrangements_migrated', '1', time()]);
                 }
             }
-            
-            // If table exists with NOT NULL constraint, we need to migrate
-            // For SQLite, we can't directly alter column constraints, so we'll work with what we have
-            // The CREATE TABLE IF NOT EXISTS will use the new schema for new tables
         } catch (PDOException $e) {
-            // Table might not exist yet, ignore
+            // Migration failed, but continue - tables might work anyway
+            error_log('Migration error: ' . $e->getMessage());
         }
         
         // Initialize default settings if they don't exist

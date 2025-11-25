@@ -48,7 +48,8 @@ function handleGetTiles() {
     $db = getDB();
     
     // All users (authenticated and guests) see all tiles - shared public repository
-    $stmt = $db->prepare('SELECT * FROM tiles ORDER BY created_at DESC');
+    // Order by position (custom order), then by created_at as a fallback
+    $stmt = $db->prepare('SELECT * FROM tiles ORDER BY position ASC, created_at DESC');
     $stmt->execute();
     
     $tiles = [];
@@ -97,33 +98,8 @@ function handleGetTiles() {
         $tilesById[$row['id']] = $tile;
     }
     
-    // Apply global arrangement (works for all users, authenticated and guests)
-    $arrangementStmt = $db->prepare('SELECT tile_id, position, group_name FROM tile_arrangements WHERE user_id IS NULL ORDER BY position ASC');
-    $arrangementStmt->execute();
-    
-    $arrangedTiles = [];
-    $arrangedTileIds = [];
-    
-    while ($arrRow = $arrangementStmt->fetch()) {
-        $tileId = $arrRow['tile_id'];
-        if (isset($tilesById[$tileId])) {
-            // Override group if specified in arrangement
-            if ($arrRow['group_name']) {
-                $tilesById[$tileId]['group'] = $arrRow['group_name'];
-            }
-            $arrangedTiles[] = $tilesById[$tileId];
-            $arrangedTileIds[] = $tileId;
-        }
-    }
-    
-    // Add tiles that aren't in the arrangement (new tiles)
-    foreach ($tiles as $tile) {
-        if (!in_array($tile['id'], $arrangedTileIds)) {
-            $arrangedTiles[] = $tile;
-        }
-    }
-    
-    $tiles = $arrangedTiles;
+    // We now rely on the tiles.position column for ordering.
+    // tile_arrangements is still written for compatibility, but not required for reading.
     
     sendJSON($tiles);
 }
