@@ -11,10 +11,20 @@ import { AdminPanel } from './components/AdminPanel';
 
 // Simple Hash Router implementation
 const useHashRoute = () => {
-  const [route, setRoute] = useState(window.location.hash || '#/');
+  // Normalize hash: empty hash or no hash = root route (but don't modify URL)
+  const normalizeHash = (hash: string) => {
+    if (!hash || hash === '#' || hash === '#/') {
+      return '#/';
+    }
+    return hash;
+  };
+
+  const [route, setRoute] = useState(normalizeHash(window.location.hash));
 
   useEffect(() => {
-    const handler = () => setRoute(window.location.hash || '#/');
+    const handler = () => {
+      setRoute(normalizeHash(window.location.hash));
+    };
     window.addEventListener('hashchange', handler);
     return () => window.removeEventListener('hashchange', handler);
   }, []);
