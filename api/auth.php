@@ -202,6 +202,62 @@ function handleRejectUser($userId) {
     requireAdmin(); // Only admins can reject users
     
     $db = getDB();
+    
+    // Check if user exists and is pending
+    $checkStmt = $db->prepare('SELECT id FROM users WHERE id = ? AND is_admin = 0 AND is_approved = 0');
+    $checkStmt->execute([$userId]);
+    $user = $checkStmt->fetch();
+    
+    if (!$user) {
+        sendJSON(['error' => 'User not found or cannot be rejected'], 404);
+    }
+    
+    // Clean up links that reference this user in allowed_users
+    // This ensures links remain visible and don't become orphaned
+    try {
+        $db->beginTransaction();
+        
+        // Get all links that have this user in their allowed_users array
+        $linksStmt = $db->prepare('SELECT id, allowed_users, visibility FROM links WHERE allowed_users IS NOT NULL AND allowed_users != ""');
+        $linksStmt->execute();
+        $links = $linksStmt->fetchAll();
+        
+        $updateStmt = $db->prepare('UPDATE links SET allowed_users = ?, visibility = ? WHERE id = ?');
+        
+        foreach ($links as $link) {
+            $allowedUsers = json_decode($link['allowed_users'], true);
+            
+            // Check if this user is in the allowed_users array
+            if (is_array($allowedUsers) && in_array($userId, $allowedUsers)) {
+                // Remove the deleted user from the array
+                $allowedUsers = array_values(array_filter($allowedUsers, function($id) use ($userId) {
+                    return $id != $userId;
+                }));
+                
+                // If it was a private link and now has no allowed users,
+                // change visibility to 'authenticated' so it remains visible to logged-in users
+                $newVisibility = $link['visibility'];
+                if ($link['visibility'] === 'private' && empty($allowedUsers)) {
+                    $newVisibility = 'authenticated';
+                    $allowedUsers = null; // Clear allowed_users since it's no longer private
+                }
+                
+                // Update the link
+                $updateStmt->execute([
+                    $allowedUsers ? json_encode($allowedUsers) : null,
+                    $newVisibility,
+                    $link['id']
+                ]);
+            }
+        }
+        
+        $db->commit();
+    } catch (PDOException $e) {
+        $db->rollBack();
+        error_log('Error cleaning up links for rejected user: ' . $e->getMessage());
+        // Continue with user deletion even if link cleanup fails
+    }
+    
     // Delete the user account (only pending users)
     $stmt = $db->prepare('DELETE FROM users WHERE id = ? AND is_admin = 0 AND is_approved = 0');
     $stmt->execute([$userId]);
@@ -209,7 +265,7 @@ function handleRejectUser($userId) {
     if ($stmt->rowCount() > 0) {
         sendJSON(['success' => true, 'message' => 'User rejected and removed']);
     } else {
-        sendJSON(['error' => 'User not found or cannot be rejected'], 404);
+        sendJSON(['error' => 'Failed to reject user'], 500);
     }
 }
 
@@ -297,6 +353,52 @@ function handleDeleteUser($userId) {
     // Prevent deleting admin accounts
     if ($user['is_admin']) {
         sendJSON(['error' => 'Cannot delete admin accounts'], 403);
+    }
+    
+    // Clean up links that reference this user in allowed_users
+    // This ensures links remain visible and don't become orphaned
+    try {
+        $db->beginTransaction();
+        
+        // Get all links that have this user in their allowed_users array
+        $linksStmt = $db->prepare('SELECT id, allowed_users, visibility FROM links WHERE allowed_users IS NOT NULL AND allowed_users != ""');
+        $linksStmt->execute();
+        $links = $linksStmt->fetchAll();
+        
+        $updateStmt = $db->prepare('UPDATE links SET allowed_users = ?, visibility = ? WHERE id = ?');
+        
+        foreach ($links as $link) {
+            $allowedUsers = json_decode($link['allowed_users'], true);
+            
+            // Check if this user is in the allowed_users array
+            if (is_array($allowedUsers) && in_array($userId, $allowedUsers)) {
+                // Remove the deleted user from the array
+                $allowedUsers = array_values(array_filter($allowedUsers, function($id) use ($userId) {
+                    return $id != $userId;
+                }));
+                
+                // If it was a private link and now has no allowed users,
+                // change visibility to 'authenticated' so it remains visible to logged-in users
+                $newVisibility = $link['visibility'];
+                if ($link['visibility'] === 'private' && empty($allowedUsers)) {
+                    $newVisibility = 'authenticated';
+                    $allowedUsers = null; // Clear allowed_users since it's no longer private
+                }
+                
+                // Update the link
+                $updateStmt->execute([
+                    $allowedUsers ? json_encode($allowedUsers) : null,
+                    $newVisibility,
+                    $link['id']
+                ]);
+            }
+        }
+        
+        $db->commit();
+    } catch (PDOException $e) {
+        $db->rollBack();
+        error_log('Error cleaning up links for deleted user: ' . $e->getMessage());
+        // Continue with user deletion even if link cleanup fails
     }
     
     // Delete the user account (cascade will delete their tiles)
