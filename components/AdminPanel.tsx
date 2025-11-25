@@ -591,7 +591,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               setError('');
                               const result = await databaseService.importDatabase(importFile);
                               setImportFile(null);
-                              alert(`Database imported successfully!\n\nImported:\n- Users: ${result.imported.users}\n- Tiles: ${result.imported.tiles}\n- Sections: ${result.imported.sections}\n- Links: ${result.imported.links}\n- Settings: ${result.imported.settings}`);
+                              const importedDetails = [
+                                `Users: ${result.imported.users}`,
+                                `Tiles: ${result.imported.tiles}`,
+                                `Sections: ${result.imported.sections}`,
+                                `Links: ${result.imported.links}`,
+                                `Settings: ${result.imported.settings}`
+                              ];
+                              if (result.imported.tile_arrangements !== undefined) {
+                                importedDetails.push(`Tile Arrangements: ${result.imported.tile_arrangements}`);
+                              }
+                              if (result.imported.category_arrangements !== undefined) {
+                                importedDetails.push(`Category Arrangements: ${result.imported.category_arrangements}`);
+                              }
+                              alert(`Database imported successfully!\n\nImported:\n- ${importedDetails.join('\n- ')}`);
                               // Reload data after import
                               await loadData();
                               await loadSettings();
@@ -635,10 +648,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     <div>
                       <p className="text-sm font-semibold text-amber-800 dark:text-amber-300 mb-1">Important Notes</p>
                       <ul className="text-xs text-amber-700 dark:text-amber-400 space-y-1 list-disc list-inside">
-                        <li>Export creates a complete backup of all database tables</li>
+                        <li>Export creates a complete backup of all database tables (users, tiles, sections, links, settings, arrangements)</li>
+                        <li>Export includes all data: user authentication sources, link health status, visibility settings, notes, and tooltips</li>
                         <li>Import will replace ALL existing data - use with caution</li>
                         <li>Always export before importing to avoid data loss</li>
                         <li>The exported file contains sensitive information - keep it secure</li>
+                        <li>Database indexes are automatically recreated after import for optimal performance</li>
                       </ul>
                     </div>
                   </div>

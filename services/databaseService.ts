@@ -45,6 +45,8 @@ export const databaseService = {
       sections: number;
       links: number;
       settings: number;
+      tile_arrangements?: number;
+      category_arrangements?: number;
     };
   }> {
     // Read file as text

@@ -37,7 +37,7 @@ function handleExportDatabase() {
     try {
         // Export all tables
         $export = [
-            'version' => '1.0',
+            'version' => '2.0', // Updated to include all new columns and tables
             'exported_at' => time(),
             'tables' => []
         ];
@@ -67,6 +67,26 @@ function handleExportDatabase() {
         $stmt->execute();
         $export['tables']['settings'] = $stmt->fetchAll();
         
+        // Export tile_arrangements table (if exists)
+        try {
+            $stmt = $db->prepare('SELECT * FROM tile_arrangements');
+            $stmt->execute();
+            $export['tables']['tile_arrangements'] = $stmt->fetchAll();
+        } catch (PDOException $e) {
+            // Table might not exist in older exports, skip
+            $export['tables']['tile_arrangements'] = [];
+        }
+        
+        // Export category_arrangements table (if exists)
+        try {
+            $stmt = $db->prepare('SELECT * FROM category_arrangements');
+            $stmt->execute();
+            $export['tables']['category_arrangements'] = $stmt->fetchAll();
+        } catch (PDOException $e) {
+            // Table might not exist in older exports, skip
+            $export['tables']['category_arrangements'] = [];
+        }
+        
         // Set headers for file download
         header('Content-Type: application/json');
         header('Content-Disposition: attachment; filename="linknest-database-export-' . date('Y-m-d-His') . '.json"');
@@ -88,6 +108,8 @@ function handleImportDatabase() {
         sendJSON(['error' => 'Invalid import data. Expected "tables" array.'], 400);
     }
     
+    // getDB() calls initDatabase() which ensures all tables and columns exist
+    // including migrations for new columns (auth_source, position, health fields, etc.)
     $db = getDB();
     $db->beginTransaction();
     
@@ -99,6 +121,17 @@ function handleImportDatabase() {
         // This ensures foreign key constraints are satisfied
         
         // Clear existing data (in reverse order of dependencies)
+        // Clear arrangement tables first (they reference tiles)
+        try {
+            $db->exec('DELETE FROM category_arrangements');
+        } catch (PDOException $e) {
+            // Table might not exist, ignore
+        }
+        try {
+            $db->exec('DELETE FROM tile_arrangements');
+        } catch (PDOException $e) {
+            // Table might not exist, ignore
+        }
         $db->exec('DELETE FROM links');
         $db->exec('DELETE FROM sections');
         $db->exec('DELETE FROM tiles');
@@ -108,9 +141,9 @@ function handleImportDatabase() {
         // Reset auto-increment counters
         $db->exec('DELETE FROM sqlite_sequence WHERE name IN ("users")');
         
-        // Import users
+        // Import users (with all columns including auth_source)
         if (isset($data['tables']['users']) && is_array($data['tables']['users'])) {
-            $stmt = $db->prepare('INSERT INTO users (id, username, email, password_hash, is_admin, is_approved, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+            $stmt = $db->prepare('INSERT INTO users (id, username, email, password_hash, is_admin, is_approved, auth_source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
             foreach ($data['tables']['users'] as $user) {
                 $stmt->execute([
                     $user['id'] ?? null,
@@ -119,14 +152,15 @@ function handleImportDatabase() {
                     $user['password_hash'] ?? '',
                     isset($user['is_admin']) ? (int)$user['is_admin'] : 0,
                     isset($user['is_approved']) ? (int)$user['is_approved'] : 0,
+                    $user['auth_source'] ?? 'local', // Default to 'local' for backward compatibility
                     $user['created_at'] ?? time()
                 ]);
             }
         }
         
-        // Import tiles
+        // Import tiles (with position column)
         if (isset($data['tables']['tiles']) && is_array($data['tables']['tiles'])) {
-            $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             foreach ($data['tables']['tiles'] as $tile) {
                 $stmt->execute([
                     $tile['id'] ?? '',
@@ -137,6 +171,7 @@ function handleImportDatabase() {
                     $tile['emoji'] ?? null,
                     $tile['theme_color'] ?? null,
                     $tile['group'] ?? null,
+                    isset($tile['position']) ? (int)$tile['position'] : 0, // Default to 0 for backward compatibility
                     $tile['created_at'] ?? time()
                 ]);
             }
@@ -154,15 +189,23 @@ function handleImportDatabase() {
             }
         }
         
-        // Import links
+        // Import links (with all new columns: health, visibility, notes, tooltip)
         if (isset($data['tables']['links']) && is_array($data['tables']['links'])) {
-            $stmt = $db->prepare('INSERT INTO links (id, section_id, label, url) VALUES (?, ?, ?, ?)');
+            $stmt = $db->prepare('INSERT INTO links (id, section_id, label, url, health_status, health_checked_at, health_http_code, health_error, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             foreach ($data['tables']['links'] as $link) {
                 $stmt->execute([
                     $link['id'] ?? '',
                     $link['section_id'] ?? '',
                     $link['label'] ?? '',
-                    $link['url'] ?? ''
+                    $link['url'] ?? '',
+                    $link['health_status'] ?? 'unknown', // Default for backward compatibility
+                    isset($link['health_checked_at']) ? (int)$link['health_checked_at'] : null,
+                    isset($link['health_http_code']) ? (int)$link['health_http_code'] : null,
+                    $link['health_error'] ?? null,
+                    $link['visibility'] ?? 'public', // Default for backward compatibility
+                    $link['allowed_users'] ?? null,
+                    $link['notes'] ?? null,
+                    $link['tooltip'] ?? null
                 ]);
             }
         }
@@ -179,6 +222,44 @@ function handleImportDatabase() {
             }
         }
         
+        // Import tile_arrangements (if exists in export)
+        if (isset($data['tables']['tile_arrangements']) && is_array($data['tables']['tile_arrangements'])) {
+            try {
+                $stmt = $db->prepare('INSERT INTO tile_arrangements (user_id, tile_id, position, group_name) VALUES (?, ?, ?, ?)');
+                foreach ($data['tables']['tile_arrangements'] as $arrangement) {
+                    $stmt->execute([
+                        isset($arrangement['user_id']) ? (int)$arrangement['user_id'] : 0,
+                        $arrangement['tile_id'] ?? '',
+                        isset($arrangement['position']) ? (int)$arrangement['position'] : 0,
+                        $arrangement['group_name'] ?? null
+                    ]);
+                }
+            } catch (PDOException $e) {
+                // Table might not exist, but that's okay - it will be created on next init
+                error_log('Warning: Could not import tile_arrangements: ' . $e->getMessage());
+            }
+        }
+        
+        // Import category_arrangements (if exists in export)
+        if (isset($data['tables']['category_arrangements']) && is_array($data['tables']['category_arrangements'])) {
+            try {
+                $stmt = $db->prepare('INSERT INTO category_arrangements (user_id, category_name, position) VALUES (?, ?, ?)');
+                foreach ($data['tables']['category_arrangements'] as $arrangement) {
+                    $stmt->execute([
+                        isset($arrangement['user_id']) ? (int)$arrangement['user_id'] : 0,
+                        $arrangement['category_name'] ?? '',
+                        isset($arrangement['position']) ? (int)$arrangement['position'] : 0
+                    ]);
+                }
+            } catch (PDOException $e) {
+                // Table might not exist, but that's okay - it will be created on next init
+                error_log('Warning: Could not import category_arrangements: ' . $e->getMessage());
+            }
+        }
+        
+        // Recreate indexes after import for optimal performance
+        createDatabaseIndexes($db);
+        
         // Re-enable foreign keys
         $db->exec('PRAGMA foreign_keys = ON');
         
@@ -192,7 +273,9 @@ function handleImportDatabase() {
                 'tiles' => count($data['tables']['tiles'] ?? []),
                 'sections' => count($data['tables']['sections'] ?? []),
                 'links' => count($data['tables']['links'] ?? []),
-                'settings' => count($data['tables']['settings'] ?? [])
+                'settings' => count($data['tables']['settings'] ?? []),
+                'tile_arrangements' => count($data['tables']['tile_arrangements'] ?? []),
+                'category_arrangements' => count($data['tables']['category_arrangements'] ?? [])
             ]
         ]);
         

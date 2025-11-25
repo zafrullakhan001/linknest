@@ -85,6 +85,24 @@ function initDatabase() {
         } catch (PDOException $e) {
             // WAL might not be available, ignore
         }
+        
+        // Optimize SQLite performance settings
+        try {
+            // Set page size to 4096 for better performance (if not already set)
+            // Note: This only works if the database is empty, so we try it but don't fail if it doesn't work
+            $db->exec('PRAGMA page_size = 4096');
+        } catch (PDOException $e) {
+            // Page size can only be set on empty database, ignore if already set
+        }
+        
+        // Set cache size to 10MB for better performance (negative value = KB)
+        $db->exec('PRAGMA cache_size = -10000');
+        
+        // Set synchronous mode to NORMAL for better performance (WAL mode makes this safe)
+        $db->exec('PRAGMA synchronous = NORMAL');
+        
+        // Set temp_store to memory for better performance
+        $db->exec('PRAGMA temp_store = MEMORY');
     
         // Create users table
         $db->exec('CREATE TABLE IF NOT EXISTS users (
@@ -405,12 +423,64 @@ function initDatabase() {
             $stmt->execute($setting);
         }
         
+        // Create indexes for optimal performance
+        createDatabaseIndexes($db);
+        
         return $db;
     } catch (PDOException $e) {
         http_response_code(500);
         header('Content-Type: application/json');
         echo json_encode(['error' => 'Database initialization failed: ' . $e->getMessage()]);
         exit;
+    }
+}
+
+/**
+ * Create database indexes for optimal query performance
+ * This function is safe to call multiple times (uses IF NOT EXISTS)
+ */
+function createDatabaseIndexes($db) {
+    try {
+        // Users table indexes
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_users_is_approved ON users(is_approved)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_users_is_admin ON users(is_admin)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_users_approved_admin ON users(is_approved, is_admin)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at DESC)');
+        
+        // Tiles table indexes
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_tiles_user_id ON tiles(user_id)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_tiles_position ON tiles(position ASC)');
+        
+        // Sections table indexes
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_sections_tile_id ON sections(tile_id)');
+        
+        // Links table indexes
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_links_section_id ON links(section_id)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_links_health_checked_at ON links(health_checked_at)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_links_health_status ON links(health_status)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_links_health_composite ON links(health_status, health_checked_at)');
+        
+        // Tile arrangements table indexes
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_tile_arrangements_user_id ON tile_arrangements(user_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_tile_arrangements_position ON tile_arrangements(user_id, position)');
+        } catch (PDOException $e) {
+            // Table might not exist yet, ignore
+        }
+        
+        // Category arrangements table indexes
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_category_arrangements_user_id ON category_arrangements(user_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_category_arrangements_position ON category_arrangements(user_id, position)');
+        } catch (PDOException $e) {
+            // Table might not exist yet, ignore
+        }
+        
+        // Analyze database to update query planner statistics
+        $db->exec('ANALYZE');
+    } catch (PDOException $e) {
+        // Log but don't fail - indexes are performance optimizations, not critical
+        error_log('Warning: Failed to create some database indexes: ' . $e->getMessage());
     }
 }
 
