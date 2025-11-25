@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { settingsService, AppSettings } from '../services/settingsService';
+import { useSettings } from '../contexts/SettingsContext';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -23,7 +23,7 @@ function extractDomainFromBaseDn(baseDn: string): string | null {
       .map(m => m.replace(/DC=/i, '').trim().toLowerCase())
       .filter(d => d.length > 0)
       .join('.');
-    return domain || null;
+    return domain.length > 0 ? domain : null;
   }
   
   return null;
@@ -38,41 +38,57 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
-  const [settings, setSettings] = useState<AppSettings | null>(null);
   const [ldapDomain, setLdapDomain] = useState<string | null>(null);
   const [ldapEnabled, setLdapEnabled] = useState(false);
   
   const { login, register } = useAuth();
+  const { settings: appSettings } = useSettings();
 
   // Load settings to check LDAP configuration
   useEffect(() => {
     if (isOpen && mode === 'login') {
-      settingsService.getSettings().then(loadedSettings => {
-        setSettings(loadedSettings);
-        const enabled = loadedSettings.ldap_enabled === '1';
-        setLdapEnabled(enabled);
-        
-        // Extract domain from base DN or user search base if LDAP is enabled
-        if (enabled) {
-          // Try ldap_base_dn first, then fall back to ldap_user_search_base
-          const baseDn = loadedSettings.ldap_base_dn || loadedSettings.ldap_user_search_base || '';
-          if (baseDn) {
-            const domain = extractDomainFromBaseDn(baseDn);
-            setLdapDomain(domain);
-          } else {
-            setLdapDomain(null);
-          }
+      // Reset domain when modal opens to ensure fresh data
+      setLdapDomain(null);
+      // Determine LDAP enabled from global settings context
+      const enabled = String(appSettings.ldap_enabled || '0') === '1';
+      setLdapEnabled(enabled);
+
+      // Extract domain from settings if LDAP is enabled
+      if (enabled) {
+        // 1) Prefer explicit login domain if configured in settings
+        let domain: string | null = null;
+        const explicit = (appSettings as any).ldap_login_domain as string | undefined;
+        if (explicit && explicit.trim().length > 0) {
+          domain = explicit.trim().toLowerCase();
         } else {
-          setLdapDomain(null);
+          // 2) Try ldap_base_dn first, then fall back to ldap_user_search_base
+          const baseDn = appSettings.ldap_base_dn || appSettings.ldap_user_search_base || '';
+          if (baseDn) {
+            domain = extractDomainFromBaseDn(baseDn);
+          }
+          // 3) If still not found, try to extract from server hostname as fallback
+          if (!domain) {
+            const server = appSettings.ldap_server || '';
+            if (server) {
+              const parts = server.split('.');
+              if (parts.length >= 2) {
+                // Skip first part (hostname), use rest as domain
+                domain = parts.slice(1).join('.').toLowerCase();
+              }
+            }
+          }
         }
-      }).catch(() => {
-        // Ignore errors, just don't show LDAP option
-        setSettings(null);
+
+        setLdapDomain(domain);
+      } else {
         setLdapDomain(null);
-        setLdapEnabled(false);
-      });
+      }
+    } else {
+      // Reset when not in login mode
+      setLdapEnabled(false);
+      setLdapDomain(null);
     }
-  }, [isOpen, mode]);
+  }, [isOpen, mode, appSettings]);
 
   // Reset form when modal closes
   useEffect(() => {
@@ -156,28 +172,38 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {mode === 'login' && ldapEnabled && (
+          {mode === 'login' && (
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
                   Authentication Method
                 </label>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-semibold flex items-center gap-1">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                  </svg>
-                  LDAP Active
-                </span>
+                {ldapEnabled && (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-semibold flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                    </svg>
+                    LDAP Active
+                  </span>
+                )}
               </div>
               <select
                 value={authMethod}
                 onChange={(e) => setAuthMethod(e.target.value as 'local' | 'ldap' | 'auto')}
                 className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
-                <option value="auto">Auto (Try LDAP, then Local)</option>
-                {ldapDomain && (
-                  <option value="ldap">LDAP ({ldapDomain})</option>
-                )}
+                <option value="auto">
+                  {ldapEnabled ? 'Auto (Try LDAP, then Local)' : 'Auto (Local Only)'}
+                </option>
+                <option value="ldap" disabled={!ldapEnabled}>
+                  {ldapDomain
+                    ? ldapEnabled
+                      ? `LDAP (${ldapDomain})`
+                      : `LDAP (${ldapDomain}) - Disabled`
+                    : ldapEnabled
+                      ? 'LDAP'
+                      : 'LDAP (Disabled)'}
+                </option>
                 <option value="local">Local Account</option>
               </select>
             </div>

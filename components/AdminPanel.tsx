@@ -992,6 +992,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           />
                           <p className="text-[10px] text-slate-500 mt-1">Override default display name attribute (leave empty for auto-detect)</p>
                         </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Login Domain (UI Label)</label>
+                          <input
+                            type="text"
+                            value={settings.ldap_login_domain || ''}
+                            onChange={(e) => setSettings({ ...settings, ldap_login_domain: e.target.value })}
+                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                            placeholder="oneflorida.org"
+                          />
+                          <p className="text-[10px] text-slate-500 mt-1">
+                            Optional: override the domain shown in the login dropdown (e.g. oneflorida.org). If empty, it is derived from Base DN or server hostname.
+                          </p>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1088,6 +1102,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         setSettingsSaving(true);
                         setError('');
                         await settingsService.updateSettings(settings);
+                        // Refresh global settings context so AuthModal sees latest LDAP status
+                        await refreshSettings();
                         alert('LDAP settings saved successfully!');
                       } catch (err: any) {
                         setError(err.message || 'Failed to save settings');

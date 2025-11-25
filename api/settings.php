@@ -200,7 +200,8 @@ function handleUpdateSettings() {
             // Validate allowed keys
             $allowedKeys = [
                 'app_name', 'page_title', 'spaces_title', 'logo_type', 'logo_icon', 'logo_image',
-                'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn', 
+                'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
+                'ldap_login_domain',
                 'ldap_bind_dn', 'ldap_bind_password',
                 'ldap_user_search_base', 'ldap_user_filter', 'ldap_user_attributes', 
                 'ldap_group_search_base', 'ldap_group_filter', 'ldap_group_attributes', 

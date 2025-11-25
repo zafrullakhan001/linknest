@@ -1,4 +1,5 @@
-const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+// Use Vite's runtime value if available, but don't depend on its TypeScript types
+const API_BASE = (import.meta as any)?.env?.VITE_API_BASE || '/api';
 
 export interface AppSettings {
   app_name: string;
@@ -14,6 +15,7 @@ export interface AppSettings {
   ldap_port?: string;
   ldap_protocol?: string;
   ldap_base_dn?: string;
+  ldap_login_domain?: string; // Optional explicit domain label for login dropdown
   ldap_bind_dn?: string;
   ldap_bind_password?: string;
   ldap_user_search_base?: string;
@@ -43,10 +45,12 @@ export interface AppSettings {
 }
 
 export const settingsService = {
-  async getSettings(): Promise<AppSettings> {
-    const response = await fetch(`${API_BASE}/settings`, {
+  async getSettings(noCache: boolean = false): Promise<AppSettings> {
+    const url = `${API_BASE}/settings${noCache ? '?_t=' + Date.now() : ''}`;
+    const response = await fetch(url, {
       method: 'GET',
-      credentials: 'include'
+      credentials: 'include',
+      cache: noCache ? 'no-cache' : 'default'
     });
 
     const data = await response.json();
@@ -70,6 +74,7 @@ export const settingsService = {
       ldap_port: data.settings?.ldap_port || '389',
       ldap_protocol: data.settings?.ldap_protocol || 'ldap',
       ldap_base_dn: data.settings?.ldap_base_dn || '',
+      ldap_login_domain: data.settings?.ldap_login_domain || '',
       ldap_bind_dn: data.settings?.ldap_bind_dn || '',
       ldap_bind_password: data.settings?.ldap_bind_password || '',
       ldap_user_search_base: data.settings?.ldap_user_search_base || '',
