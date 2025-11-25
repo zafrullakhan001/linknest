@@ -44,8 +44,18 @@ function initDatabase() {
         $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
         
+        // Set busy timeout immediately to prevent locks
+        $db->exec('PRAGMA busy_timeout = 2000'); // 2 second timeout
+        
         // Enable foreign keys
         $db->exec('PRAGMA foreign_keys = ON');
+        
+        // Use WAL mode for better concurrent access (if supported)
+        try {
+            $db->exec('PRAGMA journal_mode = WAL');
+        } catch (PDOException $e) {
+            // WAL might not be available, ignore
+        }
     
         // Create users table
         $db->exec('CREATE TABLE IF NOT EXISTS users (
@@ -130,8 +140,32 @@ function initDatabase() {
             section_id TEXT NOT NULL,
             label TEXT NOT NULL,
             url TEXT NOT NULL,
+            health_status TEXT DEFAULT "unknown",
+            health_checked_at INTEGER,
+            health_http_code INTEGER,
+            health_error TEXT,
             FOREIGN KEY (section_id) REFERENCES sections(id) ON DELETE CASCADE
         )');
+        
+        // Migrate existing links table to add health check columns if they don't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(links)")->fetchAll();
+            $hasHealthStatus = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'health_status') {
+                    $hasHealthStatus = true;
+                    break;
+                }
+            }
+            if (!$hasHealthStatus) {
+                $db->exec('ALTER TABLE links ADD COLUMN health_status TEXT DEFAULT "unknown"');
+                $db->exec('ALTER TABLE links ADD COLUMN health_checked_at INTEGER');
+                $db->exec('ALTER TABLE links ADD COLUMN health_http_code INTEGER');
+                $db->exec('ALTER TABLE links ADD COLUMN health_error TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Links health migration warning: ' . $e->getMessage());
+        }
         
         // Create settings table
         $db->exec('CREATE TABLE IF NOT EXISTS settings (

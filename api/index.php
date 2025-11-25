@@ -20,6 +20,9 @@ if (empty($path)) {
     
     // Remove leading slash if present
     $path = ltrim($path, '/');
+} else {
+    // Path from query parameter - ensure it starts with /
+    $path = ltrim($path, '/');
 }
 
 // Ensure path starts with /
@@ -47,9 +50,27 @@ if (empty($path) || $path === '/') {
 } elseif (strpos($path, '/arrangements') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 13); // Remove '/arrangements'
     require __DIR__ . '/arrangements.php';
+} elseif (strpos($path, '/linkhealth') === 0) {
+    // Remove the '/linkhealth' prefix (11 characters) and keep any sub-path (e.g. '/check', '/check-tile')
+    $remainingPath = substr($path, 11);
+    // Set PATH_INFO - use '/' for root endpoint, or ensure sub-paths start with /
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    require __DIR__ . '/linkhealth.php';
 } else {
     http_response_code(404);
     header('Content-Type: application/json');
-    echo json_encode(['error' => 'Not found']);
+    // Include debug info to help diagnose routing issues (safe for dev)
+    echo json_encode([
+        'error' => 'Not found',
+        'debug' => [
+            'path' => $path,
+            'request_uri' => $requestUri,
+            'get_path' => $_GET['path'] ?? null
+        ]
+    ]);
 }
 

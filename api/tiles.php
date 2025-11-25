@@ -94,11 +94,23 @@ function handleGetTiles() {
             $linkStmt->execute([$sectionRow['id']]);
             
             while ($linkRow = $linkStmt->fetch()) {
-                $section['links'][] = [
+                $link = [
                     'id' => $linkRow['id'],
                     'label' => $linkRow['label'],
                     'url' => $linkRow['url']
                 ];
+                
+                // Include health data if available
+                if (isset($linkRow['health_status'])) {
+                    $link['health'] = [
+                        'status' => $linkRow['health_status'] ?? 'unknown',
+                        'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,
+                        'error' => $linkRow['health_error'],
+                        'checkedAt' => $linkRow['health_checked_at'] ? (int)$linkRow['health_checked_at'] : null
+                    ];
+                }
+                
+                $section['links'][] = $link;
             }
             
             $tile['sections'][] = $section;
@@ -215,11 +227,23 @@ function handleGetTile($tileId) {
         $linkStmt->execute([$sectionRow['id']]);
         
         while ($linkRow = $linkStmt->fetch()) {
-            $section['links'][] = [
+            $link = [
                 'id' => $linkRow['id'],
                 'label' => $linkRow['label'],
                 'url' => $linkRow['url']
             ];
+            
+            // Include health data if available
+            if (isset($linkRow['health_status'])) {
+                $link['health'] = [
+                    'status' => $linkRow['health_status'] ?? 'unknown',
+                    'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,
+                    'error' => $linkRow['health_error'],
+                    'checkedAt' => $linkRow['health_checked_at'] ? (int)$linkRow['health_checked_at'] : null
+                ];
+            }
+            
+            $section['links'][] = $link;
         }
         
         $tile['sections'][] = $section;

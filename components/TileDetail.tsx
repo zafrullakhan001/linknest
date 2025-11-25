@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Tile, Link, LinkSection, COLOR_STYLES, THEME_COLORS, ThemeColor, POPULAR_EMOJIS } from '../types';
+import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
 
 interface TileDetailProps {
   tile: Tile;
@@ -41,6 +42,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
   // View State
   const [searchTerm, setSearchTerm] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  
+  // Health Check State
+  const [linkHealth, setLinkHealth] = useState<LinkHealthMap>({});
+  const [checkingHealth, setCheckingHealth] = useState(false);
+  const [checkingLinkId, setCheckingLinkId] = useState<string | null>(null);
 
   const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
 
@@ -52,7 +58,31 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     setEditEmoji(tile.emoji);
     setEditColor(tile.themeColor);
     setEditSections(tile.sections || []);
+    
+    // Load health status from tile data
+    const healthMap: LinkHealthMap = {};
+    tile.sections?.forEach(section => {
+      section.links?.forEach(link => {
+        if (link.health) {
+          healthMap[link.id] = link.health;
+        }
+      });
+    });
+    setLinkHealth(healthMap);
   }, [tile]);
+  
+  // Load fresh health data on mount
+  useEffect(() => {
+    const loadHealth = async () => {
+      try {
+        const health = await linkHealthService.getAllHealth();
+        setLinkHealth(health);
+      } catch (error) {
+        console.error('Failed to load link health:', error);
+      }
+    };
+    loadHealth();
+  }, [tile.id]);
 
   const handleSaveChanges = () => {
     const updatedTile: Tile = {
@@ -233,6 +263,57 @@ export const TileDetail: React.FC<TileDetailProps> = ({
       setTimeout(() => setCopiedId(null), 2000);
     }
   };
+  
+  // Health Check Handlers
+  const handleCheckTileHealth = async () => {
+    setCheckingHealth(true);
+    try {
+      const results = await linkHealthService.checkTileLinks(tile.id);
+      setLinkHealth(prev => ({ ...prev, ...results }));
+    } catch (error) {
+      console.error('Failed to check tile health:', error);
+      alert('Failed to check link health. Please try again.');
+    } finally {
+      setCheckingHealth(false);
+    }
+  };
+
+  const handleCheckSingleLink = async (linkId: string) => {
+    setCheckingLinkId(linkId);
+    setLinkHealth(prev => ({
+      ...prev,
+      [linkId]: { ...prev[linkId], status: 'checking' }
+    }));
+    
+    try {
+      const health = await linkHealthService.checkLink(linkId);
+      setLinkHealth(prev => ({ ...prev, [linkId]: health }));
+    } catch (error) {
+      console.error('Failed to check link:', error);
+      setLinkHealth(prev => ({
+        ...prev,
+        [linkId]: { ...prev[linkId], status: 'unknown', error: 'Check failed' }
+      }));
+    } finally {
+      setCheckingLinkId(null);
+    }
+  };
+  
+  // Helper to get health indicator
+  const getHealthIndicator = (linkId: string) => {
+    const health = linkHealth[linkId];
+    const status = health?.status || 'unknown';
+    const colorClass = linkHealthService.getHealthColor(status);
+    const label = linkHealthService.getHealthLabel(status);
+    const errorText = health?.error ? `: ${health.error}` : '';
+    
+    return (
+      <div 
+        className={`w-2 h-2 rounded-full ${colorClass} shrink-0`}
+        title={`${label}${errorText}`}
+      />
+    );
+  };
 
   // Filter links logic for View Mode
   const getFilteredSections = () => {
@@ -285,6 +366,31 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                 {/* Controls */}
                 <div className="flex items-center gap-3">
+                    {/* Check All Links Button */}
+                    <button
+                        onClick={handleCheckTileHealth}
+                        disabled={checkingHealth}
+                        className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex items-center gap-2 backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Check all links in this tile"
+                    >
+                        {checkingHealth ? (
+                            <>
+                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Checking...
+                            </>
+                        ) : (
+                            <>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                    <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
+                                </svg>
+                                Check Links
+                            </>
+                        )}
+                    </button>
+                    
                     {isAuthenticated && (
                       <button
                           onClick={() => setIsEditing(true)}
@@ -378,54 +484,92 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                              {/* Links Grid */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                {section.links.map((link) => (
-                                    <div 
-                                        key={link.id}
-                                        className={`
-                                            group flex items-center gap-3 p-3 pr-2 rounded-xl bg-white dark:bg-slate-800 border ${styles.border}
-                                            ${styles.hoverBorder} hover:bg-slate-50 dark:hover:bg-slate-750 transition-all duration-200 shadow-sm hover:shadow-md
-                                        `}
-                                    >
-                                        <div className={`w-10 h-10 rounded-lg ${styles.iconBg} flex items-center justify-center shrink-0 text-lg select-none`}>
-                                            🔗
-                                        </div>
-                                        
-                                        <a 
-                                            href={link.url}
-                                            target="_blank" 
-                                            rel="noopener noreferrer"
-                                            className="flex-1 min-w-0 block focus:outline-none"
+                                {section.links.map((link) => {
+                                    const health = linkHealth[link.id];
+                                    const isBroken = health?.status === 'broken';
+                                    
+                                    return (
+                                        <div 
+                                            key={link.id}
+                                            className={`
+                                                group flex items-center gap-3 p-3 pr-2 rounded-xl bg-white dark:bg-slate-800 border ${styles.border}
+                                                ${styles.hoverBorder} hover:bg-slate-50 dark:hover:bg-slate-750 transition-all duration-200 shadow-sm hover:shadow-md
+                                                ${isBroken ? 'border-red-300 dark:border-red-500/50' : ''}
+                                            `}
                                         >
-                                            <h4 className={`text-sm font-semibold ${styles.text} group-hover:text-brand-600 dark:group-hover:text-white truncate`}>
-                                                {link.label}
-                                            </h4>
-                                            <div className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors">
-                                                <span className="truncate max-w-[150px]">
-                                                    {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
-                                                </span>
+                                            {/* Health Indicator */}
+                                            <div className="flex flex-col items-center gap-1">
+                                                {getHealthIndicator(link.id)}
                                             </div>
-                                        </a>
-
-                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity px-1">
-                                            <button
-                                                onClick={(e) => handleCopy(e, link.url, link.id)}
-                                                className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors relative"
-                                                title="Copy URL"
+                                            
+                                            <div className={`w-10 h-10 rounded-lg ${styles.iconBg} flex items-center justify-center shrink-0 text-lg select-none`}>
+                                                🔗
+                                            </div>
+                                            
+                                            <a 
+                                                href={link.url}
+                                                target="_blank" 
+                                                rel="noopener noreferrer"
+                                                className="flex-1 min-w-0 block focus:outline-none"
                                             >
-                                                {copiedId === link.id ? (
-                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-emerald-500">
-                                                        <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                                                    </svg>
-                                                ) : (
-                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                        <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
-                                                        <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
-                                                    </svg>
-                                                )}
-                                            </button>
+                                                <h4 className={`text-sm font-semibold ${styles.text} group-hover:text-brand-600 dark:group-hover:text-white truncate`}>
+                                                    {link.label}
+                                                </h4>
+                                                <div className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors">
+                                                    <span className="truncate max-w-[150px]">
+                                                        {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
+                                                    </span>
+                                                    {isBroken && (
+                                                        <span className="text-red-500 text-xs">• Broken</span>
+                                                    )}
+                                                </div>
+                                            </a>
+
+                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity px-1">
+                                                {/* Re-check button */}
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        handleCheckSingleLink(link.id);
+                                                    }}
+                                                    disabled={checkingLinkId === link.id}
+                                                    className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                                                    title="Check link health"
+                                                >
+                                                    {checkingLinkId === link.id ? (
+                                                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                        </svg>
+                                                    ) : (
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                            <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
+                                                        </svg>
+                                                    )}
+                                                </button>
+                                                
+                                                {/* Copy button */}
+                                                <button
+                                                    onClick={(e) => handleCopy(e, link.url, link.id)}
+                                                    className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors relative"
+                                                    title="Copy URL"
+                                                >
+                                                    {copiedId === link.id ? (
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-emerald-500">
+                                                            <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                                                        </svg>
+                                                    ) : (
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                            <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                                                            <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
+                                                        </svg>
+                                                    )}
+                                                </button>
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                      ))

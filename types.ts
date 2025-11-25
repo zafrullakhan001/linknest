@@ -1,8 +1,16 @@
+export interface LinkHealth {
+  status: 'unknown' | 'healthy' | 'broken' | 'timeout' | 'checking' | 'restricted';
+  httpCode?: number | null;
+  error?: string | null;
+  checkedAt?: number | null;
+}
+
 export interface Link {
   id: string;
   label: string;
   url: string;
   icon?: string; // Optional emoji or icon identifier
+  health?: LinkHealth; // Link health status
 }
 
 export interface LinkSection {
