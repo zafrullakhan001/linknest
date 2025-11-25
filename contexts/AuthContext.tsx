@@ -4,7 +4,7 @@ import { authService, User } from '../services/authService';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string, authMethod?: 'local' | 'ldap') => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   isAuthenticated: boolean;
@@ -24,8 +24,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       .finally(() => setLoading(false));
   }, []);
 
-  const login = async (username: string, password: string) => {
-    const user = await authService.login(username, password);
+  const login = async (username: string, password: string, authMethod?: 'local' | 'ldap') => {
+    const user = await authService.login(username, password, authMethod);
     setUser(user);
   };
 

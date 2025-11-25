@@ -60,6 +60,8 @@ if (empty($path) || $path === '/') {
         $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
     }
     require __DIR__ . '/linkhealth.php';
+} elseif (strpos($path, '/ldap_test.php') === 0) {
+    require __DIR__ . '/ldap_test.php';
 } else {
     http_response_code(404);
     header('Content-Type: application/json');

@@ -19,12 +19,14 @@ export interface AllUser {
   email: string;
   is_admin: boolean;
   is_approved: boolean;
+  auth_source?: string;
   created_at: number;
 }
 
 export interface UserListItem {
   id: number;
   username: string;
+  auth_source?: string;
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
@@ -47,12 +49,12 @@ export const authService = {
     return { pending: data.pending || false, message: data.message };
   },
 
-  async login(username: string, password: string): Promise<User> {
+  async login(username: string, password: string, authMethod?: 'local' | 'ldap'): Promise<User> {
     const response = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ username, password, auth_method: authMethod })
     });
 
     const data = await response.json();
@@ -198,6 +200,21 @@ export const authService = {
     }
     
     return data.users || [];
+  },
+
+  async toggleAuthSource(userId: number): Promise<{ auth_source: string }> {
+    const response = await fetch(`${API_BASE}/auth/toggle-auth-source/${userId}`, {
+      method: 'PUT',
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to toggle auth source');
+    }
+    
+    return { auth_source: data.auth_source };
   }
 };
 

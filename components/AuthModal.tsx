@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { settingsService, AppSettings } from '../services/settingsService';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -7,16 +8,70 @@ interface AuthModalProps {
   initialMode?: 'login' | 'register';
 }
 
+// Helper function to extract domain from LDAP base DN
+// e.g., "DC=oneflorida,DC=org" -> "oneflorida.org"
+function extractDomainFromBaseDn(baseDn: string): string | null {
+  if (!baseDn) return null;
+  
+  // Match DC= parts and join them with dots
+  const matches = baseDn.match(/DC=([^,]+)/gi);
+  if (matches && matches.length > 0) {
+    return matches.map(m => m.replace(/DC=/i, '').toLowerCase()).join('.');
+  }
+  
+  return null;
+}
+
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'login' }) => {
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [authMethod, setAuthMethod] = useState<'local' | 'ldap' | 'auto'>('auto');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [ldapDomain, setLdapDomain] = useState<string | null>(null);
+  const [ldapEnabled, setLdapEnabled] = useState(false);
   
   const { login, register } = useAuth();
+
+  // Load settings to check LDAP configuration
+  useEffect(() => {
+    if (isOpen && mode === 'login') {
+      settingsService.getSettings().then(loadedSettings => {
+        setSettings(loadedSettings);
+        const enabled = loadedSettings.ldap_enabled === '1';
+        setLdapEnabled(enabled);
+        
+        // Extract domain from base DN if LDAP is enabled
+        if (enabled && loadedSettings.ldap_base_dn) {
+          const domain = extractDomainFromBaseDn(loadedSettings.ldap_base_dn);
+          setLdapDomain(domain);
+        } else {
+          setLdapDomain(null);
+        }
+      }).catch(() => {
+        // Ignore errors, just don't show LDAP option
+        setSettings(null);
+        setLdapDomain(null);
+        setLdapEnabled(false);
+      });
+    }
+  }, [isOpen, mode]);
+
+  // Reset form when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setUsername('');
+      setEmail('');
+      setPassword('');
+      setAuthMethod('auto');
+      setError('');
+      setSuccess('');
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -28,11 +83,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
     try {
       if (mode === 'login') {
-        await login(username, password);
+        // Determine auth method: 'auto' means try LDAP first, then local
+        const method = authMethod === 'auto' ? undefined : authMethod;
+        await login(username, password, method);
         onClose();
         setUsername('');
         setEmail('');
         setPassword('');
+        setAuthMethod('auto');
       } else {
         const result = await register(username, email, password);
         if (result.pending) {
@@ -85,6 +143,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {mode === 'login' && ldapEnabled && (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Authentication Method
+                </label>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-semibold flex items-center gap-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                  </svg>
+                  LDAP Active
+                </span>
+              </div>
+              <select
+                value={authMethod}
+                onChange={(e) => setAuthMethod(e.target.value as 'local' | 'ldap' | 'auto')}
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+              >
+                <option value="auto">Auto (Try LDAP, then Local)</option>
+                {ldapDomain && (
+                  <option value="ldap">LDAP ({ldapDomain})</option>
+                )}
+                <option value="local">Local Account</option>
+              </select>
+            </div>
+          )}
+          
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
               Username
@@ -147,6 +232,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             onClick={() => {
               setMode(mode === 'login' ? 'register' : 'login');
               setError('');
+              setSuccess('');
+              setAuthMethod('auto');
             }}
             className="text-sm text-brand-600 dark:text-brand-400 hover:underline"
           >

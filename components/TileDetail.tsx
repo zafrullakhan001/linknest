@@ -950,6 +950,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
                                                                         />
                                                                         <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
+                                                                        {user.auth_source === 'ldap' ? (
+                                                                            <span className="px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[10px] font-semibold">
+                                                                                LDAP
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-semibold">
+                                                                                Local
+                                                                            </span>
+                                                                        )}
                                                                     </label>
                                                                 ))
                                                             )}
@@ -1152,6 +1161,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                  className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
                                                              />
                                                              <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
+                                                             {user.auth_source === 'ldap' ? (
+                                                                 <span className="px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[10px] font-semibold">
+                                                                     LDAP
+                                                                 </span>
+                                                             ) : (
+                                                                 <span className="px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-semibold">
+                                                                     Local
+                                                                 </span>
+                                                             )}
                                                          </label>
                                                      ))
                                                  )}

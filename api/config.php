@@ -4,6 +4,35 @@ ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 error_reporting(E_ALL);
 
+// Start output buffering to prevent any accidental output
+if (!ob_get_level()) {
+    ob_start();
+}
+
+// Set custom error handler to prevent HTML output
+set_error_handler(function($errno, $errstr, $errfile, $errline) {
+    // Log the error but don't output it
+    error_log("PHP Error [$errno]: $errstr in $errfile on line $errline");
+    // Return false to let PHP handle it normally (but display_errors is off, so it won't output)
+    return false;
+}, E_ALL);
+
+// Set exception handler
+set_exception_handler(function($exception) {
+    // Clean any output
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    error_log("Uncaught exception: " . $exception->getMessage() . " in " . $exception->getFile() . " on line " . $exception->getLine());
+    // Send JSON error if headers not sent
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['error' => 'An internal server error occurred']);
+    }
+    exit;
+});
+
 // Database configuration
 define('DB_PATH', __DIR__ . '/../data/linknest.db');
 define('DB_DIR', __DIR__ . '/../data');
@@ -76,6 +105,11 @@ function initDatabase() {
         }
         try {
             $db->exec('ALTER TABLE users ADD COLUMN is_approved INTEGER DEFAULT 0');
+        } catch (PDOException $e) {
+            // Column already exists, ignore
+        }
+        try {
+            $db->exec('ALTER TABLE users ADD COLUMN auth_source TEXT DEFAULT "local"');
         } catch (PDOException $e) {
             // Column already exists, ignore
         }
@@ -437,15 +471,39 @@ function requireAuth() {
 
 // Helper function to send JSON response
 function sendJSON($data, $statusCode = 200) {
+    // Clean any output buffers but keep the buffer active
+    $level = ob_get_level();
+    for ($i = 0; $i < $level; $i++) {
+        ob_clean();
+    }
+    
+    // If headers were already sent, log it but try to continue
+    if (headers_sent($file, $line)) {
+        error_log("Warning: Headers already sent in $file on line $line - output may be corrupted");
+        // Try to clean output if possible
+        if (ob_get_level() > 0) {
+            ob_clean();
+        }
+    }
+    
     http_response_code($statusCode);
-    header('Content-Type: application/json');
-    echo json_encode($data);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
 
 // Helper function to get JSON input
 function getJSONInput() {
+    // Clean any output before reading input
+    if (ob_get_level() > 0) {
+        ob_clean();
+    }
+    
     $input = file_get_contents('php://input');
+    if ($input === false || empty($input)) {
+        sendJSON(['error' => 'No input data received'], 400);
+    }
+    
     $data = json_decode($input, true);
     if (json_last_error() !== JSON_ERROR_NONE) {
         sendJSON(['error' => 'Invalid JSON: ' . json_last_error_msg()], 400);

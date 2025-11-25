@@ -10,7 +10,7 @@ interface AdminPanelProps {
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const { refreshSettings } = useSettings();
-  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database'>('pending');
+  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'ldap'>('pending');
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
   const [allUsers, setAllUsers] = useState<AllUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,7 +19,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [resetPasswordModal, setResetPasswordModal] = useState<{ open: boolean; userId: number | null; username: string }>({ open: false, userId: null, username: '' });
   const [newPassword, setNewPassword] = useState('');
   const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
-  
+
   // Settings state
   const [settings, setSettings] = useState<AppSettings>({
     app_name: 'LinkNest',
@@ -37,11 +37,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [adminPasswordLoading, setAdminPasswordLoading] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
-  
+
   // Database export/import state
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
+
+  // LDAP Test state
+  const [ldapTestLoading, setLdapTestLoading] = useState(false);
+  const [ldapTestResult, setLdapTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [ldapTestUser, setLdapTestUser] = useState('');
+  const [ldapTestPassword, setLdapTestPassword] = useState('');
 
   const loadPendingUsers = async () => {
     try {
@@ -195,11 +201,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       <div className="flex gap-2 border-b border-slate-200 dark:border-slate-700">
         <button
           onClick={() => setActiveTab('pending')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-            activeTab === 'pending'
-              ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-          }`}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'pending'
+            ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+            : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
         >
           Pending Users
           {pendingUsers.length > 0 && (
@@ -210,33 +215,39 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         </button>
         <button
           onClick={() => setActiveTab('all')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-            activeTab === 'all'
-              ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-          }`}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'all'
+            ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+            : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
         >
           All Users
         </button>
         <button
           onClick={() => setActiveTab('settings')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-            activeTab === 'settings'
-              ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-          }`}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'settings'
+            ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+            : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
         >
           Settings
         </button>
         <button
           onClick={() => setActiveTab('database')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-            activeTab === 'database'
-              ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-          }`}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'database'
+            ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+            : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
         >
           Database
+        </button>
+        <button
+          onClick={() => setActiveTab('ldap')}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'ldap'
+            ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+            : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+        >
+          LDAP
         </button>
       </div>
 
@@ -359,20 +370,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-colors">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center gap-3">
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${
-                              user.is_admin 
-                                ? 'bg-gradient-to-br from-amber-500 to-orange-600' 
-                                : 'bg-gradient-to-br from-brand-500 to-brand-600'
-                            }`}>
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${user.is_admin
+                              ? 'bg-gradient-to-br from-amber-500 to-orange-600'
+                              : 'bg-gradient-to-br from-brand-500 to-brand-600'
+                              }`}>
                               {user.username.charAt(0).toUpperCase()}
                             </div>
                             <div>
                               <span className="font-medium text-slate-900 dark:text-white">{user.username}</span>
-                              {user.is_admin && (
-                                <span className="ml-2 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-semibold">
-                                  Admin
-                                </span>
-                              )}
+                              <div className="flex items-center gap-2 mt-1">
+                                {user.is_admin && (
+                                  <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-semibold">
+                                    Admin
+                                  </span>
+                                )}
+                                {user.auth_source === 'ldap' ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs font-semibold">
+                                    LDAP
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold">
+                                    Local
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -396,6 +417,40 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <td className="px-6 py-4 whitespace-nowrap text-right">
                           {!user.is_admin && (
                             <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    setProcessing(user.id);
+                                    setError('');
+                                    const result = await authService.toggleAuthSource(user.id);
+                                    // Update the user in the local state
+                                    setAllUsers(prevUsers => 
+                                      prevUsers.map(u => 
+                                        u.id === user.id ? { ...u, auth_source: result.auth_source } : u
+                                      )
+                                    );
+                                  } catch (err: any) {
+                                    setError(err.message || 'Failed to toggle auth source');
+                                  } finally {
+                                    setProcessing(null);
+                                  }
+                                }}
+                                disabled={processing === user.id}
+                                className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
+                                title={`Toggle Auth Source (Current: ${user.auth_source === 'ldap' ? 'LDAP' : 'Local'})`}
+                              >
+                                {processing === user.id ? (
+                                  <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                ) : (
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                    <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                                  </svg>
+                                )}
+                                Toggle
+                              </button>
                               <button
                                 onClick={() => setResetPasswordModal({ open: true, userId: user.id, username: user.username })}
                                 disabled={processing === user.id}
@@ -444,7 +499,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
                   Export your database as a JSON file for backup or import it to restore data on a new instance.
                 </p>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Export Section */}
                   <div className="space-y-4">
@@ -592,6 +647,464 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             </div>
           )}
 
+          {/* LDAP Tab */}
+          {activeTab === 'ldap' && (
+            <div className="space-y-6">
+              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">LDAP Configuration</h3>
+                    <p className="text-sm text-slate-600 dark:text-slate-400">
+                      Configure LDAP integration for user authentication.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={settings.ldap_enabled === '1'}
+                        onChange={(e) => setSettings({ ...settings, ldap_enabled: e.target.checked ? '1' : '0' })}
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-300 dark:peer-focus:ring-brand-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-brand-600"></div>
+                      <span className="ml-3 text-sm font-medium text-slate-900 dark:text-slate-300">Enable LDAP</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Connection Settings */}
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-semibold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 pb-2">Connection</h4>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Server Host</label>
+                      <input
+                        type="text"
+                        value={settings.ldap_server || ''}
+                        onChange={(e) => setSettings({ ...settings, ldap_server: e.target.value })}
+                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                        placeholder="ldap.example.com"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Port</label>
+                        <input
+                          type="number"
+                          value={settings.ldap_port || '389'}
+                          onChange={(e) => setSettings({ ...settings, ldap_port: e.target.value })}
+                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Timeout (sec)</label>
+                        <input
+                          type="number"
+                          value={settings.ldap_timeout || '30'}
+                          onChange={(e) => setSettings({ ...settings, ldap_timeout: e.target.value })}
+                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Protocol</label>
+                        <select
+                          value={settings.ldap_protocol || 'ldap'}
+                          onChange={(e) => setSettings({ ...settings, ldap_protocol: e.target.value })}
+                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                        >
+                          <option value="ldap">LDAP</option>
+                          <option value="ldaps">LDAPS (SSL)</option>
+                        </select>
+                      </div>
+                      <div className="flex items-end pb-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={settings.ldap_tls === '1'}
+                            onChange={(e) => setSettings({ ...settings, ldap_tls: e.target.checked ? '1' : '0' })}
+                            className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                          />
+                          <span className="text-sm text-slate-700 dark:text-slate-300">Use StartTLS</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Authentication Settings */}
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-semibold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 pb-2">Service Account (Bind)</h4>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Bind DN</label>
+                      <input
+                        type="text"
+                        value={settings.ldap_bind_dn || ''}
+                        onChange={(e) => setSettings({ ...settings, ldap_bind_dn: e.target.value })}
+                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                        placeholder="cn=admin,dc=example,dc=com"
+                      />
+                      <p className="text-[10px] text-slate-500 mt-1">Leave empty for anonymous bind</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Bind Password</label>
+                      <input
+                        type="password"
+                        value={settings.ldap_bind_password || ''}
+                        onChange={(e) => setSettings({ ...settings, ldap_bind_password: e.target.value })}
+                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                        placeholder="••••••••"
+                      />
+                    </div>
+                  </div>
+
+                  {/* User Schema */}
+                  <div className="space-y-4 md:col-span-2">
+                    <h4 className="text-sm font-semibold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 pb-2">User Schema</h4>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Base DN</label>
+                          <input
+                            type="text"
+                            value={settings.ldap_user_search_base || ''}
+                            onChange={(e) => setSettings({ ...settings, ldap_user_search_base: e.target.value })}
+                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                            placeholder="ou=users,dc=example,dc=com"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">User Filter</label>
+                          <input
+                            type="text"
+                            value={settings.ldap_user_filter || ''}
+                            onChange={(e) => setSettings({ ...settings, ldap_user_filter: e.target.value })}
+                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
+                            placeholder="(sAMAccountName={username})"
+                          />
+                          <p className="text-[10px] text-slate-500 mt-1">Use {`{username}`} as placeholder for login input</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Attributes</label>
+                          <input
+                            type="text"
+                            value={settings.ldap_user_attributes || ''}
+                            onChange={(e) => setSettings({ ...settings, ldap_user_attributes: e.target.value })}
+                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
+                            placeholder="sAMAccountName,mail,displayName"
+                          />
+                          <p className="text-[10px] text-slate-500 mt-1">Comma separated list of attributes to fetch</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Group Membership */}
+                  <div className="space-y-4 md:col-span-2 mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+                    <h4 className="text-sm font-semibold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 pb-2">Group Membership</h4>
+
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={settings.ldap_require_group_membership === '1'}
+                            onChange={(e) => setSettings({ ...settings, ldap_require_group_membership: e.target.checked ? '1' : '0' })}
+                            className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                          />
+                          <span className="text-sm text-slate-700 dark:text-slate-300">Require Group Membership</span>
+                        </label>
+                        <p className="text-[10px] text-slate-500 ml-6">Only allow users who are members of specific groups</p>
+                      </div>
+
+                      {settings.ldap_require_group_membership === '1' && (
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Required Groups (comma-separated)</label>
+                          <input
+                            type="text"
+                            value={settings.ldap_required_groups || ''}
+                            onChange={(e) => setSettings({ ...settings, ldap_required_groups: e.target.value })}
+                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
+                            placeholder="CN=Admins,CN=Users,DC=example,DC=com"
+                          />
+                          <p className="text-[10px] text-slate-500 mt-1">User must be a member of at least one of these groups. Enter full DN or partial match.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Advanced Options */}
+                  <div className="space-y-4 md:col-span-2 mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+                    <h4 className="text-sm font-semibold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 pb-2">Advanced Options</h4>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Search Scope</label>
+                          <select
+                            value={settings.ldap_search_scope || 'sub'}
+                            onChange={(e) => setSettings({ ...settings, ldap_search_scope: e.target.value })}
+                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                          >
+                            <option value="base">Base (exact match only)</option>
+                            <option value="one">One-level (immediate children)</option>
+                            <option value="sub">Subtree (recursive, default)</option>
+                          </select>
+                          <p className="text-[10px] text-slate-500 mt-1">How deep to search in the directory tree</p>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">User DN Template (Alternative)</label>
+                          <input
+                            type="text"
+                            value={settings.ldap_user_dn_template || ''}
+                            onChange={(e) => setSettings({ ...settings, ldap_user_dn_template: e.target.value })}
+                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
+                            placeholder="CN={username},CN=Users,DC=example,DC=com"
+                          />
+                          <p className="text-[10px] text-slate-500 mt-1">Direct bind without search. Use {`{username}`} placeholder. Leave empty to use search-based auth.</p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={settings.ldap_nested_groups === '1'}
+                              onChange={(e) => setSettings({ ...settings, ldap_nested_groups: e.target.checked ? '1' : '0' })}
+                              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300">Enable Nested Group Support</span>
+                          </label>
+                          <p className="text-[10px] text-slate-500 ml-6">Check group membership recursively through nested groups</p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={settings.ldap_case_sensitive === '1'}
+                              onChange={(e) => setSettings({ ...settings, ldap_case_sensitive: e.target.checked ? '1' : '0' })}
+                              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300">Case Sensitive Username Matching</span>
+                          </label>
+                          <p className="text-[10px] text-slate-500 ml-6">Require exact case match for usernames (default: case-insensitive)</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Connection Retries</label>
+                            <input
+                              type="number"
+                              min="0"
+                              max="10"
+                              value={settings.ldap_connection_retry || '3'}
+                              onChange={(e) => setSettings({ ...settings, ldap_connection_retry: e.target.value })}
+                              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Retry Delay (sec)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              max="10"
+                              value={settings.ldap_retry_delay || '1'}
+                              onChange={(e) => setSettings({ ...settings, ldap_retry_delay: e.target.value })}
+                              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={settings.ldap_ssl_verify === '1'}
+                              onChange={(e) => setSettings({ ...settings, ldap_ssl_verify: e.target.checked ? '1' : '0' })}
+                              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300">Verify SSL Certificates</span>
+                          </label>
+                          <p className="text-[10px] text-slate-500 ml-6">Validate SSL/TLS certificates (recommended: enabled)</p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={settings.ldap_referrals === '1'}
+                              onChange={(e) => setSettings({ ...settings, ldap_referrals: e.target.checked ? '1' : '0' })}
+                              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300">Follow LDAP Referrals</span>
+                          </label>
+                          <p className="text-[10px] text-slate-500 ml-6">Follow referrals to other LDAP servers (default: disabled)</p>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Custom Email Attribute</label>
+                          <input
+                            type="text"
+                            value={settings.ldap_email_attribute || ''}
+                            onChange={(e) => setSettings({ ...settings, ldap_email_attribute: e.target.value })}
+                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
+                            placeholder="mail"
+                          />
+                          <p className="text-[10px] text-slate-500 mt-1">Override default email attribute (leave empty for auto-detect)</p>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Custom Display Name Attribute</label>
+                          <input
+                            type="text"
+                            value={settings.ldap_display_name_attribute || ''}
+                            onChange={(e) => setSettings({ ...settings, ldap_display_name_attribute: e.target.value })}
+                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
+                            placeholder="displayName"
+                          />
+                          <p className="text-[10px] text-slate-500 mt-1">Override default display name attribute (leave empty for auto-detect)</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Test Connection */}
+                <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-700">
+                  <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Test Connection</h4>
+
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      try {
+                        setLdapTestLoading(true);
+                        setLdapTestResult(null);
+                        const result = await settingsService.testLdapConnection(settings, ldapTestUser, ldapTestPassword);
+                        setLdapTestResult(result);
+                      } catch (err: any) {
+                        setLdapTestResult({ success: false, message: err.message });
+                      } finally {
+                        setLdapTestLoading(false);
+                      }
+                    }}
+                    className="flex flex-col md:flex-row gap-4 items-end"
+                  >
+                    <div className="flex-1 w-full">
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Test Username</label>
+                      <input
+                        type="text"
+                        value={ldapTestUser}
+                        onChange={(e) => setLdapTestUser(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                        placeholder="Optional: Test authentication for user"
+                        autoComplete="username"
+                      />
+                    </div>
+                    <div className="flex-1 w-full">
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Test Password</label>
+                      <input
+                        type="password"
+                        value={ldapTestPassword}
+                        onChange={(e) => setLdapTestPassword(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                        placeholder="Optional"
+                        autoComplete="current-password"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={ldapTestLoading}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap"
+                    >
+                      {ldapTestLoading ? (
+                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                      Test Connection
+                    </button>
+                  </form>
+
+                  {ldapTestResult && (
+                    <div className={`mt-4 p-3 rounded-lg text-sm flex items-start gap-2 ${ldapTestResult.success
+                      ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                      : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800'
+                      }`}>
+                      {ldapTestResult.success ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 flex-shrink-0 mt-0.5">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                        </svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 flex-shrink-0 mt-0.5">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                      <div>
+                        <p className="font-semibold">{ldapTestResult.success ? 'Connection Successful' : 'Connection Failed'}</p>
+                        <p className="mt-1">{ldapTestResult.message}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Save Button */}
+                <div className="mt-6 flex justify-end">
+                  <button
+                    onClick={async () => {
+                      try {
+                        setSettingsSaving(true);
+                        setError('');
+                        await settingsService.updateSettings(settings);
+                        alert('LDAP settings saved successfully!');
+                      } catch (err: any) {
+                        setError(err.message || 'Failed to save settings');
+                      } finally {
+                        setSettingsSaving(false);
+                      }
+                    }}
+                    disabled={settingsSaving}
+                    className="px-6 py-2.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
+                  >
+                    {settingsSaving ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                        </svg>
+                        Save Settings
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Settings Tab */}
           {activeTab === 'settings' && (
             <div className="space-y-6">
@@ -617,7 +1130,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           placeholder="LinkNest"
                         />
                       </div>
-                      
+
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                           Page Title
@@ -654,11 +1167,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               setSettings({ ...settings, logo_type: 'icon' });
                               setLogoPreview(null);
                             }}
-                            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                              settings.logo_type === 'icon'
-                                ? 'bg-brand-600 text-white'
-                                : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                            }`}
+                            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${settings.logo_type === 'icon'
+                              ? 'bg-brand-600 text-white'
+                              : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                              }`}
                           >
                             Icon/Emoji
                           </button>
@@ -669,11 +1181,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 setLogoPreview(settings.logo_image);
                               }
                             }}
-                            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                              settings.logo_type === 'image'
-                                ? 'bg-brand-600 text-white'
-                                : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                            }`}
+                            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${settings.logo_type === 'image'
+                              ? 'bg-brand-600 text-white'
+                              : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                              }`}
                           >
                             Image
                           </button>
@@ -701,14 +1212,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                               Logo Image
                             </label>
-                            
+
                             {/* Image Preview */}
                             {(logoPreview || settings.logo_image) && (
                               <div className="mb-3 p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg">
                                 <div className="flex items-center gap-3">
-                                  <img 
-                                    src={logoPreview || settings.logo_image} 
-                                    alt="Logo preview" 
+                                  <img
+                                    src={logoPreview || settings.logo_image}
+                                    alt="Logo preview"
                                     className="w-16 h-16 object-contain rounded border border-slate-200 dark:border-slate-700"
                                     onError={(e) => {
                                       (e.target as HTMLImageElement).style.display = 'none';
@@ -731,7 +1242,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 </div>
                               </div>
                             )}
-                            
+
                             {/* File Upload */}
                             <div className="mb-3">
                               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
@@ -744,18 +1255,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   onChange={async (e) => {
                                     const file = e.target.files?.[0];
                                     if (!file) return;
-                                    
+
                                     // Validate file size (2MB)
                                     if (file.size > 2 * 1024 * 1024) {
                                       setError('File size too large. Maximum size: 2MB');
                                       e.target.value = '';
                                       return;
                                     }
-                                    
+
                                     // Validate dimensions (skip for SVG)
                                     const isSVG = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
                                     const objectUrl = URL.createObjectURL(file);
-                                    
+
                                     if (isSVG) {
                                       // For SVG, just show preview and upload
                                       setLogoPreview(objectUrl);
@@ -777,30 +1288,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     } else {
                                       // For raster images, validate dimensions
                                       const img = new Image();
-                                      
+
                                       img.onload = async () => {
                                         const maxWidth = 512;
                                         const maxHeight = 512;
                                         const minWidth = 32;
                                         const minHeight = 32;
-                                        
+
                                         if (img.width > maxWidth || img.height > maxHeight) {
                                           setError(`Image dimensions too large. Maximum: ${maxWidth}x${maxHeight}px. Your image: ${img.width}x${img.height}px`);
                                           URL.revokeObjectURL(objectUrl);
                                           e.target.value = '';
                                           return;
                                         }
-                                        
+
                                         if (img.width < minWidth || img.height < minHeight) {
                                           setError(`Image dimensions too small. Minimum: ${minWidth}x${minHeight}px. Your image: ${img.width}x${img.height}px`);
                                           URL.revokeObjectURL(objectUrl);
                                           e.target.value = '';
                                           return;
                                         }
-                                        
+
                                         // Show preview
                                         setLogoPreview(objectUrl);
-                                        
+
                                         // Upload file
                                         try {
                                           setLogoUploading(true);
@@ -818,13 +1329,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           e.target.value = '';
                                         }
                                       };
-                                      
+
                                       img.onerror = () => {
                                         setError('Invalid image file');
                                         URL.revokeObjectURL(objectUrl);
                                         e.target.value = '';
                                       };
-                                      
+
                                       img.src = objectUrl;
                                     }
                                   }}
@@ -845,7 +1356,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 Allowed: JPEG, PNG, GIF, SVG, WebP | Max size: 2MB | Dimensions: 32x32px to 512x512px
                               </p>
                             </div>
-                            
+
                             {/* URL Input (Alternative) */}
                             <div>
                               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
