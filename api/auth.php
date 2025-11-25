@@ -469,18 +469,43 @@ function handleLogin() {
                     $ldapDisplayName = $userEntry['cn'][0];
                 }
                 
-                // Fallback email if not found - use domain from base DN
+                // Fallback email if not found - use domain from base DN or user search base
                 if (empty($ldapEmail)) {
-                    $domain = 'ldap.local'; // Default fallback
+                    $domain = null;
+                    // Try ldap_base_dn first, then fall back to ldap_user_search_base
                     $baseDn = $settings['ldap_base_dn'] ?? '';
+                    if (empty($baseDn)) {
+                        $baseDn = $settings['ldap_user_search_base'] ?? '';
+                    }
+                    
                     if (!empty($baseDn)) {
                         // Extract domain from base DN (e.g., "DC=oneflorida,DC=org" -> "oneflorida.org")
+                        // Also handles: "CN=Users,DC=oneflorida,DC=org" -> "oneflorida.org"
                         if (preg_match_all('/DC=([^,]+)/i', $baseDn, $matches)) {
                             if (!empty($matches[1])) {
                                 $domain = strtolower(implode('.', $matches[1]));
                             }
                         }
                     }
+                    
+                    // If domain still not found, try to extract from server hostname
+                    if (empty($domain)) {
+                        $server = trim($settings['ldap_server'] ?? '');
+                        if (!empty($server)) {
+                            // Try to extract domain from FQDN (e.g., "server.example.com" -> "example.com")
+                            $parts = explode('.', $server);
+                            if (count($parts) >= 2) {
+                                // Skip first part (hostname), use rest as domain
+                                $domain = strtolower(implode('.', array_slice($parts, 1)));
+                            }
+                        }
+                    }
+                    
+                    // Final fallback - use generic domain
+                    if (empty($domain)) {
+                        $domain = 'ldap.local';
+                    }
+                    
                     $ldapEmail = $username . '@' . $domain;
                 }
                 

@@ -59,47 +59,166 @@ try {
         }
     }
     
-    // If username/password provided, try to bind
-    // Note: This is for testing the service account (if used) or just anonymous bind if empty
-    // But usually for testing we want to test a specific user bind if provided, 
-    // or just connection if no credentials.
-    // However, the UI might send a test username/password to verify credentials too.
+    // Helper function to escape LDAP filter values
+    function ldap_escape_filter($value) {
+        if (function_exists('ldap_escape')) {
+            return ldap_escape($value, '', LDAP_ESCAPE_FILTER);
+        }
+        $value = str_replace('\\', '\\5c', $value);
+        $value = str_replace('*', '\\2a', $value);
+        $value = str_replace('(', '\\28', $value);
+        $value = str_replace(')', '\\29', $value);
+        $value = str_replace("\x00", '\\00', $value);
+        return $value;
+    }
     
-    $bindDn = $data['test_username'] ?? null;
-    $bindPass = $data['test_password'] ?? null;
+    // Helper function to escape LDAP DN values
+    function ldap_escape_dn($value) {
+        if (function_exists('ldap_escape')) {
+            return ldap_escape($value, '', LDAP_ESCAPE_DN);
+        }
+        $value = str_replace('\\', '\\\\', $value);
+        $value = str_replace(',', '\\,', $value);
+        $value = str_replace('=', '\\=', $value);
+        $value = str_replace('+', '\\+', $value);
+        $value = str_replace('<', '\\<', $value);
+        $value = str_replace('>', '\\>', $value);
+        $value = str_replace(';', '\\;', $value);
+        $value = str_replace('"', '\\"', $value);
+        $value = str_replace('#', '\\#', $value);
+        $value = str_replace("\x00", '', $value);
+        return $value;
+    }
     
-    if ($bindDn && $bindPass) {
-        // If it's just a username (not DN), we might need to construct DN or use UPN
-        // But for this generic test, let's assume the user provides what's needed or we try to bind directly
-        // If the user provided a test username that looks like a simple username, we might need to use the user filter to find the DN first
-        // But that requires an anonymous bind or a service account bind first.
-        
-        // For simplicity in this test endpoint, we'll try to bind with what's given.
-        // If the user provides a full DN in 'test_username', it works.
-        // If they provide 'user@domain', it might work depending on AD.
-        
-        $bind = @ldap_bind($ldap, $bindDn, $bindPass);
-        if ($bind) {
-            sendJSON([
-                'success' => true,
-                'message' => "Successfully connected and bound to LDAP server as $bindDn"
-            ]);
-        } else {
-            throw new Exception("Connection successful, but bind failed: " . ldap_error($ldap));
+    // First, bind with service account (if configured) or anonymously
+    $serviceBindDn = $data['ldap_bind_dn'] ?? '';
+    $serviceBindPass = $data['ldap_bind_password'] ?? '';
+    $bound = false;
+    
+    if (!empty($serviceBindDn) && !empty($serviceBindPass)) {
+        $bound = @ldap_bind($ldap, $serviceBindDn, $serviceBindPass);
+        if (!$bound) {
+            throw new Exception("Service account bind failed: " . ldap_error($ldap));
         }
     } else {
-        // Anonymous bind or just connection check
-        $bind = @ldap_bind($ldap);
-        if ($bind) {
-            sendJSON([
-                'success' => true,
-                'message' => 'Successfully connected to LDAP server (anonymous bind)'
-            ]);
-        } else {
-            // Even if anonymous bind fails, the connection might be okay if the server requires auth.
-            // But usually ldap_bind returns false if it fails.
-            throw new Exception("Connection successful, but anonymous bind failed: " . ldap_error($ldap));
+        $bound = @ldap_bind($ldap); // Anonymous bind
+        if (!$bound) {
+            throw new Exception("Anonymous bind failed: " . ldap_error($ldap));
         }
+    }
+    
+    // If test username/password provided, test user authentication
+    $testUsername = $data['test_username'] ?? null;
+    $testPassword = $data['test_password'] ?? null;
+    
+    if ($testUsername && $testPassword) {
+        // Check if User DN Template is configured
+        $userDnTemplate = trim($data['ldap_user_dn_template'] ?? '');
+        $userDn = null;
+        
+        if (!empty($userDnTemplate)) {
+            // Use DN template for direct bind
+            $userDn = str_replace('{username}', ldap_escape_dn($testUsername), $userDnTemplate);
+            $userBind = @ldap_bind($ldap, $userDn, $testPassword);
+            if ($userBind) {
+                sendJSON([
+                    'success' => true,
+                    'message' => "Successfully authenticated user '$testUsername' using DN template: $userDn"
+                ]);
+                @ldap_close($ldap);
+                exit;
+            } else {
+                throw new Exception("User authentication failed with DN template: " . ldap_error($ldap));
+            }
+        } else {
+            // Use search-based authentication (same as actual login)
+            $searchBase = trim($data['ldap_user_search_base'] ?? '');
+            $filterTemplate = trim($data['ldap_user_filter'] ?? '(sAMAccountName={username})');
+            
+            if (empty($searchBase)) {
+                throw new Exception("User search base is not configured. Please set 'Base DN' in LDAP settings.");
+            }
+            
+            // Escape username and replace in filter template
+            $safeUsername = ldap_escape_filter($testUsername);
+            $filter = str_replace('{username}', $safeUsername, $filterTemplate);
+            
+            // Determine search scope
+            $searchScope = strtolower($data['ldap_search_scope'] ?? 'sub');
+            
+            // Get attributes from configuration or use defaults
+            $attributesStr = $data['ldap_user_attributes'] ?? 'sAMAccountName,mail,displayName,userPrincipalName';
+            $attributes = array_map('trim', explode(',', $attributesStr));
+            // Ensure we have at least the essential attributes
+            $essentialAttrs = ['sAMAccountName', 'mail', 'displayName', 'userPrincipalName'];
+            foreach ($essentialAttrs as $attr) {
+                if (!in_array($attr, $attributes)) {
+                    $attributes[] = $attr;
+                }
+            }
+            
+            // Use appropriate LDAP function based on scope
+            if ($searchScope === 'base') {
+                $result = @ldap_read($ldap, $searchBase, $filter, $attributes);
+            } elseif ($searchScope === 'one') {
+                $result = @ldap_list($ldap, $searchBase, $filter, $attributes);
+            } else {
+                $result = @ldap_search($ldap, $searchBase, $filter, $attributes);
+            }
+            
+            if ($result === false) {
+                throw new Exception("User search failed: " . ldap_error($ldap));
+            }
+            
+            $entries = @ldap_get_entries($ldap, $result);
+            if ($entries === false || $entries['count'] == 0) {
+                throw new Exception("User '$testUsername' not found in LDAP directory");
+            }
+            
+            $userEntry = $entries[0];
+            $userDn = $userEntry['dn'];
+            
+            // Try to bind as user to verify password
+            $userBind = @ldap_bind($ldap, $userDn, $testPassword);
+            if ($userBind) {
+                // Extract user info
+                $email = '';
+                if (isset($userEntry['mail']) && is_array($userEntry['mail']) && isset($userEntry['mail'][0])) {
+                    $email = $userEntry['mail'][0];
+                } elseif (isset($userEntry['userprincipalname']) && is_array($userEntry['userprincipalname']) && isset($userEntry['userprincipalname'][0])) {
+                    $email = $userEntry['userprincipalname'][0];
+                }
+                
+                $displayName = '';
+                if (isset($userEntry['displayname']) && is_array($userEntry['displayname']) && isset($userEntry['displayname'][0])) {
+                    $displayName = $userEntry['displayname'][0];
+                } elseif (isset($userEntry['cn']) && is_array($userEntry['cn']) && isset($userEntry['cn'][0])) {
+                    $displayName = $userEntry['cn'][0];
+                }
+                
+                $message = "Successfully authenticated user '$testUsername'";
+                if ($displayName) {
+                    $message .= " ($displayName)";
+                }
+                if ($email) {
+                    $message .= " - Email: $email";
+                }
+                $message .= " - DN: $userDn";
+                
+                sendJSON([
+                    'success' => true,
+                    'message' => $message
+                ]);
+            } else {
+                throw new Exception("User authentication failed: " . ldap_error($ldap));
+            }
+        }
+    } else {
+        // No test credentials provided, just test connection and service account bind
+        sendJSON([
+            'success' => true,
+            'message' => 'Successfully connected to LDAP server' . (!empty($serviceBindDn) ? " (service account bind successful)" : " (anonymous bind successful)")
+        ]);
     }
     
     @ldap_close($ldap);

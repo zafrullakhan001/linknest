@@ -4,18 +4,18 @@
 
 require_once __DIR__ . '/../api/config.php';
 
-// Configuration from user request
+// Default configuration (will be overridden by database settings)
 $config = [
     'ldap_enabled' => '1',
-    'ldap_server' => 'WIN-VTAHCVFA182.oneflorida.org',
+    'ldap_server' => '', // Will be loaded from database
     'ldap_port' => '389',
     'ldap_protocol' => 'ldap',
-    'ldap_base_dn' => 'DC=oneflorida,DC=org',
-    'ldap_user_search_base' => 'CN=Users,DC=oneflorida,DC=org',
+    'ldap_base_dn' => '', // Will be loaded from database
+    'ldap_user_search_base' => '', // Will be loaded from database
     'ldap_user_filter' => '(sAMAccountName={username})',
     'ldap_user_attributes' => 'sAMAccountName,userPrincipalName,mail,displayName,givenName,sn,memberOf',
-    'ldap_bind_dn' => '', // Fill this if needed
-    'ldap_bind_password' => '', // Fill this if needed
+    'ldap_bind_dn' => '', // Will be loaded from database
+    'ldap_bind_password' => '', // Will be loaded from database
     'ldap_timeout' => '30',
     'ldap_tls' => '0'
 ];

@@ -9,8 +9,8 @@ interface AuthModalProps {
 }
 
 // Helper function to extract domain from LDAP base DN
-// e.g., "DC=oneflorida,DC=org" -> "oneflorida.org"
-// Also handles: "CN=Users,DC=oneflorida,DC=org" -> "oneflorida.org"
+// e.g., "DC=example,DC=com" -> "example.com"
+// Also handles: "CN=Users,DC=example,DC=com" -> "example.com"
 function extractDomainFromBaseDn(baseDn: string): string | null {
   if (!baseDn) return null;
   
