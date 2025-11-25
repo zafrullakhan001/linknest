@@ -28,6 +28,7 @@ interface CategoryProps {
   children: React.ReactNode;
   onDeleteCategory?: (categoryName: string) => void;
   onSaveCategoryOrder?: () => void;
+  onRenameCategory?: (oldName: string, newName: string) => void;
 }
 
 const Category: React.FC<CategoryProps> = ({
@@ -41,8 +42,41 @@ const Category: React.FC<CategoryProps> = ({
   onMoveDown,
   children,
   onDeleteCategory,
-  onSaveCategoryOrder
+  onSaveCategoryOrder,
+  onRenameCategory
 }) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedName, setEditedName] = useState(categoryName);
+
+  // Update editedName when categoryName changes (e.g., after rename)
+  useEffect(() => {
+    setEditedName(categoryName);
+  }, [categoryName]);
+
+  const handleSave = () => {
+    const trimmedName = editedName.trim();
+    if (trimmedName && trimmedName !== categoryName && onRenameCategory) {
+      onRenameCategory(categoryName, trimmedName);
+    }
+    setIsEditing(false);
+    setEditedName(categoryName);
+  };
+
+  const handleCancel = () => {
+    setIsEditing(false);
+    setEditedName(categoryName);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSave();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      handleCancel();
+    }
+  };
+
   return (
     <div
       className="animate-in fade-in slide-in-from-bottom-2 duration-300"
@@ -94,14 +128,71 @@ const Category: React.FC<CategoryProps> = ({
             </button>
           </div>
         )}
-        <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">{categoryName}</h2>
+        {isEditing ? (
+          <div className="flex items-center gap-2 flex-1">
+            <input
+              type="text"
+              value={editedName}
+              onChange={(e) => setEditedName(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onBlur={handleSave}
+              autoFocus
+              className="flex-1 px-2 py-1 text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide bg-white dark:bg-slate-800 border border-brand-500 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+            />
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleSave();
+              }}
+              className="p-1 text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded transition-all"
+              title="Save"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+              </svg>
+            </button>
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleCancel();
+              }}
+              className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all"
+              title="Cancel"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+              </svg>
+            </button>
+          </div>
+        ) : (
+          <>
+            <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">{categoryName}</h2>
+            {isAuthenticated && onRenameCategory && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsEditing(true);
+                }}
+                className="opacity-0 group-hover/category:opacity-100 transition-opacity p-1 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 rounded transition-all"
+                title="Edit category name"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                  <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                </svg>
+              </button>
+            )}
+          </>
+        )}
         <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-500 dark:text-slate-400">
           {tileCount}
         </span>
         <div className="h-px bg-slate-200 dark:border-slate-700 flex-1"></div>
         
-        {/* Save Order Button (visible to everyone) */}
-        {onSaveCategoryOrder && (
+        {/* Save Order Button (only visible for authenticated users) */}
+        {isAuthenticated && onSaveCategoryOrder && (
           <button
             onClick={(e) => {
               e.preventDefault();
@@ -207,8 +298,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
         flex flex-col h-full min-h-[140px] cursor-pointer
       `}
     >
-      {/* Arrow Buttons for Reordering - Visible for all users */}
-      {(onMoveLeft || onMoveRight) && (
+      {/* Arrow Buttons for Reordering - Only visible for authenticated users */}
+      {isAuthenticated && (onMoveLeft || onMoveRight) && (
         <div className="absolute top-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 z-10">
           <button
             onClick={(e) => {
@@ -795,6 +886,61 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
   }, [tiles, isAuthenticated, categoryOrder]);
 
+  const handleRenameCategory = useCallback(async (oldName: string, newName: string) => {
+    if (!isAuthenticated) return;
+    if (!newName.trim() || newName.trim() === oldName) return;
+
+    const trimmedNewName = newName.trim();
+
+    try {
+      // Update all tiles with the old category name to the new name
+      const updatedTiles = tiles.map(tile => {
+        if ((tile.group || 'General') === oldName) {
+          return { ...tile, group: trimmedNewName };
+        }
+        return tile;
+      });
+
+      // Update local state
+      onUpdateTiles(updatedTiles);
+
+      // Update category order
+      const newCategoryOrder = categoryOrder.map(cat => 
+        cat === oldName ? trimmedNewName : cat
+      );
+      setCategoryOrder(newCategoryOrder);
+
+      // Save updated arrangements
+      try {
+        // Save tile arrangement with updated category names
+        const arrangement = updatedTiles.map((tile, index) => ({
+          tileId: tile.id,
+          position: index,
+          groupName: tile.group || 'General'
+        }));
+        await saveTileArrangement(arrangement);
+
+        // Save category arrangement with renamed category
+        if (newCategoryOrder.length > 0) {
+          const categoryArrangement = newCategoryOrder.map((category, index) => ({
+            categoryName: category,
+            position: index
+          }));
+          await saveCategoryArrangement(categoryArrangement);
+        }
+      } catch (error) {
+        console.error('Failed to save arrangements:', error);
+        // Revert on error
+        onUpdateTiles(tiles);
+        setCategoryOrder(categoryOrder);
+        alert('Failed to save category rename. Please try again.');
+      }
+    } catch (error) {
+      console.error('Failed to rename category:', error);
+      alert('Failed to rename category. Please try again.');
+    }
+  }, [tiles, isAuthenticated, onUpdateTiles, categoryOrder]);
+
   const handleDeleteCategory = useCallback(async (categoryName: string) => {
     if (!isAuthenticated) return;
 
@@ -848,8 +994,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
   }, [tiles, isAuthenticated, onUpdateTiles, categoryOrder]);
 
   const handleMoveTile = useCallback(async (tileId: string, direction: 'left' | 'right') => {
-    // Allow all users (including guests) to move tiles
-    // if (!isAuthenticated) return;
+    // Only authenticated users can move tiles
+    if (!isAuthenticated) return;
 
     const currentIndex = tiles.findIndex(t => t.id === tileId);
     if (currentIndex === -1) return;
@@ -1014,6 +1160,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               onMoveDown={() => handleMoveCategory(groupName, 'down')}
               onDeleteCategory={handleDeleteCategory}
               onSaveCategoryOrder={handleManualSave}
+              onRenameCategory={handleRenameCategory}
             >
               {/* Grid with wider tiles */}
               {groupTiles.length > 0 ? (

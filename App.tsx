@@ -211,7 +211,7 @@ const AppContent: React.FC = () => {
         </div>
       )}
       <footer className="py-6 text-center text-slate-400 dark:text-slate-500 text-sm">
-        <p>© {new Date().getFullYear()} LinkNest. Built with React, Tailwind & Gemini.</p>
+        <p>© {new Date().getFullYear()} Adventhealth - Designed and developed by AIT Architecture team</p>
       </footer>
       <AuthModal 
         isOpen={authModalOpen} 
