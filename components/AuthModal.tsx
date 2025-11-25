@@ -10,13 +10,20 @@ interface AuthModalProps {
 
 // Helper function to extract domain from LDAP base DN
 // e.g., "DC=oneflorida,DC=org" -> "oneflorida.org"
+// Also handles: "CN=Users,DC=oneflorida,DC=org" -> "oneflorida.org"
 function extractDomainFromBaseDn(baseDn: string): string | null {
   if (!baseDn) return null;
   
   // Match DC= parts and join them with dots
+  // This regex finds all DC= components regardless of position
   const matches = baseDn.match(/DC=([^,]+)/gi);
   if (matches && matches.length > 0) {
-    return matches.map(m => m.replace(/DC=/i, '').toLowerCase()).join('.');
+    // Extract domain components and join with dots
+    const domain = matches
+      .map(m => m.replace(/DC=/i, '').trim().toLowerCase())
+      .filter(d => d.length > 0)
+      .join('.');
+    return domain || null;
   }
   
   return null;
@@ -45,10 +52,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         const enabled = loadedSettings.ldap_enabled === '1';
         setLdapEnabled(enabled);
         
-        // Extract domain from base DN if LDAP is enabled
-        if (enabled && loadedSettings.ldap_base_dn) {
-          const domain = extractDomainFromBaseDn(loadedSettings.ldap_base_dn);
-          setLdapDomain(domain);
+        // Extract domain from base DN or user search base if LDAP is enabled
+        if (enabled) {
+          // Try ldap_base_dn first, then fall back to ldap_user_search_base
+          const baseDn = loadedSettings.ldap_base_dn || loadedSettings.ldap_user_search_base || '';
+          if (baseDn) {
+            const domain = extractDomainFromBaseDn(baseDn);
+            setLdapDomain(domain);
+          } else {
+            setLdapDomain(null);
+          }
         } else {
           setLdapDomain(null);
         }
