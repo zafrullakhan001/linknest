@@ -167,6 +167,58 @@ function initDatabase() {
             error_log('Links health migration warning: ' . $e->getMessage());
         }
         
+        // Migrate existing links table to add visibility columns if they don't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(links)")->fetchAll();
+            $hasVisibility = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'visibility') {
+                    $hasVisibility = true;
+                    break;
+                }
+            }
+            if (!$hasVisibility) {
+                $db->exec('ALTER TABLE links ADD COLUMN visibility TEXT DEFAULT "public"');
+                $db->exec('ALTER TABLE links ADD COLUMN allowed_users TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Links visibility migration warning: ' . $e->getMessage());
+        }
+        
+        // Migrate existing links table to add notes column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(links)")->fetchAll();
+            $hasNotes = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'notes') {
+                    $hasNotes = true;
+                    break;
+                }
+            }
+            if (!$hasNotes) {
+                $db->exec('ALTER TABLE links ADD COLUMN notes TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Links notes migration warning: ' . $e->getMessage());
+        }
+        
+        // Migrate existing links table to add tooltip column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(links)")->fetchAll();
+            $hasTooltip = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'tooltip') {
+                    $hasTooltip = true;
+                    break;
+                }
+            }
+            if (!$hasTooltip) {
+                $db->exec('ALTER TABLE links ADD COLUMN tooltip TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Links tooltip migration warning: ' . $e->getMessage());
+        }
+        
         // Create settings table
         $db->exec('CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,

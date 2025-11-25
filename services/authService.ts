@@ -22,6 +22,11 @@ export interface AllUser {
   created_at: number;
 }
 
+export interface UserListItem {
+  id: number;
+  username: string;
+}
+
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 export const authService = {
@@ -178,6 +183,21 @@ export const authService = {
     if (!response.ok) {
       throw new Error(data.error || 'Failed to change password');
     }
+  },
+
+  async getUsers(): Promise<UserListItem[]> {
+    const response = await fetch(`${API_BASE}/auth/users`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to fetch users');
+    }
+    
+    return data.users || [];
   }
 };
 

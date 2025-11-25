@@ -28,6 +28,8 @@ switch ($method) {
             handleGetPendingUsers();
         } elseif ($path === '/all') {
             handleGetAllUsers();
+        } elseif ($path === '/users') {
+            handleGetUsers();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -225,6 +227,18 @@ function handleGetAllUsers() {
         $user['is_admin'] = (bool)$user['is_admin'];
         $user['is_approved'] = (bool)$user['is_approved'];
     }
+    
+    sendJSON(['users' => $users]);
+}
+
+function handleGetUsers() {
+    requireAuth(); // Any authenticated user can see the user list for selecting private link recipients
+    
+    $db = getDB();
+    // Return only approved users (id and username) for privacy
+    $stmt = $db->prepare('SELECT id, username FROM users WHERE is_approved = 1 ORDER BY username ASC');
+    $stmt->execute();
+    $users = $stmt->fetchAll();
     
     sendJSON(['users' => $users]);
 }

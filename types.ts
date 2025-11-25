@@ -5,12 +5,18 @@ export interface LinkHealth {
   checkedAt?: number | null;
 }
 
+export type LinkVisibility = 'public' | 'authenticated' | 'private';
+
 export interface Link {
   id: string;
   label: string;
   url: string;
   icon?: string; // Optional emoji or icon identifier
   health?: LinkHealth; // Link health status
+  visibility?: LinkVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
+  allowedUsers?: number[]; // Array of user IDs for private links
+  notes?: string; // Optional notes/description for the link
+  tooltip?: string; // Optional custom hover tooltip text
 }
 
 export interface LinkSection {

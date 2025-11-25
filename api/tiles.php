@@ -89,15 +89,41 @@ function handleGetTiles() {
                 'links' => []
             ];
             
-            // Get links for this section
+            // Get links for this section with visibility filtering
             $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
             $linkStmt->execute([$sectionRow['id']]);
             
             while ($linkRow = $linkStmt->fetch()) {
+                // Filter links based on visibility
+                $visibility = $linkRow['visibility'] ?? 'public';
+                $allowedUsers = $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [];
+                
+                // Check if link should be visible to current user
+                // Admin users can see all links regardless of visibility
+                $isVisible = false;
+                if ($user && $user['is_admin']) {
+                    $isVisible = true; // Admins see everything
+                } elseif ($visibility === 'public') {
+                    $isVisible = true; // Public links visible to everyone
+                } elseif ($visibility === 'authenticated' && $user) {
+                    $isVisible = true; // Authenticated links visible to logged-in users
+                } elseif ($visibility === 'private' && $user) {
+                    // Private links visible only to specific users
+                    $isVisible = in_array($user['id'], $allowedUsers);
+                }
+                
+                if (!$isVisible) {
+                    continue; // Skip this link
+                }
+                
                 $link = [
                     'id' => $linkRow['id'],
                     'label' => $linkRow['label'],
-                    'url' => $linkRow['url']
+                    'url' => $linkRow['url'],
+                    'visibility' => $visibility,
+                    'allowedUsers' => $allowedUsers,
+                    'notes' => $linkRow['notes'] ?? null,
+                    'tooltip' => $linkRow['tooltip'] ?? null
                 ];
                 
                 // Include health data if available
@@ -160,15 +186,39 @@ function handleGetTiles() {
                         'links' => []
                     ];
                     
-                    // Get links for this section
+                    // Get links for this section with visibility filtering
                     $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
                     $linkStmt->execute([$sectionRow['id']]);
                     
                     while ($linkRow = $linkStmt->fetch()) {
+                        // Filter links based on visibility
+                        $visibility = $linkRow['visibility'] ?? 'public';
+                        $allowedUsers = $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [];
+                        
+                        // Check if link should be visible to current user
+                        // Admin users can see all links regardless of visibility
+                        $isVisible = false;
+                        if ($user && $user['is_admin']) {
+                            $isVisible = true; // Admins see everything
+                        } elseif ($visibility === 'public') {
+                            $isVisible = true;
+                        } elseif ($visibility === 'authenticated' && $user) {
+                            $isVisible = true;
+                        } elseif ($visibility === 'private' && $user) {
+                            $isVisible = in_array($user['id'], $allowedUsers);
+                        }
+                        
+                        if (!$isVisible) {
+                            continue;
+                        }
+                        
                         $section['links'][] = [
                             'id' => $linkRow['id'],
                             'label' => $linkRow['label'],
-                            'url' => $linkRow['url']
+                            'url' => $linkRow['url'],
+                            'visibility' => $visibility,
+                            'allowedUsers' => $allowedUsers,
+                            'notes' => $linkRow['notes'] ?? null
                         ];
                     }
                     
@@ -222,15 +272,40 @@ function handleGetTile($tileId) {
             'links' => []
         ];
         
-        // Get links
+        // Get links with visibility filtering
+        $user = getAuthenticatedUser();
         $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
         $linkStmt->execute([$sectionRow['id']]);
         
         while ($linkRow = $linkStmt->fetch()) {
+            // Filter links based on visibility
+            $visibility = $linkRow['visibility'] ?? 'public';
+            $allowedUsers = $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [];
+            
+            // Check if link should be visible to current user
+            // Admin users can see all links regardless of visibility
+            $isVisible = false;
+            if ($user && $user['is_admin']) {
+                $isVisible = true; // Admins see everything
+            } elseif ($visibility === 'public') {
+                $isVisible = true;
+            } elseif ($visibility === 'authenticated' && $user) {
+                $isVisible = true;
+            } elseif ($visibility === 'private' && $user) {
+                $isVisible = in_array($user['id'], $allowedUsers);
+            }
+            
+            if (!$isVisible) {
+                continue;
+            }
+            
             $link = [
                 'id' => $linkRow['id'],
                 'label' => $linkRow['label'],
-                'url' => $linkRow['url']
+                'url' => $linkRow['url'],
+                'visibility' => $visibility,
+                'allowedUsers' => $allowedUsers,
+                'notes' => $linkRow['notes'] ?? null
             ];
             
             // Include health data if available
@@ -293,12 +368,20 @@ function handleCreateTile() {
             if (isset($section['links']) && is_array($section['links'])) {
                 foreach ($section['links'] as $link) {
                     $linkId = $link['id'] ?? uniqid('link_', true);
-                    $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url) VALUES (?, ?, ?, ?)');
+                    $visibility = $link['visibility'] ?? 'public';
+                    $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) 
+                        ? json_encode($link['allowedUsers']) 
+                        : null;
+                    $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
                     $linkStmt->execute([
                         $linkId,
                         $sectionId,
                         $link['label'],
-                        $link['url']
+                        $link['url'],
+                        $visibility,
+                        $allowedUsers,
+                        $link['notes'] ?? null,
+                        $link['tooltip'] ?? null
                     ]);
                 }
             }
@@ -358,12 +441,20 @@ function handleUpdateTile($tileId) {
             if (isset($section['links']) && is_array($section['links'])) {
                 foreach ($section['links'] as $link) {
                     $linkId = $link['id'] ?? uniqid('link_', true);
-                    $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url) VALUES (?, ?, ?, ?)');
+                    $visibility = $link['visibility'] ?? 'public';
+                    $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) 
+                        ? json_encode($link['allowedUsers']) 
+                        : null;
+                    $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
                     $linkStmt->execute([
                         $linkId,
                         $sectionId,
                         $link['label'],
-                        $link['url']
+                        $link['url'],
+                        $visibility,
+                        $allowedUsers,
+                        $link['notes'] ?? null,
+                        $link['tooltip'] ?? null
                     ]);
                 }
             }

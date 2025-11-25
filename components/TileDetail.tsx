@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Tile, Link, LinkSection, COLOR_STYLES, THEME_COLORS, ThemeColor, POPULAR_EMOJIS } from '../types';
+import { Tile, Link, LinkSection, LinkVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, POPULAR_EMOJIS } from '../types';
 import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
+import { authService, UserListItem } from '../services/authService';
 
 interface TileDetailProps {
   tile: Tile;
@@ -33,11 +34,16 @@ export const TileDetail: React.FC<TileDetailProps> = ({
   const [editSections, setEditSections] = useState<LinkSection[]>(tile.sections || []);
 
   // Temporary State for Adding Links (keyed by section ID)
-  const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string }>>({});
+  const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, visibility: LinkVisibility, allowedUsers: number[], notes: string, tooltip: string }>>({});
 
   // State for Editing Links (keyed by link ID)
   const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
-  const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string }>>({});
+  const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, visibility: LinkVisibility, allowedUsers: number[], notes: string, tooltip: string }>>({});
+
+  // Users list for private link selection
+  const [usersList, setUsersList] = useState<UserListItem[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [showUserPicker, setShowUserPicker] = useState<Record<string, boolean>>({});
 
   // View State
   const [searchTerm, setSearchTerm] = useState('');
@@ -84,6 +90,24 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     loadHealth();
   }, [tile.id]);
 
+  // Load users list when editing and authenticated
+  useEffect(() => {
+    if (isEditing && isAuthenticated) {
+      const loadUsers = async () => {
+        try {
+          setLoadingUsers(true);
+          const users = await authService.getUsers();
+          setUsersList(users);
+        } catch (error) {
+          console.error('Failed to load users:', error);
+        } finally {
+          setLoadingUsers(false);
+        }
+      };
+      loadUsers();
+    }
+  }, [isEditing, isAuthenticated]);
+
   const handleSaveChanges = () => {
     const updatedTile: Tile = {
       ...tile,
@@ -128,11 +152,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
   };
 
   // Link Management
-  const updateNewLinkState = (sectionId: string, field: 'label' | 'url', value: string) => {
+  const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'visibility' | 'allowedUsers' | 'notes' | 'tooltip', value: string | LinkVisibility | number[]) => {
       setNewLinkState(prev => ({
           ...prev,
-          [sectionId]: { ...prev[sectionId], [field]: value }
+          [sectionId]: { 
+              ...(prev[sectionId] || { label: '', url: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '' }),
+              [field]: value 
+          }
       }));
+  };
+
+  const toggleUserSelection = (sectionId: string, userId: number) => {
+      const currentUsers = newLinkState[sectionId]?.allowedUsers || [];
+      const newUsers = currentUsers.includes(userId)
+          ? currentUsers.filter(id => id !== userId)
+          : [...currentUsers, userId];
+      updateNewLinkState(sectionId, 'allowedUsers', newUsers);
   };
 
   const handleAddLinkToSection = (sectionId: string) => {
@@ -142,7 +177,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
       const newLink: Link = {
           id: generateId(),
           label: state.label,
-          url: state.url.startsWith('http') ? state.url : `https://${state.url}`
+          url: state.url.startsWith('http') ? state.url : `https://${state.url}`,
+          visibility: state.visibility || 'public',
+          allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
+          notes: state.notes?.trim() || undefined,
+          tooltip: state.tooltip?.trim() || undefined
       };
 
       setEditSections(editSections.map(s => {
@@ -153,7 +192,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
       }));
 
       // Clear form
-      setNewLinkState(prev => ({ ...prev, [sectionId]: { label: '', url: '' } }));
+      setNewLinkState(prev => ({ ...prev, [sectionId]: { label: '', url: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '' } }));
+      setShowUserPicker(prev => ({ ...prev, [sectionId]: false }));
   };
 
   const handleRemoveLinkFromSection = (sectionId: string, linkId: string) => {
@@ -168,8 +208,16 @@ export const TileDetail: React.FC<TileDetailProps> = ({
   const handleStartEditLink = (link: Link) => {
       setEditingLinkId(link.id);
       setEditLinkState({
-          [link.id]: { label: link.label, url: link.url }
+          [link.id]: { 
+              label: link.label, 
+              url: link.url,
+              visibility: link.visibility || 'public',
+              allowedUsers: link.allowedUsers || [],
+              notes: link.notes || '',
+              tooltip: link.tooltip || ''
+          }
       });
+      setShowUserPicker(prev => ({ ...prev, [link.id]: false }));
   };
 
   const handleCancelEditLink = () => {
@@ -188,7 +236,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
               ...s,
               links: s.links.map(l => 
                   l.id === linkId 
-                      ? { ...l, label: state.label, url: state.url.startsWith('http') ? state.url : `https://${state.url}` }
+                      ? { 
+                          ...l, 
+                          label: state.label, 
+                          url: state.url.startsWith('http') ? state.url : `https://${state.url}`,
+                          visibility: state.visibility || 'public',
+                          allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
+                          notes: state.notes?.trim() || undefined,
+                          tooltip: state.tooltip?.trim() || undefined
+                      }
                       : l
               )
           };
@@ -196,13 +252,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
       setEditingLinkId(null);
       setEditLinkState({});
+      setShowUserPicker(prev => ({ ...prev, [linkId]: false }));
   };
 
-  const updateEditLinkState = (linkId: string, field: 'label' | 'url', value: string) => {
+  const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'visibility' | 'allowedUsers' | 'notes' | 'tooltip', value: string | LinkVisibility | number[]) => {
       setEditLinkState(prev => ({
           ...prev,
           [linkId]: { ...prev[linkId], [field]: value }
       }));
+  };
+
+  const toggleEditUserSelection = (linkId: string, userId: number) => {
+      const currentUsers = editLinkState[linkId]?.allowedUsers || [];
+      const newUsers = currentUsers.includes(userId)
+          ? currentUsers.filter(id => id !== userId)
+          : [...currentUsers, userId];
+      updateEditLinkState(linkId, 'allowedUsers', newUsers);
   };
 
   const handleMoveLink = (sectionId: string, linkId: string, direction: 'up' | 'down') => {
@@ -492,10 +557,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         <div 
                                             key={link.id}
                                             className={`
-                                                group flex items-center gap-3 p-3 pr-2 rounded-xl bg-white dark:bg-slate-800 border ${styles.border}
+                                                group relative flex items-center gap-3 p-3 pr-2 rounded-xl bg-white dark:bg-slate-800 border ${styles.border}
                                                 ${styles.hoverBorder} hover:bg-slate-50 dark:hover:bg-slate-750 transition-all duration-200 shadow-sm hover:shadow-md
                                                 ${isBroken ? 'border-red-300 dark:border-red-500/50' : ''}
                                             `}
+                                            title={link.tooltip || link.label}
                                         >
                                             {/* Health Indicator */}
                                             <div className="flex flex-col items-center gap-1">
@@ -519,6 +585,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     <span className="truncate max-w-[150px]">
                                                         {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
                                                     </span>
+                                                    {link.visibility && link.visibility !== 'public' && (
+                                                        <span 
+                                                            className={`text-xs px-1.5 py-0.5 rounded ${
+                                                                link.visibility === 'authenticated' 
+                                                                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' 
+                                                                    : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
+                                                            }`}
+                                                            title={link.visibility === 'authenticated' ? 'Authenticated users only' : 'Private - specific users only'}
+                                                        >
+                                                            {link.visibility === 'authenticated' ? '🔒' : '🔐'}
+                                                        </span>
+                                                    )}
                                                     {isBroken && (
                                                         <span className="text-red-500 text-xs">• Broken</span>
                                                     )}
@@ -787,6 +865,98 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     className="flex-1 min-w-0 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors font-mono"
                                                 />
                                             </div>
+                                            <div className="flex gap-2 items-center">
+                                                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Visibility:</label>
+                                                <select
+                                                    value={editLinkState[link.id]?.visibility || 'public'}
+                                                    onChange={(e) => updateEditLinkState(link.id, 'visibility', e.target.value as LinkVisibility)}
+                                                    className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors"
+                                                >
+                                                    <option value="public">Public (visible to everyone)</option>
+                                                    <option value="authenticated">Authenticated (logged-in users only)</option>
+                                                    <option value="private">Private (specific users only)</option>
+                                                </select>
+                                            </div>
+                                            <div className="flex gap-2 items-start">
+                                                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap pt-2">Notes:</label>
+                                                <textarea
+                                                    value={editLinkState[link.id]?.notes || ''}
+                                                    onChange={(e) => updateEditLinkState(link.id, 'notes', e.target.value)}
+                                                    placeholder="Add notes or description for this link..."
+                                                    rows={2}
+                                                    className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors resize-none"
+                                                />
+                                            </div>
+                                            <div className="flex gap-2 items-center">
+                                                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Hover Tooltip:</label>
+                                                <input
+                                                    type="text"
+                                                    value={editLinkState[link.id]?.tooltip || ''}
+                                                    onChange={(e) => updateEditLinkState(link.id, 'tooltip', e.target.value)}
+                                                    placeholder="Text shown on hover..."
+                                                    className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors"
+                                                />
+                                            </div>
+                                            {editLinkState[link.id]?.visibility === 'private' && (
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center justify-between">
+                                                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Select Users:</label>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setShowUserPicker(prev => ({ ...prev, [link.id]: !prev[link.id] }))}
+                                                            className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                                                        >
+                                                            {showUserPicker[link.id] ? 'Hide' : 'Show'} Users
+                                                        </button>
+                                                    </div>
+                                                    {editLinkState[link.id]?.allowedUsers && editLinkState[link.id]!.allowedUsers.length > 0 && (
+                                                        <div className="flex flex-wrap gap-1.5">
+                                                            {editLinkState[link.id]!.allowedUsers.map(userId => {
+                                                                const user = usersList.find(u => u.id === userId);
+                                                                return (
+                                                                    <span
+                                                                        key={userId}
+                                                                        className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 rounded text-xs"
+                                                                    >
+                                                                        {user?.username || `User ${userId}`}
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => toggleEditUserSelection(link.id, userId)}
+                                                                            className="hover:text-red-600 dark:hover:text-red-400"
+                                                                        >
+                                                                            ×
+                                                                        </button>
+                                                                    </span>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                    {showUserPicker[link.id] && (
+                                                        <div className="max-h-48 overflow-y-auto border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
+                                                            {loadingUsers ? (
+                                                                <div className="text-xs text-slate-500 text-center py-2">Loading users...</div>
+                                                            ) : usersList.length === 0 ? (
+                                                                <div className="text-xs text-slate-500 text-center py-2">No users available</div>
+                                                            ) : (
+                                                                usersList.map(user => (
+                                                                    <label
+                                                                        key={user.id}
+                                                                        className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700 rounded cursor-pointer"
+                                                                    >
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={editLinkState[link.id]?.allowedUsers?.includes(user.id) || false}
+                                                                            onChange={() => toggleEditUserSelection(link.id, user.id)}
+                                                                            className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                                                                        />
+                                                                        <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
+                                                                    </label>
+                                                                ))
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                             <div className="flex gap-2 justify-end">
                                                 <button
                                                     onClick={handleCancelEditLink}
@@ -831,7 +1001,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             </div>
                                             <div className="w-8 h-8 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sm">🔗</div>
                                             <div className="flex-1 min-w-0">
-                                                <div className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{link.label}</div>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{link.label}</div>
+                                                    {link.visibility && link.visibility !== 'public' && (
+                                                        <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${
+                                                            link.visibility === 'authenticated' 
+                                                                ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' 
+                                                                : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
+                                                        }`}>
+                                                            {link.visibility === 'authenticated' ? '🔒' : '🔐'}
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 <div className="text-xs text-slate-500 truncate font-mono">{link.url}</div>
                                             </div>
                                             <div className="flex gap-1">
@@ -860,30 +1041,124 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                              </div>
 
                              {/* Inline Add Form */}
-                             <div className="flex gap-2 items-center bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700/50">
-                                 <input
-                                     type="text"
-                                     value={newLinkState[section.id]?.label || ''}
-                                     onChange={(e) => updateNewLinkState(section.id, 'label', e.target.value)}
-                                     placeholder="Link Label"
-                                     className="flex-1 min-w-0 bg-transparent border-b border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white px-2 py-1 focus:border-brand-500 focus:outline-none transition-colors"
-                                 />
-                                 <input
-                                     type="text"
-                                     value={newLinkState[section.id]?.url || ''}
-                                     onChange={(e) => updateNewLinkState(section.id, 'url', e.target.value)}
-                                     placeholder="https://..."
-                                     className="flex-1 min-w-0 bg-transparent border-b border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white px-2 py-1 focus:border-brand-500 focus:outline-none transition-colors font-mono"
-                                 />
-                                 <button
-                                    onClick={() => handleAddLinkToSection(section.id)}
-                                    disabled={!newLinkState[section.id]?.label || !newLinkState[section.id]?.url}
-                                    className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white p-2 rounded-md transition-colors"
-                                 >
-                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                        <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-                                    </svg>
-                                 </button>
+                             <div className="space-y-2 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700/50">
+                                 <div className="flex gap-2 items-center">
+                                     <input
+                                         type="text"
+                                         value={newLinkState[section.id]?.label || ''}
+                                         onChange={(e) => updateNewLinkState(section.id, 'label', e.target.value)}
+                                         placeholder="Link Label"
+                                         className="flex-1 min-w-0 bg-transparent border-b border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white px-2 py-1 focus:border-brand-500 focus:outline-none transition-colors"
+                                     />
+                                     <input
+                                         type="text"
+                                         value={newLinkState[section.id]?.url || ''}
+                                         onChange={(e) => updateNewLinkState(section.id, 'url', e.target.value)}
+                                         placeholder="https://..."
+                                         className="flex-1 min-w-0 bg-transparent border-b border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white px-2 py-1 focus:border-brand-500 focus:outline-none transition-colors font-mono"
+                                     />
+                                     <button
+                                        onClick={() => handleAddLinkToSection(section.id)}
+                                        disabled={!newLinkState[section.id]?.label || !newLinkState[section.id]?.url}
+                                        className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white p-2 rounded-md transition-colors"
+                                     >
+                                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                            <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                                        </svg>
+                                     </button>
+                                 </div>
+                                 <div className="flex gap-2 items-start">
+                                     <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap pt-1.5">Notes:</label>
+                                     <textarea
+                                         value={newLinkState[section.id]?.notes || ''}
+                                         onChange={(e) => updateNewLinkState(section.id, 'notes', e.target.value)}
+                                         placeholder="Add notes or description for this link..."
+                                         rows={2}
+                                         className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors resize-none"
+                                     />
+                                 </div>
+                                 <div className="flex gap-2 items-center">
+                                     <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Hover Tooltip:</label>
+                                     <input
+                                         type="text"
+                                         value={newLinkState[section.id]?.tooltip || ''}
+                                         onChange={(e) => updateNewLinkState(section.id, 'tooltip', e.target.value)}
+                                         placeholder="Text shown on hover..."
+                                         className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors"
+                                     />
+                                 </div>
+                                 <div className="flex gap-2 items-center">
+                                     <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Visibility:</label>
+                                     <select
+                                         value={newLinkState[section.id]?.visibility || 'public'}
+                                         onChange={(e) => updateNewLinkState(section.id, 'visibility', e.target.value as LinkVisibility)}
+                                         className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors"
+                                     >
+                                         <option value="public">Public (visible to everyone)</option>
+                                         <option value="authenticated">Authenticated (logged-in users only)</option>
+                                         <option value="private">Private (specific users only)</option>
+                                     </select>
+                                 </div>
+                                 {(newLinkState[section.id]?.visibility || 'public') === 'private' && (
+                                     <div className="space-y-2">
+                                         <div className="flex items-center justify-between">
+                                             <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Select Users:</label>
+                                             <button
+                                                 type="button"
+                                                 onClick={() => setShowUserPicker(prev => ({ ...prev, [section.id]: !prev[section.id] }))}
+                                                 className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                                             >
+                                                 {showUserPicker[section.id] ? 'Hide' : 'Show'} Users
+                                             </button>
+                                         </div>
+                                         {newLinkState[section.id]?.allowedUsers && newLinkState[section.id]!.allowedUsers.length > 0 && (
+                                             <div className="flex flex-wrap gap-1.5">
+                                                 {newLinkState[section.id]!.allowedUsers.map(userId => {
+                                                     const user = usersList.find(u => u.id === userId);
+                                                     return (
+                                                         <span
+                                                             key={userId}
+                                                             className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 rounded text-xs"
+                                                         >
+                                                             {user?.username || `User ${userId}`}
+                                                             <button
+                                                                 type="button"
+                                                                 onClick={() => toggleUserSelection(section.id, userId)}
+                                                                 className="hover:text-red-600 dark:hover:text-red-400"
+                                                             >
+                                                                 ×
+                                                             </button>
+                                                         </span>
+                                                     );
+                                                 })}
+                                             </div>
+                                         )}
+                                         {showUserPicker[section.id] && (
+                                             <div className="max-h-48 overflow-y-auto border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
+                                                 {loadingUsers ? (
+                                                     <div className="text-xs text-slate-500 text-center py-2">Loading users...</div>
+                                                 ) : usersList.length === 0 ? (
+                                                     <div className="text-xs text-slate-500 text-center py-2">No users available</div>
+                                                 ) : (
+                                                     usersList.map(user => (
+                                                         <label
+                                                             key={user.id}
+                                                             className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700 rounded cursor-pointer"
+                                                         >
+                                                             <input
+                                                                 type="checkbox"
+                                                                 checked={newLinkState[section.id]?.allowedUsers?.includes(user.id) || false}
+                                                                 onChange={() => toggleUserSelection(section.id, user.id)}
+                                                                 className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                                                             />
+                                                             <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
+                                                         </label>
+                                                     ))
+                                                 )}
+                                             </div>
+                                         )}
+                                     </div>
+                                 )}
                              </div>
                         </div>
                     </div>
