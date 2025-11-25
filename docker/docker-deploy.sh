@@ -2,8 +2,13 @@
 
 # LinkNest Docker Deployment Script
 # This script builds and deploys LinkNest as a Docker container on port 8000
+# Run this script from the docker/ directory
 
 set -e
+
+# Get the project root directory (parent of docker/)
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$PROJECT_ROOT"
 
 echo "🚀 Starting LinkNest Docker Deployment..."
 echo ""
@@ -45,21 +50,21 @@ fi
 
 # Stop existing container if running
 echo "🛑 Stopping existing containers (if any)..."
-docker compose down 2>/dev/null || true
+docker compose -f docker/docker-compose.yml down 2>/dev/null || true
 
 # Build and start the container
 echo "🔨 Building Docker image..."
-docker compose build
+docker compose -f docker/docker-compose.yml build
 
 echo "🚀 Starting container on port 8000..."
-docker compose up -d
+docker compose -f docker/docker-compose.yml up -d
 
 # Wait for container to be ready
 echo "⏳ Waiting for container to be ready..."
 sleep 5
 
 # Check if container is running
-if docker compose ps | grep -q "Up"; then
+if docker compose -f docker/docker-compose.yml ps | grep -q "Up"; then
     echo ""
     echo "✅ LinkNest is now running!"
     echo ""
@@ -72,13 +77,13 @@ if docker compose ps | grep -q "Up"; then
     echo "⚠️  IMPORTANT: Change the admin password after first login!"
     echo ""
     echo "📊 Useful commands:"
-    echo "   View logs:        docker compose logs -f"
-    echo "   Stop container:   docker compose down"
-    echo "   Restart:          docker compose restart"
-    echo "   View status:      docker compose ps"
+    echo "   View logs:        docker compose -f docker/docker-compose.yml logs -f"
+    echo "   Stop container:   docker compose -f docker/docker-compose.yml down"
+    echo "   Restart:          docker compose -f docker/docker-compose.yml restart"
+    echo "   View status:      docker compose -f docker/docker-compose.yml ps"
     echo ""
 else
-    echo "❌ Container failed to start. Check logs with: docker compose logs"
+    echo "❌ Container failed to start. Check logs with: docker compose -f docker/docker-compose.yml logs"
     exit 1
 fi
 

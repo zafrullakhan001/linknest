@@ -1,9 +1,13 @@
 @echo off
 REM LinkNest Docker Deployment Script for Windows
 REM This script builds and deploys LinkNest as a Docker container on port 8000
+REM Run this script from the docker/ directory
 
 echo 🚀 Starting LinkNest Docker Deployment...
 echo.
+
+REM Get the project root directory (parent of docker/)
+cd /d "%~dp0\.."
 
 REM Check if Docker is installed
 where docker >nul 2>&1
@@ -50,21 +54,21 @@ if not exist "uploads\.htaccess" (
 
 REM Stop existing container if running
 echo 🛑 Stopping existing containers (if any)...
-%COMPOSE_CMD% down 2>nul
+%COMPOSE_CMD% -f docker\docker-compose.yml down 2>nul
 
 REM Build and start the container
 echo 🔨 Building Docker image...
-%COMPOSE_CMD% build
+%COMPOSE_CMD% -f docker\docker-compose.yml build
 
 echo 🚀 Starting container on port 8000...
-%COMPOSE_CMD% up -d
+%COMPOSE_CMD% -f docker\docker-compose.yml up -d
 
 REM Wait for container to be ready
 echo ⏳ Waiting for container to be ready...
 timeout /t 5 /nobreak >nul
 
 REM Check if container is running
-%COMPOSE_CMD% ps | findstr "Up" >nul
+%COMPOSE_CMD% -f docker\docker-compose.yml ps | findstr "Up" >nul
 if %ERRORLEVEL% EQU 0 (
     echo.
     echo ✅ LinkNest is now running!
@@ -78,13 +82,13 @@ if %ERRORLEVEL% EQU 0 (
     echo ⚠️  IMPORTANT: Change the admin password after first login!
     echo.
     echo 📊 Useful commands:
-    echo    View logs:        %COMPOSE_CMD% logs -f
-    echo    Stop container:   %COMPOSE_CMD% down
-    echo    Restart:          %COMPOSE_CMD% restart
-    echo    View status:      %COMPOSE_CMD% ps
+    echo    View logs:        %COMPOSE_CMD% -f docker\docker-compose.yml logs -f
+    echo    Stop container:   %COMPOSE_CMD% -f docker\docker-compose.yml down
+    echo    Restart:          %COMPOSE_CMD% -f docker\docker-compose.yml restart
+    echo    View status:      %COMPOSE_CMD% -f docker\docker-compose.yml ps
     echo.
 ) else (
-    echo ❌ Container failed to start. Check logs with: %COMPOSE_CMD% logs
+    echo ❌ Container failed to start. Check logs with: %COMPOSE_CMD% -f docker\docker-compose.yml logs
     exit /b 1
 )
 

@@ -51,8 +51,8 @@ function handleGetArrangement() {
 }
 
 function handleSaveArrangement() {
-    // Require authentication to save global arrangement
-    $user = requireAuth();
+    // Global arrangement - no authentication required
+    // $user = requireAuth(); // Allow guests to update arrangement
     $data = getJSONInput();
     
     if (!isset($data['arrangement']) || !is_array($data['arrangement'])) {
@@ -134,10 +134,43 @@ function handleSaveArrangement() {
             }
         }
         
+        // Ensure all positions are sequential and unique based on the saved arrangement
+        // This prevents any gaps or duplicates that could cause ordering issues
+        $updatePositionStmt = $db->prepare('UPDATE tiles SET position = ? WHERE id = ?');
+        $savedTileIds = [];
+        
+        // First, collect all tile IDs in the order they were saved
+        foreach ($data['arrangement'] as $item) {
+            if (isset($item['tileId'])) {
+                $savedTileIds[] = $item['tileId'];
+            }
+        }
+        
+        // Assign sequential positions (0, 1, 2, ...) based on saved order
+        foreach ($savedTileIds as $index => $tileId) {
+            $updatePositionStmt->execute([$index, $tileId]);
+        }
+        
+        // Handle any tiles that weren't in the arrangement (shouldn't happen, but safety check)
+        $allTilesStmt = $db->prepare('SELECT id FROM tiles');
+        $allTilesStmt->execute();
+        $allTiles = $allTilesStmt->fetchAll();
+        $savedTileIdsSet = array_flip($savedTileIds);
+        
+        $nextPosition = count($savedTileIds);
+        foreach ($allTiles as $tileRow) {
+            if (!isset($savedTileIdsSet[$tileRow['id']])) {
+                // Tile wasn't in arrangement, assign it a position after all saved tiles
+                $updatePositionStmt->execute([$nextPosition, $tileRow['id']]);
+                $nextPosition++;
+            }
+        }
+        
         $db->commit();
         
         // Log success
         error_log('Successfully saved ' . $count . ' tile arrangements (and updated tiles.position)');
+        error_log('Normalized all tile positions to be sequential (0, 1, 2, ...)');
         
         sendJSON(['success' => true, 'count' => $count]);
         

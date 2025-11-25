@@ -6,10 +6,10 @@ This guide explains how to create a deployment bundle for users who don't have a
 
 ### Step 1: Run the Bundle Script
 
-Double-click `bundle.bat` or run it from Command Prompt:
+Double-click `scripts/bundle.bat` or run it from Command Prompt:
 
 ```cmd
-bundle.bat
+scripts\bundle.bat
 ```
 
 This will:
@@ -32,13 +32,13 @@ The zip file contains:
 ### Step 1: Make Script Executable
 
 ```bash
-chmod +x bundle.sh
+chmod +x scripts/bundle.sh
 ```
 
 ### Step 2: Run the Bundle Script
 
 ```bash
-./bundle.sh
+./scripts/bundle.sh
 ```
 
 This creates the same zip file as the Windows version.
@@ -57,12 +57,12 @@ This creates the same zip file as the Windows version.
 - Docker configuration
 
 ✅ **Deployment Scripts**
-- deploy.bat (Windows)
-- deploy.sh (Linux/Mac)
+- scripts/deploy.bat (Windows)
+- scripts/deploy.sh (Linux/Mac)
 
 ✅ **Documentation**
-- README_DOCKER.md
-- DEPLOYMENT_INSTRUCTIONS.md
+- docker/README_DOCKER.md
+- docs/DEPLOYMENT_INSTRUCTIONS.md
 
 ❌ **Excluded** (to keep bundle small)
 - node_modules (will be installed during Docker build)
@@ -98,16 +98,19 @@ linknest-deploy-YYYYMMDD-HHMMSS.zip
 │   ├── settingsService.ts
 │   └── storageService.ts
 ├── docker/
+│   ├── Dockerfile
+│   ├── docker-compose.yml
+│   ├── docker-compose.prod.yml
 │   ├── apache-config.conf
 │   └── .htaccess
+├── scripts/
+│   ├── deploy.bat
+│   └── deploy.sh
+├── docs/
+│   └── DEPLOYMENT_INSTRUCTIONS.md
 ├── data/ (empty)
 ├── uploads/ (empty, with .htaccess)
 ├── App.tsx
-├── Dockerfile
-├── docker-compose.yml
-├── docker-compose.prod.yml
-├── deploy.bat
-├── deploy.sh
 ├── index.html
 ├── index.tsx
 ├── package.json
@@ -122,10 +125,10 @@ linknest-deploy-YYYYMMDD-HHMMSS.zip
 
 ## Distribution
 
-1. **Create the bundle** using `bundle.bat` or `bundle.sh`
-2. **Test the bundle** by extracting it and running `deploy.bat` or `deploy.sh`
+1. **Create the bundle** using `scripts/bundle.bat` or `scripts/bundle.sh`
+2. **Test the bundle** by extracting it and running `scripts/deploy.bat` or `scripts/deploy.sh`
 3. **Distribute** the zip file to users
-4. **Users extract** and follow `DEPLOYMENT_INSTRUCTIONS.md`
+4. **Users extract** and follow `docs/DEPLOYMENT_INSTRUCTIONS.md`
 
 ## Notes
 

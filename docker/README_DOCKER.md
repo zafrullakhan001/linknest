@@ -4,11 +4,12 @@ This guide explains how to deploy LinkNest using Docker on Ubuntu.
 
 ## Quick Start (Single Command)
 
-Run the deployment script:
+Run the deployment script from the docker directory:
 
 ```bash
-chmod +x deploy.sh
-./deploy.sh
+cd docker
+chmod +x docker-deploy.sh
+./docker-deploy.sh
 ```
 
 This script will:
@@ -51,7 +52,7 @@ chmod 755 data uploads
 ### Step 4: Build and Run
 
 ```bash
-docker compose up -d --build
+docker compose -f docker/docker-compose.yml up -d --build
 ```
 
 ### Step 5: Access Application
@@ -64,27 +65,27 @@ Open your browser and navigate to:
 
 ### View Logs
 ```bash
-docker compose logs -f
+docker compose -f docker/docker-compose.yml logs -f
 ```
 
 ### Stop Application
 ```bash
-docker compose down
+docker compose -f docker/docker-compose.yml down
 ```
 
 ### Restart Application
 ```bash
-docker compose restart
+docker compose -f docker/docker-compose.yml restart
 ```
 
 ### Rebuild After Changes
 ```bash
-docker compose up -d --build
+docker compose -f docker/docker-compose.yml up -d --build
 ```
 
 ### View Container Status
 ```bash
-docker compose ps
+docker compose -f docker/docker-compose.yml ps
 ```
 
 ### Access Container Shell
@@ -104,7 +105,7 @@ docker exec -it linknest bash
 For production, use the production compose file:
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker/docker-compose.prod.yml up -d --build
 ```
 
 This will:
@@ -132,7 +133,7 @@ These persist even if the container is removed.
 
 ### Container won't start
 ```bash
-docker compose logs
+docker compose -f docker/docker-compose.yml logs
 ```
 
 ### Permission issues
@@ -142,7 +143,7 @@ chmod -R 755 data uploads
 ```
 
 ### Port already in use
-Edit `docker-compose.yml` and change the port mapping:
+Edit `docker/docker-compose.yml` and change the port mapping:
 ```yaml
 ports:
   - "8000:80"  # Change 8000 to any available port (e.g., "8001:80")
@@ -150,8 +151,8 @@ ports:
 
 ### Rebuild after code changes
 ```bash
-docker compose down
-docker compose up -d --build
+docker compose -f docker/docker-compose.yml down
+docker compose -f docker/docker-compose.yml up -d --build
 ```
 
 ## Architecture
@@ -188,7 +189,7 @@ To update the application:
 
 ```bash
 git pull  # If using git
-docker compose down
-docker compose up -d --build
+docker compose -f docker/docker-compose.yml down
+docker compose -f docker/docker-compose.yml up -d --build
 ```
 

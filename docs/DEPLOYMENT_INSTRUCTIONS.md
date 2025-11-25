@@ -23,7 +23,7 @@ This document explains how to deploy LinkNest from a bundled zip file.
 
 2. **Run the Deployment Script**
    ```
-   deploy.bat
+   scripts\deploy.bat
    ```
 
 3. **Wait for Completion**
@@ -79,12 +79,12 @@ This document explains how to deploy LinkNest from a bundled zip file.
 
 2. **Make Script Executable**
    ```bash
-   chmod +x deploy.sh
+   chmod +x scripts/deploy.sh
    ```
 
 3. **Run the Deployment Script**
    ```bash
-   ./deploy.sh
+   ./scripts/deploy.sh
    ```
 
 4. **Access the Application**

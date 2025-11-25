@@ -27,6 +27,7 @@ interface CategoryProps {
   onMoveDown?: () => void;
   children: React.ReactNode;
   onDeleteCategory?: (categoryName: string) => void;
+  onSaveCategoryOrder?: () => void;
 }
 
 const Category: React.FC<CategoryProps> = ({
@@ -39,7 +40,8 @@ const Category: React.FC<CategoryProps> = ({
   onMoveUp,
   onMoveDown,
   children,
-  onDeleteCategory
+  onDeleteCategory,
+  onSaveCategoryOrder
 }) => {
   return (
     <div
@@ -97,6 +99,25 @@ const Category: React.FC<CategoryProps> = ({
           {tileCount}
         </span>
         <div className="h-px bg-slate-200 dark:border-slate-700 flex-1"></div>
+        
+        {/* Save Order Button (visible to everyone) */}
+        {onSaveCategoryOrder && (
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onSaveCategoryOrder();
+            }}
+            className="opacity-0 group-hover/category:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 rounded-md transition-all ml-2 flex items-center gap-1"
+            title="Save tile order"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+            </svg>
+            <span className="text-xs font-medium hidden sm:inline">Save Order</span>
+          </button>
+        )}
+
         {isAuthenticated && (
           <>
             {onDeleteCategory && (
@@ -186,8 +207,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
         flex flex-col h-full min-h-[140px] cursor-pointer
       `}
     >
-      {/* Arrow Buttons for Reordering - Only visible for authenticated users */}
-      {isAuthenticated && (onMoveLeft || onMoveRight) && (
+      {/* Arrow Buttons for Reordering - Visible for all users */}
+      {(onMoveLeft || onMoveRight) && (
         <div className="absolute top-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 z-10">
           <button
             onClick={(e) => {
@@ -372,6 +393,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
   // Category order state
   const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Load global category arrangement on mount (works for all users)
   useEffect(() => {
@@ -379,7 +401,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
       try {
         const arrangement = await getCategoryArrangement();
         if (arrangement.length > 0) {
-          const ordered = arrangement.sort((a, b) => a.position - b.position).map(c => c.categoryName);
+          // Read categories in saved order (already sorted by position from API)
+          const ordered = arrangement.map(c => c.categoryName);
           setCategoryOrder(ordered);
         } else {
           // Reset to empty if no arrangement found
@@ -394,28 +417,42 @@ export const TileGrid: React.FC<TileGridProps> = ({
     loadCategoryOrder();
   }, []); // Load once on mount, not dependent on authentication
 
-  // Get unique existing groups for suggestions
+  // Get unique existing groups for suggestions (preserve order from tiles)
   const existingGroups = useMemo(() => {
-    return Array.from(new Set(tiles.map(t => t.group || 'General'))).sort();
+    const groups = new Set<string>();
+    tiles.forEach(t => groups.add(t.group || 'General'));
+    return Array.from(groups);
   }, [tiles]);
 
-  // Get all available categories (including empty ones from categoryOrder)
+  // Get all available categories (preserve order from categoryOrder and tiles)
   const allCategories = useMemo(() => {
-    const categoriesFromTiles = Array.from(new Set(tiles.map(t => t.group || 'General')));
-    const allCats = new Set(categoriesFromTiles);
+    const categoriesFromTiles = new Set<string>();
+    tiles.forEach(t => categoriesFromTiles.add(t.group || 'General'));
     
-    // Add categories from categoryOrder (including empty ones)
+    // Start with saved category order
+    const result: string[] = [];
+    const seen = new Set<string>();
+    
+    // Add categories from saved order first
     if (categoryOrder.length > 0) {
-      categoryOrder.forEach(cat => allCats.add(cat));
+      categoryOrder.forEach(cat => {
+        if (categoriesFromTiles.has(cat) && !seen.has(cat)) {
+          result.push(cat);
+          seen.add(cat);
+        }
+      });
     }
     
-    // Sort: ordered categories first, then others alphabetically
-    const ordered = categoryOrder.length > 0
-      ? categoryOrder.filter(cat => allCats.has(cat))
-      : [];
-    const unordered = Array.from(allCats).filter(cat => !ordered.includes(cat)).sort();
+    // Add any remaining categories from tiles in their order of appearance
+    tiles.forEach(t => {
+      const cat = t.group || 'General';
+      if (!seen.has(cat)) {
+        result.push(cat);
+        seen.add(cat);
+      }
+    });
     
-    return [...ordered, ...unordered];
+    return result;
   }, [tiles, categoryOrder, isAuthenticated]);
 
   // Filter and Group Tiles - Global search across all content
@@ -449,26 +486,22 @@ export const TileGrid: React.FC<TileGridProps> = ({
       
       // Apply global category order if available (works for all users)
       if (categoryOrder.length > 0) {
-        const orderedGroups: Record<string, Tile[]> = {};
-        const unorderedGroups: Record<string, Tile[]> = {};
+        const finalGroups: Record<string, Tile[]> = {};
+        const seenCategories = new Set<string>();
         
-        // Separate ordered and unordered categories
-        Object.keys(groups).forEach(category => {
-          if (categoryOrder.includes(category)) {
-            orderedGroups[category] = groups[category];
-          } else {
-            unorderedGroups[category] = groups[category];
+        // Add categories in saved order first
+        categoryOrder.forEach(category => {
+          if (groups[category]) {
+            finalGroups[category] = groups[category];
+            seenCategories.add(category);
           }
         });
         
-        // Merge in order: ordered categories first (including empty ones), then unordered (alphabetically)
-        const finalGroups: Record<string, Tile[]> = {};
-        categoryOrder.forEach(category => {
-          // Include category even if it has no tiles (empty category)
-          finalGroups[category] = orderedGroups[category] || [];
-        });
-        Object.keys(unorderedGroups).sort().forEach(category => {
-          finalGroups[category] = unorderedGroups[category];
+        // Add any remaining categories in their order of appearance from tiles
+        Object.keys(groups).forEach(category => {
+          if (!seenCategories.has(category)) {
+            finalGroups[category] = groups[category];
+          }
         });
         
         return finalGroups;
@@ -650,14 +683,23 @@ export const TileGrid: React.FC<TileGridProps> = ({
         const arrangement: Array<{ tileId: string; position: number; groupName: string }> = [];
         let globalPosition = 0;
         
-        // Use categoryOrder if available, otherwise use alphabetical
-        const orderedCategories = categoryOrder.length > 0 
-          ? categoryOrder.filter(cat => grouped[cat])
-          : Object.keys(grouped).sort();
+        // Use categoryOrder if available, otherwise use order from tiles
+        const orderedCategories: string[] = [];
+        const seenCats = new Set<string>();
         
-        // Add any categories not in categoryOrder
+        if (categoryOrder.length > 0) {
+          // Add categories from saved order first
+          categoryOrder.forEach(cat => {
+            if (grouped[cat] && !seenCats.has(cat)) {
+              orderedCategories.push(cat);
+              seenCats.add(cat);
+            }
+          });
+        }
+        
+        // Add any remaining categories in their order of appearance
         Object.keys(grouped).forEach(cat => {
-          if (!orderedCategories.includes(cat)) {
+          if (!seenCats.has(cat)) {
             orderedCategories.push(cat);
           }
         });
@@ -690,22 +732,31 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const handleMoveCategory = useCallback(async (categoryName: string, direction: 'up' | 'down') => {
     if (!isAuthenticated) return;
 
-    // Get all current categories from tiles
-    const allCategoriesFromTiles = Array.from(new Set(tiles.map(t => t.group || 'General')));
+    // Get all current categories from tiles (preserve order)
+    const allCategoriesFromTiles: string[] = [];
+    const seenCats = new Set<string>();
+    tiles.forEach(t => {
+      const cat = t.group || 'General';
+      if (!seenCats.has(cat)) {
+        allCategoriesFromTiles.push(cat);
+        seenCats.add(cat);
+      }
+    });
     
-    // Build current order: use categoryOrder if available, otherwise use alphabetical
+    // Build current order: use categoryOrder if available, otherwise use order from tiles
     let currentCategories: string[];
     if (categoryOrder.length > 0) {
       // Start with saved order, filter to only include existing categories
       currentCategories = categoryOrder.filter(cat => allCategoriesFromTiles.includes(cat));
-      // Add any new categories not in the saved order (alphabetically)
-      const newCategories = allCategoriesFromTiles
-        .filter(cat => !currentCategories.includes(cat))
-        .sort();
-      currentCategories = [...currentCategories, ...newCategories];
+      // Add any new categories not in the saved order (in their order of appearance)
+      allCategoriesFromTiles.forEach(cat => {
+        if (!currentCategories.includes(cat)) {
+          currentCategories.push(cat);
+        }
+      });
     } else {
-      // No saved order, use alphabetical
-      currentCategories = [...allCategoriesFromTiles].sort();
+      // No saved order, use order from tiles
+      currentCategories = [...allCategoriesFromTiles];
     }
     
     const currentIndex = currentCategories.indexOf(categoryName);
@@ -797,26 +848,34 @@ export const TileGrid: React.FC<TileGridProps> = ({
   }, [tiles, isAuthenticated, onUpdateTiles, categoryOrder]);
 
   const handleMoveTile = useCallback(async (tileId: string, direction: 'left' | 'right') => {
-    if (!isAuthenticated) return;
+    // Allow all users (including guests) to move tiles
+    // if (!isAuthenticated) return;
 
-    // Work directly with the flat tiles array, which reflects the current visual order
     const currentIndex = tiles.findIndex(t => t.id === tileId);
     if (currentIndex === -1) return;
 
-    const targetIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1;
-    if (targetIndex < 0 || targetIndex >= tiles.length) {
-      return; // Already at the edge
-    }
-
     const currentTile = tiles[currentIndex];
-    const targetTile = tiles[targetIndex];
-
-    // Only allow reordering within the same category
     const currentGroup = currentTile.group || 'General';
-    const targetGroup = targetTile.group || 'General';
-    if (currentGroup !== targetGroup) {
+
+    // Find all tiles in this group to determine the target
+    const groupTiles = tiles.filter(t => (t.group || 'General') === currentGroup);
+    const indexInGroup = groupTiles.findIndex(t => t.id === tileId);
+    
+    if (indexInGroup === -1) return;
+
+    // Calculate target index within the group
+    const targetIndexInGroup = direction === 'left' ? indexInGroup - 1 : indexInGroup + 1;
+
+    // Boundary checks within the group
+    if (targetIndexInGroup < 0 || targetIndexInGroup >= groupTiles.length) {
       return;
     }
+
+    // Find the target tile in the main array
+    const targetTile = groupTiles[targetIndexInGroup];
+    const targetIndex = tiles.findIndex(t => t.id === targetTile.id);
+
+    if (targetIndex === -1) return;
 
     // Swap the two tiles in the flat array
     const reorderedTiles = [...tiles];
@@ -828,7 +887,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     // Update local state immediately for visual feedback
     onUpdateTiles(reorderedTiles);
 
-    // Save arrangement to backend using the new flat order
+    // Auto-save is kept for convenience, but manual save button provides reassurance
     try {
       const arrangement: Array<{ tileId: string; position: number; groupName: string }> =
         reorderedTiles.map((tile, index) => ({
@@ -840,11 +899,31 @@ export const TileGrid: React.FC<TileGridProps> = ({
       await saveTileArrangement(arrangement);
     } catch (error) {
       console.error('Failed to save tile arrangement:', error);
-      alert('Failed to save tile order: ' + (error instanceof Error ? error.message : 'Unknown error'));
-      // Revert on error
-      onUpdateTiles(tiles);
+      // Don't alert on auto-save failure to avoid annoying popups, 
+      // let the user use the manual save button if needed.
     }
   }, [tiles, isAuthenticated, onUpdateTiles]);
+
+  const handleManualSave = useCallback(async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const arrangement: Array<{ tileId: string; position: number; groupName: string }> =
+        tiles.map((tile, index) => ({
+          tileId: tile.id,
+          position: index,
+          groupName: tile.group || 'General',
+        }));
+
+      await saveTileArrangement(arrangement);
+      alert('Tile order saved successfully!');
+    } catch (error) {
+      console.error('Failed to save tile arrangement:', error);
+      alert('Failed to save tile order: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setIsSaving(false);
+    }
+  }, [tiles, isSaving]);
 
   return (
     <div className="w-full space-y-6">
@@ -934,6 +1013,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               onMoveUp={() => handleMoveCategory(groupName, 'up')}
               onMoveDown={() => handleMoveCategory(groupName, 'down')}
               onDeleteCategory={handleDeleteCategory}
+              onSaveCategoryOrder={handleManualSave}
             >
               {/* Grid with wider tiles */}
               {groupTiles.length > 0 ? (

@@ -48,14 +48,24 @@ function handleGetTiles() {
     $db = getDB();
     
     // All users (authenticated and guests) see all tiles - shared public repository
-    // Order by position (custom order), then by created_at as a fallback
-    $stmt = $db->prepare('SELECT * FROM tiles ORDER BY position ASC, created_at DESC');
+    // Order ONLY by position - no secondary sorting to preserve exact saved order
+    $stmt = $db->prepare('SELECT * FROM tiles ORDER BY position ASC');
     $stmt->execute();
     
     $tiles = [];
     $tilesById = [];
+    $positions = [];
+    $hasDuplicatePositions = false;
     
     while ($row = $stmt->fetch()) {
+        $position = (int)$row['position'];
+        
+        // Check for duplicate positions
+        if (isset($positions[$position])) {
+            $hasDuplicatePositions = true;
+        }
+        $positions[$position] = true;
+        
         $tile = [
             'id' => $row['id'],
             'title' => $row['title'],
@@ -96,6 +106,69 @@ function handleGetTiles() {
         
         $tiles[] = $tile;
         $tilesById[$row['id']] = $tile;
+    }
+    
+    // Normalize positions if there are duplicates or all positions are 0
+    // This ensures tiles always have unique, sequential positions
+    if (($hasDuplicatePositions || (count($positions) === 1 && isset($positions[0]))) && count($tiles) > 0) {
+        try {
+            $db->beginTransaction();
+            $updateStmt = $db->prepare('UPDATE tiles SET position = ? WHERE id = ?');
+            foreach ($tiles as $index => $tile) {
+                $updateStmt->execute([$index, $tile['id']]);
+            }
+            $db->commit();
+            error_log('Normalized tile positions: assigned sequential positions to ' . count($tiles) . ' tiles');
+            
+            // Reload tiles with updated positions
+            $stmt = $db->prepare('SELECT * FROM tiles ORDER BY position ASC');
+            $stmt->execute();
+            $tiles = [];
+            while ($row = $stmt->fetch()) {
+                $tile = [
+                    'id' => $row['id'],
+                    'title' => $row['title'],
+                    'description' => $row['description'],
+                    'htmlContent' => $row['html_content'],
+                    'emoji' => $row['emoji'],
+                    'themeColor' => $row['theme_color'],
+                    'group' => $row['group'],
+                    'createdAt' => (int)$row['created_at'],
+                    'sections' => []
+                ];
+                
+                // Get sections for this tile
+                $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tile_id = ?');
+                $sectionStmt->execute([$row['id']]);
+                
+                while ($sectionRow = $sectionStmt->fetch()) {
+                    $section = [
+                        'id' => $sectionRow['id'],
+                        'title' => $sectionRow['title'],
+                        'links' => []
+                    ];
+                    
+                    // Get links for this section
+                    $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
+                    $linkStmt->execute([$sectionRow['id']]);
+                    
+                    while ($linkRow = $linkStmt->fetch()) {
+                        $section['links'][] = [
+                            'id' => $linkRow['id'],
+                            'label' => $linkRow['label'],
+                            'url' => $linkRow['url']
+                        ];
+                    }
+                    
+                    $tile['sections'][] = $section;
+                }
+                
+                $tiles[] = $tile;
+            }
+        } catch (PDOException $e) {
+            $db->rollBack();
+            error_log('Failed to normalize tile positions: ' . $e->getMessage());
+        }
     }
     
     // We now rely on the tiles.position column for ordering.

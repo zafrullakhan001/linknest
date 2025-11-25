@@ -6,11 +6,13 @@ This guide will help you deploy LinkNest as a Docker container on port 8000.
 
 ### Windows
 ```bash
+cd docker
 docker-deploy.bat
 ```
 
 ### Linux/Mac
 ```bash
+cd docker
 chmod +x docker-deploy.sh
 ./docker-deploy.sh
 ```
@@ -24,7 +26,7 @@ chmod +x docker-deploy.sh
 
 2. **Build and start the container:**
    ```bash
-   docker compose up -d --build
+   docker compose -f docker/docker-compose.yml up -d --build
    ```
 
 3. **Access the application:**
@@ -41,28 +43,28 @@ chmod +x docker-deploy.sh
 
 ### View Logs
 ```bash
-docker compose logs -f
+docker compose -f docker/docker-compose.yml logs -f
 ```
 
 ### Stop Container
 ```bash
-docker compose down
+docker compose -f docker/docker-compose.yml down
 ```
 
 ### Restart Container
 ```bash
-docker compose restart
+docker compose -f docker/docker-compose.yml restart
 ```
 
 ### View Container Status
 ```bash
-docker compose ps
+docker compose -f docker/docker-compose.yml ps
 ```
 
 ### Rebuild After Code Changes
 ```bash
-docker compose down
-docker compose up -d --build
+docker compose -f docker/docker-compose.yml down
+docker compose -f docker/docker-compose.yml up -d --build
 ```
 
 ### Access Container Shell
@@ -76,7 +78,7 @@ The application is configured to run on **port 8000**. The container maps:
 - Host port: `8000`
 - Container port: `80` (Apache)
 
-To change the port, edit `docker-compose.yml`:
+To change the port, edit `docker/docker-compose.yml`:
 ```yaml
 ports:
   - "YOUR_PORT:80"  # Change YOUR_PORT to desired port
@@ -94,12 +96,12 @@ These directories are created automatically if they don't exist.
 
 ### Container won't start
 ```bash
-docker compose logs
+docker compose -f docker/docker-compose.yml logs
 ```
 
 ### Port 8000 already in use
 1. Stop the service using port 8000, or
-2. Change the port in `docker-compose.yml`:
+2. Change the port in `docker/docker-compose.yml`:
    ```yaml
    ports:
      - "8001:80"  # Use port 8001 instead
@@ -113,8 +115,8 @@ chmod -R 755 data uploads
 
 ### Rebuild after code changes
 ```bash
-docker compose down
-docker compose up -d --build
+docker compose -f docker/docker-compose.yml down
+docker compose -f docker/docker-compose.yml up -d --build
 ```
 
 ## Architecture
@@ -128,7 +130,7 @@ docker compose up -d --build
 
 The container includes a health check that verifies the API is responding:
 ```bash
-docker compose ps
+docker compose -f docker/docker-compose.yml ps
 ```
 
 Look for "healthy" status in the output.
@@ -152,15 +154,15 @@ To update the application:
 git pull
 
 # Rebuild and restart
-docker compose down
-docker compose up -d --build
+docker compose -f docker/docker-compose.yml down
+docker compose -f docker/docker-compose.yml up -d --build
 ```
 
 ## Production Deployment
 
 For production, use the production compose file:
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker/docker-compose.prod.yml up -d --build
 ```
 
 This includes:
