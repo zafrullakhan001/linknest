@@ -173,6 +173,7 @@ function handleLogin() {
     
     $ldapSuccess = false;
     $ldapUser = null;
+    $ldapError = null; // Store LDAP error message for better error reporting
 
     function debug_log($message) {
         $logFile = __DIR__ . '/../ldap_debug.log';
@@ -519,7 +520,10 @@ function handleLogin() {
                     if (!$hasRequiredGroup) {
                         debug_log("LDAP: User not in required groups");
                         @ldap_close($ldap);
-                        throw new Exception("Access denied: User must be a member of one of the required groups");
+                        $ldapSuccess = false;
+                        $ldapUser = null;
+                        $ldapError = "Access denied: User must be a member of one of the required groups";
+                        throw new Exception($ldapError);
                     }
                 }
                 
@@ -537,7 +541,14 @@ function handleLogin() {
             @ldap_close($ldap);
         } catch (Exception $e) {
             debug_log("LDAP Error: " . $e->getMessage());
-            // Continue to local auth
+            // If we have a stored error message, use it; otherwise use the exception message
+            if ($ldapError === null) {
+                $ldapError = $e->getMessage();
+            }
+            // Reset LDAP success flag if exception occurred
+            $ldapSuccess = false;
+            $ldapUser = null;
+            // Continue to local auth (unless auth_method is 'ldap', which will be handled below)
         }
     } else {
         debug_log("LDAP: Skipped. Enabled: " . ($ldapEnabled ? 'Yes' : 'No') . ", Extension: " . (extension_loaded('ldap') ? 'Yes' : 'No'));
@@ -627,8 +638,11 @@ function handleLogin() {
     
     // 2. Fallback to Local Authentication
     // If auth_method was 'ldap' but LDAP failed, don't allow local fallback
-    if ($authMethod === 'ldap' && !$ldapSuccess) {
-        sendJSON(['error' => 'LDAP authentication failed. Please check your credentials.'], 401);
+    // Also, if LDAP bind succeeded but group membership failed, return error (don't fall back to local)
+    if (($authMethod === 'ldap' && !$ldapSuccess) || ($ldapError && strpos($ldapError, 'required groups') !== false)) {
+        // Return specific error message if available, otherwise generic message
+        $errorMessage = $ldapError ?? 'LDAP authentication failed. Please check your credentials.';
+        sendJSON(['error' => $errorMessage], 401);
     }
     
     $stmt = $db->prepare('SELECT id, username, email, password_hash, is_admin, is_approved, auth_source FROM users WHERE username = ? OR email = ?');
