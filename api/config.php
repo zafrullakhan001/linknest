@@ -121,6 +121,45 @@ function initDatabase() {
             updated_at INTEGER NOT NULL
         )');
         
+        // Create tile_arrangements table for global tile ordering
+        // user_id is NULL for global arrangements, or user_id for user-specific (if needed in future)
+        $db->exec('CREATE TABLE IF NOT EXISTS tile_arrangements (
+            user_id INTEGER,
+            tile_id TEXT NOT NULL,
+            position INTEGER NOT NULL,
+            group_name TEXT,
+            PRIMARY KEY (user_id, tile_id),
+            FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
+        )');
+        
+        // Create category_arrangements table for global category/group ordering
+        // user_id is NULL for global arrangements, or user_id for user-specific (if needed in future)
+        $db->exec('CREATE TABLE IF NOT EXISTS category_arrangements (
+            user_id INTEGER,
+            category_name TEXT NOT NULL,
+            position INTEGER NOT NULL,
+            PRIMARY KEY (user_id, category_name)
+        )');
+        
+        // Migrate existing table structure to support NULL user_id (global arrangements)
+        try {
+            // Check if user_id column exists and if it has NOT NULL constraint
+            $tableInfo = $db->query("PRAGMA table_info(tile_arrangements)")->fetchAll();
+            $userIdColumn = null;
+            foreach ($tableInfo as $column) {
+                if ($column['name'] === 'user_id') {
+                    $userIdColumn = $column;
+                    break;
+                }
+            }
+            
+            // If table exists with NOT NULL constraint, we need to migrate
+            // For SQLite, we can't directly alter column constraints, so we'll work with what we have
+            // The CREATE TABLE IF NOT EXISTS will use the new schema for new tables
+        } catch (PDOException $e) {
+            // Table might not exist yet, ignore
+        }
+        
         // Initialize default settings if they don't exist
         $defaultSettings = [
             ['app_name', 'LinkNest', time()],

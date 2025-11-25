@@ -1,7 +1,24 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Tile, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS } from '../types';
 import { generateTileContent, GeneratedTileContent } from '../services/geminiService';
 import { useSettings } from '../contexts/SettingsContext';
+import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement } from '../services/storageService';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface TileGridProps {
   tiles: Tile[];
@@ -13,6 +30,311 @@ interface TileGridProps {
 }
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
+
+// Category Component (no longer sortable via drag)
+interface CategoryProps {
+  categoryName: string;
+  tileCount: number;
+  isAuthenticated: boolean;
+  groupIndex: number;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  children: React.ReactNode;
+  onDeleteCategory?: (categoryName: string) => void;
+}
+
+const Category: React.FC<CategoryProps> = ({
+  categoryName,
+  tileCount,
+  isAuthenticated,
+  groupIndex,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
+  children,
+  onDeleteCategory
+}) => {
+  return (
+    <div
+      className="animate-in fade-in slide-in-from-bottom-2 duration-300"
+      style={{ animationDelay: `${groupIndex * 50}ms` }}
+    >
+      {/* Category Header with Arrow Buttons */}
+      <div className="flex items-center gap-2 mb-3 group/category rounded-lg transition-colors">
+        {isAuthenticated && (onMoveUp || onMoveDown) && (
+          <div className="opacity-0 group-hover/category:opacity-100 transition-opacity flex items-center gap-0.5">
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (onMoveUp && canMoveUp) {
+                  onMoveUp();
+                }
+              }}
+              disabled={!canMoveUp}
+              className={`p-1 rounded-md transition-all ${
+                canMoveUp
+                  ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
+                  : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
+              }`}
+              title="Move category up"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path fillRule="evenodd" d="M14.77 12.79a.75.75 0 01-1.06-.02L10 8.832 6.29 12.77a.75.75 0 11-1.08-1.04l4.25-4.5a.75.75 0 011.08 0l4.25 4.5a.75.75 0 01-.02 1.06z" clipRule="evenodd" />
+              </svg>
+            </button>
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (onMoveDown && canMoveDown) {
+                  onMoveDown();
+                }
+              }}
+              disabled={!canMoveDown}
+              className={`p-1 rounded-md transition-all ${
+                canMoveDown
+                  ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
+                  : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
+              }`}
+              title="Move category down"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+        )}
+        <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">{categoryName}</h2>
+        <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-500 dark:text-slate-400">
+          {tileCount}
+        </span>
+        <div className="h-px bg-slate-200 dark:border-slate-700 flex-1"></div>
+        {isAuthenticated && (
+          <>
+            {onDeleteCategory && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (confirm(`Are you sure you want to delete the category "${categoryName}"?${tileCount > 0 ? `\n\nThis will move ${tileCount} tile(s) to "General" category.` : ''}`)) {
+                    onDeleteCategory(categoryName);
+                  }
+                }}
+                className="opacity-0 group-hover/category:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition-all ml-2"
+                title="Delete category"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                </svg>
+              </button>
+            )}
+          </>
+        )}
+      </div>
+      
+      {/* Category Content (tiles grid) */}
+      {children}
+    </div>
+  );
+};
+
+// Sortable Tile Component
+interface SortableTileProps {
+  tile: Tile;
+  isAuthenticated: boolean;
+  onTileClick: (tileId: string) => void;
+  onDeleteTile: (e: React.MouseEvent, tileId: string) => void;
+  onMoveToCategory?: (tileId: string, categoryName: string) => void;
+  availableCategories: string[];
+  groupIndex: number;
+  tileIndex: number;
+}
+
+const SortableTile: React.FC<SortableTileProps> = ({
+  tile,
+  isAuthenticated,
+  onTileClick,
+  onDeleteTile,
+  onMoveToCategory,
+  availableCategories,
+  groupIndex,
+  tileIndex
+}) => {
+  const [showCategoryMenu, setShowCategoryMenu] = useState(false);
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: tile.id });
+
+  const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
+  const linkCount = tile.sections?.reduce((acc, section) => acc + section.links.length, 0) || 0;
+  const currentCategory = tile.group || 'General';
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    animationDelay: `${(groupIndex * 50) + (tileIndex * 20)}ms`,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      onClick={() => onTileClick(tile.id)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onTileClick(tile.id);
+        }
+      }}
+      className={`
+        group relative p-4 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/50
+        hover:border-brand-300 dark:hover:border-brand-500/50
+        hover:shadow-lg hover:shadow-brand-500/10 dark:hover:shadow-brand-500/5
+        hover:-translate-y-0.5 transition-all duration-200 
+        flex flex-col h-full min-h-[140px] cursor-pointer
+        ${isDragging ? 'z-50' : ''}
+      `}
+    >
+      {/* Drag Handle - Only visible for authenticated users - positioned at top center */}
+      {isAuthenticated && (
+        <div
+          {...attributes}
+          {...listeners}
+          className="absolute top-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing z-10 p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700"
+          onClick={(e) => e.stopPropagation()}
+          title="Drag to rearrange"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-400">
+            <path d="M7 2a2 2 0 1 1 0 4a2 2 0 0 1 0-4zM7 8a2 2 0 1 1 0 4a2 2 0 0 1 0-4zM7 14a2 2 0 1 1 0 4a2 2 0 0 1 0-4zM13 2a2 2 0 1 1 0 4a2 2 0 0 1 0-4zM13 8a2 2 0 1 1 0 4a2 2 0 0 1 0-4zM13 14a2 2 0 1 1 0 4a2 2 0 0 1 0-4z" />
+          </svg>
+        </div>
+      )}
+
+      {/* Compact Header */}
+      <div className="flex items-start justify-between mb-3">
+        <div className={`
+          w-10 h-10 rounded-lg ${styles.soft} flex items-center justify-center text-lg 
+          border ${styles.border} group-hover:scale-105 transition-transform duration-200
+        `}>
+          {tile.emoji}
+        </div>
+        {isAuthenticated && (
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+            {/* Category Selector */}
+            {onMoveToCategory && (
+              <div className="relative">
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowCategoryMenu(!showCategoryMenu);
+                  }}
+                  className="p-1 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 rounded transition-all"
+                  title="Move to category"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                    <path fillRule="evenodd" d="M5.5 17a4.5 4.5 0 01-1.44-8.765 4.5 4.5 0 018.302-3.046 3.5 3.5 0 014.504 4.272A4 4 0 0115 17H5.5zm3.75-2a.75.75 0 00-1.5 0v.5a.75.75 0 001.5 0v-.5zm0-2a.75.75 0 00-1.5 0v.5a.75.75 0 001.5 0v-.5zM9 12a.75.75 0 00-1.5 0v.5a.75.75 0 001.5 0V12z" clipRule="evenodd" />
+                  </svg>
+                </button>
+                
+                {/* Category Dropdown Menu */}
+                {showCategoryMenu && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-[100]" 
+                      onClick={() => setShowCategoryMenu(false)}
+                    ></div>
+                    <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-2xl z-[101] py-1 max-h-64 overflow-y-auto">
+                      <div className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-200 dark:border-slate-700">
+                        Move to Category
+                      </div>
+                      {availableCategories.map((category) => (
+                        <button
+                          key={category}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (category !== currentCategory && onMoveToCategory) {
+                              onMoveToCategory(tile.id, category);
+                            }
+                            setShowCategoryMenu(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                            category === currentCategory
+                              ? 'bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400 font-medium'
+                              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span>{category}</span>
+                            {category === currentCategory && (
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-brand-500">
+                                <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            
+            {/* Delete Button */}
+            <button 
+              onClick={(e) => onDeleteTile(e, tile.id)}
+              className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all"
+              title="Delete"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+        )}
+      </div>
+      
+      {/* Compact Title and Description */}
+      <div className="flex-1 mb-3">
+        <h3 className={`font-bold text-sm leading-tight line-clamp-2 mb-1.5 ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}>
+          {tile.title}
+        </h3>
+        <p className="text-slate-600 dark:text-slate-400 text-xs line-clamp-2 leading-snug">
+          {tile.description || 'No description'}
+        </p>
+      </div>
+      
+      {/* Compact Footer */}
+      <div className="pt-2.5 border-t border-slate-100 dark:border-slate-700/50 flex items-center justify-between">
+        <div className={`flex items-center gap-1.5 text-xs font-medium ${styles.text}`}>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+            <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
+            <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01-.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
+          </svg>
+          <span>{linkCount}</span>
+        </div>
+        <div className="text-slate-300 dark:text-slate-600 group-hover:text-brand-500 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+            <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+          </svg>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const TileGrid: React.FC<TileGridProps> = ({ 
   tiles, 
@@ -38,10 +360,61 @@ export const TileGrid: React.FC<TileGridProps> = ({
   // Emoji Picker State
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
+  // Category order state
+  const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
+
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // Load global category arrangement on mount (works for all users)
+  useEffect(() => {
+    const loadCategoryOrder = async () => {
+      try {
+        const arrangement = await getCategoryArrangement();
+        if (arrangement.length > 0) {
+          const ordered = arrangement.sort((a, b) => a.position - b.position).map(c => c.categoryName);
+          setCategoryOrder(ordered);
+        } else {
+          // Reset to empty if no arrangement found
+          setCategoryOrder([]);
+        }
+      } catch (error) {
+        console.error('Failed to load category arrangement:', error);
+        // On error, reset to empty to avoid stale data
+        setCategoryOrder([]);
+      }
+    };
+    loadCategoryOrder();
+  }, []); // Load once on mount, not dependent on authentication
+
   // Get unique existing groups for suggestions
   const existingGroups = useMemo(() => {
     return Array.from(new Set(tiles.map(t => t.group || 'General'))).sort();
   }, [tiles]);
+
+  // Get all available categories (including empty ones from categoryOrder)
+  const allCategories = useMemo(() => {
+    const categoriesFromTiles = Array.from(new Set(tiles.map(t => t.group || 'General')));
+    const allCats = new Set(categoriesFromTiles);
+    
+    // Add categories from categoryOrder (including empty ones)
+    if (categoryOrder.length > 0) {
+      categoryOrder.forEach(cat => allCats.add(cat));
+    }
+    
+    // Sort: ordered categories first, then others alphabetically
+    const ordered = categoryOrder.length > 0
+      ? categoryOrder.filter(cat => allCats.has(cat))
+      : [];
+    const unordered = Array.from(allCats).filter(cat => !ordered.includes(cat)).sort();
+    
+    return [...ordered, ...unordered];
+  }, [tiles, categoryOrder, isAuthenticated]);
 
   // Filter and Group Tiles - Global search across all content
   const groupedTiles = useMemo(() => {
@@ -55,6 +428,34 @@ export const TileGrid: React.FC<TileGridProps> = ({
         }
         groups[groupName].push(tile);
       });
+      
+      // Apply global category order if available (works for all users)
+      if (categoryOrder.length > 0) {
+        const orderedGroups: Record<string, Tile[]> = {};
+        const unorderedGroups: Record<string, Tile[]> = {};
+        
+        // Separate ordered and unordered categories
+        Object.keys(groups).forEach(category => {
+          if (categoryOrder.includes(category)) {
+            orderedGroups[category] = groups[category];
+          } else {
+            unorderedGroups[category] = groups[category];
+          }
+        });
+        
+        // Merge in order: ordered categories first (including empty ones), then unordered (alphabetically)
+        const finalGroups: Record<string, Tile[]> = {};
+        categoryOrder.forEach(category => {
+          // Include category even if it has no tiles (empty category)
+          finalGroups[category] = orderedGroups[category] || [];
+        });
+        Object.keys(unorderedGroups).sort().forEach(category => {
+          finalGroups[category] = unorderedGroups[category];
+        });
+        
+        return finalGroups;
+      }
+      
       return groups;
     }
 
@@ -107,7 +508,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     });
 
     return groups;
-  }, [tiles, searchTerm]);
+  }, [tiles, searchTerm, categoryOrder]);
 
   const handleCreateTile = async () => {
     if (!newTitle.trim()) return;
@@ -202,6 +603,207 @@ export const TileGrid: React.FC<TileGridProps> = ({
     window.location.hash = `#/tile/${tileId}`;
   };
 
+  const handleMoveTileToCategory = useCallback(async (tileId: string, categoryName: string) => {
+    if (!isAuthenticated) return;
+
+    try {
+      const updatedTiles = tiles.map(tile => 
+        tile.id === tileId 
+          ? { ...tile, group: categoryName }
+          : tile
+      );
+
+      // Update local state
+      onUpdateTiles(updatedTiles);
+
+      // Save arrangement to backend
+      try {
+        const arrangement = updatedTiles.map((tile, index) => ({
+          tileId: tile.id,
+          position: index,
+          groupName: tile.group || 'General'
+        }));
+        await saveTileArrangement(arrangement);
+      } catch (error) {
+        console.error('Failed to save tile arrangement:', error);
+        // Revert on error
+        onUpdateTiles(tiles);
+      }
+    } catch (error) {
+      console.error('Failed to move tile to category:', error);
+      alert('Failed to move tile. Please try again.');
+    }
+  }, [tiles, isAuthenticated, onUpdateTiles]);
+
+  const handleMoveCategory = useCallback(async (categoryName: string, direction: 'up' | 'down') => {
+    if (!isAuthenticated) return;
+
+    // Get all current categories from tiles
+    const allCategoriesFromTiles = Array.from(new Set(tiles.map(t => t.group || 'General')));
+    
+    // Build current order: use categoryOrder if available, otherwise use alphabetical
+    let currentCategories: string[];
+    if (categoryOrder.length > 0) {
+      // Start with saved order, filter to only include existing categories
+      currentCategories = categoryOrder.filter(cat => allCategoriesFromTiles.includes(cat));
+      // Add any new categories not in the saved order (alphabetically)
+      const newCategories = allCategoriesFromTiles
+        .filter(cat => !currentCategories.includes(cat))
+        .sort();
+      currentCategories = [...currentCategories, ...newCategories];
+    } else {
+      // No saved order, use alphabetical
+      currentCategories = [...allCategoriesFromTiles].sort();
+    }
+    
+    const currentIndex = currentCategories.indexOf(categoryName);
+    
+    if (currentIndex === -1) {
+      console.error('Category not found in order:', categoryName);
+      return;
+    }
+    
+    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (newIndex < 0 || newIndex >= currentCategories.length) {
+      return; // Already at top or bottom
+    }
+    
+    // Create new order by swapping
+    const newCategoryOrder = [...currentCategories];
+    [newCategoryOrder[currentIndex], newCategoryOrder[newIndex]] = [newCategoryOrder[newIndex], newCategoryOrder[currentIndex]];
+    
+    // Update state immediately for instant feedback
+    setCategoryOrder(newCategoryOrder);
+    
+    // Save category arrangement to database (global for all users)
+    try {
+      const arrangement = newCategoryOrder.map((category, index) => ({
+        categoryName: category,
+        position: index
+      }));
+      await saveCategoryArrangement(arrangement);
+      // Success - order is now saved globally and will be visible to all users
+    } catch (error) {
+      console.error('Failed to save category arrangement:', error);
+      // Revert state on error
+      setCategoryOrder(categoryOrder);
+      alert('Failed to save category order. Please try again.');
+    }
+  }, [tiles, isAuthenticated, categoryOrder]);
+
+  const handleDeleteCategory = useCallback(async (categoryName: string) => {
+    if (!isAuthenticated) return;
+
+    try {
+      // Move all tiles in this category to "General"
+      const updatedTiles = tiles.map(tile => {
+        if ((tile.group || 'General') === categoryName) {
+          return { ...tile, group: 'General' };
+        }
+        return tile;
+      });
+
+      // Update tiles
+      onUpdateTiles(updatedTiles);
+
+      // Remove category from category order
+      const newCategoryOrder = categoryOrder.filter(cat => cat !== categoryName);
+      setCategoryOrder(newCategoryOrder);
+
+      // Save updated arrangements
+      try {
+        // Save tile arrangement
+        const arrangement = updatedTiles.map((tile, index) => ({
+          tileId: tile.id,
+          position: index,
+          groupName: tile.group || 'General'
+        }));
+        await saveTileArrangement(arrangement);
+
+        // Save category arrangement
+        if (newCategoryOrder.length > 0) {
+          const categoryArrangement = newCategoryOrder.map((category, index) => ({
+            categoryName: category,
+            position: index
+          }));
+          await saveCategoryArrangement(categoryArrangement);
+        } else {
+          // If no categories left, clear the arrangement
+          await saveCategoryArrangement([]);
+        }
+      } catch (error) {
+        console.error('Failed to save arrangements:', error);
+        // Revert on error
+        onUpdateTiles(tiles);
+        setCategoryOrder(categoryOrder);
+      }
+    } catch (error) {
+      console.error('Failed to delete category:', error);
+      alert('Failed to delete category. Please try again.');
+    }
+  }, [tiles, isAuthenticated, onUpdateTiles, categoryOrder]);
+
+  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+    if (!isAuthenticated) return;
+
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    // Check if this is a category drag
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    
+    // Tile rearrangement (tile dropped on another tile)
+    const activeTile = tiles.find(t => t.id === active.id);
+    const overTile = tiles.find(t => t.id === over.id);
+    
+    if (!activeTile || !overTile) return;
+
+    // Get current grouped tiles
+    const currentGroups: Record<string, Tile[]> = {};
+    tiles.forEach(tile => {
+      const groupName = tile.group || 'General';
+      if (!currentGroups[groupName]) {
+        currentGroups[groupName] = [];
+      }
+      currentGroups[groupName].push(tile);
+    });
+
+    // Only allow reordering within the same category
+    const activeGroup = activeTile.group || 'General';
+    const overGroup = overTile.group || 'General';
+
+    // Prevent moving tiles between categories via drag
+    if (activeGroup !== overGroup) {
+      return;
+    }
+
+    // Create new tiles array with updated order
+    const newTiles = [...tiles];
+    const activeIndex = newTiles.findIndex(t => t.id === active.id);
+    const overIndex = newTiles.findIndex(t => t.id === over.id);
+
+    // Reorder tiles
+    const reorderedTiles = arrayMove(newTiles, activeIndex, overIndex);
+    
+    // Update local state
+    onUpdateTiles(reorderedTiles);
+
+    // Save arrangement to backend
+    try {
+      const arrangement = reorderedTiles.map((tile, index) => ({
+        tileId: tile.id,
+        position: index,
+        groupName: tile.group || 'General'
+      }));
+      await saveTileArrangement(arrangement);
+    } catch (error) {
+      console.error('Failed to save tile arrangement:', error);
+      // Revert on error
+      onUpdateTiles(tiles);
+    }
+  }, [tiles, isAuthenticated, onUpdateTiles, categoryOrder]);
+
   return (
     <div className="w-full space-y-6">
       {/* Compact Header Section */}
@@ -255,12 +857,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
       {tiles.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
           <div className="flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-brand-500"></div>
-            <span>{tiles.length} {tiles.length === 1 ? 'Space' : 'Spaces'}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
             <span>{Object.keys(groupedTiles).length} {Object.keys(groupedTiles).length === 1 ? 'Category' : 'Categories'}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-brand-500"></div>
+            <span>{tiles.length} {tiles.length === 1 ? 'Tile' : 'Tiles'}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-violet-500"></div>
@@ -270,99 +872,58 @@ export const TileGrid: React.FC<TileGridProps> = ({
       )}
 
       {/* Tiles Grid - Full Width with More Columns */}
-      <div className="space-y-8">
-        {Object.keys(groupedTiles).sort().map((groupName, groupIndex) => (
-          <div key={groupName} className="animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: `${groupIndex * 50}ms` }}>
-            {/* Compact Group Header */}
-            <div className="flex items-center gap-2 mb-3">
-              <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">{groupName}</h2>
-              <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                {groupedTiles[groupName].length}
-              </span>
-              <div className="h-px bg-slate-200 dark:bg-slate-700 flex-1"></div>
-            </div>
-            
-            {/* Grid with wider tiles */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {groupedTiles[groupName].map((tile, tileIndex) => {
-                const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
-                const linkCount = tile.sections?.reduce((acc, section) => acc + section.links.length, 0) || 0;
-                
-                return (
-                  <div
-                    key={tile.id}
-                    onClick={() => handleTileClick(tile.id)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        handleTileClick(tile.id);
-                      }
-                    }}
-                    className={`
-                      group relative p-4 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/50
-                      hover:border-brand-300 dark:hover:border-brand-500/50
-                      hover:shadow-lg hover:shadow-brand-500/10 dark:hover:shadow-brand-500/5
-                      hover:-translate-y-0.5 transition-all duration-200 
-                      flex flex-col h-full min-h-[140px] cursor-pointer overflow-hidden
-                    `}
-                    style={{ animationDelay: `${(groupIndex * 50) + (tileIndex * 20)}ms` }}
-                  >
-                    {/* Compact Header */}
-                    <div className="flex items-start justify-between mb-3">
-                      <div className={`
-                        w-10 h-10 rounded-lg ${styles.soft} flex items-center justify-center text-lg 
-                        border ${styles.border} group-hover:scale-105 transition-transform duration-200
-                      `}>
-                        {tile.emoji}
-                      </div>
-                      {isAuthenticated && (
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button 
-                            onClick={(e) => handleDeleteTile(e, tile.id)}
-                            className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all"
-                            title="Delete"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                              <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-                            </svg>
-                          </button>
-                        </div>
-                      )}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext items={tiles.map(t => t.id)}>
+          <div className="space-y-8">
+            {Object.keys(groupedTiles).map((groupName, groupIndex) => {
+              const groupTiles = groupedTiles[groupName];
+              // Use the actual display order (which respects categoryOrder)
+              const categoryKeys = Object.keys(groupedTiles);
+              const canMoveUp = groupIndex > 0;
+              const canMoveDown = groupIndex < categoryKeys.length - 1;
+              
+              return (
+                <Category
+                  key={groupName}
+                  categoryName={groupName}
+                  tileCount={groupTiles.length}
+                  isAuthenticated={isAuthenticated}
+                  groupIndex={groupIndex}
+                  canMoveUp={canMoveUp}
+                  canMoveDown={canMoveDown}
+                  onMoveUp={() => handleMoveCategory(groupName, 'up')}
+                  onMoveDown={() => handleMoveCategory(groupName, 'down')}
+                  onDeleteCategory={handleDeleteCategory}
+                >
+                  {/* Grid with wider tiles */}
+                  {groupTiles.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      {groupTiles.map((tile, tileIndex) => (
+                        <SortableTile
+                          key={tile.id}
+                          tile={tile}
+                          isAuthenticated={isAuthenticated}
+                          onTileClick={handleTileClick}
+                          onDeleteTile={handleDeleteTile}
+                          onMoveToCategory={handleMoveTileToCategory}
+                          availableCategories={allCategories}
+                          groupIndex={groupIndex}
+                          tileIndex={tileIndex}
+                        />
+                      ))}
                     </div>
-                    
-                    {/* Compact Title and Description */}
-                    <div className="flex-1 mb-3">
-                      <h3 className={`font-bold text-sm leading-tight line-clamp-2 mb-1.5 ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}>
-                        {tile.title}
-                      </h3>
-                      <p className="text-slate-600 dark:text-slate-400 text-xs line-clamp-2 leading-snug">
-                        {tile.description || 'No description'}
-                      </p>
+                  ) : (
+                    <div className="py-8 text-center text-slate-400 dark:text-slate-500 text-sm italic">
+                      No tiles in this category. Use the menu to move tiles here.
                     </div>
-                    
-                    {/* Compact Footer */}
-                    <div className="pt-2.5 border-t border-slate-100 dark:border-slate-700/50 flex items-center justify-between">
-                      <div className={`flex items-center gap-1.5 text-xs font-medium ${styles.text}`}>
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                          <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
-                          <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01-.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
-                        </svg>
-                        <span>{linkCount}</span>
-                      </div>
-                      <div className="text-slate-300 dark:text-slate-600 group-hover:text-brand-500 transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                          <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+                  )}
+                </Category>
+              );
+            })}
         
         {/* Compact Empty State */}
         {tiles.length === 0 && isAuthenticated && (
@@ -396,7 +957,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
             </button>
           </div>
         )}
-      </div>
+          </div>
+        </SortableContext>
+      </DndContext>
 
       {/* Compact Add Tile Modal */}
       {isModalOpen && (

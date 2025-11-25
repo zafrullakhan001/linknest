@@ -44,6 +44,9 @@ if (empty($path) || $path === '/') {
 } elseif (strpos($path, '/database') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 9); // Remove '/database'
     require __DIR__ . '/database.php';
+} elseif (strpos($path, '/arrangements') === 0) {
+    $_SERVER['PATH_INFO'] = substr($path, 13); // Remove '/arrangements'
+    require __DIR__ . '/arrangements.php';
 } else {
     http_response_code(404);
     header('Content-Type: application/json');

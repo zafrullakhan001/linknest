@@ -112,3 +112,75 @@ export const initializeTiles = (): Tile[] => {
   // In practice, tiles come from the API
   return [];
 };
+
+export const saveTileArrangement = async (arrangement: Array<{ tileId: string; position: number; groupName?: string }>): Promise<void> => {
+  try {
+    const response = await fetch(`${API_BASE}/arrangements`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ arrangement })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to save tile arrangement');
+    }
+  } catch (e) {
+    console.error("Failed to save tile arrangement", e);
+    throw e;
+  }
+};
+
+export const getTileArrangement = async (): Promise<Array<{ tileId: string; position: number; groupName?: string }>> => {
+  try {
+    const response = await fetch(`${API_BASE}/arrangements`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch tile arrangement');
+    }
+
+    return await response.json();
+  } catch (e) {
+    console.error("Failed to load tile arrangement", e);
+    return [];
+  }
+};
+
+export const saveCategoryArrangement = async (categories: Array<{ categoryName: string; position: number }>): Promise<void> => {
+  try {
+    const response = await fetch(`${API_BASE}/arrangements/categories`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ categories })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to save category arrangement');
+    }
+  } catch (e) {
+    console.error("Failed to save category arrangement", e);
+    throw e;
+  }
+};
+
+export const getCategoryArrangement = async (): Promise<Array<{ categoryName: string; position: number }>> => {
+  try {
+    const response = await fetch(`${API_BASE}/arrangements/categories`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch category arrangement');
+    }
+
+    return await response.json();
+  } catch (e) {
+    console.error("Failed to load category arrangement", e);
+    return [];
+  }
+};

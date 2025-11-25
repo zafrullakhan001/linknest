@@ -52,6 +52,7 @@ function handleGetTiles() {
     $stmt->execute();
     
     $tiles = [];
+    $tilesById = [];
     
     while ($row = $stmt->fetch()) {
         $tile = [
@@ -93,7 +94,36 @@ function handleGetTiles() {
         }
         
         $tiles[] = $tile;
+        $tilesById[$row['id']] = $tile;
     }
+    
+    // Apply global arrangement (works for all users, authenticated and guests)
+    $arrangementStmt = $db->prepare('SELECT tile_id, position, group_name FROM tile_arrangements WHERE user_id IS NULL ORDER BY position ASC');
+    $arrangementStmt->execute();
+    
+    $arrangedTiles = [];
+    $arrangedTileIds = [];
+    
+    while ($arrRow = $arrangementStmt->fetch()) {
+        $tileId = $arrRow['tile_id'];
+        if (isset($tilesById[$tileId])) {
+            // Override group if specified in arrangement
+            if ($arrRow['group_name']) {
+                $tilesById[$tileId]['group'] = $arrRow['group_name'];
+            }
+            $arrangedTiles[] = $tilesById[$tileId];
+            $arrangedTileIds[] = $tileId;
+        }
+    }
+    
+    // Add tiles that aren't in the arrangement (new tiles)
+    foreach ($tiles as $tile) {
+        if (!in_array($tile['id'], $arrangedTileIds)) {
+            $arrangedTiles[] = $tile;
+        }
+    }
+    
+    $tiles = $arrangedTiles;
     
     sendJSON($tiles);
 }

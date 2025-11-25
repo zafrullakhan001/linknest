@@ -191,13 +191,46 @@ export const TileDetail: React.FC<TileDetailProps> = ({
       }));
   };
 
-  const handleCopy = (e: React.MouseEvent, text: string, id: string) => {
+  const handleCopy = async (e: React.MouseEvent, text: string, id: string) => {
     e.preventDefault();
     e.stopPropagation();
-    if (navigator.clipboard) {
-        navigator.clipboard.writeText(text);
+    
+    try {
+      // Try modern Clipboard API first
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
         setCopiedId(id);
         setTimeout(() => setCopiedId(null), 2000);
+      } else {
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        
+        try {
+          const successful = document.execCommand('copy');
+          if (successful) {
+            setCopiedId(id);
+            setTimeout(() => setCopiedId(null), 2000);
+          } else {
+            console.error('Copy command failed');
+          }
+        } catch (err) {
+          console.error('Fallback copy failed:', err);
+        } finally {
+          document.body.removeChild(textArea);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to copy text:', err);
+      // Still show feedback even if copy fails
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
     }
   };
 
