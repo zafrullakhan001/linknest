@@ -1,8 +1,14 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Tile, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS } from '../types';
 import { generateTileContent, GeneratedTileContent } from '../services/geminiService';
 import { useSettings } from '../contexts/SettingsContext';
 import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement } from '../services/storageService';
+import {
+  exportCategoryToFile,
+  exportAllCategoriesToFile,
+  parseSpaceExportObject,
+  normalizeImportedTiles
+} from '../services/spaceTransferService';
 
 interface TileGridProps {
   tiles: Tile[];
@@ -29,6 +35,7 @@ interface CategoryProps {
   onDeleteCategory?: (categoryName: string) => void;
   onSaveCategoryOrder?: () => void;
   onRenameCategory?: (oldName: string, newName: string) => void;
+  onExportCategory?: (categoryName: string) => void;
 }
 
 const Category: React.FC<CategoryProps> = ({
@@ -43,7 +50,8 @@ const Category: React.FC<CategoryProps> = ({
   children,
   onDeleteCategory,
   onSaveCategoryOrder,
-  onRenameCategory
+  onRenameCategory,
+  onExportCategory
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(categoryName);
@@ -225,6 +233,22 @@ const Category: React.FC<CategoryProps> = ({
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                   <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                </svg>
+              </button>
+            )}
+            {onExportCategory && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onExportCategory(categoryName);
+                }}
+                className="opacity-0 group-hover/category:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-md transition-all ml-1"
+                title="Export this category"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M3.75 2.75A.75.75 0 014.5 2h11a.75.75 0 01.75.75v6.5a.75.75 0 01-1.5 0V4.56l-4.72 4.72a.75.75 0 01-1.06 0L5.25 4.56v9.69h3.5a.75.75 0 010 1.5h-4.25a.75.75 0 01-.75-.75v-12z" />
+                  <path d="M12.75 10.75a.75.75 0 00-1.5 0v3.44l-1.72-1.72a.75.75 0 10-1.06 1.06l3.25 3.25a.75.75 0 001.06 0l3.25-3.25a.75.75 0 10-1.06-1.06l-1.72 1.72v-3.44z" />
                 </svg>
               </button>
             )}
@@ -481,6 +505,10 @@ export const TileGrid: React.FC<TileGridProps> = ({
   
   // Emoji Picker State
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
+  // Import state
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
 
   // Category order state
   const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
@@ -886,6 +914,77 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
   }, [tiles, isAuthenticated, categoryOrder]);
 
+  const handleExportAll = useCallback(() => {
+    exportAllCategoriesToFile(tiles, categoryOrder);
+  }, [tiles, categoryOrder]);
+
+  const handleExportCategory = useCallback(
+    (categoryName: string) => {
+      exportCategoryToFile(categoryName, tiles);
+    },
+    [tiles]
+  );
+
+  const handleImportClick = useCallback(() => {
+    if (!isAuthenticated) {
+      if (onAuthRequired) onAuthRequired();
+      return;
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  }, [isAuthenticated, onAuthRequired]);
+
+  const handleImportFileChange: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!isAuthenticated) {
+      if (onAuthRequired) onAuthRequired();
+      return;
+    }
+
+    try {
+      setIsImporting(true);
+      const text = await file.text();
+      let data: any;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        alert('Invalid JSON file. Please select a valid LinkNest space export.');
+        return;
+      }
+
+      const parsed = parseSpaceExportObject(data);
+      const newTiles = normalizeImportedTiles(parsed);
+
+      if (!newTiles.length) {
+        alert('No spaces found to import.');
+        return;
+      }
+
+      // Use onCreateTile when available so backend is kept in sync
+      if (onCreateTile) {
+        for (const t of newTiles) {
+          await onCreateTile(t);
+        }
+      } else {
+        onUpdateTiles([...tiles, ...newTiles]);
+      }
+
+      alert(`Imported ${newTiles.length} space(s) successfully.`);
+    } catch (err: any) {
+      console.error('Failed to import spaces:', err);
+      alert(err?.message || 'Failed to import spaces.');
+    } finally {
+      setIsImporting(false);
+      if (e.target) {
+        e.target.value = '';
+      }
+    }
+  };
+
   const handleRenameCategory = useCallback(async (oldName: string, newName: string) => {
     if (!isAuthenticated) return;
     if (!newName.trim() || newName.trim() === oldName) return;
@@ -1106,17 +1205,51 @@ export const TileGrid: React.FC<TileGridProps> = ({
             )}
           </div>
 
-          {isAuthenticated && (
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-md shadow-brand-500/20 hover:shadow-lg hover:shadow-brand-500/30 flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] whitespace-nowrap"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-              </svg>
-              New Space
-            </button>
-          )}
+          <div className="flex gap-2 justify-end">
+            {isAuthenticated && (
+              <>
+                <button
+                  onClick={handleImportClick}
+                  disabled={isImporting}
+                  className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap"
+                >
+                  {isImporting ? (
+                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                      <path d="M9.25 3.75A.75.75 0 0110 3h5.25A2.75 2.75 0 0118 5.75v8.5A2.75 2.75 0 0115.25 17h-10.5A2.75 2.75 0 012 14.25V10a.75.75 0 011.5 0v4.25c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-8.5c0-.69-.56-1.25-1.25-1.25H10a.75.75 0 01-.75-.75z" />
+                      <path d="M6.75 5.75a.75.75 0 011.5 0v4.5h1.5a.75.75 0 010 1.5h-4a.75.75 0 01-.75-.75v-4a.75.75 0 011.5 0v2.19l3.22-3.22a.75.75 0 111.06 1.06L6.75 9.81V5.75z" />
+                    </svg>
+                  )}
+                  <span>Import</span>
+                </button>
+                {tiles.length > 0 && (
+                  <button
+                    onClick={handleExportAll}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all shadow-md shadow-emerald-500/20 flex items-center justify-center gap-1.5 whitespace-nowrap"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                      <path d="M3.75 2.75A.75.75 0 014.5 2h11a.75.75 0 01.75.75v6.5a.75.75 0 01-1.5 0V4.56l-4.72 4.72a.75.75 0 01-1.06 0L5.25 4.56v9.69h3.5a.75.75 0 010 1.5h-4.25a.75.75 0 01-.75-.75v-12z" />
+                      <path d="M12.75 10.75a.75.75 0 00-1.5 0v3.44l-1.72-1.72a.75.75 0 10-1.06 1.06l3.25 3.25a.75.75 0 001.06 0l3.25-3.25a.75.75 0 10-1.06-1.06l-1.72 1.72v-3.44z" />
+                    </svg>
+                    <span>Export All</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsModalOpen(true)}
+                  className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-md shadow-brand-500/20 hover:shadow-lg hover:shadow-brand-500/30 flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] whitespace-nowrap"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  New Space
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1161,6 +1294,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               onDeleteCategory={handleDeleteCategory}
               onSaveCategoryOrder={handleManualSave}
               onRenameCategory={handleRenameCategory}
+              onExportCategory={handleExportCategory}
             >
               {/* Grid with wider tiles */}
               {groupTiles.length > 0 ? (
@@ -1413,6 +1547,15 @@ export const TileGrid: React.FC<TileGridProps> = ({
           </div>
         </div>
       )}
+
+      {/* Hidden file input for imports */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={handleImportFileChange}
+      />
     </div>
   );
 };

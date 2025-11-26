@@ -97,3 +97,5 @@ The optimization script is safe to run multiple times. It uses `CREATE INDEX IF 
 - Existing installations should run the optimization script once to get the performance benefits
 
 
+
+

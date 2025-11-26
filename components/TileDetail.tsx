@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Tile, Link, LinkSection, LinkVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, POPULAR_EMOJIS } from '../types';
 import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
 import { authService, UserListItem } from '../services/authService';
+import { exportTileToFile } from '../services/spaceTransferService';
 
 interface TileDetailProps {
   tile: Tile;
@@ -431,6 +432,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                 {/* Controls */}
                 <div className="flex items-center gap-3">
+                    {/* Export single space */}
+                    <button
+                        onClick={() => exportTileToFile(tile)}
+                        className="px-4 py-2 rounded-lg bg-white/15 hover:bg-white/25 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex items-center gap-2 backdrop-blur-sm"
+                        title="Export this space as JSON"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path d="M3.75 2.75A.75.75 0 014.5 2h11a.75.75 0 01.75.75v6.5a.75.75 0 01-1.5 0V4.56l-4.72 4.72a.75.75 0 01-1.06 0L5.25 4.56v9.69h3.5a.75.75 0 010 1.5h-4.25a.75.75 0 01-.75-.75v-12z" />
+                            <path d="M12.75 10.75a.75.75 0 00-1.5 0v3.44l-1.72-1.72a.75.75 0 10-1.06 1.06l3.25 3.25a.75.75 0 001.06 0l3.25-3.25a.75.75 0 10-1.06-1.06l-1.72 1.72v-3.44z" />
+                        </svg>
+                        <span>Export</span>
+                    </button>
                     {/* Check All Links Button */}
                     <button
                         onClick={handleCheckTileHealth}
