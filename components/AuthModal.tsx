@@ -36,6 +36,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authMethod, setAuthMethod] = useState<'local' | 'ldap' | 'auto'>('auto');
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -98,6 +99,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       setEmail('');
       setPassword('');
       setAuthMethod('auto');
+      setRememberMe(false);
       setError('');
       setSuccess('');
     }
@@ -131,12 +133,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       if (mode === 'login') {
         // Determine auth method: 'auto' means try LDAP first, then local
         const method = authMethod === 'auto' ? undefined : authMethod;
-        await login(username, password, method);
+        await login(username, password, method, rememberMe);
         onClose();
         setUsername('');
         setEmail('');
         setPassword('');
         setAuthMethod('auto');
+        setRememberMe(false);
       } else {
         const result = await register(username, email, password);
         if (result.pending) {
@@ -273,6 +276,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             />
           </div>
 
+          {mode === 'login' && (
+            <div className="flex items-center">
+              <input
+                id="rememberMe"
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="h-4 w-4 text-brand-600 focus:ring-brand-500 border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700"
+              />
+              <label htmlFor="rememberMe" className="ml-2 block text-sm text-slate-700 dark:text-slate-300">
+                Keep me logged in
+              </label>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={loading}
@@ -289,6 +307,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
               setError('');
               setSuccess('');
               setAuthMethod('auto');
+              setRememberMe(false);
             }}
             className="text-sm text-brand-600 dark:text-brand-400 hover:underline"
           >

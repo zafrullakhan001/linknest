@@ -145,6 +145,7 @@ function handleLogin() {
         $username = trim($data['username']);
         $password = $data['password'];
     $authMethod = isset($data['auth_method']) ? $data['auth_method'] : null; // 'local' or 'ldap' or null for auto
+    $rememberMe = isset($data['remember_me']) ? (bool)$data['remember_me'] : false;
     
     $db = getDB();
     
@@ -643,9 +644,39 @@ function handleLogin() {
             sendJSON(['error' => 'Your account is pending admin approval. Please wait for approval before logging in.'], 403);
         }
         
-        // Login success
+        // Login success - set session with remember me support
         $_SESSION['user_id'] = $user['id'];
         $_SESSION['username'] = $user['username'];
+        
+        // Set session cookie expiration based on remember me
+        // Note: ini_set for session.cookie_lifetime must be set before session_start(),
+        // so we update the cookie directly using setcookie()
+        $cookieParams = session_get_cookie_params();
+        if ($rememberMe) {
+            // 30 days for remember me
+            $cookieLifetime = 30 * 24 * 60 * 60; // 30 days in seconds
+            setcookie(
+                session_name(),
+                session_id(),
+                time() + $cookieLifetime,
+                $cookieParams['path'],
+                $cookieParams['domain'],
+                $cookieParams['secure'],
+                $cookieParams['httponly']
+            );
+        } else {
+            // 24 hours for regular sessions (or 0 for session cookie)
+            $cookieLifetime = 24 * 60 * 60; // 24 hours in seconds
+            setcookie(
+                session_name(),
+                session_id(),
+                time() + $cookieLifetime,
+                $cookieParams['path'],
+                $cookieParams['domain'],
+                $cookieParams['secure'],
+                $cookieParams['httponly']
+            );
+        }
         
         sendJSON([
             'success' => true,
@@ -690,8 +721,39 @@ function handleLogin() {
         sendJSON(['error' => 'Your account is pending admin approval. Please wait for approval before logging in.'], 403);
     }
     
+    // Login success - set session with remember me support
     $_SESSION['user_id'] = $user['id'];
     $_SESSION['username'] = $user['username'];
+    
+    // Set session cookie expiration based on remember me
+    // Note: ini_set for session.cookie_lifetime must be set before session_start(),
+    // so we update the cookie directly using setcookie()
+    $cookieParams = session_get_cookie_params();
+    if ($rememberMe) {
+        // 30 days for remember me
+        $cookieLifetime = 30 * 24 * 60 * 60; // 30 days in seconds
+        setcookie(
+            session_name(),
+            session_id(),
+            time() + $cookieLifetime,
+            $cookieParams['path'],
+            $cookieParams['domain'],
+            $cookieParams['secure'],
+            $cookieParams['httponly']
+        );
+    } else {
+        // 24 hours for regular sessions (or 0 for session cookie)
+        $cookieLifetime = 24 * 60 * 60; // 24 hours in seconds
+        setcookie(
+            session_name(),
+            session_id(),
+            time() + $cookieLifetime,
+            $cookieParams['path'],
+            $cookieParams['domain'],
+            $cookieParams['secure'],
+            $cookieParams['httponly']
+        );
+    }
     
     sendJSON([
         'success' => true,

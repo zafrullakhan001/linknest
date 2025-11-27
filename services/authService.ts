@@ -49,12 +49,12 @@ export const authService = {
     return { pending: data.pending || false, message: data.message };
   },
 
-  async login(username: string, password: string, authMethod?: 'local' | 'ldap'): Promise<User> {
+  async login(username: string, password: string, authMethod?: 'local' | 'ldap', rememberMe?: boolean): Promise<User> {
     const response = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ username, password, auth_method: authMethod })
+      body: JSON.stringify({ username, password, auth_method: authMethod, remember_me: rememberMe || false })
     });
 
     const data = await response.json();
