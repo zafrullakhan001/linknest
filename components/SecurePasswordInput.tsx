@@ -26,6 +26,13 @@ export const SecurePasswordInput: React.FC<SecurePasswordInputProps> = ({ value 
   // Update when value prop changes externally (but not from internal updates)
   useEffect(() => {
     if (!isInternalUpdateRef.current && value !== realPasswordRef.current) {
+      // If the incoming value contains dots, it might be a masked value from a bug
+      // In that case, don't update - keep the current real password
+      if (value.includes('•')) {
+        console.warn('SecurePasswordInput: Received masked value as prop, ignoring to preserve real password');
+        return;
+      }
+      
       realPasswordRef.current = value;
       setDisplayLength(value.length);
       if (inputRef.current) {
@@ -84,6 +91,9 @@ export const SecurePasswordInput: React.FC<SecurePasswordInputProps> = ({ value 
       return;
     }
 
+    // Store old password before updating
+    const oldPassword = realPasswordRef.current;
+    
     // Update real password
     realPasswordRef.current = newPassword;
     setDisplayLength(newPassword.length);
@@ -96,13 +106,20 @@ export const SecurePasswordInput: React.FC<SecurePasswordInputProps> = ({ value 
       }
     }, 0);
 
-    // Trigger onChange
-    if (onChangeRef.current) {
+    // Trigger onChange - only if password actually changed
+    if (onChangeRef.current && newPassword !== oldPassword) {
+      // Always use realPasswordRef.current (which we just updated) to ensure we never send dots
+      const passwordToSend = realPasswordRef.current;
+      if (passwordToSend.includes('•')) {
+        console.error('SecurePasswordInput: Password ref contains dots! Skipping onChange.');
+        return;
+      }
+      
       isInternalUpdateRef.current = true;
       const syntheticEvent = {
         ...e,
-        target: { ...input, value: newPassword },
-        currentTarget: { ...input, value: newPassword },
+        target: { ...input, value: passwordToSend },
+        currentTarget: { ...input, value: passwordToSend },
       } as React.ChangeEvent<HTMLInputElement>;
       onChangeRef.current(syntheticEvent);
     }
@@ -129,11 +146,18 @@ export const SecurePasswordInput: React.FC<SecurePasswordInputProps> = ({ value 
     }, 0);
 
     if (onChangeRef.current) {
+      // Always use realPasswordRef.current to ensure we never send dots
+      const passwordToSend = realPasswordRef.current;
+      if (passwordToSend.includes('•')) {
+        console.error('SecurePasswordInput: Password ref contains dots after paste! Skipping onChange.');
+        return;
+      }
+      
       isInternalUpdateRef.current = true;
       const syntheticEvent = {
         ...e,
-        target: { ...input, value: newPassword },
-        currentTarget: { ...input, value: newPassword },
+        target: { ...input, value: passwordToSend },
+        currentTarget: { ...input, value: passwordToSend },
       } as React.ChangeEvent<HTMLInputElement>;
       onChangeRef.current(syntheticEvent);
     }
@@ -212,18 +236,42 @@ export const SecurePasswordInput: React.FC<SecurePasswordInputProps> = ({ value 
             return '•'.repeat(realPasswordRef.current.length);
           },
           set: (newValue: string) => {
-            realPasswordRef.current = newValue;
-            setDisplayLength(newValue.length);
-            if (valueDescriptor.set) {
-              valueDescriptor.set.call(input, '•'.repeat(newValue.length));
+            // Check if this is React setting the controlled value (dots matching expected length)
+            const expectedDots = '•'.repeat(displayLength);
+            const isAllDots = newValue.length > 0 && newValue.replace(/•/g, '').length === 0;
+            const isReactControlledUpdate = isAllDots && newValue.length === displayLength;
+            
+            if (isReactControlledUpdate) {
+              // React is syncing the controlled value - just accept it silently
+              if (valueDescriptor.set) {
+                valueDescriptor.set.call(input, newValue);
+              }
+              return; // Don't update refs or trigger onChange
             }
-            if (onChangeRef.current) {
-              isInternalUpdateRef.current = true;
-              const syntheticEvent = {
-                target: { ...input, value: newValue },
-                currentTarget: { ...input, value: newValue },
-              } as React.ChangeEvent<HTMLInputElement>;
-              onChangeRef.current(syntheticEvent);
+            
+            // This is either external manipulation or a real password value
+            // Only update if it's different and doesn't contain dots
+            if (!newValue.includes('•') && newValue !== realPasswordRef.current) {
+              realPasswordRef.current = newValue;
+              setDisplayLength(newValue.length);
+              if (valueDescriptor.set) {
+                valueDescriptor.set.call(input, '•'.repeat(newValue.length));
+              }
+              // Only trigger onChange if not from internal update
+              if (onChangeRef.current && !isInternalUpdateRef.current) {
+                isInternalUpdateRef.current = true;
+                const syntheticEvent = {
+                  target: { ...input, value: newValue },
+                  currentTarget: { ...input, value: newValue },
+                } as React.ChangeEvent<HTMLInputElement>;
+                onChangeRef.current(syntheticEvent);
+              }
+            } else if (isAllDots && newValue.length !== displayLength) {
+              // Dots but wrong length - update display length only
+              setDisplayLength(newValue.length);
+              if (valueDescriptor.set) {
+                valueDescriptor.set.call(input, newValue);
+              }
             }
           },
           configurable: true,

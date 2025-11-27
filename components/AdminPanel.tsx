@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { authService, PendingUser, AllUser } from '../services/authService';
 import { settingsService, AppSettings } from '../services/settingsService';
 import { databaseService } from '../services/databaseService';
@@ -68,6 +68,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [ldapTestResult, setLdapTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [ldapTestUser, setLdapTestUser] = useState('');
   const [ldapTestPassword, setLdapTestPassword] = useState('');
+  
+  // Ref to store bind password for immediate access (avoids React state timing issues)
+  const ldapBindPasswordRef = useRef<string>('');
 
   const loadPendingUsers = async () => {
     try {
@@ -103,6 +106,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setSettingsLoading(true);
       const loadedSettings = await settingsService.getSettings();
       setSettings(loadedSettings);
+      // Update ref with loaded password
+      ldapBindPasswordRef.current = loadedSettings.ldap_bind_password || '';
       // Set preview if logo image exists
       if (loadedSettings.logo_image) {
         setLogoPreview(loadedSettings.logo_image);
@@ -1188,7 +1193,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Bind Password</label>
                       <SecurePasswordInput
                         value={settings.ldap_bind_password || ''}
-                        onChange={(e) => setSettings({ ...settings, ldap_bind_password: e.target.value })}
+                        onChange={(e) => {
+                          const password = e.target.value;
+                          ldapBindPasswordRef.current = password; // Store in ref for immediate access
+                          setSettings({ ...settings, ldap_bind_password: password });
+                        }}
                         className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
                         placeholder="••••••••"
                       />
@@ -1438,7 +1447,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       try {
                         setLdapTestLoading(true);
                         setLdapTestResult(null);
-                        const result = await settingsService.testLdapConnection(settings, ldapTestUser, ldapTestPassword);
+                        
+                        // Use ref value first (most up-to-date), fallback to state
+                        const bindPassword = ldapBindPasswordRef.current || settings.ldap_bind_password || '';
+                        
+                        // Ensure bind password doesn't contain dots (should never happen, but safety check)
+                        if (bindPassword.includes('•')) {
+                          setLdapTestResult({ 
+                            success: false, 
+                            message: 'Password field contains invalid characters. Please re-enter the password.' 
+                          });
+                          setLdapTestLoading(false);
+                          return;
+                        }
+                        
+                        // Create settings object with the real password
+                        const testSettings = { ...settings, ldap_bind_password: bindPassword };
+                        const result = await settingsService.testLdapConnection(testSettings, ldapTestUser, ldapTestPassword);
                         setLdapTestResult(result);
                       } catch (err: any) {
                         setLdapTestResult({ success: false, message: err.message });
