@@ -41,7 +41,7 @@ const AppContent: React.FC = () => {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [styleManagerOpen, setStyleManagerOpen] = useState(false);
   const { user, isAuthenticated, loading: authLoading } = useAuth();
-  const { updateStyles } = useStyles();
+  const { updateStyles, styles } = useStyles();
   
   // Theme State
   const [darkMode, setDarkMode] = useState(() => {
@@ -220,7 +220,7 @@ const AppContent: React.FC = () => {
         user={user}
         onLoginClick={() => setAuthModalOpen(true)}
       />
-      <main className="flex-grow container mx-auto px-4 py-8 max-w-6xl">
+      <main className={`flex-grow container mx-auto px-4 py-8 max-w-6xl ${styles?.backgroundRaised ? 'linknest-page-background' : ''}`}>
         {content}
       </main>
       {!isAuthenticated && (

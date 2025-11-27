@@ -1,13 +1,25 @@
 <?php
 // Simple router for API endpoints
+// Include config first to set up error handling
+require_once __DIR__ . '/config.php';
+
+// Ensure we always return JSON, not HTML
+if (!headers_sent()) {
+    header('Content-Type: application/json; charset=utf-8');
+}
+
 $requestUri = $_SERVER['REQUEST_URI'];
 $requestMethod = $_SERVER['REQUEST_METHOD'];
 
-// Get path from query parameter (for Vite proxy) or from REQUEST_URI
+// Get path from query parameter (for Vite proxy or .htaccess rewrite) or from REQUEST_URI
 $path = $_GET['path'] ?? '';
 
-// If no query parameter, parse from REQUEST_URI
-if (empty($path)) {
+// If path comes from query parameter (via .htaccess rewrite or Vite proxy)
+if (!empty($path)) {
+    // Path from query parameter - ensure it starts with /
+    $path = '/' . ltrim($path, '/');
+} else {
+    // Parse from REQUEST_URI (direct access or other routing)
     $parsedPath = parse_url($requestUri, PHP_URL_PATH);
     
     // Remove base path if needed (handle both /api and /linknest/api)
@@ -16,18 +28,16 @@ if (empty($path)) {
         $path = substr($parsedPath, strlen('/linknest/api'));
     } elseif (strpos($parsedPath, $basePath) === 0) {
         $path = substr($parsedPath, strlen($basePath));
+    } else {
+        // If path doesn't start with /api, it might be a direct request
+        // Check if it's just the endpoint name (e.g., /styles, /settings)
+        $path = $parsedPath;
     }
     
-    // Remove leading slash if present
-    $path = ltrim($path, '/');
-} else {
-    // Path from query parameter - ensure it starts with /
-    $path = ltrim($path, '/');
-}
-
-// Ensure path starts with /
-if (!empty($path) && $path[0] !== '/') {
-    $path = '/' . $path;
+    // Ensure path starts with / for routing
+    if (!empty($path) && $path[0] !== '/') {
+        $path = '/' . $path;
+    }
 }
 
 // Route to appropriate handler

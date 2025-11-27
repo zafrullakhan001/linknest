@@ -665,6 +665,255 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                 </div>
               </section>
 
+              {/* Background Table Effect */}
+              <section>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-600">
+                    <path fillRule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3.293 1.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L7.586 10 5.293 7.707a1 1 0 010-1.414zM11 12a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
+                  </svg>
+                  Background Table Effect
+                </h3>
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="backgroundRaised"
+                      checked={styles.backgroundRaised}
+                      onChange={(e) => updateStyle('backgroundRaised', e.target.checked)}
+                      className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500"
+                    />
+                    <label htmlFor="backgroundRaised" className="text-sm font-medium text-slate-700 dark:text-slate-300">Raised Table Background</label>
+                  </div>
+                  {styles.backgroundRaised && (
+                    <div className="space-y-4 pl-6 border-l-2 border-brand-200 dark:border-brand-800">
+                      {/* Basic Settings */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Table Type</label>
+                          <select
+                            value={styles.backgroundTableType}
+                            onChange={(e) => updateStyle('backgroundTableType', e.target.value as 'wood' | 'marble' | 'metal' | 'fabric' | 'clean')}
+                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                          >
+                            <option value="wood">Wood</option>
+                            <option value="marble">Marble</option>
+                            <option value="metal">Metal</option>
+                            <option value="fabric">Fabric</option>
+                            <option value="clean">Clean</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Raised Intensity: {styles.backgroundRaisedIntensity}</label>
+                          <input
+                            type="range"
+                            min="0"
+                            max="5"
+                            value={styles.backgroundRaisedIntensity}
+                            onChange={(e) => updateStyle('backgroundRaisedIntensity', parseInt(e.target.value))}
+                            className="w-full"
+                          />
+                          <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            <span>Flat</span>
+                            <span>Very Raised</span>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Table Width: {styles.backgroundTableWidth}%</label>
+                          <input
+                            type="range"
+                            min="50"
+                            max="100"
+                            value={styles.backgroundTableWidth}
+                            onChange={(e) => updateStyle('backgroundTableWidth', parseInt(e.target.value))}
+                            className="w-full"
+                          />
+                          <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            <span>Narrow</span>
+                            <span>Full Width</span>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Table Surface Color</label>
+                          <div className="flex gap-2">
+                            <input
+                              type="color"
+                              value={styles.backgroundTableColor}
+                              onChange={(e) => updateStyle('backgroundTableColor', e.target.value)}
+                              className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                            />
+                            <input
+                              type="text"
+                              value={styles.backgroundTableColor}
+                              onChange={(e) => updateStyle('backgroundTableColor', e.target.value)}
+                              className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                              placeholder="#8b7355"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {styles.backgroundTableType === 'wood' && 'Recommended: Brown tones (#8b7355, #6b5238)'}
+                        {styles.backgroundTableType === 'marble' && 'Recommended: Light gray/white tones (#e8e8e8, #f5f5f5)'}
+                        {styles.backgroundTableType === 'metal' && 'Recommended: Gray/silver tones (#c0c0c0, #a8a8a8)'}
+                        {styles.backgroundTableType === 'fabric' && 'Recommended: Neutral tones (#d4d4d4, #e5e5e5)'}
+                        {styles.backgroundTableType === 'clean' && 'Any color works well'}
+                      </p>
+
+                      {/* Gradient Options */}
+                      <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-700">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="backgroundUseGradient"
+                            checked={styles.backgroundUseGradient}
+                            onChange={(e) => updateStyle('backgroundUseGradient', e.target.checked)}
+                            className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500"
+                          />
+                          <label htmlFor="backgroundUseGradient" className="text-sm font-medium text-slate-700 dark:text-slate-300">Enable Gradient</label>
+                        </div>
+                        {styles.backgroundUseGradient && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-6">
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Gradient Type</label>
+                              <select
+                                value={styles.backgroundGradientType}
+                                onChange={(e) => updateStyle('backgroundGradientType', e.target.value as 'linear' | 'radial' | 'conic')}
+                                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                              >
+                                <option value="linear">Linear</option>
+                                <option value="radial">Radial</option>
+                                <option value="conic">Conic</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Direction: {styles.backgroundGradientDirection}°</label>
+                              <input
+                                type="range"
+                                min="0"
+                                max="360"
+                                value={styles.backgroundGradientDirection}
+                                onChange={(e) => updateStyle('backgroundGradientDirection', parseInt(e.target.value))}
+                                className="w-full"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Start Color</label>
+                              <div className="flex gap-2">
+                                <input
+                                  type="color"
+                                  value={styles.backgroundGradientStartColor}
+                                  onChange={(e) => updateStyle('backgroundGradientStartColor', e.target.value)}
+                                  className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                                />
+                                <input
+                                  type="text"
+                                  value={styles.backgroundGradientStartColor}
+                                  onChange={(e) => updateStyle('backgroundGradientStartColor', e.target.value)}
+                                  className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">End Color</label>
+                              <div className="flex gap-2">
+                                <input
+                                  type="color"
+                                  value={styles.backgroundGradientEndColor}
+                                  onChange={(e) => updateStyle('backgroundGradientEndColor', e.target.value)}
+                                  className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                                />
+                                <input
+                                  type="text"
+                                  value={styles.backgroundGradientEndColor}
+                                  onChange={(e) => updateStyle('backgroundGradientEndColor', e.target.value)}
+                                  className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Gradient Stop: {styles.backgroundGradientStop}%</label>
+                              <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                value={styles.backgroundGradientStop}
+                                onChange={(e) => updateStyle('backgroundGradientStop', parseInt(e.target.value))}
+                                className="w-full"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Metallic Effect */}
+                      <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-700">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="backgroundMetallicEffect"
+                            checked={styles.backgroundMetallicEffect}
+                            onChange={(e) => updateStyle('backgroundMetallicEffect', e.target.checked)}
+                            className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500"
+                          />
+                          <label htmlFor="backgroundMetallicEffect" className="text-sm font-medium text-slate-700 dark:text-slate-300">Metallic Effect</label>
+                        </div>
+                        {styles.backgroundMetallicEffect && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-6">
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Metallic Type</label>
+                              <select
+                                value={styles.backgroundMetallicType}
+                                onChange={(e) => updateStyle('backgroundMetallicType', e.target.value as 'silver' | 'gold' | 'chrome' | 'bronze' | 'copper' | 'custom')}
+                                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                              >
+                                <option value="silver">Silver</option>
+                                <option value="gold">Gold</option>
+                                <option value="chrome">Chrome</option>
+                                <option value="bronze">Bronze</option>
+                                <option value="copper">Copper</option>
+                                <option value="custom">Custom</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Metallic Intensity: {styles.backgroundMetallicIntensity}%</label>
+                              <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                value={styles.backgroundMetallicIntensity}
+                                onChange={(e) => updateStyle('backgroundMetallicIntensity', parseInt(e.target.value))}
+                                className="w-full"
+                              />
+                            </div>
+                            {styles.backgroundMetallicType === 'custom' && (
+                              <div className="md:col-span-2">
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Custom Metallic Color</label>
+                                <div className="flex gap-2">
+                                  <input
+                                    type="color"
+                                    value={styles.backgroundMetallicCustomColor}
+                                    onChange={(e) => updateStyle('backgroundMetallicCustomColor', e.target.value)}
+                                    className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={styles.backgroundMetallicCustomColor}
+                                    onChange={(e) => updateStyle('backgroundMetallicCustomColor', e.target.value)}
+                                    className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                                    placeholder="#c0c0c0"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+
               {/* Category Header */}
               <section>
                 <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
@@ -712,6 +961,222 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                       onChange={(e) => updateStyle('categoryHeaderSpacing', parseInt(e.target.value))}
                       className="w-full"
                     />
+                  </div>
+                </div>
+              </section>
+
+              {/* Typography */}
+              <section>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-indigo-500">
+                    <path fillRule="evenodd" d="M2 3.5A1.5 1.5 0 013.5 2h1.148a1.5 1.5 0 011.465 1.175l.716 3.223a1.5 1.5 0 01-1.052 1.767l-.933.267c-.41.117-.643.555-.48.95a11.542 11.542 0 006.254 6.254c.395.163.833-.07.95-.48l.267-.933a1.5 1.5 0 011.767-1.052l3.223.716a1.5 1.5 0 011.465 1.175L16.5 15.5A1.5 1.5 0 0115 17h-1.148a1.5 1.5 0 01-1.465-1.175l-.716-3.223a1.5 1.5 0 00-1.767-1.052l-.933.267a1.5 1.5 0 01-1.767-1.052l-.267-.933a1.5 1.5 0 00-1.052-1.767l-.933-.267a1.5 1.5 0 01-1.052-1.767l.267-.933A1.5 1.5 0 004.148 2H3.5A1.5 1.5 0 002 3.5z" clipRule="evenodd" />
+                  </svg>
+                  Typography
+                </h3>
+                
+                {/* Spaces (Tiles) Typography */}
+                <div className="mb-6">
+                  <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Spaces (Tiles)</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-indigo-200 dark:border-indigo-800">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Family</label>
+                      <select
+                        value={styles.tileFontFamily}
+                        onChange={(e) => updateStyle('tileFontFamily', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="inherit">Inherit (Default)</option>
+                        <option value="Arial, sans-serif">Arial</option>
+                        <option value="'Helvetica Neue', Helvetica, sans-serif">Helvetica</option>
+                        <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                        <option value="Georgia, serif">Georgia</option>
+                        <option value="'Courier New', Courier, monospace">Courier New</option>
+                        <option value="Verdana, sans-serif">Verdana</option>
+                        <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                        <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
+                        <option value="Impact, sans-serif">Impact</option>
+                        <option value="'Lucida Console', monospace">Lucida Console</option>
+                        <option value="Tahoma, sans-serif">Tahoma</option>
+                        <option value="'Palatino Linotype', Palatino, serif">Palatino</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Size: {styles.tileFontSize}px</label>
+                      <input
+                        type="range"
+                        min="10"
+                        max="24"
+                        value={styles.tileFontSize}
+                        onChange={(e) => updateStyle('tileFontSize', parseInt(e.target.value))}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Weight</label>
+                      <select
+                        value={styles.tileFontWeight}
+                        onChange={(e) => updateStyle('tileFontWeight', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="bold">Bold</option>
+                        <option value="100">Thin (100)</option>
+                        <option value="200">Extra Light (200)</option>
+                        <option value="300">Light (300)</option>
+                        <option value="400">Regular (400)</option>
+                        <option value="500">Medium (500)</option>
+                        <option value="600">Semi Bold (600)</option>
+                        <option value="700">Bold (700)</option>
+                        <option value="800">Extra Bold (800)</option>
+                        <option value="900">Black (900)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Style</label>
+                      <select
+                        value={styles.tileFontStyle}
+                        onChange={(e) => updateStyle('tileFontStyle', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="italic">Italic</option>
+                        <option value="oblique">Oblique</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Categories Typography */}
+                <div className="mb-6">
+                  <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Categories</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pl-4 border-l-2 border-indigo-200 dark:border-indigo-800">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Family</label>
+                      <select
+                        value={styles.categoryFontFamily}
+                        onChange={(e) => updateStyle('categoryFontFamily', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="inherit">Inherit (Default)</option>
+                        <option value="Arial, sans-serif">Arial</option>
+                        <option value="'Helvetica Neue', Helvetica, sans-serif">Helvetica</option>
+                        <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                        <option value="Georgia, serif">Georgia</option>
+                        <option value="'Courier New', Courier, monospace">Courier New</option>
+                        <option value="Verdana, sans-serif">Verdana</option>
+                        <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                        <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
+                        <option value="Impact, sans-serif">Impact</option>
+                        <option value="'Lucida Console', monospace">Lucida Console</option>
+                        <option value="Tahoma, sans-serif">Tahoma</option>
+                        <option value="'Palatino Linotype', Palatino, serif">Palatino</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Weight</label>
+                      <select
+                        value={styles.categoryFontWeight}
+                        onChange={(e) => updateStyle('categoryFontWeight', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="bold">Bold</option>
+                        <option value="100">Thin (100)</option>
+                        <option value="200">Extra Light (200)</option>
+                        <option value="300">Light (300)</option>
+                        <option value="400">Regular (400)</option>
+                        <option value="500">Medium (500)</option>
+                        <option value="600">Semi Bold (600)</option>
+                        <option value="700">Bold (700)</option>
+                        <option value="800">Extra Bold (800)</option>
+                        <option value="900">Black (900)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Style</label>
+                      <select
+                        value={styles.categoryFontStyle}
+                        onChange={(e) => updateStyle('categoryFontStyle', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="italic">Italic</option>
+                        <option value="oblique">Oblique</option>
+                      </select>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 pl-4">Note: Font size is controlled in the Category Header section above.</p>
+                </div>
+
+                {/* Page Title Typography */}
+                <div className="mb-6">
+                  <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Page Title</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-indigo-200 dark:border-indigo-800">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Family</label>
+                      <select
+                        value={styles.pageTitleFontFamily}
+                        onChange={(e) => updateStyle('pageTitleFontFamily', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="inherit">Inherit (Default)</option>
+                        <option value="Arial, sans-serif">Arial</option>
+                        <option value="'Helvetica Neue', Helvetica, sans-serif">Helvetica</option>
+                        <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                        <option value="Georgia, serif">Georgia</option>
+                        <option value="'Courier New', Courier, monospace">Courier New</option>
+                        <option value="Verdana, sans-serif">Verdana</option>
+                        <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                        <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
+                        <option value="Impact, sans-serif">Impact</option>
+                        <option value="'Lucida Console', monospace">Lucida Console</option>
+                        <option value="Tahoma, sans-serif">Tahoma</option>
+                        <option value="'Palatino Linotype', Palatino, serif">Palatino</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Size: {styles.pageTitleFontSize}px</label>
+                      <input
+                        type="range"
+                        min="14"
+                        max="32"
+                        value={styles.pageTitleFontSize}
+                        onChange={(e) => updateStyle('pageTitleFontSize', parseInt(e.target.value))}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Weight</label>
+                      <select
+                        value={styles.pageTitleFontWeight}
+                        onChange={(e) => updateStyle('pageTitleFontWeight', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="bold">Bold</option>
+                        <option value="100">Thin (100)</option>
+                        <option value="200">Extra Light (200)</option>
+                        <option value="300">Light (300)</option>
+                        <option value="400">Regular (400)</option>
+                        <option value="500">Medium (500)</option>
+                        <option value="600">Semi Bold (600)</option>
+                        <option value="700">Bold (700)</option>
+                        <option value="800">Extra Bold (800)</option>
+                        <option value="900">Black (900)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Style</label>
+                      <select
+                        value={styles.pageTitleFontStyle}
+                        onChange={(e) => updateStyle('pageTitleFontStyle', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="italic">Italic</option>
+                        <option value="oblique">Oblique</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
               </section>

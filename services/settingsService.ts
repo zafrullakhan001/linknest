@@ -1,5 +1,26 @@
-// Use Vite's runtime value if available, but don't depend on its TypeScript types
-const API_BASE = (import.meta as any)?.env?.VITE_API_BASE || '/api';
+// Resolve API base so it works both in dev (/api via Vite proxy)
+// and in XAMPP/production where the app is served from /linknest.
+function resolveApiBase(): string {
+  // Prefer Vite-injected env when available
+  const envBase = (import.meta as any)?.env?.VITE_API_BASE;
+  if (envBase) {
+    return envBase;
+  }
+
+  // Fallback based on current location (runtime)
+  if (typeof window !== 'undefined') {
+    const path = window.location.pathname || '';
+    // If app is served from /linknest, use /linknest/api
+    if (path.startsWith('/linknest')) {
+      return '/linknest/api';
+    }
+  }
+
+  // Default dev / generic fallback
+  return '/api';
+}
+
+const API_BASE = resolveApiBase();
 
 export interface AppSettings {
   app_name: string;
@@ -8,6 +29,7 @@ export interface AppSettings {
   logo_type: 'icon' | 'image';
   logo_icon: string;
   logo_image: string;
+  favicon: string;
 
   // LDAP Settings
   ldap_enabled?: string;
@@ -67,6 +89,7 @@ export const settingsService = {
       logo_type: (data.settings?.logo_type || 'icon') as 'icon' | 'image',
       logo_icon: data.settings?.logo_icon || '🔗',
       logo_image: data.settings?.logo_image || '',
+      favicon: data.settings?.favicon || '',
 
       // LDAP defaults
       ldap_enabled: data.settings?.ldap_enabled || '0',
@@ -133,6 +156,25 @@ export const settingsService = {
 
     if (!response.ok) {
       throw new Error(data.error || 'Failed to upload logo');
+    }
+
+    return data.url;
+  },
+
+  async uploadFavicon(file: File): Promise<string> {
+    const formData = new FormData();
+    formData.append('favicon', file);
+
+    const response = await fetch(`${API_BASE}/settings/upload-favicon`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to upload favicon');
     }
 
     return data.url;

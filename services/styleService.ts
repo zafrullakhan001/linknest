@@ -1,5 +1,26 @@
-// Use Vite's runtime value if available, but don't depend on its TypeScript types
-const API_BASE = (import.meta as any)?.env?.VITE_API_BASE || '/api';
+// Resolve API base so it works both in dev (/api via Vite proxy)
+// and in XAMPP/production where the app is served from /linknest.
+function resolveApiBase(): string {
+  // Prefer Vite-injected env when available
+  const envBase = (import.meta as any)?.env?.VITE_API_BASE;
+  if (envBase) {
+    return envBase;
+  }
+
+  // Fallback based on current location (runtime)
+  if (typeof window !== 'undefined') {
+    const path = window.location.pathname || '';
+    // If app is served from /linknest, use /linknest/api
+    if (path.startsWith('/linknest')) {
+      return '/linknest/api';
+    }
+  }
+
+  // Default dev / generic fallback
+  return '/api';
+}
+
+const API_BASE = resolveApiBase();
 
 export interface SpaceStyles {
   // Tile/Space styling
@@ -39,6 +60,21 @@ export interface SpaceStyles {
   categoryHeaderColor: string;
   categoryHeaderSize: number; // font size
   categoryHeaderSpacing: number; // margin bottom
+  categoryFontFamily: string;
+  categoryFontWeight: string;
+  categoryFontStyle: string;
+  
+  // Tile/Space font styling
+  tileFontFamily: string;
+  tileFontSize: number;
+  tileFontWeight: string;
+  tileFontStyle: string;
+  
+  // Page title font styling
+  pageTitleFontFamily: string;
+  pageTitleFontSize: number;
+  pageTitleFontWeight: string;
+  pageTitleFontStyle: string;
   
   // Grid settings
   gridColumns: {
@@ -47,6 +83,23 @@ export interface SpaceStyles {
     lg: number;
     xl: number;
   };
+  
+  // Background/Page styling
+  backgroundRaised: boolean; // Raised table-like background
+  backgroundTableType: 'wood' | 'marble' | 'metal' | 'fabric' | 'clean';
+  backgroundRaisedIntensity: number; // 0-5, how raised the background appears
+  backgroundTableColor: string; // Base color for table surface
+  backgroundTableWidth: number; // 0-100, percentage width of the table (0 = full width, 100 = max-width container)
+  backgroundUseGradient: boolean; // Use gradient for background
+  backgroundGradientType: 'linear' | 'radial' | 'conic';
+  backgroundGradientDirection: number; // 0-360 degrees for linear
+  backgroundGradientStartColor: string;
+  backgroundGradientEndColor: string;
+  backgroundGradientStop: number; // 0-100 for gradient stop position
+  backgroundMetallicEffect: boolean; // Metallic effect for background
+  backgroundMetallicType: 'silver' | 'gold' | 'chrome' | 'bronze' | 'copper' | 'custom';
+  backgroundMetallicIntensity: number; // 0-100, intensity of metallic effect
+  backgroundMetallicCustomColor: string; // Custom color for metallic effect
 }
 
 export const DEFAULT_STYLES: SpaceStyles = {
@@ -76,12 +129,38 @@ export const DEFAULT_STYLES: SpaceStyles = {
   categoryHeaderColor: '#475569',
   categoryHeaderSize: 14,
   categoryHeaderSpacing: 12,
+  categoryFontFamily: 'inherit',
+  categoryFontWeight: 'bold',
+  categoryFontStyle: 'normal',
+  tileFontFamily: 'inherit',
+  tileFontSize: 14,
+  tileFontWeight: 'bold',
+  tileFontStyle: 'normal',
+  pageTitleFontFamily: 'inherit',
+  pageTitleFontSize: 20,
+  pageTitleFontWeight: 'bold',
+  pageTitleFontStyle: 'normal',
   gridColumns: {
     sm: 1,
     md: 2,
     lg: 3,
     xl: 4
-  }
+  },
+  backgroundRaised: false,
+  backgroundTableType: 'wood',
+  backgroundRaisedIntensity: 3,
+  backgroundTableColor: '#8b7355',
+  backgroundTableWidth: 100,
+  backgroundUseGradient: false,
+  backgroundGradientType: 'linear',
+  backgroundGradientDirection: 135,
+  backgroundGradientStartColor: '#8b7355',
+  backgroundGradientEndColor: '#6b5238',
+  backgroundGradientStop: 50,
+  backgroundMetallicEffect: false,
+  backgroundMetallicType: 'silver',
+  backgroundMetallicIntensity: 50,
+  backgroundMetallicCustomColor: '#c0c0c0'
 };
 
 export const styleService = {
@@ -322,6 +401,23 @@ export const styleService = {
         color: ${styles.categoryHeaderColor} !important;
         font-size: ${styles.categoryHeaderSize}px !important;
         margin-bottom: ${styles.categoryHeaderSpacing}px !important;
+        font-family: ${styles.categoryFontFamily} !important;
+        font-weight: ${styles.categoryFontWeight} !important;
+        font-style: ${styles.categoryFontStyle} !important;
+      }
+      
+      .linknest-tile h3 {
+        font-family: ${styles.tileFontFamily} !important;
+        font-size: ${styles.tileFontSize}px !important;
+        font-weight: ${styles.tileFontWeight} !important;
+        font-style: ${styles.tileFontStyle} !important;
+      }
+      
+      .linknest-page-title {
+        font-family: ${styles.pageTitleFontFamily} !important;
+        font-size: ${styles.pageTitleFontSize}px !important;
+        font-weight: ${styles.pageTitleFontWeight} !important;
+        font-style: ${styles.pageTitleFontStyle} !important;
       }
       
       @media (min-width: 640px) {
@@ -347,7 +443,267 @@ export const styleService = {
           grid-template-columns: repeat(${styles.gridColumns.xl}, minmax(0, 1fr)) !important;
         }
       }
+      
+      ${styles.backgroundRaised ? `
+      /* Raised Table Background */
+      .linknest-page-background {
+        position: relative;
+        background: ${getTableBackground(styles)} !important;
+        border-radius: 16px;
+        padding: 24px;
+        margin: 20px auto;
+        width: ${styles.backgroundTableWidth}%;
+        max-width: ${styles.backgroundTableWidth === 100 ? 'calc(100% - 40px)' : `${styles.backgroundTableWidth}%`};
+        box-shadow: ${getTableShadow(styles.backgroundRaisedIntensity)} !important;
+        border: 2px solid ${getTableBorder(styles.backgroundTableType)};
+      }
+      
+      ${styles.backgroundMetallicEffect ? `
+      .linknest-page-background::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 50%;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.1) 50%, transparent 100%);
+        border-radius: 14px 14px 0 0;
+        pointer-events: none;
+        z-index: 0;
+      }
+      ` : `
+      .linknest-page-background::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        border-radius: 14px;
+        background: ${getTableOverlay(styles)};
+        pointer-events: none;
+        z-index: 0;
+      }
+      `}
+      
+      .linknest-page-background > * {
+        position: relative;
+        z-index: 1;
+      }
+      ` : ''}
     `;
   }
 };
+
+// Helper functions for table background effects
+function getTableBackground(styles: SpaceStyles): string {
+  const baseColor = styles.backgroundTableColor;
+  
+  // Build base texture/pattern based on table type
+  let basePattern = '';
+  switch (styles.backgroundTableType) {
+    case 'wood':
+      basePattern = `linear-gradient(135deg, 
+        ${darkenColor(baseColor, 0.1)} 0%, 
+        ${baseColor} 25%, 
+        ${lightenColor(baseColor, 0.05)} 50%, 
+        ${baseColor} 75%, 
+        ${darkenColor(baseColor, 0.1)} 100%
+      ), repeating-linear-gradient(
+        90deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.03) 2px,
+        rgba(0, 0, 0, 0.03) 4px
+      )`;
+      break;
+    case 'marble':
+      basePattern = `linear-gradient(135deg, 
+        ${lightenColor(baseColor, 0.2)} 0%, 
+        ${baseColor} 30%, 
+        ${lightenColor(baseColor, 0.1)} 50%, 
+        ${baseColor} 70%, 
+        ${darkenColor(baseColor, 0.1)} 100%
+      ), radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.3) 0%, transparent 50%)`;
+      break;
+    case 'metal':
+      basePattern = `linear-gradient(135deg, 
+        ${lightenColor(baseColor, 0.15)} 0%, 
+        ${baseColor} 25%, 
+        ${darkenColor(baseColor, 0.1)} 50%, 
+        ${baseColor} 75%, 
+        ${lightenColor(baseColor, 0.1)} 100%
+      )`;
+      break;
+    case 'fabric':
+      basePattern = `repeating-linear-gradient(
+        45deg,
+        ${baseColor},
+        ${baseColor} 10px,
+        ${darkenColor(baseColor, 0.05)} 10px,
+        ${darkenColor(baseColor, 0.05)} 20px
+      )`;
+      break;
+    case 'clean':
+    default:
+      basePattern = baseColor;
+      break;
+  }
+  
+  // Add gradient if enabled
+  let gradientCSS = '';
+  if (styles.backgroundUseGradient) {
+    if (styles.backgroundGradientType === 'linear') {
+      gradientCSS = `linear-gradient(${styles.backgroundGradientDirection}deg, ${styles.backgroundGradientStartColor} ${styles.backgroundGradientStop}%, ${styles.backgroundGradientEndColor})`;
+    } else if (styles.backgroundGradientType === 'radial') {
+      gradientCSS = `radial-gradient(circle, ${styles.backgroundGradientStartColor} ${styles.backgroundGradientStop}%, ${styles.backgroundGradientEndColor})`;
+    } else if (styles.backgroundGradientType === 'conic') {
+      gradientCSS = `conic-gradient(from ${styles.backgroundGradientDirection}deg, ${styles.backgroundGradientStartColor} ${styles.backgroundGradientStop}%, ${styles.backgroundGradientEndColor})`;
+    }
+  }
+  
+  // Add metallic effect if enabled
+  let metallicCSS = '';
+  if (styles.backgroundMetallicEffect) {
+    const metallicColors: Record<string, { start: string; mid: string; end: string; highlight: string }> = {
+      silver: { start: '#e8e8e8', mid: '#c0c0c0', end: '#a8a8a8', highlight: '#ffffff' },
+      gold: { start: '#ffd700', mid: '#ffed4e', end: '#daa520', highlight: '#fffacd' },
+      chrome: { start: '#e8e8e8', mid: '#d0d0d0', end: '#b0b0b0', highlight: '#f5f5f5' },
+      bronze: { start: '#cd7f32', mid: '#b87333', end: '#8b4513', highlight: '#daa520' },
+      copper: { start: '#b87333', mid: '#cd7f32', end: '#8b4513', highlight: '#daa520' },
+      custom: { start: styles.backgroundMetallicCustomColor, mid: styles.backgroundMetallicCustomColor, end: styles.backgroundMetallicCustomColor, highlight: '#ffffff' }
+    };
+    
+    const metallic = metallicColors[styles.backgroundMetallicType] || metallicColors.silver;
+    const intensity = styles.backgroundMetallicIntensity / 100;
+    
+    metallicCSS = `linear-gradient(135deg, 
+      ${metallic.highlight} 0%, 
+      ${metallic.start} ${10 * intensity}%, 
+      ${metallic.mid} 50%, 
+      ${metallic.end} ${90 * intensity}%, 
+      ${metallic.start} 100%
+    )`;
+  }
+  
+  // Combine all effects
+  const layers: string[] = [];
+  
+  // Base pattern/texture first
+  if (basePattern) {
+    layers.push(basePattern);
+  }
+  
+  // Gradient second (if enabled)
+  if (gradientCSS) {
+    layers.push(gradientCSS);
+  }
+  
+  // Metallic effect last (if enabled)
+  if (metallicCSS) {
+    layers.push(metallicCSS);
+  }
+  
+  // If only one layer, return it directly, otherwise combine
+  if (layers.length === 0) {
+    return baseColor;
+  } else if (layers.length === 1) {
+    return layers[0];
+  } else {
+    return layers.join(', ');
+  }
+}
+
+function getTableShadow(intensity: number): string {
+  const shadows = [
+    '0 2px 8px rgba(0, 0, 0, 0.1), 0 1px 4px rgba(0, 0, 0, 0.06)',
+    '0 4px 12px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.08)',
+    '0 8px 24px rgba(0, 0, 0, 0.15), 0 4px 12px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
+    '0 12px 32px rgba(0, 0, 0, 0.18), 0 6px 16px rgba(0, 0, 0, 0.12), inset 0 2px 0 rgba(255, 255, 255, 0.15)',
+    '0 16px 40px rgba(0, 0, 0, 0.2), 0 8px 20px rgba(0, 0, 0, 0.15), inset 0 2px 0 rgba(255, 255, 255, 0.2)',
+    '0 20px 48px rgba(0, 0, 0, 0.25), 0 10px 24px rgba(0, 0, 0, 0.18), inset 0 3px 0 rgba(255, 255, 255, 0.25)'
+  ];
+  return shadows[Math.min(intensity, 5)];
+}
+
+function getTableBorder(type: string): string {
+  const borders: Record<string, string> = {
+    wood: 'rgba(101, 67, 33, 0.3)',
+    marble: 'rgba(200, 200, 200, 0.4)',
+    metal: 'rgba(150, 150, 150, 0.5)',
+    fabric: 'rgba(100, 100, 100, 0.2)',
+    clean: 'rgba(0, 0, 0, 0.1)'
+  };
+  return borders[type] || borders.clean;
+}
+
+function getTableOverlay(styles: SpaceStyles): string {
+  if (styles.backgroundTableType === 'wood') {
+    return `linear-gradient(180deg, 
+      rgba(255, 255, 255, 0.05) 0%, 
+      transparent 30%, 
+      transparent 70%, 
+      rgba(0, 0, 0, 0.05) 100%
+    )`;
+  } else if (styles.backgroundTableType === 'marble') {
+    return `radial-gradient(ellipse at top left, rgba(255, 255, 255, 0.2) 0%, transparent 50%)`;
+  } else if (styles.backgroundTableType === 'metal') {
+    return `linear-gradient(135deg, 
+      rgba(255, 255, 255, 0.1) 0%, 
+      transparent 50%, 
+      rgba(0, 0, 0, 0.05) 100%
+    )`;
+  }
+  return 'transparent';
+}
+
+function lightenColor(color: string, amount: number): string {
+  // Simple color lightening - convert hex to RGB, lighten, convert back
+  let hex = color.replace('#', '');
+  
+  // Handle 3-digit hex codes
+  if (hex.length === 3) {
+    hex = hex.split('').map(char => char + char).join('');
+  }
+  
+  // Validate hex color
+  if (!/^[0-9A-Fa-f]{6}$/.test(hex)) {
+    return color; // Return original if invalid
+  }
+  
+  const r = parseInt(hex.substr(0, 2), 16);
+  const g = parseInt(hex.substr(2, 2), 16);
+  const b = parseInt(hex.substr(4, 2), 16);
+  
+  const newR = Math.min(255, Math.floor(r + (255 - r) * amount));
+  const newG = Math.min(255, Math.floor(g + (255 - g) * amount));
+  const newB = Math.min(255, Math.floor(b + (255 - b) * amount));
+  
+  return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
+}
+
+function darkenColor(color: string, amount: number): string {
+  // Simple color darkening
+  let hex = color.replace('#', '');
+  
+  // Handle 3-digit hex codes
+  if (hex.length === 3) {
+    hex = hex.split('').map(char => char + char).join('');
+  }
+  
+  // Validate hex color
+  if (!/^[0-9A-Fa-f]{6}$/.test(hex)) {
+    return color; // Return original if invalid
+  }
+  
+  const r = parseInt(hex.substr(0, 2), 16);
+  const g = parseInt(hex.substr(2, 2), 16);
+  const b = parseInt(hex.substr(4, 2), 16);
+  
+  const newR = Math.max(0, Math.floor(r * (1 - amount)));
+  const newG = Math.max(0, Math.floor(g * (1 - amount)));
+  const newB = Math.max(0, Math.floor(b * (1 - amount)));
+  
+  return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
+}
 

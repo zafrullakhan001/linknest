@@ -34,7 +34,8 @@ $mimeTypes = [
     'png' => 'image/png',
     'gif' => 'image/gif',
     'svg' => 'image/svg+xml',
-    'webp' => 'image/webp'
+    'webp' => 'image/webp',
+    'ico' => 'image/x-icon'
 ];
 
 $mimeType = $mimeTypes[$extension] ?? 'application/octet-stream';

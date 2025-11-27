@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { SpaceStyles, DEFAULT_STYLES, styleService } from '../services/styleService';
+import { useAuth } from './AuthContext';
 
 interface StyleContextType {
   styles: SpaceStyles;
@@ -13,6 +14,9 @@ const StyleContext = createContext<StyleContextType | undefined>(undefined);
 export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [styles, setStyles] = useState<SpaceStyles>(DEFAULT_STYLES);
   const [isLoading, setIsLoading] = useState(true);
+  const { isAuthenticated, loading: authLoading } = useAuth();
+  const prevAuthRef = useRef<boolean | undefined>(undefined);
+  const initialMountRef = useRef(true);
 
   const loadStyles = async () => {
     setIsLoading(true);
@@ -56,6 +60,27 @@ export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       window.removeEventListener('refreshStyles', handleRefresh);
     };
   }, []);
+
+  // Reload styles when authentication state changes (but not on initial mount)
+  useEffect(() => {
+    // Skip if auth is still loading
+    if (authLoading) {
+      return;
+    }
+
+    // On initial mount, just record the auth state and don't reload
+    if (initialMountRef.current) {
+      initialMountRef.current = false;
+      prevAuthRef.current = isAuthenticated;
+      return;
+    }
+
+    // Only reload if authentication state actually changed
+    if (prevAuthRef.current !== isAuthenticated) {
+      prevAuthRef.current = isAuthenticated;
+      loadStyles();
+    }
+  }, [isAuthenticated, authLoading]);
 
   // Reapply styles when they change or dark mode changes
   useEffect(() => {

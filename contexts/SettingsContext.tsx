@@ -16,7 +16,8 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     spaces_title: 'My Spaces',
     logo_type: 'icon',
     logo_icon: '🔗',
-    logo_image: ''
+    logo_image: '',
+    favicon: ''
   });
   const [loading, setLoading] = useState(true);
 
@@ -27,10 +28,30 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
       
       // Update page title
       document.title = loadedSettings.page_title || 'LinkNest';
+      
+      // Update favicon
+      updateFavicon(loadedSettings.favicon);
     } catch (error) {
       console.error('Failed to load settings:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const updateFavicon = (faviconUrl: string) => {
+    // Remove existing favicon links
+    const existingLinks = document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]');
+    existingLinks.forEach(link => link.remove());
+    
+    if (faviconUrl) {
+      // Create new favicon link
+      const link = document.createElement('link');
+      link.rel = 'icon';
+      link.type = faviconUrl.endsWith('.svg') ? 'image/svg+xml' : 
+                  faviconUrl.endsWith('.ico') ? 'image/x-icon' : 
+                  'image/png';
+      link.href = faviconUrl;
+      document.head.appendChild(link);
     }
   };
 
@@ -56,7 +77,8 @@ export const useSettings = () => {
         spaces_title: 'My Spaces',
         logo_type: 'icon' as const,
         logo_icon: '🔗',
-        logo_image: ''
+        logo_image: '',
+        favicon: ''
       },
       loading: false,
       refreshSettings: async () => {}

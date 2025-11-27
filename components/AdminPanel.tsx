@@ -33,7 +33,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     spaces_title: 'My Spaces',
     logo_type: 'icon',
     logo_icon: '🔗',
-    logo_image: ''
+    logo_image: '',
+    favicon: ''
   });
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -43,6 +44,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [adminPasswordLoading, setAdminPasswordLoading] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [faviconUploading, setFaviconUploading] = useState(false);
+  const [faviconPreview, setFaviconPreview] = useState<string | null>(null);
 
   // Database export/import state
   const [exporting, setExporting] = useState(false);
@@ -2042,6 +2045,181 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           </div>
                         </div>
                       )}
+
+                      {/* Favicon Upload Section */}
+                      <div className="mb-6">
+                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Favicon</h4>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mb-4">
+                          Upload a favicon (16x16px to 512x512px recommended). This appears in browser tabs and bookmarks.
+                        </p>
+
+                        {/* Preview */}
+                        {(faviconPreview || settings.favicon) && (
+                          <div className="mb-3">
+                            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                              Current Favicon Preview
+                            </label>
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={faviconPreview || settings.favicon}
+                                alt="Favicon preview"
+                                className="w-16 h-16 object-contain border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 p-2"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).style.display = 'none';
+                                }}
+                              />
+                              <div className="flex-1">
+                                <p className="text-xs text-slate-600 dark:text-slate-400">
+                                  {settings.favicon || 'Preview'}
+                                </p>
+                                {settings.favicon && (
+                                  <button
+                                    onClick={() => {
+                                      setSettings({ ...settings, favicon: '' });
+                                      setFaviconPreview(null);
+                                    }}
+                                    className="mt-1 text-xs text-red-600 dark:text-red-400 hover:underline"
+                                  >
+                                    Remove favicon
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* File Upload */}
+                        <div className="mb-3">
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                            Upload Favicon
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="file"
+                              accept="image/x-icon,image/vnd.microsoft.icon,image/png,image/svg+xml,image/jpeg,image/jpg,image/gif,image/webp,.ico"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+
+                                // Validate file size (1MB)
+                                if (file.size > 1 * 1024 * 1024) {
+                                  setError('File size too large. Maximum size: 1MB');
+                                  e.target.value = '';
+                                  return;
+                                }
+
+                                // Validate dimensions (skip for SVG and ICO)
+                                const isSVG = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
+                                const isICO = file.name.toLowerCase().endsWith('.ico') || file.type === 'image/x-icon' || file.type === 'image/vnd.microsoft.icon';
+                                const objectUrl = URL.createObjectURL(file);
+
+                                if (isSVG || isICO) {
+                                  // For SVG and ICO, just show preview and upload
+                                  setFaviconPreview(objectUrl);
+                                  try {
+                                    setFaviconUploading(true);
+                                    setError('');
+                                    const url = await settingsService.uploadFavicon(file);
+                                    setSettings({ ...settings, favicon: url });
+                                    setFaviconPreview(null); // Clear preview after upload
+                                    URL.revokeObjectURL(objectUrl);
+                                  } catch (err: any) {
+                                    setError(err.message || 'Failed to upload favicon');
+                                    setFaviconPreview(null);
+                                    URL.revokeObjectURL(objectUrl);
+                                  } finally {
+                                    setFaviconUploading(false);
+                                    e.target.value = '';
+                                  }
+                                } else {
+                                  // For raster images, validate dimensions
+                                  const img = new Image();
+
+                                  img.onload = async () => {
+                                    const maxWidth = 512;
+                                    const maxHeight = 512;
+                                    const minWidth = 16;
+                                    const minHeight = 16;
+
+                                    if (img.width > maxWidth || img.height > maxHeight) {
+                                      setError(`Image dimensions too large. Maximum: ${maxWidth}x${maxHeight}px. Your image: ${img.width}x${img.height}px`);
+                                      URL.revokeObjectURL(objectUrl);
+                                      e.target.value = '';
+                                      return;
+                                    }
+
+                                    if (img.width < minWidth || img.height < minHeight) {
+                                      setError(`Image dimensions too small. Minimum: ${minWidth}x${minHeight}px. Your image: ${img.width}x${img.height}px`);
+                                      URL.revokeObjectURL(objectUrl);
+                                      e.target.value = '';
+                                      return;
+                                    }
+
+                                    // Show preview
+                                    setFaviconPreview(objectUrl);
+
+                                    // Upload file
+                                    try {
+                                      setFaviconUploading(true);
+                                      setError('');
+                                      const url = await settingsService.uploadFavicon(file);
+                                      setSettings({ ...settings, favicon: url });
+                                      setFaviconPreview(null); // Clear preview after upload
+                                      URL.revokeObjectURL(objectUrl);
+                                    } catch (err: any) {
+                                      setError(err.message || 'Failed to upload favicon');
+                                      setFaviconPreview(null);
+                                      URL.revokeObjectURL(objectUrl);
+                                    } finally {
+                                      setFaviconUploading(false);
+                                      e.target.value = '';
+                                    }
+                                  };
+
+                                  img.onerror = () => {
+                                    setError('Invalid image file');
+                                    URL.revokeObjectURL(objectUrl);
+                                    e.target.value = '';
+                                  };
+
+                                  img.src = objectUrl;
+                                }
+                              }}
+                              disabled={faviconUploading}
+                              className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            />
+                          </div>
+                          {faviconUploading && (
+                            <div className="mt-2 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                              <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Uploading...
+                            </div>
+                          )}
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            Allowed: ICO, PNG, SVG, JPEG, GIF, WebP | Max size: 1MB | Dimensions: 16x16px to 512x512px
+                          </p>
+                        </div>
+
+                        {/* URL Input (Alternative) */}
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                            Or enter Favicon URL
+                          </label>
+                          <input
+                            type="text"
+                            value={settings.favicon}
+                            onChange={(e) => {
+                              setSettings({ ...settings, favicon: e.target.value });
+                              setFaviconPreview(e.target.value || null);
+                            }}
+                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                            placeholder="https://example.com/favicon.ico"
+                          />
+                        </div>
+                      </div>
 
                       <button
                         onClick={async () => {

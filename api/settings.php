@@ -20,6 +20,8 @@ switch ($method) {
     case 'POST':
         if ($path === '/upload-logo') {
             handleUploadLogo();
+        } else if ($path === '/upload-favicon') {
+            handleUploadFavicon();
         } else if ($path === '/encrypt-password') {
             handleEncryptPassword();
         } else if ($path === '/decrypt-password') {
@@ -98,6 +100,11 @@ function handleGetSettings() {
     // Normalize logo_image URL for current environment
     if (isset($settings['logo_image']) && !empty($settings['logo_image'])) {
         $settings['logo_image'] = normalizeLogoUrl($settings['logo_image']);
+    }
+    
+    // Normalize favicon URL for current environment
+    if (isset($settings['favicon']) && !empty($settings['favicon'])) {
+        $settings['favicon'] = normalizeLogoUrl($settings['favicon']);
     }
     
     sendJSON(['settings' => $settings]);
@@ -187,6 +194,93 @@ function handleUploadLogo() {
     ]);
 }
 
+function handleUploadFavicon() {
+    requireAdmin(); // Only admins can upload
+    
+    // Check if file was uploaded
+    if (!isset($_FILES['favicon']) || $_FILES['favicon']['error'] !== UPLOAD_ERR_OK) {
+        sendJSON(['error' => 'No file uploaded or upload error'], 400);
+    }
+    
+    $file = $_FILES['favicon'];
+    
+    // Validate file type (favicon typically supports ICO, PNG, SVG)
+    $allowedTypes = ['image/x-icon', 'image/vnd.microsoft.icon', 'image/png', 'image/svg+xml', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mimeType = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+    
+    // Also check file extension for ICO files (which might have different MIME types)
+    $extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    $allowedExtensions = ['ico', 'png', 'svg', 'jpg', 'jpeg', 'gif', 'webp'];
+    
+    if (!in_array($mimeType, $allowedTypes) && !in_array($extension, $allowedExtensions)) {
+        sendJSON(['error' => 'Invalid file type. Allowed: ICO, PNG, SVG, JPEG, GIF, WebP'], 400);
+    }
+    
+    // Validate file size (max 1MB for favicon - smaller than logo)
+    $maxSize = 1 * 1024 * 1024; // 1MB
+    if ($file['size'] > $maxSize) {
+        sendJSON(['error' => 'File size too large. Maximum size: 1MB'], 400);
+    }
+    
+    // Validate dimensions (for non-SVG images)
+    if ($mimeType !== 'image/svg+xml' && $extension !== 'svg') {
+        $imageInfo = @getimagesize($file['tmp_name']);
+        if ($imageInfo === false) {
+            sendJSON(['error' => 'Invalid image file'], 400);
+        }
+        
+        $maxWidth = 512;
+        $maxHeight = 512;
+        $minWidth = 16;
+        $minHeight = 16;
+        
+        if ($imageInfo[0] > $maxWidth || $imageInfo[1] > $maxHeight) {
+            sendJSON(['error' => "Image dimensions too large. Maximum: {$maxWidth}x{$maxHeight}px. Your image: {$imageInfo[0]}x{$imageInfo[1]}px"], 400);
+        }
+        
+        if ($imageInfo[0] < $minWidth || $imageInfo[1] < $minHeight) {
+            sendJSON(['error' => "Image dimensions too small. Minimum: {$minWidth}x{$minHeight}px. Your image: {$imageInfo[0]}x{$imageInfo[1]}px"], 400);
+        }
+    }
+    
+    // Create uploads directory if it doesn't exist
+    $uploadDir = __DIR__ . '/../uploads';
+    if (!file_exists($uploadDir)) {
+        if (!mkdir($uploadDir, 0755, true)) {
+            sendJSON(['error' => 'Failed to create uploads directory'], 500);
+        }
+    }
+    
+    // Generate unique filename
+    $filename = 'favicon_' . time() . '_' . uniqid() . '.' . $extension;
+    $filepath = $uploadDir . '/' . $filename;
+    
+    // Move uploaded file
+    if (!move_uploaded_file($file['tmp_name'], $filepath)) {
+        sendJSON(['error' => 'Failed to save uploaded file'], 500);
+    }
+    
+    // Always store as /uploads/filename (without environment prefix)
+    // The URL will be normalized when returned based on current environment
+    $url = '/uploads/' . $filename;
+    
+    // Update settings with the new favicon URL (stored without prefix)
+    $db = getDB();
+    $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+    $stmt->execute(['favicon', $url, time()]);
+    
+    // Return normalized URL for current environment
+    $normalizedUrl = normalizeLogoUrl($url);
+    
+    sendJSON([
+        'success' => true,
+        'url' => $normalizedUrl,
+        'message' => 'Favicon uploaded successfully'
+    ]);
+}
+
 function handleUpdateSettings() {
     requireAdmin(); // Only admins can update settings
     
@@ -203,7 +297,7 @@ function handleUpdateSettings() {
         foreach ($data['settings'] as $key => $value) {
             // Validate allowed keys
             $allowedKeys = [
-                'app_name', 'page_title', 'spaces_title', 'logo_type', 'logo_icon', 'logo_image',
+                'app_name', 'page_title', 'spaces_title', 'logo_type', 'logo_icon', 'logo_image', 'favicon',
                 'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
                 'ldap_login_domain',
                 'ldap_bind_dn', 'ldap_bind_password',
@@ -222,6 +316,11 @@ function handleUpdateSettings() {
             
             // Normalize logo_image URL before storing (remove environment prefix)
             if ($key === 'logo_image' && !empty($value)) {
+                $value = preg_replace('#^/linknest/uploads/#', '/uploads/', $value);
+            }
+            
+            // Normalize favicon URL before storing (remove environment prefix)
+            if ($key === 'favicon' && !empty($value)) {
                 $value = preg_replace('#^/linknest/uploads/#', '/uploads/', $value);
             }
             
