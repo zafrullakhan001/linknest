@@ -6,8 +6,10 @@ import { TileDetail } from './components/TileDetail';
 import { Navigation } from './components/Navigation';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SettingsProvider } from './contexts/SettingsContext';
+import { StyleProvider, useStyles } from './contexts/StyleContext';
 import { AuthModal } from './components/AuthModal';
 import { AdminPanel } from './components/AdminPanel';
+import { StyleManager } from './components/StyleManager';
 
 // Simple Hash Router implementation
 const useHashRoute = () => {
@@ -37,7 +39,9 @@ const AppContent: React.FC = () => {
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [loading, setLoading] = useState(true);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [styleManagerOpen, setStyleManagerOpen] = useState(false);
   const { user, isAuthenticated, loading: authLoading } = useAuth();
+  const { updateStyles } = useStyles();
   
   // Theme State
   const [darkMode, setDarkMode] = useState(() => {
@@ -54,6 +58,20 @@ const AppContent: React.FC = () => {
       localStorage.setItem('linknest_theme', 'light');
     }
   }, [darkMode]);
+
+  // Listen for style manager open event
+  useEffect(() => {
+    const handleOpenStyleManager = () => {
+      if (user?.is_admin) {
+        setStyleManagerOpen(true);
+      }
+    };
+
+    window.addEventListener('openStyleManager', handleOpenStyleManager);
+    return () => {
+      window.removeEventListener('openStyleManager', handleOpenStyleManager);
+    };
+  }, [user]);
 
   const toggleTheme = () => setDarkMode(!darkMode);
 
@@ -227,6 +245,13 @@ const AppContent: React.FC = () => {
         isOpen={authModalOpen} 
         onClose={() => setAuthModalOpen(false)}
       />
+      {user?.is_admin && (
+        <StyleManager
+          isOpen={styleManagerOpen}
+          onClose={() => setStyleManagerOpen(false)}
+          onStylesChange={updateStyles}
+        />
+      )}
     </div>
   );
 };
@@ -235,7 +260,9 @@ const App: React.FC = () => {
   return (
     <AuthProvider>
       <SettingsProvider>
-        <AppContent />
+        <StyleProvider>
+          <AppContent />
+        </StyleProvider>
       </SettingsProvider>
     </AuthProvider>
   );

@@ -84,7 +84,7 @@ const Category: React.FC<CategoryProps> = ({
 
   return (
     <div
-      className="animate-in fade-in slide-in-from-bottom-2 duration-300"
+      className="linknest-category animate-in fade-in slide-in-from-bottom-2 duration-300"
       style={{ animationDelay: `${groupIndex * 50}ms` }}
     >
       {/* Category Header with Arrow Buttons */}
@@ -173,7 +173,7 @@ const Category: React.FC<CategoryProps> = ({
           </div>
         ) : (
           <>
-            <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">{categoryName}</h2>
+            <h2 className="linknest-category-header text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">{categoryName}</h2>
             {isAuthenticated && onRenameCategory && (
               <button
                 onClick={(e) => {
@@ -312,10 +312,9 @@ const SortableTile: React.FC<SortableTileProps> = ({
         }
       }}
       className={`
-        group relative p-4 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/50
+        linknest-tile group relative rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/50
         hover:border-brand-300 dark:hover:border-brand-500/50
-        hover:shadow-lg hover:shadow-brand-500/10 dark:hover:shadow-brand-500/5
-        hover:-translate-y-0.5 transition-all duration-200 
+        transition-all duration-200 
         flex flex-col h-full min-h-[140px] cursor-pointer
       `}
     >
@@ -1196,7 +1195,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
             >
               {/* Grid with wider tiles */}
               {groupTiles.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div className="linknest-tile-grid grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                   {groupTiles.map((tile, tileIndex) => {
                     const canMoveLeft = tileIndex > 0;
                     const canMoveRight = tileIndex < groupTiles.length - 1;
