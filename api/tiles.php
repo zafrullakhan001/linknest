@@ -18,6 +18,8 @@ switch ($method) {
     case 'POST':
         if ($path === '' || $path === '/') {
             handleCreateTile();
+        } elseif ($path === '/bulk-import' || $path === '/bulk-import/') {
+            handleBulkImport();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -484,4 +486,234 @@ function handleDeleteTile($tileId) {
     $stmt->execute([$tileId]);
     
     sendJSON(['success' => true]);
+}
+
+function handleBulkImport() {
+    $user = requireAuth();
+    
+    // Check if file was uploaded
+    if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+        sendJSON(['error' => 'No file uploaded or upload error'], 400);
+    }
+    
+    $file = $_FILES['file'];
+    $filePath = $file['tmp_name'];
+    
+    // Validate file type (CSV)
+    $fileExt = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    if ($fileExt !== 'csv') {
+        sendJSON(['error' => 'Invalid file type. Please upload a CSV file.'], 400);
+    }
+    
+    // Read CSV file
+    $csvData = [];
+    if (($handle = fopen($filePath, 'r')) !== false) {
+        // Read header row
+        $headers = fgetcsv($handle);
+        if ($headers === false) {
+            fclose($handle);
+            sendJSON(['error' => 'Invalid CSV file. Could not read header row.'], 400);
+        }
+        
+        // Normalize headers (trim and lowercase for comparison)
+        $headers = array_map('trim', $headers);
+        $headerMap = [];
+        
+        // Map of expected header keys to possible variations
+        $headerVariations = [
+            'tile_title' => ['tile title', 'tile_title', 'tiletitle'],
+            'tile_description' => ['tile description', 'tile_description', 'tiledescription'],
+            'tile_emoji' => ['tile emoji', 'tile_emoji', 'tileemoji'],
+            'tile_theme_color' => ['tile theme color', 'tile_theme_color', 'tilethemecolor', 'tile theme', 'tile_theme'],
+            'tile_group' => ['tile group', 'tile_group', 'tilegroup'],
+            'section_title' => ['section title', 'section_title', 'sectiontitle'],
+            'link_label' => ['link label', 'link_label', 'linklabel'],
+            'link_url' => ['link url', 'link_url', 'linkurl'],
+            'link_visibility' => ['link visibility', 'link_visibility', 'linkvisibility'],
+            'link_notes' => ['link notes', 'link_notes', 'linknotes'],
+            'link_tooltip' => ['link tooltip', 'link_tooltip', 'linktooltip']
+        ];
+        
+        // Match headers
+        foreach ($headerVariations as $key => $variations) {
+            foreach ($headers as $idx => $header) {
+                $normalizedHeader = strtolower(preg_replace('/[\s_\-]/', '', $header));
+                foreach ($variations as $variation) {
+                    $normalizedVariation = strtolower(preg_replace('/[\s_\-]/', '', $variation));
+                    if ($normalizedHeader === $normalizedVariation) {
+                        $headerMap[$key] = $idx;
+                        break 2; // Break out of both loops
+                    }
+                }
+            }
+        }
+        
+        // Check required headers
+        if (!isset($headerMap['tile_title']) || !isset($headerMap['link_label']) || !isset($headerMap['link_url'])) {
+            fclose($handle);
+            sendJSON(['error' => 'CSV file missing required columns: Tile Title, Link Label, Link URL'], 400);
+        }
+        
+        // Read data rows
+        $rowNum = 1;
+        while (($row = fgetcsv($handle)) !== false) {
+            $rowNum++;
+            if (count($row) < count($headers)) {
+                continue; // Skip incomplete rows
+            }
+            
+            $csvData[] = [
+                'tile_title' => isset($headerMap['tile_title']) ? trim($row[$headerMap['tile_title']]) : '',
+                'tile_description' => isset($headerMap['tile_description']) ? trim($row[$headerMap['tile_description']]) : '',
+                'tile_emoji' => isset($headerMap['tile_emoji']) ? trim($row[$headerMap['tile_emoji']]) : '📁',
+                'tile_theme_color' => isset($headerMap['tile_theme_color']) ? trim($row[$headerMap['tile_theme_color']]) : 'blue',
+                'tile_group' => isset($headerMap['tile_group']) ? trim($row[$headerMap['tile_group']]) : 'General',
+                'section_title' => isset($headerMap['section_title']) ? trim($row[$headerMap['section_title']]) : 'General',
+                'link_label' => isset($headerMap['link_label']) ? trim($row[$headerMap['link_label']]) : '',
+                'link_url' => isset($headerMap['link_url']) ? trim($row[$headerMap['link_url']]) : '',
+                'link_visibility' => isset($headerMap['link_visibility']) ? trim($row[$headerMap['link_visibility']]) : 'public',
+                'link_notes' => isset($headerMap['link_notes']) ? trim($row[$headerMap['link_notes']]) : '',
+                'link_tooltip' => isset($headerMap['link_tooltip']) ? trim($row[$headerMap['link_tooltip']]) : '',
+                'row_num' => $rowNum
+            ];
+        }
+        fclose($handle);
+    } else {
+        sendJSON(['error' => 'Failed to read CSV file'], 400);
+    }
+    
+    if (empty($csvData)) {
+        sendJSON(['error' => 'CSV file is empty or contains no valid data'], 400);
+    }
+    
+    $db = getDB();
+    $created = [];
+    $errors = [];
+    $currentTime = time();
+    
+    // Get current max position to append new tiles
+    $maxPositionStmt = $db->prepare('SELECT MAX(position) as max_pos FROM tiles');
+    $maxPositionStmt->execute();
+    $maxPosRow = $maxPositionStmt->fetch();
+    $nextPosition = ($maxPosRow && $maxPosRow['max_pos'] !== null) ? (int)$maxPosRow['max_pos'] + 1 : 0;
+    
+    // Group CSV rows by tile and section
+    $tilesMap = [];
+    foreach ($csvData as $row) {
+        // Skip rows with missing required fields
+        if (empty($row['tile_title']) || empty($row['link_label']) || empty($row['link_url'])) {
+            $errors[] = "Row {$row['row_num']}: Missing required fields (Tile Title, Link Label, or Link URL)";
+            continue;
+        }
+        
+        $tileKey = $row['tile_title'] . '|' . ($row['tile_group'] ?: 'General');
+        $sectionKey = $row['section_title'] ?: 'General';
+        
+        if (!isset($tilesMap[$tileKey])) {
+            $tilesMap[$tileKey] = [
+                'title' => $row['tile_title'],
+                'description' => $row['tile_description'],
+                'emoji' => $row['tile_emoji'] ?: '📁',
+                'themeColor' => $row['tile_theme_color'] ?: 'blue',
+                'group' => $row['tile_group'] ?: 'General',
+                'sections' => []
+            ];
+        }
+        
+        if (!isset($tilesMap[$tileKey]['sections'][$sectionKey])) {
+            $tilesMap[$tileKey]['sections'][$sectionKey] = [];
+        }
+        
+        $tilesMap[$tileKey]['sections'][$sectionKey][] = [
+            'label' => $row['link_label'],
+            'url' => $row['link_url'],
+            'visibility' => $row['link_visibility'] ?: 'public',
+            'notes' => $row['link_notes'],
+            'tooltip' => $row['link_tooltip']
+        ];
+    }
+    
+    if (empty($tilesMap)) {
+        sendJSON(['error' => 'No valid tiles found in CSV file'], 400);
+    }
+    
+    $db->beginTransaction();
+    
+    try {
+        foreach ($tilesMap as $tileKey => $tileData) {
+            try {
+                // Generate unique tile ID
+                $tileId = uniqid('tile_', true);
+                
+                // Insert tile
+                $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                
+                if (!$stmt->execute([
+                    $tileId,
+                    $user['id'],
+                    $tileData['title'],
+                    $tileData['description'],
+                    '',
+                    $tileData['emoji'],
+                    $tileData['themeColor'],
+                    $tileData['group'],
+                    $nextPosition++,
+                    $currentTime
+                ])) {
+                    $errors[] = "Tile '{$tileData['title']}': Failed to create tile";
+                    continue;
+                }
+                
+                // Insert sections and links
+                foreach ($tileData['sections'] as $sectionTitle => $links) {
+                    $sectionId = uniqid('section_', true);
+                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, title) VALUES (?, ?, ?)');
+                    $sectionStmt->execute([
+                        $sectionId,
+                        $tileId,
+                        $sectionTitle
+                    ]);
+                    
+                    foreach ($links as $link) {
+                        $linkId = uniqid('link_', true);
+                        $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                        $linkStmt->execute([
+                            $linkId,
+                            $sectionId,
+                            $link['label'],
+                            $link['url'],
+                            $link['visibility'],
+                            null,
+                            $link['notes'] ?: null,
+                            $link['tooltip'] ?: null
+                        ]);
+                    }
+                }
+                
+                $created[] = [
+                    'id' => $tileId,
+                    'title' => $tileData['title']
+                ];
+                
+            } catch (Exception $e) {
+                $errors[] = "Tile '{$tileData['title']}': " . $e->getMessage();
+                error_log('Bulk import error for tile: ' . $tileData['title'] . ' - ' . $e->getMessage());
+            }
+        }
+        
+        $db->commit();
+        
+        sendJSON([
+            'success' => true,
+            'created' => count($created),
+            'errors' => count($errors),
+            'createdTiles' => $created,
+            'errorMessages' => $errors
+        ], 201);
+        
+    } catch (Exception $e) {
+        $db->rollBack();
+        error_log('Bulk import transaction failed: ' . $e->getMessage());
+        sendJSON(['error' => 'Bulk import failed: ' . $e->getMessage()], 500);
+    }
 }

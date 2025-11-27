@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
+import { SecurePasswordInput } from './SecurePasswordInput';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -245,8 +246,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
               Password
             </label>
-            <input
-              type="password"
+            <SecurePasswordInput
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required

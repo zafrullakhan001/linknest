@@ -190,3 +190,32 @@ export const getCategoryArrangement = async (): Promise<Array<{ categoryName: st
     return [];
   }
 };
+
+export const bulkImportTiles = async (file: File): Promise<{
+  success: boolean;
+  created: number;
+  errors: number;
+  createdTiles: Array<{ id: string; title: string }>;
+  errorMessages: string[];
+}> => {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_BASE}/tiles/bulk-import`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(errorData.error || 'Failed to bulk import tiles');
+    }
+
+    return await response.json();
+  } catch (e) {
+    console.error("Failed to bulk import tiles", e);
+    throw e;
+  }
+};

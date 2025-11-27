@@ -20,6 +20,10 @@ switch ($method) {
     case 'POST':
         if ($path === '/upload-logo') {
             handleUploadLogo();
+        } else if ($path === '/encrypt-password') {
+            handleEncryptPassword();
+        } else if ($path === '/decrypt-password') {
+            handleDecryptPassword();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -230,6 +234,40 @@ function handleUpdateSettings() {
     } catch (Exception $e) {
         $db->rollBack();
         sendJSON(['error' => 'Failed to update settings: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleEncryptPassword() {
+    requireAdmin(); // Only admins can encrypt passwords
+    
+    $data = getJSONInput();
+    
+    if (!isset($data['password'])) {
+        sendJSON(['error' => 'Password is required'], 400);
+    }
+    
+    try {
+        $encrypted = encryptPassword($data['password']);
+        sendJSON(['encrypted' => $encrypted]);
+    } catch (Exception $e) {
+        sendJSON(['error' => 'Encryption failed: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleDecryptPassword() {
+    requireAdmin(); // Only admins can decrypt passwords
+    
+    $data = getJSONInput();
+    
+    if (!isset($data['encrypted_password'])) {
+        sendJSON(['error' => 'Encrypted password is required'], 400);
+    }
+    
+    try {
+        $decrypted = decryptPassword($data['encrypted_password']);
+        sendJSON(['password' => $decrypted]);
+    } catch (Exception $e) {
+        sendJSON(['error' => 'Decryption failed: ' . $e->getMessage()], 500);
     }
 }
 

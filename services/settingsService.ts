@@ -170,6 +170,40 @@ export const settingsService = {
     }
 
     return data;
+  },
+
+  async encryptPassword(password: string): Promise<string> {
+    const response = await fetch(`${API_BASE}/settings/encrypt-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ password })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to encrypt password');
+    }
+
+    return data.encrypted;
+  },
+
+  async decryptPassword(encryptedPassword: string): Promise<string> {
+    const response = await fetch(`${API_BASE}/settings/decrypt-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ encrypted_password: encryptedPassword })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to decrypt password');
+    }
+
+    return data.password;
   }
 };
 

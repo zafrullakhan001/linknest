@@ -580,3 +580,90 @@ function getJSONInput() {
     }
     return $data;
 }
+
+// Encryption secret key for LDAP password encryption
+// In production, this should be stored securely (environment variable, secure vault, etc.)
+// For now, we'll use a key derived from the database path and a constant salt
+function getEncryptionKey() {
+    // Generate a consistent key based on DB path and a salt
+    // In production, consider using a proper key management system
+    $salt = 'linknest_ldap_encryption_salt_v1';
+    $keySource = DB_PATH . $salt;
+    return hash('sha256', $keySource, true); // Returns 32 bytes for AES-256
+}
+
+/**
+ * Encrypt a password using AES-256-GCM
+ * Returns base64-encoded string: iv.tag.encrypted_data
+ */
+function encryptPassword($password) {
+    if (empty($password)) {
+        return '';
+    }
+    
+    $key = getEncryptionKey();
+    $ivLength = openssl_cipher_iv_length('aes-256-gcm');
+    $iv = openssl_random_pseudo_bytes($ivLength);
+    
+    $tag = '';
+    $encrypted = openssl_encrypt(
+        $password,
+        'aes-256-gcm',
+        $key,
+        OPENSSL_RAW_DATA,
+        $iv,
+        $tag
+    );
+    
+    if ($encrypted === false) {
+        throw new Exception('Encryption failed');
+    }
+    
+    // Return: base64(iv) . '.' . base64(tag) . '.' . base64(encrypted)
+    return base64_encode($iv) . '.' . base64_encode($tag) . '.' . base64_encode($encrypted);
+}
+
+/**
+ * Decrypt a password encrypted with encryptPassword()
+ * Expects format: base64(iv).base64(tag).base64(encrypted_data)
+ */
+function decryptPassword($encryptedPassword) {
+    if (empty($encryptedPassword)) {
+        return '';
+    }
+    
+    // Handle plain text passwords (for backward compatibility)
+    // If it doesn't contain dots, assume it's plain text
+    if (strpos($encryptedPassword, '.') === false) {
+        return $encryptedPassword;
+    }
+    
+    $parts = explode('.', $encryptedPassword, 3);
+    if (count($parts) !== 3) {
+        throw new Exception('Invalid encrypted password format');
+    }
+    
+    $iv = base64_decode($parts[0], true);
+    $tag = base64_decode($parts[1], true);
+    $encrypted = base64_decode($parts[2], true);
+    
+    if ($iv === false || $tag === false || $encrypted === false) {
+        throw new Exception('Invalid base64 encoding in encrypted password');
+    }
+    
+    $key = getEncryptionKey();
+    $decrypted = openssl_decrypt(
+        $encrypted,
+        'aes-256-gcm',
+        $key,
+        OPENSSL_RAW_DATA,
+        $iv,
+        $tag
+    );
+    
+    if ($decrypted === false) {
+        throw new Exception('Decryption failed - invalid password or corrupted data');
+    }
+    
+    return $decrypted;
+}

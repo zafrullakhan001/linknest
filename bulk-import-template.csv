@@ -1,0 +1,7 @@
+Tile Title,Tile Description,Tile Emoji,Tile Theme Color,Tile Group,Section Title,Link Label,Link URL,Link Visibility,Link Notes,Link Tooltip
+Architecture Links,Page for all application architecture,🚀,blue,Architecture,Architecture Links,Arch Public Repository,https://ahsonline.sharepoint.com/sites/ArchPublic,public,Public architecture repository,Access public architecture documents
+Architecture Links,Page for all application architecture,🚀,blue,Architecture,Architecture Links,Arch Private Repository,https://ahsonline.sharepoint.com/sites/ArchPrivate,authenticated,Private architecture repository,
+Architecture Links,Page for all application architecture,🚀,blue,Architecture,Department Documents,Architecture Dept Documents,https://ahsonline.sharepoint.com/sites/ArchDept,public,,
+Development Resources,Resources for developers,💻,emerald,Development,Documentation,API Documentation,https://api.example.com/docs,public,,
+Development Resources,Resources for developers,💻,emerald,Development,Documentation,Developer Guide,https://docs.example.com,authenticated,,
+

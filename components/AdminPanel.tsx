@@ -3,6 +3,12 @@ import { authService, PendingUser, AllUser } from '../services/authService';
 import { settingsService, AppSettings } from '../services/settingsService';
 import { databaseService } from '../services/databaseService';
 import { useSettings } from '../contexts/SettingsContext';
+import { getTiles, createTile } from '../services/storageService';
+import { bulkImportTiles } from '../services/storageService';
+import { exportAllCategoriesToFile, parseSpaceExportObject, normalizeImportedTiles } from '../services/spaceTransferService';
+import { Tile } from '../types';
+import { getCategoryArrangement } from '../services/storageService';
+import { SecurePasswordInput } from './SecurePasswordInput';
 
 interface AdminPanelProps {
   onUserApproved?: () => void;
@@ -10,7 +16,7 @@ interface AdminPanelProps {
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const { refreshSettings } = useSettings();
-  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'ldap'>('pending');
+  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap'>('pending');
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
   const [allUsers, setAllUsers] = useState<AllUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +48,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
+
+  // Spaces export/import state
+  const [spacesExporting, setSpacesExporting] = useState(false);
+  const [spacesImporting, setSpacesImporting] = useState(false);
+  const [spacesBulkImporting, setSpacesBulkImporting] = useState(false);
+  const [spacesImportFile, setSpacesImportFile] = useState<File | null>(null);
+  const [spacesBulkImportFile, setSpacesBulkImportFile] = useState<File | null>(null);
+  const [spacesTiles, setSpacesTiles] = useState<Tile[]>([]);
+  const [spacesCategoryOrder, setSpacesCategoryOrder] = useState<string[]>([]);
+
+  // LDAP export/import state
+  const [ldapExporting, setLdapExporting] = useState(false);
+  const [ldapImporting, setLdapImporting] = useState(false);
+  const [ldapImportFile, setLdapImportFile] = useState<File | null>(null);
 
   // LDAP Test state
   const [ldapTestLoading, setLdapTestLoading] = useState(false);
@@ -97,7 +117,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   useEffect(() => {
     loadData();
     loadSettings();
-  }, []);
+    if (activeTab === 'spaces') {
+      loadSpaces();
+    }
+  }, [activeTab]);
+
+  const loadSpaces = async () => {
+    try {
+      const tiles = await getTiles();
+      setSpacesTiles(tiles);
+      const categoryArrangement = await getCategoryArrangement();
+      if (categoryArrangement.length > 0) {
+        setSpacesCategoryOrder(categoryArrangement.map(c => c.categoryName));
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to load spaces');
+    }
+  };
 
   const handleApprove = async (userId: number) => {
     try {
@@ -239,6 +275,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             }`}
         >
           Database
+        </button>
+        <button
+          onClick={() => setActiveTab('spaces')}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'spaces'
+            ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+            : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+        >
+          Spaces
         </button>
         <button
           onClick={() => setActiveTab('ldap')}
@@ -662,6 +707,379 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             </div>
           )}
 
+          {/* Spaces Tab */}
+          {activeTab === 'spaces' && (
+            <div className="space-y-6">
+              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Spaces Export & Import</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                  Export your spaces to JSON or CSV format, or import spaces from previously exported files or CSV spreadsheets.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Export Section */}
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="text-base font-semibold text-slate-900 dark:text-white mb-2">Export Spaces</h4>
+                      <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                        Export all spaces to JSON or CSV format for backup or sharing.
+                      </p>
+                      <div className="space-y-2">
+                        <button
+                          onClick={async () => {
+                            try {
+                              setSpacesExporting(true);
+                              setError('');
+                              await loadSpaces();
+                              exportAllCategoriesToFile(spacesTiles, spacesCategoryOrder);
+                              alert('Spaces exported successfully!');
+                            } catch (err: any) {
+                              setError(err.message || 'Failed to export spaces');
+                            } finally {
+                              setSpacesExporting(false);
+                            }
+                          }}
+                          disabled={spacesExporting || spacesTiles.length === 0}
+                          className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                        >
+                          {spacesExporting ? (
+                            <>
+                              <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Exporting...
+                            </>
+                          ) : (
+                            <>
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
+                                <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+                              </svg>
+                              Export to JSON
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={async () => {
+                            try {
+                              setSpacesExporting(true);
+                              setError('');
+                              await loadSpaces();
+                              
+                              // Convert tiles to CSV format
+                              const csvRows: string[] = [];
+                              csvRows.push('Tile Title,Tile Description,Tile Emoji,Tile Theme Color,Tile Group,Section Title,Link Label,Link URL,Link Visibility,Link Notes,Link Tooltip');
+                              
+                              spacesTiles.forEach(tile => {
+                                if (tile.sections && tile.sections.length > 0) {
+                                  tile.sections.forEach(section => {
+                                    if (section.links && section.links.length > 0) {
+                                      section.links.forEach(link => {
+                                        const row = [
+                                          `"${(tile.title || '').replace(/"/g, '""')}"`,
+                                          `"${(tile.description || '').replace(/"/g, '""')}"`,
+                                          `"${(tile.emoji || '📁').replace(/"/g, '""')}"`,
+                                          `"${(tile.themeColor || 'blue').replace(/"/g, '""')}"`,
+                                          `"${(tile.group || 'General').replace(/"/g, '""')}"`,
+                                          `"${(section.title || '').replace(/"/g, '""')}"`,
+                                          `"${(link.label || '').replace(/"/g, '""')}"`,
+                                          `"${(link.url || '').replace(/"/g, '""')}"`,
+                                          `"${(link.visibility || 'public').replace(/"/g, '""')}"`,
+                                          `"${((link.notes || '').replace(/"/g, '""'))}"`,
+                                          `"${((link.tooltip || '').replace(/"/g, '""'))}"`
+                                        ];
+                                        csvRows.push(row.join(','));
+                                      });
+                                    }
+                                  });
+                                }
+                              });
+                              
+                              const csvContent = csvRows.join('\n');
+                              const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                              const url = window.URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = 'linknest-spaces-export.csv';
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                              window.URL.revokeObjectURL(url);
+                              
+                              alert('Spaces exported to CSV successfully!');
+                            } catch (err: any) {
+                              setError(err.message || 'Failed to export spaces to CSV');
+                            } finally {
+                              setSpacesExporting(false);
+                            }
+                          }}
+                          disabled={spacesExporting || spacesTiles.length === 0}
+                          className="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                        >
+                          {spacesExporting ? (
+                            <>
+                              <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Exporting...
+                            </>
+                          ) : (
+                            <>
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                <path fillRule="evenodd" d="M15.621 4.379a3 3 0 00-4.242 0l-7 7a3 3 0 004.241 4.243h.001l.497-.5a.75.75 0 011.064 1.06l-.498.501-.002.002a4.5 4.5 0 01-6.364-6.364l7-7a4.5 4.5 0 016.368 6.36l-3.455 3.553A2.625 2.625 0 119.52 9.52l3.45-3.451a.75.75 0 111.061 1.06l-3.451 3.45a1.125 1.125 0 001.587 1.595l3.454-3.553a3 3 0 000-4.242z" clipRule="evenodd" />
+                              </svg>
+                              Export to CSV
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Import Section */}
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="text-base font-semibold text-slate-900 dark:text-white mb-2">Import Spaces</h4>
+                      <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                        Import spaces from exported JSON files or CSV spreadsheets.
+                      </p>
+                      <div className="space-y-3">
+                        {/* JSON Import - Supports Single Space, Category, or All Categories */}
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                            Import from JSON
+                            <span className="text-xs text-slate-500 dark:text-slate-500 ml-1">(Single Space / Category / All Categories)</span>
+                          </label>
+                          <input
+                            type="file"
+                            accept=".json,application/json"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                setSpacesImportFile(file);
+                                setError('');
+                              }
+                            }}
+                            className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer"
+                          />
+                          {spacesImportFile && (
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                              Selected: {spacesImportFile.name}
+                            </p>
+                          )}
+                          <button
+                            onClick={async () => {
+                              if (!spacesImportFile) {
+                                setError('Please select a JSON file to import');
+                                return;
+                              }
+
+                              try {
+                                setSpacesImporting(true);
+                                setError('');
+                                const text = await spacesImportFile.text();
+                                const data = JSON.parse(text);
+                                
+                                // Validate and parse the import file
+                                const parsed = parseSpaceExportObject(data);
+                                
+                                // Check if it's a single tile, category, or all categories
+                                let importType = '';
+                                let tileCount = 0;
+                                
+                                if (parsed.type === 'tile') {
+                                  importType = 'single space';
+                                  tileCount = parsed.tiles.length;
+                                } else if (parsed.type === 'category') {
+                                  importType = `category "${parsed.categoryName || 'Unknown'}"`;
+                                  tileCount = parsed.tiles.length;
+                                } else if (parsed.type === 'all_categories') {
+                                  importType = 'all categories';
+                                  tileCount = parsed.tiles.length;
+                                }
+                                
+                                const newTiles = normalizeImportedTiles(parsed);
+
+                                if (!newTiles.length) {
+                                  setError('No spaces found to import.');
+                                  return;
+                                }
+
+                                // Import tiles one by one using createTile API
+                                let imported = 0;
+                                let errors: string[] = [];
+                                
+                                for (const tile of newTiles) {
+                                  try {
+                                    await createTile(tile);
+                                    imported++;
+                                  } catch (err: any) {
+                                    const errorMsg = err.message || 'Unknown error';
+                                    errors.push(`Failed to import "${tile.title}": ${errorMsg}`);
+                                    console.error('Failed to import tile:', tile.title, err);
+                                  }
+                                }
+
+                                const result = {
+                                  success: imported > 0,
+                                  created: imported,
+                                  errors: errors.length,
+                                  createdTiles: newTiles.slice(0, imported).map(t => ({ id: t.id, title: t.title })),
+                                  errorMessages: errors
+                                };
+
+                                setSpacesImportFile(null);
+                                
+                                if (result.success) {
+                                  let message = `Successfully imported ${result.created} space(s) from ${importType}.`;
+                                  if (result.errors > 0) {
+                                    message += `\n\n${result.errors} error(s) occurred:`;
+                                    result.errorMessages.forEach((msg, idx) => {
+                                      message += `\n${idx + 1}. ${msg}`;
+                                    });
+                                  }
+                                  alert(message);
+                                  await loadSpaces();
+                                  window.location.reload();
+                                } else {
+                                  setError('Import failed. Please check the console for details.');
+                                }
+                              } catch (err: any) {
+                                console.error('Import error:', err);
+                                setError(err.message || 'Failed to import spaces. Please ensure the file is a valid LinkNest export.');
+                              } finally {
+                                setSpacesImporting(false);
+                              }
+                            }}
+                            disabled={spacesImporting || !spacesImportFile}
+                            className="mt-2 w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                          >
+                            {spacesImporting ? (
+                              <>
+                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Importing...
+                              </>
+                            ) : (
+                              <>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                  <path d="M9.25 3.75A.75.75 0 0110 3h5.25A2.75 2.75 0 0118 5.75v8.5A2.75 2.75 0 0115.25 17h-10.5A2.75 2.75 0 012 14.25V10a.75.75 0 011.5 0v4.25c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-8.5c0-.69-.56-1.25-1.25-1.25H10a.75.75 0 01-.75-.75z" />
+                                  <path d="M6.75 5.75a.75.75 0 011.5 0v4.5h1.5a.75.75 0 010 1.5h-4a.75.75 0 01-.75-.75v-4a.75.75 0 011.5 0v2.19l3.22-3.22a.75.75 0 111.06 1.06L6.75 9.81V5.75z" />
+                                </svg>
+                                Import JSON
+                              </>
+                            )}
+                          </button>
+                        </div>
+
+                        {/* CSV Import */}
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                            Import from CSV (Bulk Import)
+                          </label>
+                          <input
+                            type="file"
+                            accept=".csv,text/csv"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                setSpacesBulkImportFile(file);
+                                setError('');
+                              }
+                            }}
+                            className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100 dark:file:bg-violet-900/30 dark:file:text-violet-300 cursor-pointer"
+                          />
+                          {spacesBulkImportFile && (
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                              Selected: {spacesBulkImportFile.name}
+                            </p>
+                          )}
+                          <button
+                            onClick={async () => {
+                              if (!spacesBulkImportFile) {
+                                setError('Please select a CSV file to import');
+                                return;
+                              }
+
+                              try {
+                                setSpacesBulkImporting(true);
+                                setError('');
+                                const result = await bulkImportTiles(spacesBulkImportFile);
+                                
+                                if (result.success) {
+                                  let message = `Successfully imported ${result.created} tile(s).`;
+                                  if (result.errors > 0) {
+                                    message += `\n\n${result.errors} error(s) occurred:`;
+                                    result.errorMessages.forEach((msg, idx) => {
+                                      message += `\n${idx + 1}. ${msg}`;
+                                    });
+                                  }
+                                  alert(message);
+                                  setSpacesBulkImportFile(null);
+                                  await loadSpaces();
+                                  window.location.reload();
+                                } else {
+                                  setError('Bulk import failed. Please check the console for details.');
+                                }
+                              } catch (err: any) {
+                                setError(err.message || 'Failed to bulk import spaces');
+                              } finally {
+                                setSpacesBulkImporting(false);
+                              }
+                            }}
+                            disabled={spacesBulkImporting || !spacesBulkImportFile}
+                            className="mt-2 w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                          >
+                            {spacesBulkImporting ? (
+                              <>
+                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Importing...
+                              </>
+                            ) : (
+                              <>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                  <path fillRule="evenodd" d="M15.621 4.379a3 3 0 00-4.242 0l-7 7a3 3 0 004.241 4.243h.001l.497-.5a.75.75 0 011.064 1.06l-.498.501-.002.002a4.5 4.5 0 01-6.364-6.364l7-7a4.5 4.5 0 016.368 6.36l-3.455 3.553A2.625 2.625 0 119.52 9.52l3.45-3.451a.75.75 0 111.061 1.06l-3.451 3.45a1.125 1.125 0 001.587 1.595l3.454-3.553a3 3 0 000-4.242z" clipRule="evenodd" />
+                                </svg>
+                                Import CSV
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <div className="flex gap-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
+                    </svg>
+                    <div>
+                      <p className="text-sm font-semibold text-blue-800 dark:text-blue-300 mb-1">Import/Export Notes</p>
+                      <ul className="text-xs text-blue-700 dark:text-blue-400 space-y-1 list-disc list-inside">
+                        <li><strong>JSON Import:</strong> Supports single space exports, category exports, or all categories exports</li>
+                        <li><strong>JSON Export:</strong> Preserves all space data including categories and arrangements</li>
+                        <li><strong>CSV Export:</strong> Creates a spreadsheet-friendly format for bulk editing</li>
+                        <li><strong>CSV Import:</strong> Requires specific column format - download template for reference</li>
+                        <li>Importing spaces adds them to your existing collection (does not replace existing spaces)</li>
+                        <li>Both formats support all link properties (visibility, notes, tooltips)</li>
+                        <li>Category imports preserve the category name from the export file</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* LDAP Tab */}
           {activeTab === 'ldap' && (
             <div className="space-y-6">
@@ -768,8 +1186,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                     <div>
                       <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Bind Password</label>
-                      <input
-                        type="password"
+                      <SecurePasswordInput
                         value={settings.ldap_bind_password || ''}
                         onChange={(e) => setSettings({ ...settings, ldap_bind_password: e.target.value })}
                         className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
@@ -1044,8 +1461,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
                     <div className="flex-1 w-full">
                       <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Test Password</label>
-                      <input
-                        type="password"
+                      <SecurePasswordInput
                         value={ldapTestPassword}
                         onChange={(e) => setLdapTestPassword(e.target.value)}
                         className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
@@ -1092,6 +1508,200 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </div>
                     </div>
                   )}
+                </div>
+
+                {/* Export & Import LDAP Settings */}
+                <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-700">
+                  <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Export & Import LDAP Settings</h4>
+
+                  <div className="flex flex-wrap gap-3 items-start">
+                    {/* Export Section */}
+                    <button
+                          onClick={async () => {
+                            try {
+                              setLdapExporting(true);
+                              setError('');
+                              
+                              // Filter only LDAP-related settings
+                              const ldapSettings: Partial<AppSettings> = {};
+                              const ldapKeys = [
+                                'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
+                                'ldap_login_domain', 'ldap_bind_dn', 'ldap_bind_password',
+                                'ldap_user_search_base', 'ldap_user_filter', 'ldap_user_attributes',
+                                'ldap_group_search_base', 'ldap_group_filter', 'ldap_group_attributes',
+                                'ldap_auto_create_users', 'ldap_auto_update_users', 'ldap_sync_interval',
+                                'ldap_require_group_membership', 'ldap_required_groups', 'ldap_timeout', 'ldap_tls',
+                                'ldap_search_scope', 'ldap_user_dn_template', 'ldap_nested_groups', 'ldap_case_sensitive',
+                                'ldap_ssl_verify', 'ldap_connection_retry', 'ldap_retry_delay', 'ldap_email_attribute',
+                                'ldap_display_name_attribute', 'ldap_referrals'
+                              ];
+                              
+                              ldapKeys.forEach(key => {
+                                if (settings[key as keyof AppSettings] !== undefined) {
+                                  ldapSettings[key as keyof AppSettings] = settings[key as keyof AppSettings];
+                                }
+                              });
+                              
+                              // Encrypt password before exporting
+                              if (ldapSettings.ldap_bind_password && ldapSettings.ldap_bind_password.trim() !== '') {
+                                try {
+                                  ldapSettings.ldap_bind_password = await settingsService.encryptPassword(ldapSettings.ldap_bind_password);
+                                } catch (encryptErr: any) {
+                                  throw new Error('Failed to encrypt password: ' + (encryptErr.message || 'Unknown error'));
+                                }
+                              }
+                              
+                              // Create JSON blob
+                              const jsonData = JSON.stringify(ldapSettings, null, 2);
+                              const blob = new Blob([jsonData], { type: 'application/json' });
+                              const url = URL.createObjectURL(blob);
+                              
+                              // Create download link
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `ldap-settings-${new Date().toISOString().split('T')[0]}.json`;
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                              URL.revokeObjectURL(url);
+                              
+                              alert('LDAP settings exported successfully!');
+                            } catch (err: any) {
+                              setError(err.message || 'Failed to export LDAP settings');
+                            } finally {
+                              setLdapExporting(false);
+                            }
+                          }}
+                          disabled={ldapExporting}
+                          className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
+                        >
+                          {ldapExporting ? (
+                            <>
+                              <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Exporting...
+                            </>
+                          ) : (
+                            <>
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
+                                <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+                              </svg>
+                              Export
+                            </>
+                          )}
+                        </button>
+
+                    {/* Import Section */}
+                    <div className="flex items-center gap-2">
+                      <input
+                              type="file"
+                              accept=".json,application/json"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  setLdapImportFile(file);
+                                  setError('');
+                                }
+                              }}
+                        className="text-xs text-slate-600 dark:text-slate-400 file:mr-2 file:py-1.5 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer"
+                      />
+                      <button
+                            onClick={async () => {
+                              if (!ldapImportFile) {
+                                setError('Please select a JSON file to import');
+                                return;
+                              }
+
+                              if (!confirm('This will replace all existing LDAP settings. Are you sure you want to continue?')) {
+                                return;
+                              }
+
+                              try {
+                                setLdapImporting(true);
+                                setError('');
+                                
+                                // Read file content
+                                const fileContent = await ldapImportFile.text();
+                                const importedSettings = JSON.parse(fileContent);
+                                
+                                // Validate that it's an object
+                                if (typeof importedSettings !== 'object' || importedSettings === null) {
+                                  throw new Error('Invalid JSON format');
+                                }
+                                
+                                // Filter only valid LDAP keys
+                                const validLdapKeys = [
+                                  'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
+                                  'ldap_login_domain', 'ldap_bind_dn', 'ldap_bind_password',
+                                  'ldap_user_search_base', 'ldap_user_filter', 'ldap_user_attributes',
+                                  'ldap_group_search_base', 'ldap_group_filter', 'ldap_group_attributes',
+                                  'ldap_auto_create_users', 'ldap_auto_update_users', 'ldap_sync_interval',
+                                  'ldap_require_group_membership', 'ldap_required_groups', 'ldap_timeout', 'ldap_tls',
+                                  'ldap_search_scope', 'ldap_user_dn_template', 'ldap_nested_groups', 'ldap_case_sensitive',
+                                  'ldap_ssl_verify', 'ldap_connection_retry', 'ldap_retry_delay', 'ldap_email_attribute',
+                                  'ldap_display_name_attribute', 'ldap_referrals'
+                                ];
+                                
+                                const filteredSettings: Partial<AppSettings> = {};
+                                validLdapKeys.forEach(key => {
+                                  if (importedSettings[key] !== undefined) {
+                                    filteredSettings[key as keyof AppSettings] = importedSettings[key];
+                                  }
+                                });
+                                
+                                // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
+                                if (filteredSettings.ldap_bind_password && filteredSettings.ldap_bind_password.trim() !== '') {
+                                  try {
+                                    // Try to decrypt - decryptPassword handles plain text passwords too
+                                    filteredSettings.ldap_bind_password = await settingsService.decryptPassword(filteredSettings.ldap_bind_password);
+                                  } catch (decryptErr: any) {
+                                    // If decryption fails, it might be plain text (old export format)
+                                    // Keep it as is - the backend will handle it
+                                    console.warn('Password decryption failed, assuming plain text:', decryptErr.message);
+                                  }
+                                }
+                                
+                                // Update settings
+                                await settingsService.updateSettings(filteredSettings);
+                                
+                                // Reload settings to reflect changes
+                                await loadSettings();
+                                await refreshSettings();
+                                
+                                setLdapImportFile(null);
+                                alert('LDAP settings imported successfully!');
+                              } catch (err: any) {
+                                setError(err.message || 'Failed to import LDAP settings. Please check the file format.');
+                              } finally {
+                                setLdapImporting(false);
+                              }
+                            }}
+                            disabled={ldapImporting || !ldapImportFile}
+                            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
+                          >
+                            {ldapImporting ? (
+                              <>
+                                <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Importing...
+                              </>
+                            ) : (
+                              <>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                  <path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 3.129a.75.75 0 001.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 101.09 1.03l2.955-3.129V13.25z" />
+                                  <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+                                </svg>
+                                Import
+                              </>
+                            )}
+                          </button>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Save Button */}
@@ -1469,8 +2079,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                   New Password
                 </label>
-                <input
-                  type="password"
+                <SecurePasswordInput
                   value={newPassword}
                   onChange={(e) => {
                     setNewPassword(e.target.value);
@@ -1522,8 +2131,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                   Current Password
                 </label>
-                <input
-                  type="password"
+                <SecurePasswordInput
                   value={currentPassword}
                   onChange={(e) => {
                     setCurrentPassword(e.target.value);
@@ -1538,8 +2146,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                   New Password
                 </label>
-                <input
-                  type="password"
+                <SecurePasswordInput
                   value={adminNewPassword}
                   onChange={(e) => {
                     setAdminNewPassword(e.target.value);
