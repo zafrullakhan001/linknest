@@ -103,6 +103,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     }
   }, [isOpen]);
 
+  // Handle ESC key to close modal
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
