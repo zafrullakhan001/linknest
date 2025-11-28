@@ -38,8 +38,10 @@ export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       try {
         // Get or create style tag
         let styleTag = styleTagRef.current;
-        if (!styleTag) {
-          // Remove any existing style tag first
+
+        // Check if tag exists and is still in DOM
+        if (!styleTag || !styleTag.isConnected) {
+          // Remove any existing style tag first (just in case)
           const existingStyle = document.getElementById('linknest-custom-styles');
           if (existingStyle) {
             existingStyle.remove();
@@ -82,21 +84,24 @@ export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   useEffect(() => {
     // Use setTimeout to ensure DOM is ready and dark mode is set
     const timer = setTimeout(() => {
-      applyStyles(DEFAULT_STYLES);
+      // Only apply defaults if we haven't loaded anything yet
+      if (isLoading) {
+        applyStyles(DEFAULT_STYLES);
+      }
     }, 0);
     return () => clearTimeout(timer);
-  }, [applyStyles]);
+  }, [applyStyles, isLoading]);
 
   useEffect(() => {
     loadStyles();
-    
+
     // Listen for refresh events
     const handleRefresh = () => {
       loadStyles();
     };
-    
+
     window.addEventListener('refreshStyles', handleRefresh);
-    
+
     return () => {
       window.removeEventListener('refreshStyles', handleRefresh);
     };
@@ -135,12 +140,12 @@ export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         applyStyles(stylesRef.current);
       }, 50);
     });
-    
+
     observer.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ['class']
     });
-    
+
     return () => {
       clearTimeout(timeoutId);
       observer.disconnect();

@@ -37,9 +37,9 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
           setPosition({ x: centerX, y: centerY });
         } else {
           // Fallback: center of screen
-          setPosition({ 
-            x: window.innerWidth / 2, 
-            y: window.innerHeight / 2 
+          setPosition({
+            x: window.innerWidth / 2,
+            y: window.innerHeight / 2
           });
         }
       }, 0);
@@ -65,12 +65,12 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
   // Drag handlers
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!dialogRef.current || !headerRef.current) return;
-    
+
     // Calculate offset from center of dialog
     const rect = dialogRef.current.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
-    
+
     setDragOffset({
       x: e.clientX - centerX,
       y: e.clientY - centerY
@@ -84,20 +84,20 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!dialogRef.current) return;
-      
+
       // Calculate new position (center point of dialog) accounting for drag offset
       const newX = e.clientX - dragOffset.x;
       const newY = e.clientY - dragOffset.y;
-      
+
       // Keep dialog within viewport bounds
       const dialogWidth = dialogRef.current.offsetWidth;
       const dialogHeight = dialogRef.current.offsetHeight;
       const halfWidth = dialogWidth / 2;
       const halfHeight = dialogHeight / 2;
-      
+
       const maxX = window.innerWidth - halfWidth;
       const maxY = window.innerHeight - halfHeight;
-      
+
       setPosition({
         x: Math.max(halfWidth, Math.min(newX, maxX)),
         y: Math.max(halfHeight, Math.min(newY, maxY))
@@ -154,15 +154,20 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
 
   const updateNestedStyle = (key: string, value: any) => {
     setStyles(prev => {
-      const updated = { ...prev };
+      // Deep clone the previous state to avoid mutating nested objects
+      // This is important because prev might contain references to DEFAULT_STYLES
+      const updated = JSON.parse(JSON.stringify(prev));
+
       const keys = key.split('.');
       let current: any = updated;
+
       for (let i = 0; i < keys.length - 1; i++) {
         if (!current[keys[i]]) {
           current[keys[i]] = {};
         }
         current = current[keys[i]];
       }
+
       current[keys[keys.length - 1]] = value;
       setHasChanges(true);
       return updated;
@@ -251,13 +256,13 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
   return (
     <div className="fixed inset-0 z-[200] p-4 pointer-events-none">
       {/* Backdrop - less opaque, no blur, clickable to close */}
-      <div 
-        className="absolute inset-0 bg-slate-900/20 dark:bg-slate-900/30 pointer-events-auto" 
+      <div
+        className="absolute inset-0 bg-slate-900/20 dark:bg-slate-900/30 pointer-events-auto"
         onClick={onClose}
       ></div>
-      
+
       {/* Dialog - draggable */}
-      <div 
+      <div
         ref={dialogRef}
         className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl relative pointer-events-auto"
         style={{
@@ -270,7 +275,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
         }}
       >
         {/* Header - draggable area */}
-        <div 
+        <div
           ref={headerRef}
           onMouseDown={(e) => {
             // Don't start dragging if clicking on the close button or its children
@@ -306,11 +311,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
         <div className="flex border-b border-slate-200 dark:border-slate-700 px-6 bg-slate-50 dark:bg-slate-900/50">
           <button
             onClick={() => setActiveTab('spaces')}
-            className={`px-6 py-3 text-sm font-semibold transition-all relative ${
-              activeTab === 'spaces'
-                ? 'text-brand-600 dark:text-brand-400'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-            }`}
+            className={`px-6 py-3 text-sm font-semibold transition-all relative ${activeTab === 'spaces'
+              ? 'text-brand-600 dark:text-brand-400'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
           >
             <span className="flex items-center gap-2">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -324,11 +328,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
           </button>
           <button
             onClick={() => setActiveTab('content')}
-            className={`px-6 py-3 text-sm font-semibold transition-all relative ${
-              activeTab === 'content'
-                ? 'text-brand-600 dark:text-brand-400'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-            }`}
+            className={`px-6 py-3 text-sm font-semibold transition-all relative ${activeTab === 'content'
+              ? 'text-brand-600 dark:text-brand-400'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
           >
             <span className="flex items-center gap-2">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -859,7 +862,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                           </div>
                         </div>
                       </div>
-                      
+
                       <p className="text-xs text-slate-500 dark:text-slate-400">
                         {styles.backgroundTableType === 'wood' && 'Recommended: Brown tones (#8b7355, #6b5238)'}
                         {styles.backgroundTableType === 'marble' && 'Recommended: Light gray/white tones (#e8e8e8, #f5f5f5)'}
@@ -1081,7 +1084,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                   </svg>
                   Typography
                 </h3>
-                
+
                 {/* Spaces (Tiles) Typography */}
                 <div className="mb-6">
                   <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Spaces (Tiles)</h4>
@@ -2059,6 +2062,62 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Delay between each link's entrance animation</p>
                     </div>
                   )}
+                </div>
+              </section>
+
+              {/* Grid Settings */}
+              <section>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-cyan-500">
+                    <path fillRule="evenodd" d="M2 4.25A2.25 2.25 0 014.25 2h11.5A2.25 2.25 0 0118 4.25v11.5A2.25 2.25 0 0115.75 18h-11.5A2.25 2.25 0 012 15.75V4.25zm3.75 7.5a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5zm2.25-3a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5H8zm2.25-3a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5zm2.25 6a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5zm2.25-3a.75.75 0 000 1.5h1.5a.75.75 0 000-1.5h-1.5z" clipRule="evenodd" />
+                  </svg>
+                  Grid Columns
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Small (sm)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="6"
+                      value={styles.contentGridColumns?.sm || 1}
+                      onChange={(e) => updateNestedStyle('contentGridColumns.sm', parseInt(e.target.value) || 1)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Medium (md)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="6"
+                      value={styles.contentGridColumns?.md || 2}
+                      onChange={(e) => updateNestedStyle('contentGridColumns.md', parseInt(e.target.value) || 1)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Large (lg)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="6"
+                      value={styles.contentGridColumns?.lg || 3}
+                      onChange={(e) => updateNestedStyle('contentGridColumns.lg', parseInt(e.target.value) || 1)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Extra Large (xl)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="6"
+                      value={styles.contentGridColumns?.xl || 4}
+                      onChange={(e) => updateNestedStyle('contentGridColumns.xl', parseInt(e.target.value) || 1)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                    />
+                  </div>
                 </div>
               </section>
             </div>

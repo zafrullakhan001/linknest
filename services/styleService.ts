@@ -28,7 +28,7 @@ const API_BASE = resolveApiBase();
 export interface SpaceStyles {
   // Global Page Settings
   pageZoom: number; // Global page zoom percentage (50-150)
-  
+
   // Tile/Space styling
   tileBackgroundColor: string;
   tileBorderColor: string;
@@ -36,11 +36,11 @@ export interface SpaceStyles {
   tileBorderRadius: number;
   tilePadding: number;
   tileElevation: number; // Shadow intensity (0-5)
-  
+
   // Spacing
   tileGap: number; // Gap between tiles
   categorySpacing: number; // Spacing between categories
-  
+
   // Gradient
   useGradient: boolean;
   gradientType: 'linear' | 'radial' | 'conic';
@@ -48,12 +48,12 @@ export interface SpaceStyles {
   gradientStartColor: string;
   gradientEndColor: string;
   gradientStop: number; // 0-100 for gradient stop position
-  
+
   // Hover effects
   hoverElevation: number;
   hoverScale: number; // 1.0 = no scale, 1.1 = 10% larger
   hoverTranslateY: number; // pixels to move up on hover
-  
+
   // Visual effects
   raisedEffect: boolean; // 3D raised appearance with multiple shadows
   raisedIntensity: number; // 0-5, intensity of raised effect
@@ -61,7 +61,7 @@ export interface SpaceStyles {
   metallicType: 'silver' | 'gold' | 'chrome' | 'bronze' | 'copper' | 'custom';
   metallicIntensity: number; // 0-100, intensity of metallic effect
   metallicCustomColor: string; // Custom color for metallic effect
-  
+
   // Category header styling
   categoryHeaderColor: string;
   categoryHeaderSize: number; // font size
@@ -69,26 +69,26 @@ export interface SpaceStyles {
   categoryFontFamily: string;
   categoryFontWeight: string;
   categoryFontStyle: string;
-  
+
   // Tile/Space font styling
   tileFontFamily: string;
   tileFontSize: number;
   tileFontWeight: string;
   tileFontStyle: string;
-  
+
   // Page title font styling
   pageTitleFontFamily: string;
   pageTitleFontSize: number;
   pageTitleFontWeight: string;
   pageTitleFontStyle: string;
   pageTitleGradientEnabled: boolean;
-  
+
   // Spaces title (Landing page heading) font styling
   spacesTitleFontFamily: string;
   spacesTitleFontSize: number;
   spacesTitleFontWeight: string;
   spacesTitleFontStyle: string;
-  
+
   // Grid settings
   gridColumns: {
     sm: number;
@@ -96,7 +96,7 @@ export interface SpaceStyles {
     lg: number;
     xl: number;
   };
-  
+
   // Background/Page styling
   backgroundRaised: boolean; // Raised table-like background
   backgroundTableType: 'wood' | 'marble' | 'metal' | 'fabric' | 'clean';
@@ -113,7 +113,7 @@ export interface SpaceStyles {
   backgroundMetallicType: 'silver' | 'gold' | 'chrome' | 'bronze' | 'copper' | 'custom';
   backgroundMetallicIntensity: number; // 0-100, intensity of metallic effect
   backgroundMetallicCustomColor: string; // Custom color for metallic effect
-  
+
   // Content Page UX Styling
   contentHeaderStyle: 'gradient' | 'solid' | 'glassmorphism' | 'minimal';
   contentHeaderGradientStart: string;
@@ -122,7 +122,7 @@ export interface SpaceStyles {
   contentHeaderSolidColor: string;
   contentHeaderBlur: number; // For glassmorphism effect (0-20)
   contentHeaderOpacity: number; // 0-100
-  
+
   // Content Section Styling
   contentSectionStyle: 'card' | 'flat' | 'bordered' | 'elevated';
   contentSectionBackgroundColor: string;
@@ -130,7 +130,7 @@ export interface SpaceStyles {
   contentSectionBorderRadius: number;
   contentSectionElevation: number;
   contentSectionSpacing: number;
-  
+
   // Content Link Styling
   contentLinkStyle: 'pill' | 'card' | 'minimal' | 'button';
   contentLinkBackgroundColor: string;
@@ -140,13 +140,13 @@ export interface SpaceStyles {
   contentLinkPadding: number;
   contentLinkSpacing: number;
   contentLinkIconSize: number;
-  
+
   // Content Tab Styling
   contentTabStyle: 'underline' | 'pill' | 'box' | 'minimal';
   contentTabActiveColor: string;
   contentTabInactiveColor: string;
   contentTabBorderRadius: number;
-  
+
   // Content Typography
   contentTitleFontFamily: string;
   contentTitleFontSize: number;
@@ -160,16 +160,24 @@ export interface SpaceStyles {
   contentLinkFontSize: number;
   contentLinkFontWeight: string;
   contentLinkFontStyle: string;
-  
+
   // Content Section Vertical Spacing
   contentSectionVerticalSpacing: number; // Space between sections
-  
+
   // Content Visual Enhancements
   contentShowLinkIcons: boolean;
   contentShowLinkDomain: boolean;
   contentShowHealthStatus: boolean;
   contentAnimateLinks: boolean;
   contentLinkAnimationDelay: number; // ms between each link animation
+
+  // Content Grid settings
+  contentGridColumns: {
+    sm: number;
+    md: number;
+    lg: number;
+    xl: number;
+  };
 }
 
 export const DEFAULT_STYLES: SpaceStyles = {
@@ -237,7 +245,7 @@ export const DEFAULT_STYLES: SpaceStyles = {
   backgroundMetallicType: 'silver',
   backgroundMetallicIntensity: 50,
   backgroundMetallicCustomColor: '#c0c0c0',
-  
+
   // Content Page UX Defaults
   contentHeaderStyle: 'gradient',
   contentHeaderGradientStart: '#3b82f6',
@@ -246,14 +254,14 @@ export const DEFAULT_STYLES: SpaceStyles = {
   contentHeaderSolidColor: '#3b82f6',
   contentHeaderBlur: 12,
   contentHeaderOpacity: 95,
-  
+
   contentSectionStyle: 'card',
   contentSectionBackgroundColor: '#ffffff',
   contentSectionBorderColor: '#e2e8f0',
   contentSectionBorderRadius: 16,
   contentSectionElevation: 1,
   contentSectionSpacing: 24,
-  
+
   contentLinkStyle: 'card',
   contentLinkBackgroundColor: '#ffffff',
   contentLinkBorderColor: '#e2e8f0',
@@ -262,12 +270,12 @@ export const DEFAULT_STYLES: SpaceStyles = {
   contentLinkPadding: 16,
   contentLinkSpacing: 12,
   contentLinkIconSize: 40,
-  
+
   contentTabStyle: 'underline',
   contentTabActiveColor: '#3b82f6',
   contentTabInactiveColor: '#64748b',
   contentTabBorderRadius: 8,
-  
+
   contentTitleFontFamily: 'inherit',
   contentTitleFontSize: 24,
   contentTitleFontWeight: 'bold',
@@ -281,12 +289,18 @@ export const DEFAULT_STYLES: SpaceStyles = {
   contentLinkFontWeight: '500',
   contentLinkFontStyle: 'normal',
   contentSectionVerticalSpacing: 32,
-  
+
   contentShowLinkIcons: true,
   contentShowLinkDomain: true,
   contentShowHealthStatus: true,
   contentAnimateLinks: true,
-  contentLinkAnimationDelay: 30
+  contentLinkAnimationDelay: 30,
+  contentGridColumns: {
+    sm: 1,
+    md: 2,
+    lg: 3,
+    xl: 4
+  }
 };
 
 export const styleService = {
@@ -364,18 +378,18 @@ export const styleService = {
         try {
           const content = e.target?.result as string;
           const imported = JSON.parse(content);
-          
+
           // Validate and merge with defaults
           const styles: SpaceStyles = {
             ...DEFAULT_STYLES,
             ...imported
           };
-          
+
           // Validate grid columns
           if (!styles.gridColumns || typeof styles.gridColumns !== 'object') {
             styles.gridColumns = { ...DEFAULT_STYLES.gridColumns };
           }
-          
+
           resolve(styles);
         } catch (error) {
           reject(new Error('Invalid style file format'));
@@ -389,7 +403,7 @@ export const styleService = {
   generateCSS(styles: SpaceStyles, isDark: boolean = false): string {
     const shadowIntensity = styles.tileElevation;
     const hoverShadowIntensity = styles.hoverElevation;
-    
+
     const shadows = [
       'none',
       '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
@@ -398,7 +412,7 @@ export const styleService = {
       '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
       '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)'
     ];
-    
+
     const hoverShadows = [
       'none',
       '0 2px 4px 0 rgba(0, 0, 0, 0.1)',
@@ -407,7 +421,7 @@ export const styleService = {
       '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
       '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
     ];
-    
+
     let gradientCSS = '';
     if (styles.useGradient) {
       if (styles.gradientType === 'linear') {
@@ -418,10 +432,10 @@ export const styleService = {
         gradientCSS = `conic-gradient(from ${styles.gradientDirection}deg, ${styles.gradientStartColor} ${styles.gradientStop}%, ${styles.gradientEndColor})`;
       }
     }
-    
+
     // Build background with effects
     let bgColor = styles.useGradient ? gradientCSS : styles.tileBackgroundColor;
-    
+
     // Metallic effect
     let metallicCSS = '';
     if (styles.metallicEffect) {
@@ -433,10 +447,10 @@ export const styleService = {
         copper: { start: '#b87333', mid: '#cd7f32', end: '#8b4513', highlight: '#daa520' },
         custom: { start: styles.metallicCustomColor, mid: styles.metallicCustomColor, end: styles.metallicCustomColor, highlight: '#ffffff' }
       };
-      
+
       const metallic = metallicColors[styles.metallicType] || metallicColors.silver;
       const intensity = styles.metallicIntensity / 100;
-      
+
       // Create metallic gradient with highlight
       metallicCSS = `linear-gradient(135deg, 
         ${metallic.highlight} 0%, 
@@ -445,7 +459,7 @@ export const styleService = {
         ${metallic.end} ${90 * intensity}%, 
         ${metallic.start} 100%
       )`;
-      
+
       // If gradient is already set, combine them
       if (styles.useGradient) {
         bgColor = `${metallicCSS}, ${gradientCSS}`;
@@ -453,13 +467,13 @@ export const styleService = {
         bgColor = metallicCSS;
       }
     }
-    
+
     // Raised effect shadows
     let raisedShadow = '';
     if (styles.raisedEffect) {
       const intensity = styles.raisedIntensity;
       const baseShadow = shadows[Math.min(shadowIntensity, 5)];
-      
+
       // Create multi-layer shadow for 3D raised effect
       const raisedShadows = [
         '', // 0 - no raised effect
@@ -469,16 +483,16 @@ export const styleService = {
         '0 8px 16px rgba(0, 0, 0, 0.18), 0 4px 8px rgba(0, 0, 0, 0.12), inset 0 2px 0 rgba(255, 255, 255, 0.25)', // 4
         '0 12px 24px rgba(0, 0, 0, 0.2), 0 6px 12px rgba(0, 0, 0, 0.15), inset 0 3px 0 rgba(255, 255, 255, 0.3)' // 5
       ];
-      
+
       raisedShadow = raisedShadows[Math.min(intensity, 5)];
     }
-    
-    const finalShadow = styles.raisedEffect && raisedShadow 
-      ? raisedShadow 
+
+    const finalShadow = styles.raisedEffect && raisedShadow
+      ? raisedShadow
       : shadows[Math.min(shadowIntensity, 5)];
-    
+
     const zoomValue = styles.pageZoom || 80;
-    
+
     return `
       /* Global Page Zoom */
       .linknest-app-container {
@@ -526,9 +540,9 @@ export const styleService = {
       ` : ''}
       
       .linknest-tile:hover {
-        box-shadow: ${styles.raisedEffect && raisedShadow 
-          ? `0 ${8 + hoverShadowIntensity * 2}px ${16 + hoverShadowIntensity * 4}px rgba(0, 0, 0, 0.2), 0 ${4 + hoverShadowIntensity}px ${8 + hoverShadowIntensity * 2}px rgba(0, 0, 0, 0.15), inset 0 2px 0 rgba(255, 255, 255, 0.3)` 
-          : hoverShadows[Math.min(hoverShadowIntensity, 5)]} !important;
+        box-shadow: ${styles.raisedEffect && raisedShadow
+        ? `0 ${8 + hoverShadowIntensity * 2}px ${16 + hoverShadowIntensity * 4}px rgba(0, 0, 0, 0.2), 0 ${4 + hoverShadowIntensity}px ${8 + hoverShadowIntensity * 2}px rgba(0, 0, 0, 0.15), inset 0 2px 0 rgba(255, 255, 255, 0.3)`
+        : hoverShadows[Math.min(hoverShadowIntensity, 5)]} !important;
         transform: translateY(${styles.raisedEffect ? -styles.hoverTranslateY - 1 : -styles.hoverTranslateY}px) scale(${styles.hoverScale}) !important;
       }
       
@@ -595,15 +609,15 @@ export const styleService = {
         font-size: ${styles.pageTitleFontSize}px !important;
         font-weight: ${styles.pageTitleFontWeight} !important;
         font-style: ${styles.pageTitleFontStyle} !important;
-        ${styles.pageTitleGradientEnabled 
-          ? `background-clip: text !important;
+        ${styles.pageTitleGradientEnabled
+        ? `background-clip: text !important;
         -webkit-background-clip: text !important;
         -webkit-text-fill-color: transparent !important;
         background-image: linear-gradient(to right, rgb(30 41 55), rgb(100 116 139)) !important;`
-          : `color: ${isDark ? 'rgb(255 255 255)' : 'rgb(30 41 55)'} !important;`}
+        : `color: ${isDark ? 'rgb(255 255 255)' : 'rgb(30 41 55)'} !important;`}
       }
       
-      ${styles.pageTitleGradientEnabled 
+      ${styles.pageTitleGradientEnabled
         ? `.dark .linknest-page-title {
         background-image: linear-gradient(to right, rgb(255 255 255), rgb(148 163 184)) !important;
       }`
@@ -697,7 +711,7 @@ export const styleService = {
 // Helper functions for table background effects
 function getTableBackground(styles: SpaceStyles): string {
   const baseColor = styles.backgroundTableColor;
-  
+
   // Build base texture/pattern based on table type
   let basePattern = '';
   switch (styles.backgroundTableType) {
@@ -748,7 +762,7 @@ function getTableBackground(styles: SpaceStyles): string {
       basePattern = baseColor;
       break;
   }
-  
+
   // Add gradient if enabled
   let gradientCSS = '';
   if (styles.backgroundUseGradient) {
@@ -760,7 +774,7 @@ function getTableBackground(styles: SpaceStyles): string {
       gradientCSS = `conic-gradient(from ${styles.backgroundGradientDirection}deg, ${styles.backgroundGradientStartColor} ${styles.backgroundGradientStop}%, ${styles.backgroundGradientEndColor})`;
     }
   }
-  
+
   // Add metallic effect if enabled
   let metallicCSS = '';
   if (styles.backgroundMetallicEffect) {
@@ -772,10 +786,10 @@ function getTableBackground(styles: SpaceStyles): string {
       copper: { start: '#b87333', mid: '#cd7f32', end: '#8b4513', highlight: '#daa520' },
       custom: { start: styles.backgroundMetallicCustomColor, mid: styles.backgroundMetallicCustomColor, end: styles.backgroundMetallicCustomColor, highlight: '#ffffff' }
     };
-    
+
     const metallic = metallicColors[styles.backgroundMetallicType] || metallicColors.silver;
     const intensity = styles.backgroundMetallicIntensity / 100;
-    
+
     metallicCSS = `linear-gradient(135deg, 
       ${metallic.highlight} 0%, 
       ${metallic.start} ${10 * intensity}%, 
@@ -784,25 +798,25 @@ function getTableBackground(styles: SpaceStyles): string {
       ${metallic.start} 100%
     )`;
   }
-  
+
   // Combine all effects
   const layers: string[] = [];
-  
+
   // Base pattern/texture first
   if (basePattern) {
     layers.push(basePattern);
   }
-  
+
   // Gradient second (if enabled)
   if (gradientCSS) {
     layers.push(gradientCSS);
   }
-  
+
   // Metallic effect last (if enabled)
   if (metallicCSS) {
     layers.push(metallicCSS);
   }
-  
+
   // If only one layer, return it directly, otherwise combine
   if (layers.length === 0) {
     return baseColor;
@@ -866,7 +880,7 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
     '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
     '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
   ];
-  
+
   // Header background based on style
   let headerBackground = '';
   switch (styles.contentHeaderStyle) {
@@ -877,7 +891,7 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       headerBackground = styles.contentHeaderSolidColor;
       break;
     case 'glassmorphism':
-      headerBackground = isDark 
+      headerBackground = isDark
         ? `rgba(30, 41, 59, ${styles.contentHeaderOpacity / 100})`
         : `rgba(255, 255, 255, ${styles.contentHeaderOpacity / 100})`;
       break;
@@ -885,7 +899,7 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       headerBackground = 'transparent';
       break;
   }
-  
+
   // Link hover effects
   let linkHoverTransform = '';
   let linkHoverShadow = '';
@@ -907,7 +921,7 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       linkHoverShadow = '0 4px 12px -2px rgba(0, 0, 0, 0.1)';
       break;
   }
-  
+
   // Section styles
   let sectionBackground = '';
   let sectionBorder = '';
@@ -934,7 +948,7 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       sectionShadow = contentShadows[Math.min(styles.contentSectionElevation + 2, 5)];
       break;
   }
-  
+
   // Link styles
   let linkBackground = '';
   let linkBorder = '';
@@ -956,14 +970,14 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       linkShadow = 'none';
       break;
     case 'button':
-      linkBackground = isDark 
+      linkBackground = isDark
         ? `linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(139, 92, 246, 0.2))`
         : `linear-gradient(135deg, ${styles.contentHeaderGradientStart}10, ${styles.contentHeaderGradientEnd}10)`;
       linkBorder = `1px solid ${isDark ? 'rgba(59, 130, 246, 0.3)' : `${styles.contentHeaderGradientStart}30`}`;
       linkShadow = '0 2px 8px rgba(59, 130, 246, 0.1)';
       break;
   }
-  
+
   // Tab styles
   let tabActiveStyles = '';
   let tabInactiveStyles = '';
@@ -1088,9 +1102,9 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       transform: ${linkHoverTransform} !important;
       box-shadow: ${linkHoverShadow} !important;
       ${styles.contentLinkStyle === 'button' ? `
-        background: ${isDark 
-          ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(139, 92, 246, 0.3))'
-          : `linear-gradient(135deg, ${styles.contentHeaderGradientStart}20, ${styles.contentHeaderGradientEnd}20)`} !important;
+        background: ${isDark
+        ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(139, 92, 246, 0.3))'
+        : `linear-gradient(135deg, ${styles.contentHeaderGradientStart}20, ${styles.contentHeaderGradientEnd}20)`} !important;
       ` : ''}
     }
     
@@ -1135,56 +1149,80 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
     .linknest-content-link-grid {
       gap: ${styles.contentLinkSpacing}px !important;
     }
+    
+    @media (min-width: 640px) {
+      .linknest-content-link-grid {
+        grid-template-columns: repeat(${styles.contentGridColumns?.sm || 1}, minmax(0, 1fr)) !important;
+      }
+    }
+    
+    @media (min-width: 768px) {
+      .linknest-content-link-grid {
+        grid-template-columns: repeat(${styles.contentGridColumns?.md || 2}, minmax(0, 1fr)) !important;
+      }
+    }
+    
+    @media (min-width: 1024px) {
+      .linknest-content-link-grid {
+        grid-template-columns: repeat(${styles.contentGridColumns?.lg || 3}, minmax(0, 1fr)) !important;
+      }
+    }
+    
+    @media (min-width: 1280px) {
+      .linknest-content-link-grid {
+        grid-template-columns: repeat(${styles.contentGridColumns?.xl || 4}, minmax(0, 1fr)) !important;
+      }
+    }
   `;
 }
 
 function lightenColor(color: string, amount: number): string {
   // Simple color lightening - convert hex to RGB, lighten, convert back
   let hex = color.replace('#', '');
-  
+
   // Handle 3-digit hex codes
   if (hex.length === 3) {
     hex = hex.split('').map(char => char + char).join('');
   }
-  
+
   // Validate hex color
   if (!/^[0-9A-Fa-f]{6}$/.test(hex)) {
     return color; // Return original if invalid
   }
-  
+
   const r = parseInt(hex.substr(0, 2), 16);
   const g = parseInt(hex.substr(2, 2), 16);
   const b = parseInt(hex.substr(4, 2), 16);
-  
+
   const newR = Math.min(255, Math.floor(r + (255 - r) * amount));
   const newG = Math.min(255, Math.floor(g + (255 - g) * amount));
   const newB = Math.min(255, Math.floor(b + (255 - b) * amount));
-  
+
   return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
 }
 
 function darkenColor(color: string, amount: number): string {
   // Simple color darkening
   let hex = color.replace('#', '');
-  
+
   // Handle 3-digit hex codes
   if (hex.length === 3) {
     hex = hex.split('').map(char => char + char).join('');
   }
-  
+
   // Validate hex color
   if (!/^[0-9A-Fa-f]{6}$/.test(hex)) {
     return color; // Return original if invalid
   }
-  
+
   const r = parseInt(hex.substr(0, 2), 16);
   const g = parseInt(hex.substr(2, 2), 16);
   const b = parseInt(hex.substr(4, 2), 16);
-  
+
   const newR = Math.max(0, Math.floor(r * (1 - amount)));
   const newG = Math.max(0, Math.floor(g * (1 - amount)));
   const newB = Math.max(0, Math.floor(b * (1 - amount)));
-  
+
   return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
 }
 

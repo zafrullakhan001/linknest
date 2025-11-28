@@ -51,9 +51,9 @@ const AppContent: React.FC = () => {
   const [styleManagerOpen, setStyleManagerOpen] = useState(false);
   const [authRequired, setAuthRequired] = useState(false); // Track if we got 401 error
   const { user, isAuthenticated, loading: authLoading } = useAuth();
-  const { updateStyles, styles } = useStyles();
+  const { updateStyles, styles, isLoading: stylesLoading } = useStyles();
   const { settings, loading: settingsLoading } = useSettings();
-  
+
   // Theme State
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('linknest_theme');
@@ -126,7 +126,7 @@ const AppContent: React.FC = () => {
         setLoading(false);
       }
     };
-    
+
     if (!settingsLoading && (guestAccessEnabled || isAuthenticated)) {
       loadData();
     }
@@ -138,7 +138,7 @@ const AppContent: React.FC = () => {
       setTiles(newTiles);
       return;
     }
-    
+
     try {
       setTiles(newTiles);
       await saveTiles(newTiles);
@@ -155,7 +155,7 @@ const AppContent: React.FC = () => {
       setAuthModalOpen(true);
       return;
     }
-    
+
     try {
       const created = await createTile(tile);
       setTiles([...tiles, created]);
@@ -169,7 +169,7 @@ const AppContent: React.FC = () => {
     if (!isAuthenticated) {
       return;
     }
-    
+
     try {
       await deleteTile(tileId);
       setTiles(tiles.filter(t => t.id !== tileId));
@@ -184,7 +184,7 @@ const AppContent: React.FC = () => {
       setAuthModalOpen(true);
       return;
     }
-    
+
     try {
       const cloned = await cloneTile(tileId);
       // Reload tiles to get the updated list
@@ -198,7 +198,7 @@ const AppContent: React.FC = () => {
 
   // Only show loading if settings are loading OR if we're authenticated and loading tiles
   // Don't show loading if guest access is disabled and user is not authenticated
-  if (settingsLoading || (loading && (isAuthenticated || guestAccessEnabled))) {
+  if (settingsLoading || stylesLoading || (loading && (isAuthenticated || guestAccessEnabled))) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white transition-colors duration-300">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500"></div>
@@ -209,12 +209,12 @@ const AppContent: React.FC = () => {
 
   // Routing Logic
   let content;
-  
+
   // If guest access is disabled and user is not authenticated, show login message in content area
   // Also show if we got a 401 error (authRequired flag)
-  const shouldShowLoginMessage = (!guestAccessEnabled && !isAuthenticated && !settingsLoading) || 
-                                  (authRequired && !isAuthenticated);
-  
+  const shouldShowLoginMessage = (!guestAccessEnabled && !isAuthenticated && !settingsLoading) ||
+    (authRequired && !isAuthenticated);
+
   if (shouldShowLoginMessage) {
     content = (
       <div className="w-full max-w-2xl mx-auto">
@@ -229,12 +229,12 @@ const AppContent: React.FC = () => {
                 </svg>
               </div>
             </div>
-            
+
             {/* Title */}
             <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-3">
               Login Required
             </h2>
-            
+
             {/* Description */}
             <p className="text-lg text-slate-600 dark:text-slate-400 mb-2">
               Guest access has been disabled.
@@ -242,7 +242,7 @@ const AppContent: React.FC = () => {
             <p className="text-base text-slate-500 dark:text-slate-500 mb-8">
               Please sign in with your account to access and view all spaces.
             </p>
-            
+
             {/* Login Button */}
             <button
               onClick={() => setAuthModalOpen(true)}
@@ -255,7 +255,7 @@ const AppContent: React.FC = () => {
             </button>
           </div>
         </div>
-        
+
         {/* Info Box */}
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
           <div className="flex items-start gap-3">
@@ -277,8 +277,8 @@ const AppContent: React.FC = () => {
   } else if (route === '#/' || route === '') {
     content = (
       <Suspense fallback={<LoadingFallback />}>
-        <TileGrid 
-          tiles={tiles} 
+        <TileGrid
+          tiles={tiles}
           onUpdateTiles={handleUpdateTiles}
           onCreateTile={handleCreateTile}
           onDeleteTile={handleDeleteTile}
@@ -292,7 +292,7 @@ const AppContent: React.FC = () => {
     if (user?.is_admin) {
       content = (
         <Suspense fallback={<LoadingFallback />}>
-          <AdminPanel 
+          <AdminPanel
             onUserApproved={() => {
               // Refresh tiles if needed
               const loadData = async () => {
@@ -318,9 +318,9 @@ const AppContent: React.FC = () => {
     if (tile) {
       content = (
         <Suspense fallback={<LoadingFallback />}>
-          <TileDetail 
-            tile={tile} 
-            allTiles={tiles} 
+          <TileDetail
+            tile={tile}
+            allTiles={tiles}
             onUpdateTiles={handleUpdateTiles}
             isAuthenticated={isAuthenticated}
             onAuthRequired={() => setAuthModalOpen(true)}
@@ -335,8 +335,8 @@ const AppContent: React.FC = () => {
   } else {
     content = (
       <Suspense fallback={<LoadingFallback />}>
-        <TileGrid 
-          tiles={tiles} 
+        <TileGrid
+          tiles={tiles}
           onUpdateTiles={handleUpdateTiles}
           onCreateTile={handleCreateTile}
           onDeleteTile={handleDeleteTile}
@@ -350,21 +350,21 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="linknest-app-container min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-brand-500 selection:text-white transition-colors duration-300">
-      <Navigation 
-        darkMode={darkMode} 
+      <Navigation
+        darkMode={darkMode}
         toggleTheme={toggleTheme}
         user={user}
         onLoginClick={() => setAuthModalOpen(true)}
       />
-      <main className={`flex-grow container mx-auto px-4 py-8 max-w-6xl ${styles?.backgroundRaised ? 'linknest-page-background' : ''} ${!guestAccessEnabled && !isAuthenticated ? 'flex items-center justify-center' : ''}`}>
+      <main className={`flex-grow container mx-auto px-4 py-8 max-w-6xl-plus ${styles?.backgroundRaised ? 'linknest-page-background' : ''} ${!guestAccessEnabled && !isAuthenticated ? 'flex items-center justify-center' : ''}`}>
         {content}
       </main>
       {!isAuthenticated && guestAccessEnabled && (
-        <div className="container mx-auto px-4 max-w-6xl pb-4">
+        <div className="container mx-auto px-4 max-w-6xl-plus pb-4">
           <div className="p-2.5 bg-slate-100/50 dark:bg-slate-800/30 border border-slate-200/50 dark:border-slate-700/50 rounded-md text-center">
             <p className="text-xs text-slate-600 dark:text-slate-400">
-              👋 Guest Mode: You're viewing all public links. 
-              <button 
+              👋 Guest Mode: You're viewing all public links.
+              <button
                 onClick={() => setAuthModalOpen(true)}
                 className="ml-1.5 text-slate-700 dark:text-slate-300 hover:underline"
               >
@@ -377,8 +377,8 @@ const AppContent: React.FC = () => {
       <footer className="py-6 text-center text-slate-400 dark:text-slate-500 text-sm">
         <p dangerouslySetInnerHTML={{ __html: settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}></p>
       </footer>
-      <AuthModal 
-        isOpen={authModalOpen} 
+      <AuthModal
+        isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
       />
       {user?.is_admin && (

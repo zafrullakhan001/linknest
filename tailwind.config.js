@@ -123,6 +123,9 @@ module.exports = {
           700: '#1d4ed8',
           900: '#1e3a8a',
         }
+      },
+      maxWidth: {
+        '6xl-plus': '93.6rem', // 30% larger than default 6xl (72rem)
       }
     },
   },
