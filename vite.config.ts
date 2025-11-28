@@ -16,10 +16,27 @@ export default defineConfig(({ mode }) => {
         emptyOutDir: true,
         sourcemap: false,
         minify: 'esbuild',
+        chunkSizeWarningLimit: 1000, // Increase limit to 1MB (chunks are still optimized)
         rollupOptions: {
           output: {
-            manualChunks: {
-              'react-vendor': ['react', 'react-dom'],
+            manualChunks: (id) => {
+              // Split node_modules into separate chunks
+              if (id.includes('node_modules')) {
+                // React and React DOM
+                if (id.includes('react') || id.includes('react-dom')) {
+                  return 'react-vendor';
+                }
+                // DnD Kit libraries
+                if (id.includes('@dnd-kit')) {
+                  return 'dnd-vendor';
+                }
+                // Google GenAI (can be large)
+                if (id.includes('@google/genai') || id.includes('google')) {
+                  return 'genai-vendor';
+                }
+                // Other vendor libraries
+                return 'vendor';
+              }
             }
           }
         }
