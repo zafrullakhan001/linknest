@@ -76,6 +76,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   // Ref to store bind password for immediate access (avoids React state timing issues)
   const ldapBindPasswordRef = useRef<string>('');
 
+  // Add User modal state
+  const [addUserModal, setAddUserModal] = useState(false);
+  const [addUserType, setAddUserType] = useState<'local' | 'ldap'>('local');
+  
+  // Local user form state
+  const [localUsername, setLocalUsername] = useState('');
+  const [localEmail, setLocalEmail] = useState('');
+  const [localPassword, setLocalPassword] = useState('');
+  
+  // LDAP user search state
+  const [ldapSearchTerm, setLdapSearchTerm] = useState('');
+  const [ldapSearchResults, setLdapSearchResults] = useState<Array<{ username: string; email: string; displayName: string; dn: string }>>([]);
+  const [ldapSearchLoading, setLdapSearchLoading] = useState(false);
+  const [selectedLdapUser, setSelectedLdapUser] = useState<{ username: string; email: string; displayName: string; dn: string } | null>(null);
+  const [addUserLoading, setAddUserLoading] = useState(false);
+
   const loadPendingUsers = async () => {
     try {
       setError('');
@@ -221,6 +237,94 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp * 1000).toLocaleString();
+  };
+
+  const handleSearchLdapUsers = async () => {
+    if (!ldapSearchTerm.trim() || ldapSearchTerm.length < 2) {
+      setError('Please enter at least 2 characters to search');
+      return;
+    }
+
+    try {
+      setLdapSearchLoading(true);
+      setError('');
+      const results = await authService.searchLdapUsers(ldapSearchTerm);
+      setLdapSearchResults(results);
+      setSelectedLdapUser(null);
+    } catch (err: any) {
+      setError(err.message || 'Failed to search LDAP users');
+      setLdapSearchResults([]);
+    } finally {
+      setLdapSearchLoading(false);
+    }
+  };
+
+  const handleAddLocalUser = async () => {
+    if (!localUsername.trim() || !localEmail.trim() || !localPassword.trim()) {
+      setError('Please fill in all fields');
+      return;
+    }
+
+    if (localPassword.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
+    try {
+      setAddUserLoading(true);
+      setError('');
+      await authService.addLocalUser(localUsername.trim(), localEmail.trim(), localPassword);
+      setAddUserModal(false);
+      setLocalUsername('');
+      setLocalEmail('');
+      setLocalPassword('');
+      await loadData();
+      alert('Local user created successfully. User is pending admin approval.');
+    } catch (err: any) {
+      setError(err.message || 'Failed to add local user');
+    } finally {
+      setAddUserLoading(false);
+    }
+  };
+
+  const handleAddLdapUser = async () => {
+    if (!selectedLdapUser) {
+      setError('Please select an LDAP user');
+      return;
+    }
+
+    try {
+      setAddUserLoading(true);
+      setError('');
+      await authService.addLdapUser(
+        selectedLdapUser.username,
+        selectedLdapUser.email,
+        selectedLdapUser.dn,
+        selectedLdapUser.displayName
+      );
+      setAddUserModal(false);
+      setLdapSearchTerm('');
+      setLdapSearchResults([]);
+      setSelectedLdapUser(null);
+      await loadData();
+      alert('LDAP user added successfully. User is pending admin approval.');
+    } catch (err: any) {
+      setError(err.message || 'Failed to add LDAP user');
+    } finally {
+      setAddUserLoading(false);
+    }
+  };
+
+  const openAddUserModal = () => {
+    setAddUserModal(true);
+    setAddUserType('local');
+    setLocalUsername('');
+    setLocalEmail('');
+    setLocalPassword('');
+    setLdapSearchTerm('');
+    setLdapSearchResults([]);
+    setSelectedLdapUser(null);
+    setError('');
   };
 
   return (
@@ -416,8 +520,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
           {/* All Users Tab */}
           {activeTab === 'all' && (
-            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-              <div className="overflow-x-auto">
+            <div className="space-y-4">
+              <div className="flex justify-end">
+                <button
+                  onClick={openAddUserModal}
+                  className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path d="M10 5a3 3 0 100 6 3 3 0 000-6zM3.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM15.75 6a3 3 0 11-6 0 3 3 0 016 0zm1.423 11.285a1.224 1.224 0 00-.569-1.175 5.964 5.964 0 00-1.576-.19 5.964 5.964 0 00-2.383.676.224.224 0 00-.12.219c0 .288.09.567.26.804a5.96 5.96 0 013.5 2.377 5.96 5.96 0 003.5-2.377c.17-.237.26-.516.26-.804a.225.225 0 00-.12-.219z" />
+                  </svg>
+                  Add User
+                </button>
+              </div>
+              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
                     <tr>
@@ -514,17 +630,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 )}
                                 Toggle
                               </button>
-                              <button
-                                onClick={() => setResetPasswordModal({ open: true, userId: user.id, username: user.username })}
-                                disabled={processing === user.id}
-                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
-                                title="Reset Password"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                  <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
-                                </svg>
-                                Reset
-                              </button>
+                              {user.auth_source !== 'ldap' && (
+                                <button
+                                  onClick={() => setResetPasswordModal({ open: true, userId: user.id, username: user.username })}
+                                  disabled={processing === user.id}
+                                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
+                                  title="Reset Password"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                    <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
+                                  </svg>
+                                  Reset
+                                </button>
+                              )}
                               <button
                                 onClick={() => handleDeleteUser(user.id, user.username)}
                                 disabled={processing === user.id}
@@ -550,6 +668,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     ))}
                   </tbody>
                 </table>
+              </div>
               </div>
             </div>
           )}
@@ -1244,6 +1363,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         }}
                         className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
                         placeholder="••••••••"
+                        autoComplete="current-password"
                       />
                     </div>
                   </div>
@@ -2435,6 +2555,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   minLength={6}
                   className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
                   autoFocus
+                  autoComplete="new-password"
                 />
               </div>
               <div className="flex justify-end gap-3 pt-2">
@@ -2486,6 +2607,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
                   placeholder="Enter current password"
                   autoFocus
+                  autoComplete="current-password"
                 />
               </div>
               <div>
@@ -2501,6 +2623,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
                   placeholder="Enter new password (min 6 characters)"
                   minLength={6}
+                  autoComplete="new-password"
                 />
               </div>
               <div className="flex justify-end gap-3 pt-2">
@@ -2546,6 +2669,262 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add User Modal */}
+      {addUserModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          {/* Keep a light, non-blurred overlay so background (including error bar) stays readable */}
+          <div className="absolute inset-0 bg-slate-900/20 dark:bg-slate-900/40" onClick={() => {
+            setAddUserModal(false);
+            setAddUserType('local');
+            setLocalUsername('');
+            setLocalEmail('');
+            setLocalPassword('');
+            setLdapSearchTerm('');
+            setLdapSearchResults([]);
+            setSelectedLdapUser(null);
+            setError('');
+          }}></div>
+          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-2xl p-6 relative shadow-2xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Add User</h3>
+            
+            {/* Tabs */}
+            <div className="flex gap-2 border-b border-slate-200 dark:border-slate-700 mb-4">
+              <button
+                onClick={() => {
+                  setAddUserType('local');
+                  setError('');
+                }}
+                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                  addUserType === 'local'
+                    ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                Local User
+              </button>
+              <button
+                onClick={() => {
+                  setAddUserType('ldap');
+                  setError('');
+                }}
+                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                  addUserType === 'ldap'
+                    ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                LDAP User
+              </button>
+            </div>
+
+            {/* Local User Form */}
+            {addUserType === 'local' && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleAddLocalUser();
+                }}
+                className="space-y-4"
+              >
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Username *
+                  </label>
+                  <input
+                    type="text"
+                    value={localUsername}
+                    onChange={(e) => {
+                      setLocalUsername(e.target.value);
+                      setError('');
+                    }}
+                    placeholder="Enter username (min 3 characters)"
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    autoFocus
+                    required
+                    minLength={3}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Email *
+                  </label>
+                  <input
+                    type="email"
+                    value={localEmail}
+                    onChange={(e) => {
+                      setLocalEmail(e.target.value);
+                      setError('');
+                    }}
+                    placeholder="Enter email address"
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    required
+                    autoComplete="email"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Password *
+                  </label>
+                  <SecurePasswordInput
+                    value={localPassword}
+                    onChange={(e) => {
+                      setLocalPassword(e.target.value);
+                      setError('');
+                    }}
+                    placeholder="Enter password (min 6 characters)"
+                    minLength={6}
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    required
+                    autoComplete="new-password"
+                  />
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  * User will be created and will require admin approval before they can log in.
+                </p>
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddUserModal(false);
+                      setLocalUsername('');
+                      setLocalEmail('');
+                      setLocalPassword('');
+                      setError('');
+                    }}
+                    className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={addUserLoading || !localUsername.trim() || !localEmail.trim() || !localPassword.trim() || localPassword.length < 6}
+                    className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
+                  >
+                    {addUserLoading ? 'Adding...' : 'Add User'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* LDAP User Form */}
+            {addUserType === 'ldap' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Search LDAP Users *
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={ldapSearchTerm}
+                      onChange={(e) => {
+                        setLdapSearchTerm(e.target.value);
+                        setError('');
+                      }}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          handleSearchLdapUsers();
+                        }
+                      }}
+                      placeholder="Search by username, email, or display name (min 2 characters)"
+                      className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      autoFocus
+                    />
+                    <button
+                      onClick={handleSearchLdapUsers}
+                      disabled={ldapSearchLoading || !ldapSearchTerm.trim() || ldapSearchTerm.length < 2}
+                      className="px-4 py-2.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
+                    >
+                      {ldapSearchLoading ? 'Searching...' : 'Search'}
+                    </button>
+                  </div>
+                </div>
+
+                {ldapSearchResults.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Select User ({ldapSearchResults.length} found)
+                    </label>
+                    <div className="max-h-60 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg">
+                      {ldapSearchResults.map((user, index) => (
+                        <div
+                          key={index}
+                          onClick={() => {
+                            setSelectedLdapUser(user);
+                            setError('');
+                          }}
+                          className={`p-3 cursor-pointer border-b border-slate-200 dark:border-slate-700 last:border-b-0 hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors ${
+                            selectedLdapUser?.dn === user.dn ? 'bg-brand-50 dark:bg-brand-500/10 border-brand-500' : ''
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="font-medium text-slate-900 dark:text-white">
+                                {user.displayName || user.username}
+                              </div>
+                              <div className="text-sm text-slate-600 dark:text-slate-400">
+                                {user.email || 'No email'}
+                              </div>
+                              <div className="text-xs text-slate-500 dark:text-slate-500 mt-1">
+                                Username: {user.username}
+                              </div>
+                            </div>
+                            {selectedLdapUser?.dn === user.dn && (
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600">
+                                <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {selectedLdapUser && (
+                  <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <div className="text-sm font-medium text-slate-900 dark:text-white mb-1">Selected User:</div>
+                    <div className="text-sm text-slate-600 dark:text-slate-400">
+                      <div><strong>Username:</strong> {selectedLdapUser.username}</div>
+                      <div><strong>Email:</strong> {selectedLdapUser.email || 'N/A'}</div>
+                      {selectedLdapUser.displayName && (
+                        <div><strong>Display Name:</strong> {selectedLdapUser.displayName}</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  * Search for users in LDAP directory. Selected user will be added and will require admin approval before they can log in.
+                </p>
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    onClick={() => {
+                      setAddUserModal(false);
+                      setLdapSearchTerm('');
+                      setLdapSearchResults([]);
+                      setSelectedLdapUser(null);
+                      setError('');
+                    }}
+                    className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleAddLdapUser}
+                    disabled={addUserLoading || !selectedLdapUser}
+                    className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
+                  >
+                    {addUserLoading ? 'Adding...' : 'Add User'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

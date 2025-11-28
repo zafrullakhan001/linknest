@@ -217,6 +217,57 @@ export const authService = {
     }
     
     return { auth_source: data.auth_source };
+  },
+
+  async searchLdapUsers(searchTerm: string): Promise<Array<{ username: string; email: string; displayName: string; dn: string }>> {
+    const response = await fetch(`${API_BASE}/auth/search-ldap-users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ search: searchTerm })
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to search LDAP users');
+    }
+    
+    return data.users || [];
+  },
+
+  async addLocalUser(username: string, email: string, password: string): Promise<{ user: AllUser; message: string }> {
+    const response = await fetch(`${API_BASE}/auth/add-local-user`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ username, email, password })
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to add local user');
+    }
+    
+    return { user: data.user, message: data.message };
+  },
+
+  async addLdapUser(username: string, email: string, dn: string, displayName?: string): Promise<{ user: AllUser; message: string }> {
+    const response = await fetch(`${API_BASE}/auth/add-ldap-user`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ username, email, dn, displayName })
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to add LDAP user');
+    }
+    
+    return { user: data.user, message: data.message };
   }
 };
 

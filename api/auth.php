@@ -29,6 +29,12 @@ switch ($method) {
             handleRegister();
         } elseif ($path === '/login') {
             handleLogin();
+        } elseif ($path === '/search-ldap-users') {
+            handleSearchLdapUsers();
+        } elseif ($path === '/add-local-user') {
+            handleAddLocalUser();
+        } elseif ($path === '/add-ldap-user') {
+            handleAddLdapUser();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -70,6 +76,39 @@ switch ($method) {
         
     default:
         sendJSON(['error' => 'Method not allowed'], 405);
+}
+
+// Helper function to escape LDAP filter values (for PHP < 5.6 compatibility)
+function ldap_escape_filter($value) {
+    if (function_exists('ldap_escape')) {
+        return ldap_escape($value, '', LDAP_ESCAPE_FILTER);
+    }
+    // Manual escaping for older PHP versions
+    $value = str_replace('\\', '\\5c', $value);
+    $value = str_replace('*', '\\2a', $value);
+    $value = str_replace('(', '\\28', $value);
+    $value = str_replace(')', '\\29', $value);
+    $value = str_replace("\x00", '\\00', $value);
+    return $value;
+}
+
+// Helper function to escape LDAP DN values (for PHP < 5.6 compatibility)
+function ldap_escape_dn($value) {
+    if (function_exists('ldap_escape')) {
+        return ldap_escape($value, '', LDAP_ESCAPE_DN);
+    }
+    // Manual escaping for DN (simpler than filter escaping)
+    $value = str_replace('\\', '\\\\', $value);
+    $value = str_replace(',', '\\,', $value);
+    $value = str_replace('=', '\\=', $value);
+    $value = str_replace('+', '\\+', $value);
+    $value = str_replace('<', '\\<', $value);
+    $value = str_replace('>', '\\>', $value);
+    $value = str_replace(';', '\\;', $value);
+    $value = str_replace('"', '\\"', $value);
+    $value = str_replace('#', '\\#', $value);
+    $value = str_replace("\x00", '', $value); // Remove null bytes
+    return $value;
 }
 
 function handleRegister() {
@@ -182,39 +221,8 @@ function handleLogin() {
         @file_put_contents($logFile, date('[Y-m-d H:i:s] ') . $message . "\n", FILE_APPEND);
     }
     
-    // Helper function to escape LDAP filter values (for PHP < 5.6 compatibility)
-    function ldap_escape_filter($value) {
-        if (function_exists('ldap_escape')) {
-            return ldap_escape($value, '', LDAP_ESCAPE_FILTER);
-        }
-        // Manual escaping for older PHP versions
-        $value = str_replace('\\', '\\5c', $value);
-        $value = str_replace('*', '\\2a', $value);
-        $value = str_replace('(', '\\28', $value);
-        $value = str_replace(')', '\\29', $value);
-        $value = str_replace("\x00", '\\00', $value);
-        return $value;
-    }
+    // Note: ldap_escape_filter and ldap_escape_dn are now defined globally above
     
-    // Helper function to escape LDAP DN values (for PHP < 5.6 compatibility)
-    function ldap_escape_dn($value) {
-        if (function_exists('ldap_escape')) {
-            return ldap_escape($value, '', LDAP_ESCAPE_DN);
-        }
-        // Manual escaping for DN (simpler than filter escaping)
-        $value = str_replace('\\', '\\\\', $value);
-        $value = str_replace(',', '\\,', $value);
-        $value = str_replace('=', '\\=', $value);
-        $value = str_replace('+', '\\+', $value);
-        $value = str_replace('<', '\\<', $value);
-        $value = str_replace('>', '\\>', $value);
-        $value = str_replace(';', '\\;', $value);
-        $value = str_replace('"', '\\"', $value);
-        $value = str_replace('#', '\\#', $value);
-        $value = str_replace("\x00", '', $value); // Remove null bytes
-        return $value;
-    }
-
     if ($ldapEnabled && extension_loaded('ldap')) {
         $retryCount = (int)($settings['ldap_connection_retry'] ?? 3);
         $retryDelay = (int)($settings['ldap_retry_delay'] ?? 1);
@@ -1119,6 +1127,469 @@ function handleChangeAdminPassword() {
         sendJSON(['success' => true, 'message' => 'Admin password changed successfully']);
     } else {
         sendJSON(['error' => 'Failed to change password'], 500);
+    }
+}
+
+function handleSearchLdapUsers() {
+    try {
+        requireAdmin(); // Only admins can search LDAP
+        
+        $data = getJSONInput();
+        if ($data === null) {
+            sendJSON(['error' => 'Invalid JSON input'], 400);
+            return;
+        }
+        
+        $searchTerm = trim($data['search'] ?? '');
+        
+        if (empty($searchTerm)) {
+            sendJSON(['error' => 'Search term is required'], 400);
+            return;
+        }
+        
+        if (strlen($searchTerm) < 2) {
+            sendJSON(['error' => 'Search term must be at least 2 characters'], 400);
+            return;
+        }
+        
+        // Load LDAP settings from database (same approach as handleLogin)
+        $db = getDB();
+        $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'ldap_%'");
+        $stmt->execute();
+        $settings = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $settings[$row['key']] = $row['value'];
+        }
+        
+        $ldapEnabled = !empty($settings['ldap_enabled']) && $settings['ldap_enabled'] == '1';
+        
+        if (!$ldapEnabled) {
+            sendJSON(['error' => 'LDAP is not enabled'], 400);
+            return;
+        }
+        
+        if (!extension_loaded('ldap')) {
+            sendJSON(['error' => 'LDAP extension is not loaded'], 500);
+            return;
+        }
+        
+        // Connect to LDAP (reuse connection logic from handleLogin)
+        $server = trim($settings['ldap_server'] ?? '');
+        $port = (int)($settings['ldap_port'] ?? 389);
+        $protocol = trim($settings['ldap_protocol'] ?? 'ldap');
+        $tls = !empty($settings['ldap_tls']) && $settings['ldap_tls'] == '1';
+        $timeout = (int)($settings['ldap_timeout'] ?? 30);
+        
+        if (empty($server)) {
+            sendJSON(['error' => 'LDAP server is not configured'], 400);
+            return;
+        }
+        
+        $prefix = ($protocol === 'ldaps') ? 'ldaps://' : 'ldap://';
+        $uri = $prefix . $server . ':' . $port;
+        
+        $ldap = @ldap_connect($uri);
+        if (!$ldap) {
+            sendJSON(['error' => 'Failed to connect to LDAP server at ' . $uri], 500);
+            return;
+        }
+        
+        ldap_set_option($ldap, LDAP_OPT_PROTOCOL_VERSION, 3);
+        $followReferrals = !empty($settings['ldap_referrals']) && $settings['ldap_referrals'] == '1';
+        ldap_set_option($ldap, LDAP_OPT_REFERRALS, $followReferrals ? 1 : 0);
+        ldap_set_option($ldap, LDAP_OPT_NETWORK_TIMEOUT, $timeout);
+        ldap_set_option($ldap, LDAP_OPT_TIMELIMIT, $timeout);
+        
+        if ($tls && $protocol !== 'ldaps') {
+            if (!@ldap_start_tls($ldap)) {
+                $err = ldap_error($ldap);
+                @ldap_close($ldap);
+                sendJSON(['error' => 'TLS start failed: ' . $err], 500);
+                return;
+            }
+        }
+        
+        // Bind with service account
+        $bindDn = trim($settings['ldap_bind_dn'] ?? '');
+        $bindPass = $settings['ldap_bind_password'] ?? '';
+        
+        $bound = false;
+        if (!empty($bindDn) && !empty($bindPass)) {
+            $bound = @ldap_bind($ldap, $bindDn, $bindPass);
+        } else {
+            $bound = @ldap_bind($ldap); // Anonymous
+        }
+        
+        if (!$bound) {
+            $err = ldap_error($ldap);
+            @ldap_close($ldap);
+            sendJSON(['error' => 'LDAP bind failed: ' . $err], 500);
+            return;
+        }
+        
+        // Search for users using the same filter logic as LDAP Test tab / login
+        $searchBase = trim($settings['ldap_user_search_base'] ?? '');
+        $filterTemplate = trim($settings['ldap_user_filter'] ?? '(sAMAccountName={username})');
+        if (empty($searchBase)) {
+            @ldap_close($ldap);
+            sendJSON(['error' => 'LDAP user search base is not configured'], 400);
+            return;
+        }
+        
+        // Escape search term using built-in function or manual fallback
+        $safeSearch = '';
+        if (function_exists('ldap_escape')) {
+            $safeSearch = ldap_escape($searchTerm, '', LDAP_ESCAPE_FILTER);
+        } else {
+            // Manual escaping for older PHP versions
+            $safeSearch = $searchTerm;
+            $safeSearch = str_replace('\\', '\\5c', $safeSearch);
+            $safeSearch = str_replace('*', '\\2a', $safeSearch);
+            $safeSearch = str_replace('(', '\\28', $safeSearch);
+            $safeSearch = str_replace(')', '\\29', $safeSearch);
+            $safeSearch = str_replace("\x00", '\\00', $safeSearch);
+        }
+        
+        // Build filter - use the same filter template as login, replacing {username} with search term
+        if (strpos($filterTemplate, '{username}') !== false) {
+            $filter = str_replace('{username}', $safeSearch, $filterTemplate);
+        } else {
+            // If template does not use {username}, fall back to a simple sAMAccountName filter
+            $filter = "(sAMAccountName={$safeSearch})";
+        }
+        
+        // Get attributes
+        $attributesStr = $settings['ldap_user_attributes'] ?? 'sAMAccountName,mail,displayName,userPrincipalName';
+        $attributes = array_map('trim', explode(',', $attributesStr));
+        $essentialAttrs = ['sAMAccountName', 'mail', 'displayName', 'userPrincipalName'];
+        foreach ($essentialAttrs as $attr) {
+            if (!in_array($attr, $attributes)) {
+                $attributes[] = $attr;
+            }
+        }
+        
+        // Custom attribute mappings
+        $emailAttr = !empty($settings['ldap_email_attribute']) ? $settings['ldap_email_attribute'] : null;
+        $displayNameAttr = !empty($settings['ldap_display_name_attribute']) ? $settings['ldap_display_name_attribute'] : null;
+        
+        if ($emailAttr && !in_array($emailAttr, $attributes)) {
+            $attributes[] = $emailAttr;
+        }
+        if ($displayNameAttr && !in_array($displayNameAttr, $attributes)) {
+            $attributes[] = $displayNameAttr;
+        }
+        
+        // Determine search scope - use same as configured for login
+        $searchScope = strtolower($settings['ldap_search_scope'] ?? 'sub');
+        
+        // Set size limit to prevent aggressive scanning (max 20 results)
+        ldap_set_option($ldap, LDAP_OPT_SIZELIMIT, 20);
+        
+        // Perform simple search with size limit
+        if ($searchScope === 'base') {
+            $result = @ldap_read($ldap, $searchBase, $filter, $attributes, 0, 20, $timeout);
+        } elseif ($searchScope === 'one') {
+            $result = @ldap_list($ldap, $searchBase, $filter, $attributes, 0, 20, $timeout);
+        } else {
+            $result = @ldap_search($ldap, $searchBase, $filter, $attributes, 0, 20, $timeout);
+        }
+        
+        if ($result === false) {
+            $err = ldap_error($ldap);
+            @ldap_close($ldap);
+            // Size limit exceeded is not an error for our use case
+            if (strpos($err, 'Size limit') === false) {
+                sendJSON(['error' => 'LDAP search failed: ' . $err], 500);
+                return;
+            }
+        }
+        
+        $entries = @ldap_get_entries($ldap, $result);
+        @ldap_close($ldap);
+        
+        if ($entries === false) {
+            sendJSON(['error' => 'Failed to get LDAP entries'], 500);
+            return;
+        }
+        
+        $users = [];
+        // Limit to first 20 results
+        $entryCount = min(isset($entries['count']) ? (int)$entries['count'] : 0, 20);
+        
+        for ($i = 0; $i < $entryCount; $i++) {
+            $entry = $entries[$i];
+            
+            // Extract username (sAMAccountName or userPrincipalName)
+            $username = '';
+            if (isset($entry['samaccountname']) && is_array($entry['samaccountname']) && isset($entry['samaccountname'][0])) {
+                $username = $entry['samaccountname'][0];
+            } elseif (isset($entry['userprincipalname']) && is_array($entry['userprincipalname']) && isset($entry['userprincipalname'][0])) {
+                $upn = $entry['userprincipalname'][0];
+                $username = explode('@', $upn)[0]; // Extract username part
+            }
+            
+            if (empty($username)) {
+                continue; // Skip entries without username
+            }
+            
+            // Extract email
+            $email = '';
+            if ($emailAttr && isset($entry[strtolower($emailAttr)]) && is_array($entry[strtolower($emailAttr)]) && isset($entry[strtolower($emailAttr)][0])) {
+                $email = $entry[strtolower($emailAttr)][0];
+            } elseif (isset($entry['mail']) && is_array($entry['mail']) && isset($entry['mail'][0])) {
+                $email = $entry['mail'][0];
+            } elseif (isset($entry['userprincipalname']) && is_array($entry['userprincipalname']) && isset($entry['userprincipalname'][0])) {
+                $upn = $entry['userprincipalname'][0];
+                if (filter_var($upn, FILTER_VALIDATE_EMAIL)) {
+                    $email = $upn;
+                }
+            }
+            
+            // Extract display name
+            $displayName = '';
+            if ($displayNameAttr && isset($entry[strtolower($displayNameAttr)]) && is_array($entry[strtolower($displayNameAttr)]) && isset($entry[strtolower($displayNameAttr)][0])) {
+                $displayName = $entry[strtolower($displayNameAttr)][0];
+            } elseif (isset($entry['displayname']) && is_array($entry['displayname']) && isset($entry['displayname'][0])) {
+                $displayName = $entry['displayname'][0];
+            }
+            
+            $users[] = [
+                'username' => $username,
+                'email' => $email,
+                'displayName' => $displayName,
+                'dn' => $entry['dn'] ?? ''
+            ];
+        }
+        
+        sendJSON(['success' => true, 'users' => $users]);
+        
+    } catch (Exception $e) {
+        sendJSON(['error' => 'LDAP search error: ' . $e->getMessage()], 500);
+    } catch (Error $e) {
+        // Catch PHP 7+ fatal errors
+        sendJSON(['error' => 'LDAP search fatal error: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleAddLocalUser() {
+    requireAdmin(); // Only admins can add users
+    
+    $data = getJSONInput();
+    
+    if (!isset($data['username']) || !isset($data['email']) || !isset($data['password'])) {
+        sendJSON(['error' => 'Username, email, and password are required'], 400);
+    }
+    
+    $username = trim($data['username'] ?? '');
+    $email = trim($data['email'] ?? '');
+    $password = $data['password'] ?? '';
+    
+    if (empty($username)) {
+        sendJSON(['error' => 'Username is required'], 400);
+    }
+    
+    if (strlen($username) < 3) {
+        sendJSON(['error' => 'Username must be at least 3 characters'], 400);
+    }
+    
+    if (empty($email)) {
+        sendJSON(['error' => 'Email is required'], 400);
+    }
+    
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        sendJSON(['error' => 'Invalid email address'], 400);
+    }
+    
+    if (empty($password)) {
+        sendJSON(['error' => 'Password is required'], 400);
+    }
+    
+    if (strlen($password) < 6) {
+        sendJSON(['error' => 'Password must be at least 6 characters'], 400);
+    }
+    
+    $db = getDB();
+    
+    // Check if username exists
+    $stmt = $db->prepare('SELECT id FROM users WHERE username = ?');
+    $stmt->execute([$username]);
+    if ($stmt->fetch()) {
+        sendJSON(['error' => 'Username already exists'], 409);
+    }
+    
+    // Check if email exists
+    $stmt = $db->prepare('SELECT id FROM users WHERE email = ?');
+    $stmt->execute([$email]);
+    if ($stmt->fetch()) {
+        sendJSON(['error' => 'Email already exists'], 409);
+    }
+    
+    // Create user (unapproved by default, as per requirement)
+    $passwordHash = password_hash($password, PASSWORD_DEFAULT);
+    $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, created_at) VALUES (?, ?, ?, 0, 0, ?, ?)');
+    
+    if ($stmt->execute([$username, $email, $passwordHash, 'local', time()])) {
+        $userId = $db->lastInsertId();
+        sendJSON([
+            'success' => true,
+            'message' => 'Local user created successfully. User is pending admin approval.',
+            'user' => [
+                'id' => $userId,
+                'username' => $username,
+                'email' => $email,
+                'auth_source' => 'local',
+                'is_approved' => false
+            ]
+        ]);
+    } else {
+        sendJSON(['error' => 'Failed to create user'], 500);
+    }
+}
+
+function handleAddLdapUser() {
+    requireAdmin(); // Only admins can add LDAP users
+    
+    $data = getJSONInput();
+    
+    if (!isset($data['username']) || !isset($data['email']) || !isset($data['dn'])) {
+        sendJSON(['error' => 'Username, email, and DN are required'], 400);
+    }
+    
+    $username = trim($data['username']);
+    $email = trim($data['email']);
+    $dn = trim($data['dn']);
+    $displayName = trim($data['displayName'] ?? '');
+    
+    if (strlen($username) < 1) {
+        sendJSON(['error' => 'Username is required'], 400);
+    }
+    
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        sendJSON(['error' => 'Invalid email address'], 400);
+    }
+    
+    // Verify user exists in LDAP - load settings from database
+    $db = getDB();
+    $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'ldap_%'");
+    $stmt->execute();
+    $settings = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $settings[$row['key']] = $row['value'];
+    }
+    
+    $ldapEnabled = !empty($settings['ldap_enabled']) && $settings['ldap_enabled'] == '1';
+    
+    if (!$ldapEnabled) {
+        sendJSON(['error' => 'LDAP is not enabled'], 400);
+    }
+    
+    if (!extension_loaded('ldap')) {
+        sendJSON(['error' => 'LDAP extension is not loaded'], 500);
+    }
+    
+    try {
+        // Connect to LDAP and verify user exists
+        $server = trim($settings['ldap_server'] ?? '');
+        $port = (int)($settings['ldap_port'] ?? 389);
+        $protocol = trim($settings['ldap_protocol'] ?? 'ldap');
+        $tls = !empty($settings['ldap_tls']);
+        $timeout = (int)($settings['ldap_timeout'] ?? 30);
+        
+        $prefix = ($protocol === 'ldaps') ? 'ldaps://' : 'ldap://';
+        $uri = $prefix . $server . ':' . $port;
+        
+        $ldap = @ldap_connect($uri);
+        if (!$ldap) {
+            sendJSON(['error' => 'Failed to connect to LDAP server'], 500);
+        }
+        
+        ldap_set_option($ldap, LDAP_OPT_PROTOCOL_VERSION, 3);
+        $followReferrals = !empty($settings['ldap_referrals']) && $settings['ldap_referrals'] == '1';
+        ldap_set_option($ldap, LDAP_OPT_REFERRALS, $followReferrals ? 1 : 0);
+        ldap_set_option($ldap, LDAP_OPT_NETWORK_TIMEOUT, $timeout);
+        
+        if ($tls && $protocol !== 'ldaps') {
+            if (!@ldap_start_tls($ldap)) {
+                @ldap_close($ldap);
+                sendJSON(['error' => 'TLS start failed: ' . ldap_error($ldap)], 500);
+            }
+        }
+        
+        // Bind with service account
+        $bindDn = trim($settings['ldap_bind_dn'] ?? '');
+        $bindPass = $settings['ldap_bind_password'] ?? '';
+        
+        $bound = false;
+        if (!empty($bindDn) && !empty($bindPass)) {
+            $bound = @ldap_bind($ldap, $bindDn, $bindPass);
+        } else {
+            $bound = @ldap_bind($ldap);
+        }
+        
+        if (!$bound) {
+            @ldap_close($ldap);
+            sendJSON(['error' => 'LDAP bind failed: ' . ldap_error($ldap)], 500);
+        }
+        
+        // Verify user exists by reading the DN
+        $attributes = ['sAMAccountName', 'mail', 'displayName', 'userPrincipalName'];
+        $result = @ldap_read($ldap, $dn, '(objectClass=*)', $attributes);
+        
+        if ($result === false) {
+            @ldap_close($ldap);
+            sendJSON(['error' => 'User not found in LDAP directory'], 404);
+        }
+        
+        $entries = @ldap_get_entries($ldap, $result);
+        @ldap_close($ldap);
+        
+        if ($entries === false || $entries['count'] === 0) {
+            sendJSON(['error' => 'User not found in LDAP directory'], 404);
+        }
+        
+        // User verified in LDAP, now add to database
+        $db = getDB();
+        
+        // Check if username exists
+        $stmt = $db->prepare('SELECT id FROM users WHERE username = ?');
+        $stmt->execute([$username]);
+        if ($stmt->fetch()) {
+            sendJSON(['error' => 'Username already exists'], 409);
+        }
+        
+        // Check if email exists
+        $stmt = $db->prepare('SELECT id FROM users WHERE email = ?');
+        $stmt->execute([$email]);
+        if ($stmt->fetch()) {
+            sendJSON(['error' => 'Email already exists'], 409);
+        }
+        
+        // Create user (unapproved by default, as per requirement)
+        // Use a random password hash since they should login via LDAP
+        $randomPass = bin2hex(random_bytes(16));
+        $passwordHash = password_hash($randomPass, PASSWORD_DEFAULT);
+        
+        $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, created_at) VALUES (?, ?, ?, 0, 0, ?, ?)');
+        
+        if ($stmt->execute([$username, $email, $passwordHash, 'ldap', time()])) {
+            $userId = $db->lastInsertId();
+            sendJSON([
+                'success' => true,
+                'message' => 'LDAP user added successfully. User is pending admin approval.',
+                'user' => [
+                    'id' => $userId,
+                    'username' => $username,
+                    'email' => $email,
+                    'auth_source' => 'ldap',
+                    'is_approved' => false
+                ]
+            ]);
+        } else {
+            sendJSON(['error' => 'Failed to create user'], 500);
+        }
+        
+    } catch (Exception $e) {
+        sendJSON(['error' => 'LDAP error: ' . $e->getMessage()], 500);
     }
 }
 

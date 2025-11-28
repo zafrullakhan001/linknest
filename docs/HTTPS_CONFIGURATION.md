@@ -123,3 +123,5 @@ Header always set X-XSS-Protection "1; mode=block"
 - SSL certificate installation is the only required step
 - Environment variables are optional and only needed for Vite dev server HTTPS proxy
 
+
+
