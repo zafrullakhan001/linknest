@@ -7,11 +7,14 @@ interface StyleManagerProps {
   onStylesChange?: (styles: SpaceStyles) => void;
 }
 
+type StyleTab = 'spaces' | 'content';
+
 export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onStylesChange }) => {
   const [styles, setStyles] = useState<SpaceStyles>(DEFAULT_STYLES);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const [activeTab, setActiveTab] = useState<StyleTab>('spaces');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -299,14 +302,103 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
           </button>
         </div>
 
+        {/* Tab Navigation */}
+        <div className="flex border-b border-slate-200 dark:border-slate-700 px-6 bg-slate-50 dark:bg-slate-900/50">
+          <button
+            onClick={() => setActiveTab('spaces')}
+            className={`px-6 py-3 text-sm font-semibold transition-all relative ${
+              activeTab === 'spaces'
+                ? 'text-brand-600 dark:text-brand-400'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path fillRule="evenodd" d="M4 2a2 2 0 00-2 2v11a2 2 0 002 2h12a2 2 0 002-2V4a2 2 0 00-2-2H4zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
+              </svg>
+              Spaces Grid
+            </span>
+            {activeTab === 'spaces' && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-brand-500 to-violet-500"></div>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('content')}
+            className={`px-6 py-3 text-sm font-semibold transition-all relative ${
+              activeTab === 'content'
+                ? 'text-brand-600 dark:text-brand-400'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path fillRule="evenodd" d="M4.5 2A1.5 1.5 0 003 3.5v13A1.5 1.5 0 004.5 18h11a1.5 1.5 0 001.5-1.5V7.621a1.5 1.5 0 00-.44-1.06l-4.12-4.122A1.5 1.5 0 0011.378 2H4.5zm2.25 8.5a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zm0 3a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5z" clipRule="evenodd" />
+              </svg>
+              Content Page UX
+            </span>
+            {activeTab === 'content' && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-brand-500 to-violet-500"></div>
+            )}
+          </button>
+        </div>
+
         {/* Content */}
-        <div className="overflow-y-auto max-h-[calc(90vh-180px)] p-6">
+        <div className="overflow-y-auto max-h-[calc(90vh-230px)] p-6">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
             </div>
-          ) : (
+          ) : activeTab === 'spaces' ? (
             <div className="space-y-6">
+              {/* Global Page Zoom */}
+              <section className="bg-gradient-to-r from-brand-50/50 to-violet-50/50 dark:from-brand-500/5 dark:to-violet-500/5 -mx-6 -mt-6 px-6 py-5 border-b border-slate-200 dark:border-slate-700">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-500">
+                    <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z" />
+                  </svg>
+                  Global Page Settings
+                </h3>
+                <div className="flex items-center gap-6">
+                  <div className="flex-1 max-w-md">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Page Zoom: {styles.pageZoom || 80}%
+                    </label>
+                    <div className="flex items-center gap-4">
+                      <input
+                        type="range"
+                        min="50"
+                        max="150"
+                        step="5"
+                        value={styles.pageZoom || 80}
+                        onChange={(e) => updateStyle('pageZoom', parseInt(e.target.value))}
+                        className="flex-1"
+                      />
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => updateStyle('pageZoom', 80)}
+                          className={`px-2 py-1 text-xs rounded ${(styles.pageZoom || 80) === 80 ? 'bg-brand-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+                        >
+                          80%
+                        </button>
+                        <button
+                          onClick={() => updateStyle('pageZoom', 100)}
+                          className={`px-2 py-1 text-xs rounded ${(styles.pageZoom || 80) === 100 ? 'bg-brand-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+                        >
+                          100%
+                        </button>
+                        <button
+                          onClick={() => updateStyle('pageZoom', 120)}
+                          className={`px-2 py-1 text-xs rounded ${(styles.pageZoom || 80) === 120 ? 'bg-brand-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+                        >
+                          120%
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">Adjust the overall zoom level of the application</p>
+                  </div>
+                </div>
+              </section>
+
               {/* Tile Styling */}
               <section>
                 <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
@@ -1334,6 +1426,639 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                       className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
                     />
                   </div>
+                </div>
+              </section>
+            </div>
+          ) : (
+            /* Content Page UX Tab */
+            <div className="space-y-6">
+              {/* Header Styling */}
+              <section>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-violet-500">
+                    <path fillRule="evenodd" d="M4.5 2A1.5 1.5 0 003 3.5v13A1.5 1.5 0 004.5 18h11a1.5 1.5 0 001.5-1.5v-6.621a1.5 1.5 0 00-.44-1.06l-5.878-5.878A1.5 1.5 0 009.621 2H4.5zm3.75 8.5a.75.75 0 000 1.5h3.5a.75.75 0 000-1.5h-3.5zm0 3a.75.75 0 000 1.5h3.5a.75.75 0 000-1.5h-3.5z" clipRule="evenodd" />
+                  </svg>
+                  Header Style
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Header Style</label>
+                    <select
+                      value={styles.contentHeaderStyle}
+                      onChange={(e) => updateStyle('contentHeaderStyle', e.target.value as 'gradient' | 'solid' | 'glassmorphism' | 'minimal')}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                    >
+                      <option value="gradient">Gradient</option>
+                      <option value="solid">Solid Color</option>
+                      <option value="glassmorphism">Glassmorphism</option>
+                      <option value="minimal">Minimal</option>
+                    </select>
+                  </div>
+                  {styles.contentHeaderStyle === 'gradient' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Direction: {styles.contentHeaderGradientDirection}°</label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="360"
+                          value={styles.contentHeaderGradientDirection}
+                          onChange={(e) => updateStyle('contentHeaderGradientDirection', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Start Color</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="color"
+                            value={styles.contentHeaderGradientStart}
+                            onChange={(e) => updateStyle('contentHeaderGradientStart', e.target.value)}
+                            className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                          />
+                          <input
+                            type="text"
+                            value={styles.contentHeaderGradientStart}
+                            onChange={(e) => updateStyle('contentHeaderGradientStart', e.target.value)}
+                            className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">End Color</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="color"
+                            value={styles.contentHeaderGradientEnd}
+                            onChange={(e) => updateStyle('contentHeaderGradientEnd', e.target.value)}
+                            className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                          />
+                          <input
+                            type="text"
+                            value={styles.contentHeaderGradientEnd}
+                            onChange={(e) => updateStyle('contentHeaderGradientEnd', e.target.value)}
+                            className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+                  {styles.contentHeaderStyle === 'solid' && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Header Color</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="color"
+                          value={styles.contentHeaderSolidColor}
+                          onChange={(e) => updateStyle('contentHeaderSolidColor', e.target.value)}
+                          className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                        />
+                        <input
+                          type="text"
+                          value={styles.contentHeaderSolidColor}
+                          onChange={(e) => updateStyle('contentHeaderSolidColor', e.target.value)}
+                          className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {styles.contentHeaderStyle === 'glassmorphism' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Blur Intensity: {styles.contentHeaderBlur}px</label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="20"
+                          value={styles.contentHeaderBlur}
+                          onChange={(e) => updateStyle('contentHeaderBlur', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Opacity: {styles.contentHeaderOpacity}%</label>
+                        <input
+                          type="range"
+                          min="50"
+                          max="100"
+                          value={styles.contentHeaderOpacity}
+                          onChange={(e) => updateStyle('contentHeaderOpacity', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              </section>
+
+              {/* Section Styling */}
+              <section>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-emerald-500">
+                    <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.5 9.5A2.5 2.5 0 005 7h10a2.5 2.5 0 010 5H5a2.5 2.5 0 01-2.5-2.5zM3 15a2.5 2.5 0 002.5 2.5h9a2.5 2.5 0 000-5h-9A2.5 2.5 0 003 15z" />
+                  </svg>
+                  Sections
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Section Style</label>
+                    <select
+                      value={styles.contentSectionStyle}
+                      onChange={(e) => updateStyle('contentSectionStyle', e.target.value as 'card' | 'flat' | 'bordered' | 'elevated')}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                    >
+                      <option value="card">Card</option>
+                      <option value="flat">Flat</option>
+                      <option value="bordered">Bordered</option>
+                      <option value="elevated">Elevated</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Background Color</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="color"
+                        value={styles.contentSectionBackgroundColor}
+                        onChange={(e) => updateStyle('contentSectionBackgroundColor', e.target.value)}
+                        className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                      />
+                      <input
+                        type="text"
+                        value={styles.contentSectionBackgroundColor}
+                        onChange={(e) => updateStyle('contentSectionBackgroundColor', e.target.value)}
+                        className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Border Radius: {styles.contentSectionBorderRadius}px</label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="32"
+                      value={styles.contentSectionBorderRadius}
+                      onChange={(e) => updateStyle('contentSectionBorderRadius', parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Elevation: {styles.contentSectionElevation}</label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="5"
+                      value={styles.contentSectionElevation}
+                      onChange={(e) => updateStyle('contentSectionElevation', parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Inner Padding: {styles.contentSectionSpacing}px</label>
+                    <input
+                      type="range"
+                      min="12"
+                      max="48"
+                      value={styles.contentSectionSpacing}
+                      onChange={(e) => updateStyle('contentSectionSpacing', parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Vertical Space Between: {styles.contentSectionVerticalSpacing || 32}px</label>
+                    <input
+                      type="range"
+                      min="8"
+                      max="64"
+                      value={styles.contentSectionVerticalSpacing || 32}
+                      onChange={(e) => updateStyle('contentSectionVerticalSpacing', parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                </div>
+              </section>
+
+              {/* Link Styling */}
+              <section>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-blue-500">
+                    <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
+                    <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
+                  </svg>
+                  Links
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Link Style</label>
+                    <select
+                      value={styles.contentLinkStyle}
+                      onChange={(e) => updateStyle('contentLinkStyle', e.target.value as 'pill' | 'card' | 'minimal' | 'button')}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                    >
+                      <option value="card">Card</option>
+                      <option value="pill">Pill</option>
+                      <option value="minimal">Minimal</option>
+                      <option value="button">Button</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Hover Effect</label>
+                    <select
+                      value={styles.contentLinkHoverEffect}
+                      onChange={(e) => updateStyle('contentLinkHoverEffect', e.target.value as 'lift' | 'glow' | 'scale' | 'slide')}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                    >
+                      <option value="lift">Lift</option>
+                      <option value="glow">Glow</option>
+                      <option value="scale">Scale</option>
+                      <option value="slide">Slide</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Background Color</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="color"
+                        value={styles.contentLinkBackgroundColor}
+                        onChange={(e) => updateStyle('contentLinkBackgroundColor', e.target.value)}
+                        className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                      />
+                      <input
+                        type="text"
+                        value={styles.contentLinkBackgroundColor}
+                        onChange={(e) => updateStyle('contentLinkBackgroundColor', e.target.value)}
+                        className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Border Radius: {styles.contentLinkBorderRadius}px</label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="24"
+                      value={styles.contentLinkBorderRadius}
+                      onChange={(e) => updateStyle('contentLinkBorderRadius', parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Padding: {styles.contentLinkPadding}px</label>
+                    <input
+                      type="range"
+                      min="8"
+                      max="24"
+                      value={styles.contentLinkPadding}
+                      onChange={(e) => updateStyle('contentLinkPadding', parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Spacing: {styles.contentLinkSpacing}px</label>
+                    <input
+                      type="range"
+                      min="4"
+                      max="24"
+                      value={styles.contentLinkSpacing}
+                      onChange={(e) => updateStyle('contentLinkSpacing', parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Icon Size: {styles.contentLinkIconSize}px</label>
+                    <input
+                      type="range"
+                      min="24"
+                      max="64"
+                      value={styles.contentLinkIconSize}
+                      onChange={(e) => updateStyle('contentLinkIconSize', parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                </div>
+              </section>
+
+              {/* Tab Styling */}
+              <section>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-500">
+                    <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 012.5 2.5v11a2.5 2.5 0 01-2.5 2.5h-11A2.5 2.5 0 012 15.5v-11zM4.5 4a.5.5 0 00-.5.5V6h2V4H4.5zM8 4v2h2V4H8zm4 0v2h4V4h-4z" />
+                  </svg>
+                  Tabs
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Tab Style</label>
+                    <select
+                      value={styles.contentTabStyle}
+                      onChange={(e) => updateStyle('contentTabStyle', e.target.value as 'underline' | 'pill' | 'box' | 'minimal')}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                    >
+                      <option value="underline">Underline</option>
+                      <option value="pill">Pill</option>
+                      <option value="box">Box</option>
+                      <option value="minimal">Minimal</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Active Tab Color</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="color"
+                        value={styles.contentTabActiveColor}
+                        onChange={(e) => updateStyle('contentTabActiveColor', e.target.value)}
+                        className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                      />
+                      <input
+                        type="text"
+                        value={styles.contentTabActiveColor}
+                        onChange={(e) => updateStyle('contentTabActiveColor', e.target.value)}
+                        className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Inactive Tab Color</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="color"
+                        value={styles.contentTabInactiveColor}
+                        onChange={(e) => updateStyle('contentTabInactiveColor', e.target.value)}
+                        className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                      />
+                      <input
+                        type="text"
+                        value={styles.contentTabInactiveColor}
+                        onChange={(e) => updateStyle('contentTabInactiveColor', e.target.value)}
+                        className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Border Radius: {styles.contentTabBorderRadius}px</label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="16"
+                      value={styles.contentTabBorderRadius}
+                      onChange={(e) => updateStyle('contentTabBorderRadius', parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                </div>
+              </section>
+
+              {/* Typography */}
+              <section>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-indigo-500">
+                    <path fillRule="evenodd" d="M10 2c-1.716 0-3.408.106-5.07.31C3.806 2.45 3 3.414 3 4.517V17.25a.75.75 0 001.075.676L10 15.082l5.925 2.844A.75.75 0 0017 17.25V4.517c0-1.103-.806-2.068-1.93-2.207A41.403 41.403 0 0010 2z" clipRule="evenodd" />
+                  </svg>
+                  Typography
+                </h3>
+                <div className="space-y-6">
+                  {/* Title Typography */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Page Title</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pl-4 border-l-2 border-indigo-200 dark:border-indigo-800">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Family</label>
+                        <select
+                          value={styles.contentTitleFontFamily}
+                          onChange={(e) => updateStyle('contentTitleFontFamily', e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                        >
+                          <option value="inherit">Inherit (Default)</option>
+                          <option value="Arial, sans-serif">Arial</option>
+                          <option value="'Helvetica Neue', Helvetica, sans-serif">Helvetica</option>
+                          <option value="Georgia, serif">Georgia</option>
+                          <option value="Verdana, sans-serif">Verdana</option>
+                          <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                          <option value="Tahoma, sans-serif">Tahoma</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Size: {styles.contentTitleFontSize}px</label>
+                        <input
+                          type="range"
+                          min="18"
+                          max="36"
+                          value={styles.contentTitleFontSize}
+                          onChange={(e) => updateStyle('contentTitleFontSize', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Weight</label>
+                        <select
+                          value={styles.contentTitleFontWeight}
+                          onChange={(e) => updateStyle('contentTitleFontWeight', e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                        >
+                          <option value="normal">Normal</option>
+                          <option value="500">Medium (500)</option>
+                          <option value="600">Semi Bold (600)</option>
+                          <option value="bold">Bold</option>
+                          <option value="800">Extra Bold (800)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Style</label>
+                        <select
+                          value={styles.contentTitleFontStyle || 'normal'}
+                          onChange={(e) => updateStyle('contentTitleFontStyle', e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                        >
+                          <option value="normal">Normal</option>
+                          <option value="italic">Italic</option>
+                          <option value="oblique">Oblique</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section Title Typography */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Section Title</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pl-4 border-l-2 border-emerald-200 dark:border-emerald-800">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Family</label>
+                        <select
+                          value={styles.contentSectionTitleFontFamily}
+                          onChange={(e) => updateStyle('contentSectionTitleFontFamily', e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                        >
+                          <option value="inherit">Inherit (Default)</option>
+                          <option value="Arial, sans-serif">Arial</option>
+                          <option value="'Helvetica Neue', Helvetica, sans-serif">Helvetica</option>
+                          <option value="Georgia, serif">Georgia</option>
+                          <option value="Verdana, sans-serif">Verdana</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Size: {styles.contentSectionTitleFontSize}px</label>
+                        <input
+                          type="range"
+                          min="12"
+                          max="24"
+                          value={styles.contentSectionTitleFontSize}
+                          onChange={(e) => updateStyle('contentSectionTitleFontSize', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Weight</label>
+                        <select
+                          value={styles.contentSectionTitleFontWeight}
+                          onChange={(e) => updateStyle('contentSectionTitleFontWeight', e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                        >
+                          <option value="normal">Normal</option>
+                          <option value="500">Medium (500)</option>
+                          <option value="600">Semi Bold (600)</option>
+                          <option value="bold">Bold</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Style</label>
+                        <select
+                          value={styles.contentSectionTitleFontStyle || 'normal'}
+                          onChange={(e) => updateStyle('contentSectionTitleFontStyle', e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                        >
+                          <option value="normal">Normal</option>
+                          <option value="italic">Italic</option>
+                          <option value="oblique">Oblique</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Link Typography */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Link Text</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pl-4 border-l-2 border-blue-200 dark:border-blue-800">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Family</label>
+                        <select
+                          value={styles.contentLinkFontFamily}
+                          onChange={(e) => updateStyle('contentLinkFontFamily', e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                        >
+                          <option value="inherit">Inherit (Default)</option>
+                          <option value="Arial, sans-serif">Arial</option>
+                          <option value="'Helvetica Neue', Helvetica, sans-serif">Helvetica</option>
+                          <option value="Georgia, serif">Georgia</option>
+                          <option value="Verdana, sans-serif">Verdana</option>
+                          <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                          <option value="'Palatino Linotype', Palatino, serif">Palatino</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Size: {styles.contentLinkFontSize}px</label>
+                        <input
+                          type="range"
+                          min="12"
+                          max="18"
+                          value={styles.contentLinkFontSize}
+                          onChange={(e) => updateStyle('contentLinkFontSize', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Weight</label>
+                        <select
+                          value={styles.contentLinkFontWeight}
+                          onChange={(e) => updateStyle('contentLinkFontWeight', e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                        >
+                          <option value="normal">Normal</option>
+                          <option value="500">Medium (500)</option>
+                          <option value="600">Semi Bold (600)</option>
+                          <option value="bold">Bold</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Style</label>
+                        <select
+                          value={styles.contentLinkFontStyle || 'normal'}
+                          onChange={(e) => updateStyle('contentLinkFontStyle', e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                        >
+                          <option value="normal">Normal</option>
+                          <option value="italic">Italic</option>
+                          <option value="oblique">Oblique</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* Visual Enhancements */}
+              <section>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-rose-500">
+                    <path d="M10 2a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 0110 2zM10 15a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 0110 15zM10 7a3 3 0 100 6 3 3 0 000-6zM15.657 5.404a.75.75 0 10-1.06-1.06l-1.061 1.06a.75.75 0 001.06 1.06l1.06-1.06zM6.464 14.596a.75.75 0 10-1.06-1.06l-1.06 1.06a.75.75 0 001.06 1.06l1.06-1.06zM18 10a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 0118 10zM5 10a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 015 10zM14.596 15.657a.75.75 0 001.06-1.06l-1.06-1.061a.75.75 0 10-1.06 1.06l1.06 1.06zM5.404 6.464a.75.75 0 001.06-1.06l-1.06-1.06a.75.75 0 10-1.06 1.06l1.06 1.06z" />
+                  </svg>
+                  Visual Enhancements
+                </h3>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="contentShowLinkIcons"
+                        checked={styles.contentShowLinkIcons}
+                        onChange={(e) => updateStyle('contentShowLinkIcons', e.target.checked)}
+                        className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500"
+                      />
+                      <label htmlFor="contentShowLinkIcons" className="text-sm font-medium text-slate-700 dark:text-slate-300">Show Link Icons</label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="contentShowLinkDomain"
+                        checked={styles.contentShowLinkDomain}
+                        onChange={(e) => updateStyle('contentShowLinkDomain', e.target.checked)}
+                        className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500"
+                      />
+                      <label htmlFor="contentShowLinkDomain" className="text-sm font-medium text-slate-700 dark:text-slate-300">Show Domain</label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="contentShowHealthStatus"
+                        checked={styles.contentShowHealthStatus}
+                        onChange={(e) => updateStyle('contentShowHealthStatus', e.target.checked)}
+                        className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500"
+                      />
+                      <label htmlFor="contentShowHealthStatus" className="text-sm font-medium text-slate-700 dark:text-slate-300">Health Status</label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="contentAnimateLinks"
+                        checked={styles.contentAnimateLinks}
+                        onChange={(e) => updateStyle('contentAnimateLinks', e.target.checked)}
+                        className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500"
+                      />
+                      <label htmlFor="contentAnimateLinks" className="text-sm font-medium text-slate-700 dark:text-slate-300">Animate Links</label>
+                    </div>
+                  </div>
+                  {styles.contentAnimateLinks && (
+                    <div className="pl-4 border-l-2 border-rose-200 dark:border-rose-800">
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Animation Delay: {styles.contentLinkAnimationDelay}ms</label>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={styles.contentLinkAnimationDelay}
+                        onChange={(e) => updateStyle('contentLinkAnimationDelay', parseInt(e.target.value))}
+                        className="w-full max-w-xs"
+                      />
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Delay between each link's entrance animation</p>
+                    </div>
+                  )}
                 </div>
               </section>
             </div>

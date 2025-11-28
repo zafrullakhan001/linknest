@@ -90,10 +90,12 @@ const Category: React.FC<CategoryProps> = ({
     }
   };
 
+  const categoryAnimationDelay = groupIndex * 100;
+  
   return (
     <div
-      className="linknest-category animate-in fade-in slide-in-from-bottom-2 duration-300"
-      style={{ animationDelay: `${groupIndex * 50}ms` }}
+      className="linknest-category linknest-category-animated"
+      style={{ animationDelay: `${categoryAnimationDelay}ms` }}
     >
       {/* Category Header with Arrow Buttons */}
       <div className="flex items-center gap-2 mb-3 group/category rounded-lg transition-colors">
@@ -327,8 +329,10 @@ const SortableTile: React.FC<SortableTileProps> = ({
   const linkCount = tile.isHyperlink ? 0 : (tile.sections?.reduce((acc, section) => acc + section.links.length, 0) || 0);
   const currentCategory = tile.group || 'General';
 
+  const animationDelay = (groupIndex * 80) + (tileIndex * 50);
+  
   const style = {
-    animationDelay: `${(groupIndex * 50) + (tileIndex * 20)}ms`,
+    animationDelay: `${animationDelay}ms`,
   };
 
   return (
@@ -344,7 +348,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
         }
       }}
       className={`
-        linknest-tile group relative rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/50
+        linknest-tile linknest-tile-animated group relative rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/50
         hover:border-brand-300 dark:hover:border-brand-500/50
         transition-all duration-200 
         flex flex-col h-full min-h-[140px] cursor-pointer

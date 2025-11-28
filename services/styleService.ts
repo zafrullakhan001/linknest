@@ -26,6 +26,9 @@ function resolveApiBase(): string {
 const API_BASE = resolveApiBase();
 
 export interface SpaceStyles {
+  // Global Page Settings
+  pageZoom: number; // Global page zoom percentage (50-150)
+  
   // Tile/Space styling
   tileBackgroundColor: string;
   tileBorderColor: string;
@@ -110,9 +113,67 @@ export interface SpaceStyles {
   backgroundMetallicType: 'silver' | 'gold' | 'chrome' | 'bronze' | 'copper' | 'custom';
   backgroundMetallicIntensity: number; // 0-100, intensity of metallic effect
   backgroundMetallicCustomColor: string; // Custom color for metallic effect
+  
+  // Content Page UX Styling
+  contentHeaderStyle: 'gradient' | 'solid' | 'glassmorphism' | 'minimal';
+  contentHeaderGradientStart: string;
+  contentHeaderGradientEnd: string;
+  contentHeaderGradientDirection: number;
+  contentHeaderSolidColor: string;
+  contentHeaderBlur: number; // For glassmorphism effect (0-20)
+  contentHeaderOpacity: number; // 0-100
+  
+  // Content Section Styling
+  contentSectionStyle: 'card' | 'flat' | 'bordered' | 'elevated';
+  contentSectionBackgroundColor: string;
+  contentSectionBorderColor: string;
+  contentSectionBorderRadius: number;
+  contentSectionElevation: number;
+  contentSectionSpacing: number;
+  
+  // Content Link Styling
+  contentLinkStyle: 'pill' | 'card' | 'minimal' | 'button';
+  contentLinkBackgroundColor: string;
+  contentLinkBorderColor: string;
+  contentLinkBorderRadius: number;
+  contentLinkHoverEffect: 'lift' | 'glow' | 'scale' | 'slide';
+  contentLinkPadding: number;
+  contentLinkSpacing: number;
+  contentLinkIconSize: number;
+  
+  // Content Tab Styling
+  contentTabStyle: 'underline' | 'pill' | 'box' | 'minimal';
+  contentTabActiveColor: string;
+  contentTabInactiveColor: string;
+  contentTabBorderRadius: number;
+  
+  // Content Typography
+  contentTitleFontFamily: string;
+  contentTitleFontSize: number;
+  contentTitleFontWeight: string;
+  contentTitleFontStyle: string;
+  contentSectionTitleFontFamily: string;
+  contentSectionTitleFontSize: number;
+  contentSectionTitleFontWeight: string;
+  contentSectionTitleFontStyle: string;
+  contentLinkFontFamily: string;
+  contentLinkFontSize: number;
+  contentLinkFontWeight: string;
+  contentLinkFontStyle: string;
+  
+  // Content Section Vertical Spacing
+  contentSectionVerticalSpacing: number; // Space between sections
+  
+  // Content Visual Enhancements
+  contentShowLinkIcons: boolean;
+  contentShowLinkDomain: boolean;
+  contentShowHealthStatus: boolean;
+  contentAnimateLinks: boolean;
+  contentLinkAnimationDelay: number; // ms between each link animation
 }
 
 export const DEFAULT_STYLES: SpaceStyles = {
+  pageZoom: 80,
   tileBackgroundColor: '#ffffff',
   tileBorderColor: '#e2e8f0',
   tileBorderWidth: 1,
@@ -175,7 +236,57 @@ export const DEFAULT_STYLES: SpaceStyles = {
   backgroundMetallicEffect: false,
   backgroundMetallicType: 'silver',
   backgroundMetallicIntensity: 50,
-  backgroundMetallicCustomColor: '#c0c0c0'
+  backgroundMetallicCustomColor: '#c0c0c0',
+  
+  // Content Page UX Defaults
+  contentHeaderStyle: 'gradient',
+  contentHeaderGradientStart: '#3b82f6',
+  contentHeaderGradientEnd: '#8b5cf6',
+  contentHeaderGradientDirection: 135,
+  contentHeaderSolidColor: '#3b82f6',
+  contentHeaderBlur: 12,
+  contentHeaderOpacity: 95,
+  
+  contentSectionStyle: 'card',
+  contentSectionBackgroundColor: '#ffffff',
+  contentSectionBorderColor: '#e2e8f0',
+  contentSectionBorderRadius: 16,
+  contentSectionElevation: 1,
+  contentSectionSpacing: 24,
+  
+  contentLinkStyle: 'card',
+  contentLinkBackgroundColor: '#ffffff',
+  contentLinkBorderColor: '#e2e8f0',
+  contentLinkBorderRadius: 12,
+  contentLinkHoverEffect: 'lift',
+  contentLinkPadding: 16,
+  contentLinkSpacing: 12,
+  contentLinkIconSize: 40,
+  
+  contentTabStyle: 'underline',
+  contentTabActiveColor: '#3b82f6',
+  contentTabInactiveColor: '#64748b',
+  contentTabBorderRadius: 8,
+  
+  contentTitleFontFamily: 'inherit',
+  contentTitleFontSize: 24,
+  contentTitleFontWeight: 'bold',
+  contentTitleFontStyle: 'normal',
+  contentSectionTitleFontFamily: 'inherit',
+  contentSectionTitleFontSize: 16,
+  contentSectionTitleFontWeight: '600',
+  contentSectionTitleFontStyle: 'normal',
+  contentLinkFontFamily: 'inherit',
+  contentLinkFontSize: 14,
+  contentLinkFontWeight: '500',
+  contentLinkFontStyle: 'normal',
+  contentSectionVerticalSpacing: 32,
+  
+  contentShowLinkIcons: true,
+  contentShowLinkDomain: true,
+  contentShowHealthStatus: true,
+  contentAnimateLinks: true,
+  contentLinkAnimationDelay: 30
 };
 
 export const styleService = {
@@ -366,7 +477,24 @@ export const styleService = {
       ? raisedShadow 
       : shadows[Math.min(shadowIntensity, 5)];
     
+    const zoomValue = styles.pageZoom || 80;
+    
     return `
+      /* Global Page Zoom */
+      .linknest-app-container {
+        zoom: ${zoomValue / 100};
+        -moz-transform: scale(${zoomValue / 100});
+        -moz-transform-origin: top left;
+      }
+      
+      @supports not (zoom: 1) {
+        .linknest-app-container {
+          transform: scale(${zoomValue / 100});
+          transform-origin: top left;
+          width: ${100 / (zoomValue / 100)}%;
+        }
+      }
+      
       .linknest-tile {
         background: ${bgColor} !important;
         border-color: ${styles.tileBorderColor} !important;
@@ -402,6 +530,40 @@ export const styleService = {
           ? `0 ${8 + hoverShadowIntensity * 2}px ${16 + hoverShadowIntensity * 4}px rgba(0, 0, 0, 0.2), 0 ${4 + hoverShadowIntensity}px ${8 + hoverShadowIntensity * 2}px rgba(0, 0, 0, 0.15), inset 0 2px 0 rgba(255, 255, 255, 0.3)` 
           : hoverShadows[Math.min(hoverShadowIntensity, 5)]} !important;
         transform: translateY(${styles.raisedEffect ? -styles.hoverTranslateY - 1 : -styles.hoverTranslateY}px) scale(${styles.hoverScale}) !important;
+      }
+      
+      /* Tile entrance animation */
+      @keyframes tileFadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(16px) scale(0.96);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+      
+      .linknest-tile-animated {
+        animation: tileFadeIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        opacity: 0;
+      }
+      
+      /* Category entrance animation */
+      @keyframes categoryFadeIn {
+        from {
+          opacity: 0;
+          transform: translateX(-12px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+      
+      .linknest-category-animated {
+        animation: categoryFadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        opacity: 0;
       }
       
       .linknest-tile-grid {
@@ -525,6 +687,9 @@ export const styleService = {
         z-index: 1;
       }
       ` : ''}
+      
+      /* Content Page UX Styles */
+      ${generateContentPageCSS(styles, isDark)}
     `;
   }
 };
@@ -689,6 +854,288 @@ function getTableOverlay(styles: SpaceStyles): string {
     )`;
   }
   return 'transparent';
+}
+
+// Generate Content Page UX CSS
+function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
+  const contentShadows = [
+    'none',
+    '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1)',
+    '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
+    '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
+    '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+    '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+  ];
+  
+  // Header background based on style
+  let headerBackground = '';
+  switch (styles.contentHeaderStyle) {
+    case 'gradient':
+      headerBackground = `linear-gradient(${styles.contentHeaderGradientDirection}deg, ${styles.contentHeaderGradientStart}, ${styles.contentHeaderGradientEnd})`;
+      break;
+    case 'solid':
+      headerBackground = styles.contentHeaderSolidColor;
+      break;
+    case 'glassmorphism':
+      headerBackground = isDark 
+        ? `rgba(30, 41, 59, ${styles.contentHeaderOpacity / 100})`
+        : `rgba(255, 255, 255, ${styles.contentHeaderOpacity / 100})`;
+      break;
+    case 'minimal':
+      headerBackground = 'transparent';
+      break;
+  }
+  
+  // Link hover effects
+  let linkHoverTransform = '';
+  let linkHoverShadow = '';
+  switch (styles.contentLinkHoverEffect) {
+    case 'lift':
+      linkHoverTransform = 'translateY(-4px)';
+      linkHoverShadow = '0 12px 24px -8px rgba(0, 0, 0, 0.15)';
+      break;
+    case 'glow':
+      linkHoverTransform = 'translateY(-2px)';
+      linkHoverShadow = `0 0 20px ${styles.contentHeaderGradientStart}40`;
+      break;
+    case 'scale':
+      linkHoverTransform = 'scale(1.02)';
+      linkHoverShadow = '0 8px 16px -4px rgba(0, 0, 0, 0.12)';
+      break;
+    case 'slide':
+      linkHoverTransform = 'translateX(8px)';
+      linkHoverShadow = '0 4px 12px -2px rgba(0, 0, 0, 0.1)';
+      break;
+  }
+  
+  // Section styles
+  let sectionBackground = '';
+  let sectionBorder = '';
+  let sectionShadow = '';
+  switch (styles.contentSectionStyle) {
+    case 'card':
+      sectionBackground = isDark ? 'rgba(30, 41, 59, 0.6)' : styles.contentSectionBackgroundColor;
+      sectionBorder = `1px solid ${isDark ? 'rgba(51, 65, 85, 0.5)' : styles.contentSectionBorderColor}`;
+      sectionShadow = contentShadows[Math.min(styles.contentSectionElevation, 5)];
+      break;
+    case 'flat':
+      sectionBackground = isDark ? 'rgba(30, 41, 59, 0.4)' : styles.contentSectionBackgroundColor;
+      sectionBorder = 'none';
+      sectionShadow = 'none';
+      break;
+    case 'bordered':
+      sectionBackground = 'transparent';
+      sectionBorder = `2px solid ${isDark ? 'rgba(71, 85, 105, 0.5)' : styles.contentSectionBorderColor}`;
+      sectionShadow = 'none';
+      break;
+    case 'elevated':
+      sectionBackground = isDark ? 'rgba(30, 41, 59, 0.8)' : styles.contentSectionBackgroundColor;
+      sectionBorder = 'none';
+      sectionShadow = contentShadows[Math.min(styles.contentSectionElevation + 2, 5)];
+      break;
+  }
+  
+  // Link styles
+  let linkBackground = '';
+  let linkBorder = '';
+  let linkShadow = '';
+  switch (styles.contentLinkStyle) {
+    case 'card':
+      linkBackground = isDark ? 'rgba(51, 65, 85, 0.5)' : styles.contentLinkBackgroundColor;
+      linkBorder = `1px solid ${isDark ? 'rgba(71, 85, 105, 0.5)' : styles.contentLinkBorderColor}`;
+      linkShadow = '0 2px 4px rgba(0, 0, 0, 0.05)';
+      break;
+    case 'pill':
+      linkBackground = isDark ? 'rgba(51, 65, 85, 0.4)' : `${styles.contentLinkBackgroundColor}f5`;
+      linkBorder = `1px solid ${isDark ? 'rgba(71, 85, 105, 0.3)' : styles.contentLinkBorderColor}`;
+      linkShadow = 'none';
+      break;
+    case 'minimal':
+      linkBackground = 'transparent';
+      linkBorder = 'none';
+      linkShadow = 'none';
+      break;
+    case 'button':
+      linkBackground = isDark 
+        ? `linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(139, 92, 246, 0.2))`
+        : `linear-gradient(135deg, ${styles.contentHeaderGradientStart}10, ${styles.contentHeaderGradientEnd}10)`;
+      linkBorder = `1px solid ${isDark ? 'rgba(59, 130, 246, 0.3)' : `${styles.contentHeaderGradientStart}30`}`;
+      linkShadow = '0 2px 8px rgba(59, 130, 246, 0.1)';
+      break;
+  }
+  
+  // Tab styles
+  let tabActiveStyles = '';
+  let tabInactiveStyles = '';
+  switch (styles.contentTabStyle) {
+    case 'underline':
+      tabActiveStyles = `
+        color: ${styles.contentTabActiveColor};
+        border-bottom: 2px solid ${styles.contentTabActiveColor};
+        background: transparent;
+      `;
+      tabInactiveStyles = `
+        color: ${styles.contentTabInactiveColor};
+        border-bottom: 2px solid transparent;
+        background: transparent;
+      `;
+      break;
+    case 'pill':
+      tabActiveStyles = `
+        color: white;
+        background: ${styles.contentTabActiveColor};
+        border-radius: ${styles.contentTabBorderRadius}px;
+      `;
+      tabInactiveStyles = `
+        color: ${styles.contentTabInactiveColor};
+        background: ${isDark ? 'rgba(51, 65, 85, 0.3)' : 'rgba(0, 0, 0, 0.05)'};
+        border-radius: ${styles.contentTabBorderRadius}px;
+      `;
+      break;
+    case 'box':
+      tabActiveStyles = `
+        color: ${styles.contentTabActiveColor};
+        background: ${isDark ? 'rgba(59, 130, 246, 0.15)' : `${styles.contentTabActiveColor}10`};
+        border: 1px solid ${styles.contentTabActiveColor};
+        border-radius: ${styles.contentTabBorderRadius}px;
+      `;
+      tabInactiveStyles = `
+        color: ${styles.contentTabInactiveColor};
+        background: transparent;
+        border: 1px solid ${isDark ? 'rgba(71, 85, 105, 0.5)' : '#e2e8f0'};
+        border-radius: ${styles.contentTabBorderRadius}px;
+      `;
+      break;
+    case 'minimal':
+      tabActiveStyles = `
+        color: ${styles.contentTabActiveColor};
+        background: transparent;
+        font-weight: 600;
+      `;
+      tabInactiveStyles = `
+        color: ${styles.contentTabInactiveColor};
+        background: transparent;
+      `;
+      break;
+  }
+
+  return `
+    /* Content Page Header */
+    .linknest-content-header {
+      background: ${headerBackground} !important;
+      ${styles.contentHeaderStyle === 'glassmorphism' ? `
+        backdrop-filter: blur(${styles.contentHeaderBlur}px) !important;
+        -webkit-backdrop-filter: blur(${styles.contentHeaderBlur}px) !important;
+        border: 1px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.5)'} !important;
+      ` : ''}
+    }
+    
+    .linknest-content-header .linknest-content-title {
+      font-family: ${styles.contentTitleFontFamily} !important;
+      font-size: ${styles.contentTitleFontSize}px !important;
+      font-weight: ${styles.contentTitleFontWeight} !important;
+      font-style: ${styles.contentTitleFontStyle || 'normal'} !important;
+    }
+    
+    /* Content Sections */
+    .linknest-content-section {
+      background: ${sectionBackground} !important;
+      border: ${sectionBorder} !important;
+      border-radius: ${styles.contentSectionBorderRadius}px !important;
+      box-shadow: ${sectionShadow} !important;
+      margin-bottom: ${styles.contentSectionVerticalSpacing || 32}px !important;
+      padding: ${styles.contentSectionSpacing}px !important;
+    }
+    
+    .linknest-content-section:last-child {
+      margin-bottom: 0 !important;
+    }
+    
+    .linknest-content-section-title {
+      font-family: ${styles.contentSectionTitleFontFamily} !important;
+      font-size: ${styles.contentSectionTitleFontSize}px !important;
+      font-weight: ${styles.contentSectionTitleFontWeight} !important;
+      font-style: ${styles.contentSectionTitleFontStyle || 'normal'} !important;
+    }
+    
+    /* Content Links */
+    .linknest-content-link {
+      background: ${linkBackground} !important;
+      border: ${linkBorder} !important;
+      border-radius: ${styles.contentLinkBorderRadius}px !important;
+      box-shadow: ${linkShadow} !important;
+      padding: ${styles.contentLinkPadding}px !important;
+      margin-bottom: ${styles.contentLinkSpacing}px !important;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+      ${styles.contentAnimateLinks ? `
+        animation: linkFadeIn 0.4s ease-out forwards;
+        opacity: 0;
+      ` : ''}
+    }
+    
+    @keyframes linkFadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    .linknest-content-link:hover {
+      transform: ${linkHoverTransform} !important;
+      box-shadow: ${linkHoverShadow} !important;
+      ${styles.contentLinkStyle === 'button' ? `
+        background: ${isDark 
+          ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(139, 92, 246, 0.3))'
+          : `linear-gradient(135deg, ${styles.contentHeaderGradientStart}20, ${styles.contentHeaderGradientEnd}20)`} !important;
+      ` : ''}
+    }
+    
+    .linknest-content-link-title {
+      font-family: ${styles.contentLinkFontFamily} !important;
+      font-size: ${styles.contentLinkFontSize}px !important;
+      font-weight: ${styles.contentLinkFontWeight} !important;
+      font-style: ${styles.contentLinkFontStyle || 'normal'} !important;
+    }
+    
+    .linknest-content-link-icon {
+      width: ${styles.contentLinkIconSize}px !important;
+      height: ${styles.contentLinkIconSize}px !important;
+      ${!styles.contentShowLinkIcons ? 'display: none !important;' : ''}
+    }
+    
+    .linknest-content-link-domain {
+      ${!styles.contentShowLinkDomain ? 'display: none !important;' : ''}
+    }
+    
+    .linknest-content-link-health {
+      ${!styles.contentShowHealthStatus ? 'display: none !important;' : ''}
+    }
+    
+    /* Content Tabs */
+    .linknest-content-tab {
+      ${tabInactiveStyles}
+      transition: all 0.2s ease !important;
+    }
+    
+    .linknest-content-tab.active,
+    .linknest-content-tab[data-active="true"] {
+      ${tabActiveStyles}
+    }
+    
+    .linknest-content-tab:hover:not(.active):not([data-active="true"]) {
+      color: ${styles.contentTabActiveColor} !important;
+      opacity: 0.8;
+    }
+    
+    /* Link Grid */
+    .linknest-content-link-grid {
+      gap: ${styles.contentLinkSpacing}px !important;
+    }
+  `;
 }
 
 function lightenColor(color: string, amount: number): string {

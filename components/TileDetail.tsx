@@ -785,7 +785,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
       <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 min-h-[80vh] flex flex-col max-w-5xl mx-auto pb-10">
         
         {/* Compact Modern Header */}
-        <div className="relative rounded-2xl overflow-hidden mb-6 group border border-slate-200 dark:border-slate-700/50 shadow-sm dark:shadow-none">
+        <div className="linknest-content-header relative rounded-2xl overflow-hidden mb-6 group border border-slate-200 dark:border-slate-700/50 shadow-lg dark:shadow-none">
             {/* Ambient Background */}
             <div className={`absolute inset-0 bg-gradient-to-r ${styles.gradient} opacity-90 dark:opacity-20`}></div>
             {/* Light mode overlay to make text readable on intense gradients, dark mode transparent */}
@@ -795,7 +795,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 
                 {/* Icon Box */}
                 <div className={`
-                    w-16 h-16 rounded-2xl ${styles.base} shadow-xl shadow-black/10 dark:shadow-black/20 
+                    linknest-content-link-icon w-16 h-16 rounded-2xl ${styles.base} shadow-xl shadow-black/10 dark:shadow-black/20 
                     flex items-center justify-center text-3xl shrink-0 border-t border-white/20 text-white
                 `}>
                     {tile.emoji}
@@ -804,7 +804,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 {/* Title & Meta */}
                 <div className="flex-1 min-w-0 text-center md:text-left">
                     <div className="flex items-center justify-center md:justify-start gap-3 mb-1">
-                        <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
+                        <h1 className="linknest-content-title text-2xl md:text-3xl font-bold text-white tracking-tight">
                             {tile.title}
                         </h1>
                     </div>
@@ -951,55 +951,30 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                  {/* Tab Navigation */}
                  {displayTabs && displayTabs.length > 0 && (
-                    <div className="border-b border-slate-200 dark:border-slate-700 -mx-4 px-4 overflow-x-auto">
-                        <div className="flex gap-1 min-w-max">
+                    <div className="border-b border-slate-200 dark:border-slate-700 -mx-4 px-4 overflow-x-auto bg-white/50 dark:bg-slate-900/30 backdrop-blur-sm rounded-t-xl">
+                        <div className="flex gap-2 min-w-max py-1">
                             {displayTabs.map((tab) => {
                                 const isActive = selectedTabId === tab.id;
                                 const tabSections = tab.sections || [];
                                 const tabLinksCount = tabSections.reduce((acc, s) => acc + (s.links?.length || 0), 0);
                                 
-                                // Get border color for active tab
-                                const getBorderColor = () => {
-                                    const colorMap: Record<string, string> = {
-                                        blue: '#3b82f6',
-                                        emerald: '#10b981',
-                                        violet: '#8b5cf6',
-                                        amber: '#f59e0b',
-                                        rose: '#f43f5e',
-                                        cyan: '#06b6d4',
-                                        fuchsia: '#d946ef',
-                                        orange: '#f97316',
-                                        red: '#ef4444',
-                                        indigo: '#6366f1',
-                                        lime: '#84cc16',
-                                        sky: '#0ea5e9',
-                                        slate: '#64748b',
-                                        teal: '#14b8a6',
-                                        pink: '#ec4899',
-                                        purple: '#a855f7',
-                                        yellow: '#eab308',
-                                        zinc: '#71717a'
-                                    };
-                                    return colorMap[tile.themeColor] || '#3b82f6';
-                                };
-                                
                                 return (
                                     <button
                                         key={tab.id}
                                         onClick={() => setSelectedTabId(tab.id)}
-                                        className={`relative px-4 py-3 text-sm font-medium transition-all duration-200 whitespace-nowrap border-b-2 ${
+                                        data-active={isActive}
+                                        className={`linknest-content-tab relative px-5 py-2.5 text-sm font-medium transition-all duration-200 whitespace-nowrap rounded-lg ${
                                             isActive 
                                                 ? `${styles.text} font-semibold` 
-                                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 border-transparent hover:border-slate-300 dark:hover:border-slate-600'
+                                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
                                         }`}
-                                        style={isActive ? { borderBottomColor: getBorderColor() } : undefined}
                                     >
                                         <span className="flex items-center gap-2">
                                             {tab.title}
                                             {tabLinksCount > 0 && (
-                                                <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
+                                                <span className={`px-2 py-0.5 text-xs rounded-full font-semibold transition-colors ${
                                                     isActive 
-                                                        ? styles.iconBg
+                                                        ? `${styles.iconBg} ${styles.text}`
                                                         : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                                                 }`}>
                                                     {tabLinksCount}
@@ -1023,38 +998,40 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             <p className="text-slate-500 font-medium">No links found</p>
                         </div>
                  ) : (
-                     filteredSections.map((section) => (
-                        <div key={section.id} className="animate-in fade-in slide-in-from-bottom-2">
+                     filteredSections.map((section, sectionIndex) => (
+                        <div key={section.id} className="linknest-content-section animate-in fade-in slide-in-from-bottom-2 bg-white/80 dark:bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-200/80 dark:border-slate-700/50 p-6 shadow-sm">
                              {/* Section Title */}
                              {section.title && (
-                                 <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
-                                     <span className={`w-1.5 h-6 rounded-full ${styles.base}`}></span>
+                                 <h3 className="linknest-content-section-title text-lg font-bold text-slate-800 dark:text-white mb-5 flex items-center gap-3">
+                                     <span className={`w-1.5 h-7 rounded-full ${styles.base} shadow-sm`}></span>
                                      {section.title}
                                  </h3>
                              )}
 
                              {/* Links Grid */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                {section.links.map((link) => {
+                            <div className="linknest-content-link-grid grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {section.links.map((link, linkIndex) => {
                                     const health = linkHealth[link.id];
                                     const isBroken = health?.status === 'broken';
+                                    const animationDelay = (sectionIndex * 100) + (linkIndex * 30);
                                     
                                     return (
                                         <div 
                                             key={link.id}
+                                            style={{ animationDelay: `${animationDelay}ms` }}
                                             className={`
-                                                group relative flex items-center gap-3 p-3 pr-2 rounded-xl bg-white dark:bg-slate-800 border ${styles.border}
-                                                ${styles.hoverBorder} hover:bg-slate-50 dark:hover:bg-slate-750 transition-all duration-200 shadow-sm hover:shadow-md
-                                                ${isBroken ? 'border-red-300 dark:border-red-500/50' : ''}
+                                                linknest-content-link group relative flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60
+                                                hover:border-brand-300 dark:hover:border-brand-500/50 transition-all duration-300 shadow-sm
+                                                ${isBroken ? 'border-red-300 dark:border-red-500/50 bg-red-50/50 dark:bg-red-900/10' : ''}
                                             `}
                                             title={link.tooltip || link.label}
                                         >
                                             {/* Health Indicator */}
-                                            <div className="flex flex-col items-center gap-1">
+                                            <div className="linknest-content-link-health flex flex-col items-center gap-1 shrink-0">
                                                 {getHealthIndicator(link.id)}
                                             </div>
                                             
-                                            <div className={`w-10 h-10 rounded-lg ${styles.iconBg} flex items-center justify-center shrink-0 text-lg select-none`}>
+                                            <div className={`linknest-content-link-icon w-11 h-11 rounded-xl ${styles.iconBg} flex items-center justify-center shrink-0 text-lg select-none shadow-sm border border-white/20`}>
                                                 🔗
                                             </div>
                                             
@@ -1064,19 +1041,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 rel="noopener noreferrer"
                                                 className="flex-1 min-w-0 block focus:outline-none"
                                             >
-                                                <h4 className={`text-sm font-semibold ${styles.text} group-hover:text-brand-600 dark:group-hover:text-white truncate`}>
+                                                <h4 className={`linknest-content-link-title text-sm font-semibold ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 truncate transition-colors`}>
                                                     {link.label}
                                                 </h4>
-                                                <div className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors">
-                                                    <span className="truncate max-w-[150px]">
+                                                <div className="linknest-content-link-domain flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors mt-0.5">
+                                                    <span className="truncate max-w-[180px]">
                                                         {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
                                                     </span>
                                                     {link.visibility && link.visibility !== 'public' && (
                                                         <span 
-                                                            className={`text-xs px-1.5 py-0.5 rounded ${
+                                                            className={`text-xs px-1.5 py-0.5 rounded-md font-medium ${
                                                                 link.visibility === 'authenticated' 
-                                                                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' 
-                                                                    : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
+                                                                    ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400' 
+                                                                    : 'bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400'
                                                             }`}
                                                             title={link.visibility === 'authenticated' ? 'Authenticated users only' : 'Private - specific users only'}
                                                         >
@@ -1084,12 +1061,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         </span>
                                                     )}
                                                     {isBroken && (
-                                                        <span className="text-red-500 text-xs">• Broken</span>
+                                                        <span className="text-red-500 text-xs font-medium flex items-center gap-1">
+                                                            <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                                                            Broken
+                                                        </span>
                                                     )}
                                                 </div>
                                             </a>
 
-                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity px-1">
+                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 px-1">
                                                 {/* Re-check button */}
                                                 <button
                                                     onClick={(e) => {
@@ -1098,7 +1078,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         handleCheckSingleLink(link.id);
                                                     }}
                                                     disabled={checkingLinkId === link.id}
-                                                    className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                                                    className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all"
                                                     title="Check link health"
                                                 >
                                                     {checkingLinkId === link.id ? (
@@ -1116,7 +1096,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 {/* Copy button */}
                                                 <button
                                                     onClick={(e) => handleCopy(e, link.url, link.id)}
-                                                    className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors relative"
+                                                    className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all relative"
                                                     title="Copy URL"
                                                 >
                                                     {copiedId === link.id ? (
