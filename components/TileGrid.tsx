@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Tile, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS, TileVisibility } from '../types';
+import { Tile, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS, TileVisibility } from '../types';
 import { generateTileContent, GeneratedTileContent } from '../services/geminiService';
 import { useSettings } from '../contexts/SettingsContext';
 import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles } from '../services/storageService';
@@ -1621,11 +1621,11 @@ export const TileGrid: React.FC<TileGridProps> = ({
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-brand-500"></div>
-            <span>{Object.values(groupedTiles).reduce((acc, group) => acc + group.length, 0)} {Object.values(groupedTiles).reduce((acc, group) => acc + group.length, 0) === 1 ? 'Tile' : 'Tiles'}</span>
+            <span>{Object.values(groupedTiles).reduce((acc: number, group: Tile[]) => acc + group.length, 0)} {Object.values(groupedTiles).reduce((acc: number, group: Tile[]) => acc + group.length, 0) === 1 ? 'Tile' : 'Tiles'}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-violet-500"></div>
-            <span>{Object.values(groupedTiles).flat().reduce((acc, t) => acc + (t.sections?.reduce((s, sec) => s + sec.links.length, 0) || 0), 0)} Links</span>
+            <span>{Object.values(groupedTiles).flat().reduce((acc: number, t: Tile) => acc + (t.sections?.reduce((s: number, sec: LinkSection) => s + sec.links.length, 0) || 0), 0)} Links</span>
           </div>
         </div>
       )}
