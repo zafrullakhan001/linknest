@@ -2,9 +2,12 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { Tile, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS, TileVisibility } from '../types';
 import { generateTileContent, GeneratedTileContent } from '../services/geminiService';
 import { useSettings } from '../contexts/SettingsContext';
-import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile } from '../services/storageService';
+import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles } from '../services/storageService';
 import {
-  exportCategoryToFile
+  exportCategoryToFile,
+  exportTileToFile,
+  parseSpaceExportObject,
+  normalizeImportedTiles
 } from '../services/spaceTransferService';
 import { authService, UserListItem } from '../services/authService';
 import { useAuth } from '../contexts/AuthContext';
@@ -36,6 +39,7 @@ interface CategoryProps {
   onSaveCategoryOrder?: () => void;
   onRenameCategory?: (oldName: string, newName: string) => void;
   onExportCategory?: (categoryName: string) => void;
+  onImportCategory?: (categoryName: string) => void;
 }
 
 const Category: React.FC<CategoryProps> = ({
@@ -51,7 +55,8 @@ const Category: React.FC<CategoryProps> = ({
   onDeleteCategory,
   onSaveCategoryOrder,
   onRenameCategory,
-  onExportCategory
+  onExportCategory,
+  onImportCategory
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(categoryName);
@@ -252,6 +257,22 @@ const Category: React.FC<CategoryProps> = ({
                 </svg>
               </button>
             )}
+            {onImportCategory && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onImportCategory(categoryName);
+                }}
+                className="opacity-0 group-hover/category:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-md transition-all ml-1"
+                title="Import tiles/spaces to this category"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M9.25 3.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                  <path fillRule="evenodd" d="M2 9a7 7 0 0112.452-4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9zm14.25 0a5.5 5.5 0 11-11 0 5.5 5.5 0 0111 0z" clipRule="evenodd" />
+                </svg>
+              </button>
+            )}
           </>
         )}
       </div>
@@ -274,6 +295,7 @@ interface SortableTileProps {
   onMoveToCategory?: (tileId: string, categoryName: string) => void;
   onMoveLeft?: (tileId: string) => void;
   onMoveRight?: (tileId: string) => void;
+  onExportTile?: (tile: Tile) => void;
   canMoveLeft?: boolean;
   canMoveRight?: boolean;
   availableCategories: string[];
@@ -292,6 +314,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
   onMoveToCategory,
   onMoveLeft,
   onMoveRight,
+  onExportTile,
   canMoveLeft = false,
   canMoveRight = false,
   availableCategories,
@@ -447,6 +470,24 @@ const SortableTile: React.FC<SortableTileProps> = ({
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
                   <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
                   <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.439A1.5 1.5 0 008.378 6H4.5z" />
+                </svg>
+              </button>
+            )}
+            
+            {/* Export Button */}
+            {onExportTile && (
+              <button 
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onExportTile(tile);
+                }}
+                className="p-1 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded transition-all"
+                title="Export this tile/space"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                  <path d="M3.75 2.75A.75.75 0 014.5 2h11a.75.75 0 01.75.75v6.5a.75.75 0 01-1.5 0V4.56l-4.72 4.72a.75.75 0 01-1.06 0L5.25 4.56v9.69h3.5a.75.75 0 010 1.5h-4.25a.75.75 0 01-.75-.75v-12z" />
+                  <path d="M12.75 10.75a.75.75 0 00-1.5 0v3.44l-1.72-1.72a.75.75 0 10-1.06 1.06l3.25 3.25a.75.75 0 001.06 0l3.25-3.25a.75.75 0 10-1.06-1.06l-1.72 1.72v-3.44z" />
                 </svg>
               </button>
             )}
@@ -878,6 +919,37 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
   }, [isModalOpen, isAuthenticated, newVisibility]);
 
+  // Handle ESC key for create tile modal
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isModalOpen) {
+        setIsModalOpen(false);
+        resetForm();
+      }
+    };
+
+    if (isModalOpen) {
+      window.addEventListener('keydown', handleEsc);
+      return () => window.removeEventListener('keydown', handleEsc);
+    }
+  }, [isModalOpen]);
+
+  // Handle ESC key for edit tile modal
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isEditModalOpen) {
+        setIsEditModalOpen(false);
+        setEditingTile(null);
+        resetForm();
+      }
+    };
+
+    if (isEditModalOpen) {
+      window.addEventListener('keydown', handleEsc);
+      return () => window.removeEventListener('keydown', handleEsc);
+    }
+  }, [isEditModalOpen]);
+
   const handleDeleteTile = async (e: React.MouseEvent, id: string) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1150,6 +1222,95 @@ export const TileGrid: React.FC<TileGridProps> = ({
       exportCategoryToFile(categoryName, tiles);
     },
     [tiles]
+  );
+
+  const handleExportTile = useCallback(
+    (tile: Tile) => {
+      exportTileToFile(tile);
+    },
+    []
+  );
+
+  const handleImportCategory = useCallback(
+    async (categoryName: string) => {
+      if (!isAuthenticated) {
+        if (onAuthRequired) onAuthRequired();
+        return;
+      }
+
+      // Create a file input element
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json';
+      input.onchange = async (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (!file) return;
+
+        try {
+          const text = await file.text();
+          const data = JSON.parse(text);
+          
+          // Validate and parse the import file
+          const parsed = parseSpaceExportObject(data);
+          
+          // Normalize imported tiles and assign to the target category
+          const normalizedTiles = normalizeImportedTiles(parsed);
+          
+          // Update group to target category
+          const tilesToImport = normalizedTiles.map(tile => ({
+            ...tile,
+            group: categoryName
+          }));
+
+          if (tilesToImport.length === 0) {
+            alert('No tiles/spaces found to import.');
+            return;
+          }
+
+          // Import tiles one by one using createTile API
+          let successCount = 0;
+          let errorCount = 0;
+          const errors: string[] = [];
+
+          for (const tile of tilesToImport) {
+            try {
+              await createTile(tile);
+              successCount++;
+            } catch (error) {
+              errorCount++;
+              const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+              errors.push(`Failed to import "${tile.title}": ${errorMsg}`);
+              console.error('Failed to import tile:', tile.title, error);
+            }
+          }
+
+          // Refresh tiles from server
+          try {
+            const updatedTiles = await getTiles();
+            onUpdateTiles(updatedTiles);
+          } catch (error) {
+            console.error('Failed to refresh tiles:', error);
+          }
+
+          // Show results
+          if (errorCount === 0) {
+            alert(`Successfully imported ${successCount} tile(s) to category "${categoryName}".`);
+          } else {
+            alert(
+              `Imported ${successCount} tile(s) successfully.\n` +
+              `Failed to import ${errorCount} tile(s).\n\n` +
+              `Errors:\n${errors.join('\n')}`
+            );
+          }
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          alert(`Failed to import tiles: ${errorMsg}`);
+          console.error('Import error:', error);
+        }
+      };
+      input.click();
+    },
+    [isAuthenticated, onAuthRequired, onUpdateTiles]
   );
 
   const handleRenameCategory = useCallback(async (oldName: string, newName: string) => {
@@ -1489,6 +1650,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               onSaveCategoryOrder={handleManualSave}
               onRenameCategory={handleRenameCategory}
               onExportCategory={handleExportCategory}
+              onImportCategory={handleImportCategory}
             >
               {/* Grid with wider tiles */}
               {groupTiles.length > 0 ? (
@@ -1510,6 +1672,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         onMoveToCategory={handleMoveTileToCategory}
                         onMoveLeft={() => handleMoveTile(tile.id, 'left')}
                         onMoveRight={() => handleMoveTile(tile.id, 'right')}
+                        onExportTile={handleExportTile}
                         canMoveLeft={canMoveLeft}
                         canMoveRight={canMoveRight}
                         availableCategories={allCategories}
