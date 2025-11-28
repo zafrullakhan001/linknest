@@ -3,7 +3,7 @@ import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STY
 import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
 import { authService, UserListItem } from '../services/authService';
 import { exportTileToFile } from '../services/spaceTransferService';
-import { cloneTile } from '../services/storageService';
+import { cloneTile, getTiles } from '../services/storageService';
 
 interface TileDetailProps {
   tile: Tile;
@@ -871,7 +871,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                               try {
                                 await cloneTile(tile.id);
                                 // Fetch fresh tiles to get the cloned one
-                                const { getTiles } = await import('../services/storageService');
                                 const freshTiles = await getTiles();
                                 onUpdateTiles(freshTiles);
                                 alert('Space cloned successfully!');
