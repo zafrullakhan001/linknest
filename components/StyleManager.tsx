@@ -1704,6 +1704,16 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                       className="w-full"
                     />
                   </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="contentLinkNoBorder"
+                      checked={styles.contentLinkNoBorder}
+                      onChange={(e) => updateStyle('contentLinkNoBorder', e.target.checked)}
+                      className="w-4 h-4 text-brand-600 bg-slate-100 border-slate-300 rounded focus:ring-brand-500 dark:focus:ring-brand-600 dark:ring-offset-slate-800 focus:ring-2 dark:bg-slate-700 dark:border-slate-600"
+                    />
+                    <label htmlFor="contentLinkNoBorder" className="text-sm font-medium text-slate-700 dark:text-slate-300">No Border</label>
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Padding: {styles.contentLinkPadding}px</label>
                     <input

@@ -135,6 +135,7 @@ export interface SpaceStyles {
   contentLinkStyle: 'pill' | 'card' | 'minimal' | 'button';
   contentLinkBackgroundColor: string;
   contentLinkBorderColor: string;
+  contentLinkNoBorder: boolean;
   contentLinkBorderRadius: number;
   contentLinkHoverEffect: 'lift' | 'glow' | 'scale' | 'slide';
   contentLinkPadding: number;
@@ -265,6 +266,7 @@ export const DEFAULT_STYLES: SpaceStyles = {
   contentLinkStyle: 'card',
   contentLinkBackgroundColor: '#ffffff',
   contentLinkBorderColor: '#e2e8f0',
+  contentLinkNoBorder: false,
   contentLinkBorderRadius: 12,
   contentLinkHoverEffect: 'lift',
   contentLinkPadding: 16,
@@ -303,7 +305,52 @@ export const DEFAULT_STYLES: SpaceStyles = {
   }
 };
 
+// LocalStorage key for caching styles
+const STYLES_CACHE_KEY = 'linknest_styles_cache';
+const STYLES_CACHE_TIMESTAMP_KEY = 'linknest_styles_cache_timestamp';
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 export const styleService = {
+  // Get cached styles from localStorage
+  getCachedStyles(): SpaceStyles | null {
+    try {
+      const cached = localStorage.getItem(STYLES_CACHE_KEY);
+      const timestamp = localStorage.getItem(STYLES_CACHE_TIMESTAMP_KEY);
+      
+      if (cached && timestamp) {
+        const age = Date.now() - parseInt(timestamp, 10);
+        if (age < CACHE_DURATION) {
+          const parsed = JSON.parse(cached);
+          // Merge with defaults to ensure all properties exist
+          return { ...DEFAULT_STYLES, ...parsed };
+        }
+      }
+    } catch (error) {
+      console.error('Failed to read cached styles:', error);
+    }
+    return null;
+  },
+
+  // Cache styles to localStorage
+  cacheStyles(styles: SpaceStyles): void {
+    try {
+      localStorage.setItem(STYLES_CACHE_KEY, JSON.stringify(styles));
+      localStorage.setItem(STYLES_CACHE_TIMESTAMP_KEY, Date.now().toString());
+    } catch (error) {
+      console.error('Failed to cache styles:', error);
+    }
+  },
+
+  // Clear cached styles
+  clearCache(): void {
+    try {
+      localStorage.removeItem(STYLES_CACHE_KEY);
+      localStorage.removeItem(STYLES_CACHE_TIMESTAMP_KEY);
+    } catch (error) {
+      console.error('Failed to clear style cache:', error);
+    }
+  },
+
   async getStyles(): Promise<SpaceStyles> {
     try {
       const response = await fetch(`${API_BASE}/styles`, {
@@ -313,24 +360,34 @@ export const styleService = {
       });
 
       if (!response.ok) {
-        // If no styles exist, return defaults
-        return { ...DEFAULT_STYLES };
+        // If no styles exist, try cache, then return defaults
+        const cached = this.getCachedStyles();
+        return cached || { ...DEFAULT_STYLES };
       }
 
       const data = await response.json();
       if (data.styles) {
         // Merge with defaults to ensure all properties exist
-        return { ...DEFAULT_STYLES, ...data.styles };
+        const mergedStyles = { ...DEFAULT_STYLES, ...data.styles };
+        // Cache the loaded styles
+        this.cacheStyles(mergedStyles);
+        return mergedStyles;
       }
 
-      return { ...DEFAULT_STYLES };
+      // Try cache if API returns no styles
+      const cached = this.getCachedStyles();
+      return cached || { ...DEFAULT_STYLES };
     } catch (error) {
       console.error('Failed to load styles:', error);
-      return { ...DEFAULT_STYLES };
+      // On error, try to use cached styles
+      const cached = this.getCachedStyles();
+      return cached || { ...DEFAULT_STYLES };
     }
   },
 
   async saveStyles(styles: SpaceStyles): Promise<void> {
+    // Cache styles immediately when saving
+    this.cacheStyles(styles);
     const response = await fetch(`${API_BASE}/styles`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -346,6 +403,9 @@ export const styleService = {
   },
 
   async resetStyles(): Promise<void> {
+    // Clear cache when resetting
+    this.clearCache();
+    
     const response = await fetch(`${API_BASE}/styles`, {
       method: 'DELETE',
       credentials: 'include'
@@ -580,8 +640,11 @@ export const styleService = {
         opacity: 0;
       }
       
+      /* Tile Grid - Completely independent from content link grid */
       .linknest-tile-grid {
         gap: ${styles.tileGap}px !important;
+        display: grid !important;
+        grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
       }
       
       .linknest-category {
@@ -630,6 +693,7 @@ export const styleService = {
         font-style: ${styles.spacesTitleFontStyle} !important;
       }
       
+      /* Tile Grid Responsive - Independent breakpoints */
       @media (min-width: 640px) {
         .linknest-tile-grid {
           grid-template-columns: repeat(${styles.gridColumns.sm}, minmax(0, 1fr)) !important;
@@ -953,29 +1017,56 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
   let linkBackground = '';
   let linkBorder = '';
   let linkShadow = '';
-  switch (styles.contentLinkStyle) {
-    case 'card':
-      linkBackground = isDark ? 'rgba(51, 65, 85, 0.5)' : styles.contentLinkBackgroundColor;
-      linkBorder = `1px solid ${isDark ? 'rgba(71, 85, 105, 0.5)' : styles.contentLinkBorderColor}`;
-      linkShadow = '0 2px 4px rgba(0, 0, 0, 0.05)';
-      break;
-    case 'pill':
-      linkBackground = isDark ? 'rgba(51, 65, 85, 0.4)' : `${styles.contentLinkBackgroundColor}f5`;
-      linkBorder = `1px solid ${isDark ? 'rgba(71, 85, 105, 0.3)' : styles.contentLinkBorderColor}`;
-      linkShadow = 'none';
-      break;
-    case 'minimal':
-      linkBackground = 'transparent';
-      linkBorder = 'none';
-      linkShadow = 'none';
-      break;
-    case 'button':
-      linkBackground = isDark
-        ? `linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(139, 92, 246, 0.2))`
-        : `linear-gradient(135deg, ${styles.contentHeaderGradientStart}10, ${styles.contentHeaderGradientEnd}10)`;
-      linkBorder = `1px solid ${isDark ? 'rgba(59, 130, 246, 0.3)' : `${styles.contentHeaderGradientStart}30`}`;
-      linkShadow = '0 2px 8px rgba(59, 130, 246, 0.1)';
-      break;
+  
+  // Check if no-border is enabled first
+  if (styles.contentLinkNoBorder) {
+    linkBorder = 'none';
+    // Still set background and shadow based on style
+    switch (styles.contentLinkStyle) {
+      case 'card':
+        linkBackground = isDark ? 'rgba(51, 65, 85, 0.5)' : styles.contentLinkBackgroundColor;
+        linkShadow = '0 2px 4px rgba(0, 0, 0, 0.05)';
+        break;
+      case 'pill':
+        linkBackground = isDark ? 'rgba(51, 65, 85, 0.4)' : `${styles.contentLinkBackgroundColor}f5`;
+        linkShadow = 'none';
+        break;
+      case 'minimal':
+        linkBackground = 'transparent';
+        linkShadow = 'none';
+        break;
+      case 'button':
+        linkBackground = isDark
+          ? `linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(139, 92, 246, 0.2))`
+          : `linear-gradient(135deg, ${styles.contentHeaderGradientStart}10, ${styles.contentHeaderGradientEnd}10)`;
+        linkShadow = '0 2px 8px rgba(59, 130, 246, 0.1)';
+        break;
+    }
+  } else {
+    switch (styles.contentLinkStyle) {
+      case 'card':
+        linkBackground = isDark ? 'rgba(51, 65, 85, 0.5)' : styles.contentLinkBackgroundColor;
+        linkBorder = `1px solid ${isDark ? 'rgba(71, 85, 105, 0.5)' : styles.contentLinkBorderColor}`;
+        linkShadow = '0 2px 4px rgba(0, 0, 0, 0.05)';
+        break;
+      case 'pill':
+        linkBackground = isDark ? 'rgba(51, 65, 85, 0.4)' : `${styles.contentLinkBackgroundColor}f5`;
+        linkBorder = `1px solid ${isDark ? 'rgba(71, 85, 105, 0.3)' : styles.contentLinkBorderColor}`;
+        linkShadow = 'none';
+        break;
+      case 'minimal':
+        linkBackground = 'transparent';
+        linkBorder = 'none';
+        linkShadow = 'none';
+        break;
+      case 'button':
+        linkBackground = isDark
+          ? `linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(139, 92, 246, 0.2))`
+          : `linear-gradient(135deg, ${styles.contentHeaderGradientStart}10, ${styles.contentHeaderGradientEnd}10)`;
+        linkBorder = `1px solid ${isDark ? 'rgba(59, 130, 246, 0.3)' : `${styles.contentHeaderGradientStart}30`}`;
+        linkShadow = '0 2px 8px rgba(59, 130, 246, 0.1)';
+        break;
+    }
   }
 
   // Tab styles
@@ -1081,6 +1172,8 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       padding: ${styles.contentLinkPadding}px !important;
       margin-bottom: ${styles.contentLinkSpacing}px !important;
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+      width: 100% !important;
+      min-width: 0 !important;
       ${styles.contentAnimateLinks ? `
         animation: linkFadeIn 0.4s ease-out forwards;
         opacity: 0;
@@ -1113,6 +1206,9 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       font-size: ${styles.contentLinkFontSize}px !important;
       font-weight: ${styles.contentLinkFontWeight} !important;
       font-style: ${styles.contentLinkFontStyle || 'normal'} !important;
+      word-wrap: break-word !important;
+      overflow-wrap: break-word !important;
+      max-width: 100% !important;
     }
     
     .linknest-content-link-icon {
@@ -1145,32 +1241,45 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       opacity: 0.8;
     }
     
-    /* Link Grid */
+    /* Content Link Grid - Completely independent from tile grid */
+    /* Use auto-fit to make columns flexible and expand to fill available space */
+    /* Columns will automatically expand when there are fewer items than max columns */
     .linknest-content-link-grid {
       gap: ${styles.contentLinkSpacing}px !important;
+      display: grid !important;
+      width: 100% !important;
+      /* Use auto-fit with a reasonable minimum width - columns will expand to fill space */
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)) !important;
     }
     
+    .linknest-content-link-grid > * {
+      width: 100% !important;
+      min-width: 0 !important;
+    }
+    
+    /* Content Link Grid Responsive - Flexible columns that expand to use available space */
+    /* Adjust minimum width per breakpoint to allow better expansion */
     @media (min-width: 640px) {
       .linknest-content-link-grid {
-        grid-template-columns: repeat(${styles.contentGridColumns?.sm || 1}, minmax(0, 1fr)) !important;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)) !important;
       }
     }
     
     @media (min-width: 768px) {
       .linknest-content-link-grid {
-        grid-template-columns: repeat(${styles.contentGridColumns?.md || 2}, minmax(0, 1fr)) !important;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important;
       }
     }
     
     @media (min-width: 1024px) {
       .linknest-content-link-grid {
-        grid-template-columns: repeat(${styles.contentGridColumns?.lg || 3}, minmax(0, 1fr)) !important;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)) !important;
       }
     }
     
     @media (min-width: 1280px) {
       .linknest-content-link-grid {
-        grid-template-columns: repeat(${styles.contentGridColumns?.xl || 4}, minmax(0, 1fr)) !important;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)) !important;
       }
     }
   `;

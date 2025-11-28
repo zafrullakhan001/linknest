@@ -782,7 +782,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     // VIEW MODE
     if (!isEditing) {
         return (
-            <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 min-h-[80vh] flex flex-col max-w-5xl mx-auto pb-10">
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 min-h-[80vh] flex flex-col w-full pb-10">
 
                 {/* Compact Modern Header */}
                 <div className="linknest-content-header relative rounded-2xl overflow-hidden mb-6 group border border-slate-200 dark:border-slate-700/50 shadow-lg dark:shadow-none">
@@ -1007,7 +1007,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 )}
 
                                 {/* Links Grid */}
-                                <div className="linknest-content-link-grid grid grid-cols-1 gap-4">
+                                <div className="linknest-content-link-grid">
                                     {section.links.map((link, linkIndex) => {
                                         const health = linkHealth[link.id];
                                         const isBroken = health?.status === 'broken';
@@ -1039,11 +1039,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     rel="noopener noreferrer"
                                                     className="flex-1 min-w-0 block focus:outline-none"
                                                 >
-                                                    <h4 className={`linknest-content-link-title text-sm font-semibold ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 truncate transition-colors`}>
+                                                    <h4 className={`linknest-content-link-title text-sm font-semibold ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}>
                                                         {link.label}
                                                     </h4>
                                                     <div className="linknest-content-link-domain flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors mt-0.5">
-                                                        <span className="truncate max-w-[180px]">
+                                                        <span className="break-words">
                                                             {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
                                                         </span>
                                                         {link.visibility && link.visibility !== 'public' && (
@@ -1122,7 +1122,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     // EDIT MODE
     return (
-        <div className="animate-in fade-in zoom-in duration-300 max-w-6xl mx-auto">
+        <div className="animate-in fade-in zoom-in duration-300 w-full">
             <div className="flex items-center justify-between mb-6">
                 <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Edit Page: {editTitle}</h1>
                 <div className="flex gap-3">

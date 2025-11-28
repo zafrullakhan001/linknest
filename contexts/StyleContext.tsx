@@ -12,46 +12,57 @@ interface StyleContextType {
 const StyleContext = createContext<StyleContextType | undefined>(undefined);
 
 export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [styles, setStyles] = useState<SpaceStyles>(DEFAULT_STYLES);
+  // Initialize with cached styles if available, otherwise use defaults
+  const getInitialStyles = () => {
+    const cached = styleService.getCachedStyles();
+    return cached || DEFAULT_STYLES;
+  };
+  
+  const [styles, setStyles] = useState<SpaceStyles>(getInitialStyles);
   const [isLoading, setIsLoading] = useState(true);
   const { isAuthenticated, loading: authLoading } = useAuth();
   const prevAuthRef = useRef<boolean | undefined>(undefined);
   const initialMountRef = useRef(true);
   const applyingStylesRef = useRef(false);
   const styleTagRef = useRef<HTMLStyleElement | null>(null);
-  const stylesRef = useRef<SpaceStyles>(DEFAULT_STYLES);
+  const stylesRef = useRef<SpaceStyles>(getInitialStyles());
 
   // Keep styles ref in sync
   useEffect(() => {
     stylesRef.current = styles;
   }, [styles]);
 
-  const applyStyles = useCallback((styleData: SpaceStyles) => {
+  const applyStyles = useCallback((styleData: SpaceStyles, synchronous: boolean = false) => {
     // Prevent duplicate applications
-    if (applyingStylesRef.current) {
+    if (applyingStylesRef.current && !synchronous) {
       return;
     }
     applyingStylesRef.current = true;
 
-    // Use requestAnimationFrame to batch style updates and prevent flicker
-    requestAnimationFrame(() => {
+    const apply = () => {
       try {
         // Get or create style tag
         let styleTag = styleTagRef.current;
 
         // Check if tag exists and is still in DOM
         if (!styleTag || !styleTag.isConnected) {
-          // Remove any existing style tag first (just in case)
+          // First check if tag was created by inline script
           const existingStyle = document.getElementById('linknest-custom-styles');
-          if (existingStyle) {
-            existingStyle.remove();
-          }
+          if (existingStyle && existingStyle.isConnected) {
+            styleTag = existingStyle as HTMLStyleElement;
+            styleTagRef.current = styleTag;
+          } else {
+            // Remove any orphaned style tag first (just in case)
+            if (existingStyle) {
+              existingStyle.remove();
+            }
 
-          // Create new style tag
-          styleTag = document.createElement('style');
-          styleTag.id = 'linknest-custom-styles';
-          document.head.appendChild(styleTag);
-          styleTagRef.current = styleTag;
+            // Create new style tag
+            styleTag = document.createElement('style');
+            styleTag.id = 'linknest-custom-styles';
+            document.head.appendChild(styleTag);
+            styleTagRef.current = styleTag;
+          }
         }
 
         // Update style content
@@ -62,7 +73,14 @@ export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       } finally {
         applyingStylesRef.current = false;
       }
-    });
+    };
+
+    // Apply synchronously on initial mount to prevent flash, otherwise use requestAnimationFrame
+    if (synchronous) {
+      apply();
+    } else {
+      requestAnimationFrame(apply);
+    }
   }, []);
 
   const loadStyles = useCallback(async () => {
@@ -70,27 +88,48 @@ export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     try {
       const loadedStyles = await styleService.getStyles();
       setStyles(loadedStyles);
-      applyStyles(loadedStyles);
+      stylesRef.current = loadedStyles;
+      // Apply loaded styles immediately
+      applyStyles(loadedStyles, false);
+      // Cache the loaded styles
+      styleService.cacheStyles(loadedStyles);
     } catch (error) {
       console.error('Failed to load styles:', error);
-      applyStyles(DEFAULT_STYLES);
+      // Try to use cached styles on error
+      const cached = styleService.getCachedStyles();
+      const fallbackStyles = cached || DEFAULT_STYLES;
+      setStyles(fallbackStyles);
+      stylesRef.current = fallbackStyles;
+      applyStyles(fallbackStyles, false);
     } finally {
       setIsLoading(false);
     }
   }, [applyStyles]);
 
   // Apply styles immediately on mount to prevent flash
-  // Wait a tick to ensure dark mode class is set
+  // Apply cached or default styles synchronously before React renders
   useEffect(() => {
-    // Use setTimeout to ensure DOM is ready and dark mode is set
-    const timer = setTimeout(() => {
-      // Only apply defaults if we haven't loaded anything yet
-      if (isLoading) {
-        applyStyles(DEFAULT_STYLES);
-      }
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [applyStyles, isLoading]);
+    // Get cached styles or defaults
+    const cached = styleService.getCachedStyles();
+    const initialStyles = cached || DEFAULT_STYLES;
+    
+    // Apply synchronously immediately
+    const applyInitial = () => {
+      applyStyles(initialStyles, true);
+    };
+
+    if (document.readyState === 'loading') {
+      // If document is still loading, wait for DOMContentLoaded
+      const handleDOMReady = () => {
+        applyInitial();
+      };
+      document.addEventListener('DOMContentLoaded', handleDOMReady);
+      return () => document.removeEventListener('DOMContentLoaded', handleDOMReady);
+    } else {
+      // Document is already ready, apply immediately
+      applyInitial();
+    }
+  }, [applyStyles]);
 
   useEffect(() => {
     loadStyles();
@@ -107,26 +146,26 @@ export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
   }, [loadStyles]);
 
-  // Reload styles when authentication state changes (but not on initial mount)
+  // Note: Styles are public and don't depend on authentication state
+  // We don't reload styles when auth changes to prevent grid column changes
+  // Styles are only reloaded on initial mount or when explicitly refreshed
   useEffect(() => {
     // Skip if auth is still loading
     if (authLoading) {
       return;
     }
 
-    // On initial mount, just record the auth state and don't reload
+    // On initial mount, just record the auth state
     if (initialMountRef.current) {
       initialMountRef.current = false;
       prevAuthRef.current = isAuthenticated;
       return;
     }
 
-    // Only reload if authentication state actually changed
-    if (prevAuthRef.current !== isAuthenticated) {
-      prevAuthRef.current = isAuthenticated;
-      loadStyles();
-    }
-  }, [isAuthenticated, authLoading, loadStyles]);
+    // Don't reload styles when authentication state changes
+    // This prevents grid columns from changing on sign in/out
+    prevAuthRef.current = isAuthenticated;
+  }, [isAuthenticated, authLoading]);
 
   // Reapply styles when they change or dark mode changes
   useEffect(() => {
@@ -158,7 +197,10 @@ export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const updateStyles = (newStyles: SpaceStyles) => {
     setStyles(newStyles);
+    stylesRef.current = newStyles;
     applyStyles(newStyles);
+    // Cache updated styles immediately
+    styleService.cacheStyles(newStyles);
   };
 
   return (

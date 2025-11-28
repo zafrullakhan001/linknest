@@ -1658,7 +1658,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
             >
               {/* Grid with wider tiles */}
               {groupTiles.length > 0 ? (
-                <div className="linknest-tile-grid grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div className="linknest-tile-grid">
                   {groupTiles.map((tile, tileIndex) => {
                     const canMoveLeft = tileIndex > 0;
                     const canMoveRight = tileIndex < groupTiles.length - 1;
