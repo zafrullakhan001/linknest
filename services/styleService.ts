@@ -408,7 +408,7 @@ export const styleService = {
       }
       
       .linknest-category-header {
-        color: ${styles.categoryHeaderColor} !important;
+        color: ${isDark ? '#cbd5e1' : styles.categoryHeaderColor} !important;
         font-size: ${styles.categoryHeaderSize}px !important;
         margin-bottom: ${styles.categoryHeaderSpacing}px !important;
         font-family: ${styles.categoryFontFamily} !important;
