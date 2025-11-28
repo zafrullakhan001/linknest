@@ -24,6 +24,8 @@ switch ($method) {
             handleBulkImport();
         } elseif (preg_match('#^/([^/]+)/favorite$#', $path, $matches)) {
             handleToggleFavorite($matches[1]);
+        } elseif (preg_match('#^/([^/]+)/clone$#', $path, $matches)) {
+            handleCloneTile($matches[1]);
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -907,6 +909,180 @@ function handleDeleteTile($tileId) {
     $stmt->execute([$tileId]);
     
     sendJSON(['success' => true]);
+}
+
+function handleCloneTile($tileId) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Get the original tile
+    $stmt = $db->prepare('SELECT * FROM tiles WHERE id = ?');
+    $stmt->execute([$tileId]);
+    $originalTile = $stmt->fetch();
+    
+    if (!$originalTile) {
+        sendJSON(['error' => 'Tile not found'], 404);
+    }
+    
+    // Check visibility - user must be able to see the tile to clone it
+    $tileVisibility = $originalTile['visibility'] ?? 'public';
+    $tileAllowedUsers = $originalTile['allowed_users'] ? json_decode($originalTile['allowed_users'], true) : [];
+    
+    $isTileVisible = false;
+    if ($user && $user['is_admin']) {
+        $isTileVisible = true;
+    } elseif ($tileVisibility === 'public') {
+        $isTileVisible = true;
+    } elseif ($tileVisibility === 'authenticated' && $user) {
+        $isTileVisible = true;
+    } elseif ($tileVisibility === 'private' && $user) {
+        $isTileVisible = in_array($user['id'], $tileAllowedUsers);
+    }
+    
+    if (!$isTileVisible) {
+        sendJSON(['error' => 'Tile not found'], 404);
+    }
+    
+    // Generate new tile ID
+    $newTileId = uniqid('tile_', true);
+    
+    // Get current max position to append new tile
+    $maxPositionStmt = $db->prepare('SELECT MAX(position) as max_pos FROM tiles');
+    $maxPositionStmt->execute();
+    $maxPosRow = $maxPositionStmt->fetch();
+    $newPosition = ($maxPosRow && $maxPosRow['max_pos'] !== null) ? (int)$maxPosRow['max_pos'] + 1 : 0;
+    
+    // Create new tile with "Copy of" prefix
+    $newTitle = 'Copy of ' . $originalTile['title'];
+    $newVisibility = 'public'; // Cloned tiles default to public
+    $newAllowedUsers = null;
+    
+    $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    
+    if (!$insertStmt->execute([
+        $newTileId,
+        $user['id'],
+        $newTitle,
+        $originalTile['description'],
+        $originalTile['html_content'],
+        $originalTile['emoji'],
+        $originalTile['theme_color'],
+        $originalTile['group'],
+        $newVisibility,
+        $newAllowedUsers,
+        $originalTile['is_hyperlink'] ?? 0,
+        $originalTile['hyperlink_url'] ?? null,
+        $originalTile['open_in_new_tab'] ?? 0,
+        $newPosition,
+        time()
+    ])) {
+        sendJSON(['error' => 'Failed to create cloned tile'], 500);
+    }
+    
+    // Clone tabs, sections, and links
+    $tabStmt = $db->prepare('SELECT * FROM tabs WHERE tile_id = ? ORDER BY position ASC');
+    $tabStmt->execute([$tileId]);
+    $tabs = $tabStmt->fetchAll();
+    
+    if (empty($tabs)) {
+        // Check for legacy sections (backward compatibility)
+        $legacySectionStmt = $db->prepare('SELECT * FROM sections WHERE tile_id = ? AND (tab_id IS NULL OR tab_id = "")');
+        $legacySectionStmt->execute([$tileId]);
+        $legacySections = $legacySectionStmt->fetchAll();
+        
+        if (!empty($legacySections)) {
+            // Create a default tab for legacy sections
+            $defaultTabId = uniqid('tab_', true);
+            $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
+            $tabInsertStmt->execute([
+                $defaultTabId,
+                $newTileId,
+                'Default',
+                0
+            ]);
+            
+            foreach ($legacySections as $section) {
+                $newSectionId = uniqid('section_', true);
+                $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title) VALUES (?, ?, ?, ?)');
+                $sectionInsertStmt->execute([
+                    $newSectionId,
+                    $newTileId,
+                    $defaultTabId,
+                    $section['title']
+                ]);
+                
+                // Clone links
+                $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
+                $linkStmt->execute([$section['id']]);
+                $links = $linkStmt->fetchAll();
+                
+                foreach ($links as $link) {
+                    $newLinkId = uniqid('link_', true);
+                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                    $linkInsertStmt->execute([
+                        $newLinkId,
+                        $newSectionId,
+                        $link['label'],
+                        $link['url'],
+                        $link['visibility'] ?? 'public',
+                        null, // Reset allowed_users for cloned links
+                        $link['notes'] ?? null,
+                        $link['tooltip'] ?? null
+                    ]);
+                }
+            }
+        }
+    } else {
+        // Clone tabs and their sections/links
+        foreach ($tabs as $tab) {
+            $newTabId = uniqid('tab_', true);
+            $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
+            $tabInsertStmt->execute([
+                $newTabId,
+                $newTileId,
+                $tab['title'],
+                $tab['position'] ?? 0
+            ]);
+            
+            // Clone sections for this tab
+            $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tab_id = ? ORDER BY id');
+            $sectionStmt->execute([$tab['id']]);
+            $sections = $sectionStmt->fetchAll();
+            
+            foreach ($sections as $section) {
+                $newSectionId = uniqid('section_', true);
+                $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title) VALUES (?, ?, ?, ?)');
+                $sectionInsertStmt->execute([
+                    $newSectionId,
+                    $newTileId,
+                    $newTabId,
+                    $section['title']
+                ]);
+                
+                // Clone links
+                $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
+                $linkStmt->execute([$section['id']]);
+                $links = $linkStmt->fetchAll();
+                
+                foreach ($links as $link) {
+                    $newLinkId = uniqid('link_', true);
+                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                    $linkInsertStmt->execute([
+                        $newLinkId,
+                        $newSectionId,
+                        $link['label'],
+                        $link['url'],
+                        $link['visibility'] ?? 'public',
+                        null, // Reset allowed_users for cloned links
+                        $link['notes'] ?? null,
+                        $link['tooltip'] ?? null
+                    ]);
+                }
+            }
+        }
+    }
+    
+    sendJSON(['success' => true, 'id' => $newTileId], 201);
 }
 
 function handleBulkImport() {

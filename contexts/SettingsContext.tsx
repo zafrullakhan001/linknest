@@ -17,7 +17,8 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     logo_type: 'icon',
     logo_icon: '🔗',
     logo_image: '',
-    favicon: ''
+    favicon: '',
+    footer_text: '© 2025 Adventhealth - Designed and developed by AIT Architecture team'
   });
   const [loading, setLoading] = useState(true);
 
@@ -78,7 +79,8 @@ export const useSettings = () => {
         logo_type: 'icon' as const,
         logo_icon: '🔗',
         logo_image: '',
-        favicon: ''
+        favicon: '',
+        footer_text: '© 2025 Adventhealth - Designed and developed by AIT Architecture team'
       },
       loading: false,
       refreshSettings: async () => {}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Tile, Link } from './types';
-import { getTiles, saveTiles, createTile, deleteTile } from './services/storageService';
+import { getTiles, saveTiles, createTile, deleteTile, cloneTile } from './services/storageService';
 import { TileGrid } from './components/TileGrid';
 import { TileDetail } from './components/TileDetail';
 import { Navigation } from './components/Navigation';
@@ -170,6 +170,23 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const handleCloneTile = async (tileId: string) => {
+    if (!isAuthenticated) {
+      setAuthModalOpen(true);
+      return;
+    }
+    
+    try {
+      const cloned = await cloneTile(tileId);
+      // Reload tiles to get the updated list
+      const updatedTiles = await getTiles();
+      setTiles(updatedTiles);
+    } catch (error) {
+      console.error('Failed to clone tile:', error);
+      throw error;
+    }
+  };
+
   // Only show loading if settings are loading OR if we're authenticated and loading tiles
   // Don't show loading if guest access is disabled and user is not authenticated
   if (settingsLoading || (loading && (isAuthenticated || guestAccessEnabled))) {
@@ -255,6 +272,7 @@ const AppContent: React.FC = () => {
         onUpdateTiles={handleUpdateTiles}
         onCreateTile={handleCreateTile}
         onDeleteTile={handleDeleteTile}
+        onCloneTile={handleCloneTile}
         isAuthenticated={isAuthenticated}
         onAuthRequired={() => setAuthModalOpen(true)}
       />
@@ -306,6 +324,7 @@ const AppContent: React.FC = () => {
         onUpdateTiles={handleUpdateTiles}
         onCreateTile={handleCreateTile}
         onDeleteTile={handleDeleteTile}
+        onCloneTile={handleCloneTile}
         isAuthenticated={isAuthenticated}
         onAuthRequired={() => setAuthModalOpen(true)}
       />
@@ -339,7 +358,7 @@ const AppContent: React.FC = () => {
         </div>
       )}
       <footer className="py-6 text-center text-slate-400 dark:text-slate-500 text-sm">
-        <p>© {new Date().getFullYear()} Adventhealth - Designed and developed by AIT Architecture team</p>
+        <p dangerouslySetInnerHTML={{ __html: settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}></p>
       </footer>
       <AuthModal 
         isOpen={authModalOpen} 

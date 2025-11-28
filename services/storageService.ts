@@ -242,3 +242,28 @@ export const toggleFavorite = async (tileId: string): Promise<{ isFavorite: bool
     throw e;
   }
 };
+
+export const cloneTile = async (tileId: string): Promise<Tile> => {
+  try {
+    const response = await fetch(`${API_BASE}/tiles/${tileId}/clone`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to clone tile');
+    }
+
+    const data = await response.json();
+    // Fetch the cloned tile to get full data
+    const tiles = await getTiles();
+    const cloned = tiles.find(t => t.id === data.id);
+    if (!cloned) {
+      throw new Error('Cloned tile not found');
+    }
+    return cloned;
+  } catch (e) {
+    console.error("Failed to clone tile", e);
+    throw e;
+  }
+};

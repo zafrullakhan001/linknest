@@ -3,6 +3,7 @@ import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STY
 import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
 import { authService, UserListItem } from '../services/authService';
 import { exportTileToFile } from '../services/spaceTransferService';
+import { cloneTile } from '../services/storageService';
 
 interface TileDetailProps {
   tile: Tile;
@@ -60,6 +61,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
   const [linkHealth, setLinkHealth] = useState<LinkHealthMap>({});
   const [checkingHealth, setCheckingHealth] = useState(false);
   const [checkingLinkId, setCheckingLinkId] = useState<string | null>(null);
+
+  // CSV Import State
+  const [csvImportFile, setCsvImportFile] = useState<Record<string, File | null>>({});
+  const [importingCsv, setImportingCsv] = useState<Record<string, boolean>>({});
 
   const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
 
@@ -338,6 +343,148 @@ export const TileDetail: React.FC<TileDetailProps> = ({
               }
               return s;
           }));
+      }
+  };
+
+  // CSV Import Function
+  const handleImportLinksFromCSV = async (tabId: string, sectionId: string) => {
+      const file = csvImportFile[sectionId];
+      if (!file) {
+          alert('Please select a CSV file first');
+          return;
+      }
+
+      setImportingCsv(prev => ({ ...prev, [sectionId]: true }));
+
+      try {
+          const text = await file.text();
+          const lines = text.split('\n').filter(line => line.trim());
+          
+          if (lines.length < 2) {
+              alert('CSV file must have at least a header row and one data row');
+              setImportingCsv(prev => ({ ...prev, [sectionId]: false }));
+              return;
+          }
+
+          // Parse header row
+          const headerLine = lines[0];
+          const headers = headerLine.split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
+          
+          // Find column indices
+          const labelIndex = headers.findIndex(h => 
+              h === 'link name' || h === 'linkname' || h === 'name' || h === 'label' || h === 'title'
+          );
+          const urlIndex = headers.findIndex(h => 
+              h === 'link' || h === 'url' || h === 'link url' || h === 'linkurl' || h === 'href'
+          );
+
+          if (labelIndex === -1 || urlIndex === -1) {
+              alert('CSV file must contain "Link Name" and "Link" columns');
+              setImportingCsv(prev => ({ ...prev, [sectionId]: false }));
+              return;
+          }
+
+          // Parse data rows
+          const newLinks: Link[] = [];
+          let importedCount = 0;
+          let skippedCount = 0;
+
+          for (let i = 1; i < lines.length; i++) {
+              const line = lines[i].trim();
+              if (!line) continue;
+
+              // Handle CSV parsing with quoted fields
+              const values: string[] = [];
+              let current = '';
+              let inQuotes = false;
+
+              for (let j = 0; j < line.length; j++) {
+                  const char = line[j];
+                  if (char === '"') {
+                      // Handle escaped quotes
+                      if (j + 1 < line.length && line[j + 1] === '"' && inQuotes) {
+                          current += '"';
+                          j++; // Skip next quote
+                      } else {
+                          inQuotes = !inQuotes;
+                      }
+                  } else if (char === ',' && !inQuotes) {
+                      values.push(current.trim());
+                      current = '';
+                  } else {
+                      current += char;
+                  }
+              }
+              // Add the last field
+              values.push(current.trim());
+
+              // Ensure we have enough columns
+              if (values.length <= Math.max(labelIndex, urlIndex)) {
+                  skippedCount++;
+                  continue;
+              }
+
+              const label = values[labelIndex]?.trim().replace(/^["']|["']$/g, '') || '';
+              const url = values[urlIndex]?.trim().replace(/^["']|["']$/g, '') || '';
+
+              if (label && url) {
+                  const newLink: Link = {
+                      id: generateId(),
+                      label: label,
+                      url: url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`,
+                      visibility: 'public',
+                      notes: undefined,
+                      tooltip: undefined
+                  };
+                  newLinks.push(newLink);
+                  importedCount++;
+              } else {
+                  skippedCount++;
+              }
+          }
+
+          if (newLinks.length === 0) {
+              alert('No valid links found in CSV file');
+              setImportingCsv(prev => ({ ...prev, [sectionId]: false }));
+              return;
+          }
+
+          // Add links to section
+          if (editTabs.length > 0) {
+              // New structure with tabs
+              setEditTabs(editTabs.map(tab => {
+                  if (tab.id === tabId) {
+                      return {
+                          ...tab,
+                          sections: tab.sections.map(s => {
+                              if (s.id === sectionId) {
+                                  return { ...s, links: [...s.links, ...newLinks] };
+                              }
+                              return s;
+                          })
+                      };
+                  }
+                  return tab;
+              }));
+          } else {
+              // Backward compatibility: sections without tabs
+              setEditSections(editSections.map(s => {
+                  if (s.id === sectionId) {
+                      return { ...s, links: [...s.links, ...newLinks] };
+                  }
+                  return s;
+              }));
+          }
+
+          // Clear file input
+          setCsvImportFile(prev => ({ ...prev, [sectionId]: null }));
+          
+          alert(`Successfully imported ${importedCount} link(s)${skippedCount > 0 ? ` (${skippedCount} row(s) skipped)` : ''}`);
+      } catch (error) {
+          console.error('CSV import error:', error);
+          alert('Failed to import CSV file: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      } finally {
+          setImportingCsv(prev => ({ ...prev, [sectionId]: false }));
       }
   };
 
@@ -704,16 +851,45 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     </button>
                     
                     {isAuthenticated && (
-                      <button
-                          onClick={() => setIsEditing(true)}
-                          className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex items-center gap-2 backdrop-blur-sm"
-                      >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                             <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
-                             <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
-                          </svg>
-                          Edit
-                      </button>
+                      <>
+                        <button
+                            onClick={() => setIsEditing(true)}
+                            className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex items-center gap-2 backdrop-blur-sm"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                               <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
+                               <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
+                            </svg>
+                            Edit
+                        </button>
+                        <button
+                            onClick={async () => {
+                              if (!isAuthenticated) {
+                                if (onAuthRequired) onAuthRequired();
+                                return;
+                              }
+                              try {
+                                await cloneTile(tile.id);
+                                // Fetch fresh tiles to get the cloned one
+                                const { getTiles } = await import('../services/storageService');
+                                const freshTiles = await getTiles();
+                                onUpdateTiles(freshTiles);
+                                alert('Space cloned successfully!');
+                              } catch (error) {
+                                console.error('Failed to clone tile:', error);
+                                alert('Failed to clone space. Please try again.');
+                              }
+                            }}
+                            className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex items-center gap-2 backdrop-blur-sm"
+                            title="Clone this space"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                              <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                              <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.439A1.5 1.5 0 008.378 6H4.5z" />
+                            </svg>
+                            Clone
+                        </button>
+                      </>
                     )}
                     <button 
                         onClick={() => window.location.hash = '#/'}
@@ -1330,6 +1506,64 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 placeholder="Section Header (e.g. Resources)"
                                 className="flex-1 bg-transparent border-none text-slate-900 dark:text-white font-semibold focus:ring-0 placeholder-slate-400"
                             />
+                            {/* CSV Import */}
+                            <div className="flex items-center gap-1">
+                                <label className="cursor-pointer">
+                                    <input
+                                        type="file"
+                                        accept=".csv,text/csv"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0] || null;
+                                            setCsvImportFile(prev => ({ ...prev, [section.id]: file }));
+                                        }}
+                                    />
+                                    <span className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2" title="Import Links from CSV (requires 'Link Name' and 'Link' columns)">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                                        </svg>
+                                    </span>
+                                </label>
+                                {csvImportFile[section.id] && (
+                                    <div className="flex items-center gap-1">
+                                        <span className="text-xs text-slate-500 dark:text-slate-400 max-w-[100px] truncate" title={csvImportFile[section.id]?.name}>
+                                            {csvImportFile[section.id]?.name}
+                                        </span>
+                                        <button
+                                            onClick={() => handleImportLinksFromCSV(tab.id, section.id)}
+                                            disabled={importingCsv[section.id]}
+                                            className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-2 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1"
+                                            title="Import CSV"
+                                        >
+                                            {importingCsv[section.id] ? (
+                                                <>
+                                                    <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                    </svg>
+                                                    Importing...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                                                    </svg>
+                                                    Import
+                                                </>
+                                            )}
+                                        </button>
+                                        <button
+                                            onClick={() => setCsvImportFile(prev => ({ ...prev, [section.id]: null }))}
+                                            className="text-slate-400 hover:text-red-500 p-1"
+                                            title="Clear file"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                             <button
                                 onClick={() => handleRemoveSection(tab.id, section.id)}
                                 className="text-slate-400 hover:text-red-500 p-2"

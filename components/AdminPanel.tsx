@@ -16,7 +16,7 @@ interface AdminPanelProps {
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const { refreshSettings } = useSettings();
-  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap'>('pending');
+  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer'>('pending');
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
   const [allUsers, setAllUsers] = useState<AllUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,7 +34,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     logo_type: 'icon',
     logo_icon: '🔗',
     logo_image: '',
-    favicon: ''
+    favicon: '',
+    footer_text: '© 2025 Adventhealth - Designed and developed by AIT Architecture team'
   });
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -301,6 +302,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             }`}
         >
           LDAP
+        </button>
+        <button
+          onClick={() => setActiveTab('footer')}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'footer'
+            ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+            : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+        >
+          Footer
         </button>
       </div>
 
@@ -1802,6 +1812,72 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Footer Tab */}
+          {activeTab === 'footer' && (
+            <div className="space-y-6">
+              {settingsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                </div>
+              ) : (
+                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Footer Text Settings</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                    Customize the footer text that appears at the bottom of every page.
+                  </p>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        Footer Text
+                      </label>
+                      <textarea
+                        value={settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team'}
+                        onChange={(e) => setSettings({ ...settings, footer_text: e.target.value })}
+                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                        placeholder="© 2025 Adventhealth - Designed and developed by AIT Architecture team"
+                        rows={3}
+                      />
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        This text will be displayed in the footer of all pages. You can use HTML tags for formatting.
+                      </p>
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                      <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Preview</h4>
+                      <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                        <footer className="py-6 text-center text-slate-400 dark:text-slate-500 text-sm">
+                          <p dangerouslySetInnerHTML={{ __html: settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}></p>
+                        </footer>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={async () => {
+                        try {
+                          setSettingsSaving(true);
+                          setError('');
+                          await settingsService.updateSettings(settings);
+                          await loadSettings(); // Reload local settings
+                          await refreshSettings(); // Refresh global settings context
+                          alert('Footer text saved successfully!');
+                        } catch (err: any) {
+                          setError(err.message || 'Failed to save footer text');
+                        } finally {
+                          setSettingsSaving(false);
+                        }
+                      }}
+                      disabled={settingsSaving}
+                      className="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                    >
+                      {settingsSaving ? 'Saving...' : 'Save Footer Text'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

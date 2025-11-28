@@ -30,6 +30,7 @@ export interface AppSettings {
   logo_icon: string;
   logo_image: string;
   favicon: string;
+  footer_text?: string; // Footer text displayed at the bottom of pages
   guest_access_enabled?: string; // '0' or '1' - controls whether guests can view spaces
 
   // LDAP Settings
@@ -91,6 +92,7 @@ export const settingsService = {
       logo_icon: data.settings?.logo_icon || '🔗',
       logo_image: data.settings?.logo_image || '',
       favicon: data.settings?.favicon || '',
+      footer_text: data.settings?.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team',
       guest_access_enabled: data.settings?.guest_access_enabled || '1', // Default to enabled
 
       // LDAP defaults
