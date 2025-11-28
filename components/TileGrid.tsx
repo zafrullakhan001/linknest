@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { Tile, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS, TileVisibility } from '../types';
 import { generateTileContent, GeneratedTileContent } from '../services/geminiService';
 import { useSettings } from '../contexts/SettingsContext';
-import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite } from '../services/storageService';
+import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile } from '../services/storageService';
 import {
   exportCategoryToFile
 } from '../services/spaceTransferService';
@@ -954,18 +954,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
       onUpdateTiles(updatedTiles);
       
       // Save to backend if authenticated
-      if (isAuthenticated && onCreateTile) {
-        // Use the update API endpoint
-        const response = await fetch(`/api/tiles/${updatedTile.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify(updatedTile)
-        });
-        
-        if (!response.ok) {
-          throw new Error('Failed to update tile');
-        }
+      if (isAuthenticated) {
+        await saveTile(updatedTile);
       }
       
       resetForm();
