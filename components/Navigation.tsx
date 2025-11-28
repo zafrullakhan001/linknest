@@ -40,7 +40,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme, u
               {settings.logo_icon || '🔗'}
             </div>
           )}
-          <span className="linknest-page-title text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-800 to-slate-500 dark:from-white dark:to-slate-400">
+          <span className="linknest-page-title text-xl font-bold">
             {settings.app_name || 'LinkNest'}
           </span>
         </div>

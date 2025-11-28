@@ -29,6 +29,8 @@ export interface UserListItem {
   auth_source?: string;
 }
 
+// API_BASE uses relative URLs (starting with /) which are protocol-agnostic
+// This ensures the app works with both HTTP and HTTPS automatically
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 export const authService = {

@@ -2,6 +2,8 @@ import { LinkHealth } from '../types';
 
 // Match other services: guard against environments where import.meta.env may not be typed
 // Vite injects VITE_API_BASE at build time; fallback to '/api' for safety.
+// API_BASE uses relative URLs (starting with /) which are protocol-agnostic
+// This ensures the app works with both HTTP and HTTPS automatically
 const API_BASE: string =
   (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_API_BASE) ||
   '/api';

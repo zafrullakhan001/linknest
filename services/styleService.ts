@@ -1,5 +1,6 @@
 // Resolve API base so it works both in dev (/api via Vite proxy)
 // and in XAMPP/production where the app is served from /linknest.
+// Protocol-agnostic: uses relative URLs that work with both HTTP and HTTPS
 function resolveApiBase(): string {
   // Prefer Vite-injected env when available
   const envBase = (import.meta as any)?.env?.VITE_API_BASE;
@@ -8,6 +9,7 @@ function resolveApiBase(): string {
   }
 
   // Fallback based on current location (runtime)
+  // This automatically uses the same protocol (HTTP/HTTPS) as the page
   if (typeof window !== 'undefined') {
     const path = window.location.pathname || '';
     // If app is served from /linknest, use /linknest/api
@@ -17,6 +19,7 @@ function resolveApiBase(): string {
   }
 
   // Default dev / generic fallback
+  // Using relative URL ensures it works with both HTTP and HTTPS
   return '/api';
 }
 
@@ -75,6 +78,7 @@ export interface SpaceStyles {
   pageTitleFontSize: number;
   pageTitleFontWeight: string;
   pageTitleFontStyle: string;
+  pageTitleGradientEnabled: boolean;
   
   // Spaces title (Landing page heading) font styling
   spacesTitleFontFamily: string;
@@ -146,6 +150,7 @@ export const DEFAULT_STYLES: SpaceStyles = {
   pageTitleFontSize: 20,
   pageTitleFontWeight: 'bold',
   pageTitleFontStyle: 'normal',
+  pageTitleGradientEnabled: true,
   spacesTitleFontFamily: 'inherit',
   spacesTitleFontSize: 24,
   spacesTitleFontWeight: 'bold',
@@ -428,7 +433,19 @@ export const styleService = {
         font-size: ${styles.pageTitleFontSize}px !important;
         font-weight: ${styles.pageTitleFontWeight} !important;
         font-style: ${styles.pageTitleFontStyle} !important;
+        ${styles.pageTitleGradientEnabled 
+          ? `background-clip: text !important;
+        -webkit-background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
+        background-image: linear-gradient(to right, rgb(30 41 55), rgb(100 116 139)) !important;`
+          : `color: ${isDark ? 'rgb(255 255 255)' : 'rgb(30 41 55)'} !important;`}
       }
+      
+      ${styles.pageTitleGradientEnabled 
+        ? `.dark .linknest-page-title {
+        background-image: linear-gradient(to right, rgb(255 255 255), rgb(148 163 184)) !important;
+      }`
+        : ''}
       
       .linknest-spaces-title {
         font-family: ${styles.spacesTitleFontFamily} !important;

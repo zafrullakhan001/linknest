@@ -1,15 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { Tile, Link } from './types';
 import { getTiles, saveTiles, createTile, deleteTile, cloneTile } from './services/storageService';
-import { TileGrid } from './components/TileGrid';
-import { TileDetail } from './components/TileDetail';
 import { Navigation } from './components/Navigation';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import { StyleProvider, useStyles } from './contexts/StyleContext';
 import { AuthModal } from './components/AuthModal';
-import { AdminPanel } from './components/AdminPanel';
-import { StyleManager } from './components/StyleManager';
+
+// Lazy load heavy components for better initial load performance
+const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
+const TileDetail = lazy(() => import('./components/TileDetail').then(m => ({ default: m.TileDetail })));
+const AdminPanel = lazy(() => import('./components/AdminPanel').then(m => ({ default: m.AdminPanel })));
+const StyleManager = lazy(() => import('./components/StyleManager').then(m => ({ default: m.StyleManager })));
+
+// Loading fallback component
+const LoadingFallback: React.FC = () => (
+  <div className="flex items-center justify-center min-h-screen">
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+  </div>
+);
 
 // Simple Hash Router implementation
 const useHashRoute = () => {
@@ -267,33 +276,37 @@ const AppContent: React.FC = () => {
     );
   } else if (route === '#/' || route === '') {
     content = (
-      <TileGrid 
-        tiles={tiles} 
-        onUpdateTiles={handleUpdateTiles}
-        onCreateTile={handleCreateTile}
-        onDeleteTile={handleDeleteTile}
-        onCloneTile={handleCloneTile}
-        isAuthenticated={isAuthenticated}
-        onAuthRequired={() => setAuthModalOpen(true)}
-      />
+      <Suspense fallback={<LoadingFallback />}>
+        <TileGrid 
+          tiles={tiles} 
+          onUpdateTiles={handleUpdateTiles}
+          onCreateTile={handleCreateTile}
+          onDeleteTile={handleDeleteTile}
+          onCloneTile={handleCloneTile}
+          isAuthenticated={isAuthenticated}
+          onAuthRequired={() => setAuthModalOpen(true)}
+        />
+      </Suspense>
     );
   } else if (route === '#/admin') {
     if (user?.is_admin) {
       content = (
-        <AdminPanel 
-          onUserApproved={() => {
-            // Refresh tiles if needed
-            const loadData = async () => {
-              try {
-                const stored = await getTiles();
-                setTiles(stored);
-              } catch (error) {
-                console.error('Failed to load tiles:', error);
-              }
-            };
-            loadData();
-          }}
-        />
+        <Suspense fallback={<LoadingFallback />}>
+          <AdminPanel 
+            onUserApproved={() => {
+              // Refresh tiles if needed
+              const loadData = async () => {
+                try {
+                  const stored = await getTiles();
+                  setTiles(stored);
+                } catch (error) {
+                  console.error('Failed to load tiles:', error);
+                }
+              };
+              loadData();
+            }}
+          />
+        </Suspense>
       );
     } else {
       window.location.hash = '#/';
@@ -304,13 +317,15 @@ const AppContent: React.FC = () => {
     const tile = tiles.find((t) => t.id === tileId);
     if (tile) {
       content = (
-        <TileDetail 
-          tile={tile} 
-          allTiles={tiles} 
-          onUpdateTiles={handleUpdateTiles}
-          isAuthenticated={isAuthenticated}
-          onAuthRequired={() => setAuthModalOpen(true)}
-        />
+        <Suspense fallback={<LoadingFallback />}>
+          <TileDetail 
+            tile={tile} 
+            allTiles={tiles} 
+            onUpdateTiles={handleUpdateTiles}
+            isAuthenticated={isAuthenticated}
+            onAuthRequired={() => setAuthModalOpen(true)}
+          />
+        </Suspense>
       );
     } else {
       // 404 or redirect
@@ -319,15 +334,17 @@ const AppContent: React.FC = () => {
     }
   } else {
     content = (
-      <TileGrid 
-        tiles={tiles} 
-        onUpdateTiles={handleUpdateTiles}
-        onCreateTile={handleCreateTile}
-        onDeleteTile={handleDeleteTile}
-        onCloneTile={handleCloneTile}
-        isAuthenticated={isAuthenticated}
-        onAuthRequired={() => setAuthModalOpen(true)}
-      />
+      <Suspense fallback={<LoadingFallback />}>
+        <TileGrid 
+          tiles={tiles} 
+          onUpdateTiles={handleUpdateTiles}
+          onCreateTile={handleCreateTile}
+          onDeleteTile={handleDeleteTile}
+          onCloneTile={handleCloneTile}
+          isAuthenticated={isAuthenticated}
+          onAuthRequired={() => setAuthModalOpen(true)}
+        />
+      </Suspense>
     );
   }
 
@@ -365,11 +382,13 @@ const AppContent: React.FC = () => {
         onClose={() => setAuthModalOpen(false)}
       />
       {user?.is_admin && (
-        <StyleManager
-          isOpen={styleManagerOpen}
-          onClose={() => setStyleManagerOpen(false)}
-          onStylesChange={updateStyles}
-        />
+        <Suspense fallback={null}>
+          <StyleManager
+            isOpen={styleManagerOpen}
+            onClose={() => setStyleManagerOpen(false)}
+            onStylesChange={updateStyles}
+          />
+        </Suspense>
       )}
     </div>
   );

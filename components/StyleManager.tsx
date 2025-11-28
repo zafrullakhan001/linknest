@@ -1127,71 +1127,83 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                 {/* Page Title Typography */}
                 <div className="mb-6">
                   <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Page Title</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-indigo-200 dark:border-indigo-800">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Family</label>
-                      <select
-                        value={styles.pageTitleFontFamily}
-                        onChange={(e) => updateStyle('pageTitleFontFamily', e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
-                      >
-                        <option value="inherit">Inherit (Default)</option>
-                        <option value="Arial, sans-serif">Arial</option>
-                        <option value="'Helvetica Neue', Helvetica, sans-serif">Helvetica</option>
-                        <option value="'Times New Roman', Times, serif">Times New Roman</option>
-                        <option value="Georgia, serif">Georgia</option>
-                        <option value="'Courier New', Courier, monospace">Courier New</option>
-                        <option value="Verdana, sans-serif">Verdana</option>
-                        <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
-                        <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
-                        <option value="Impact, sans-serif">Impact</option>
-                        <option value="'Lucida Console', monospace">Lucida Console</option>
-                        <option value="Tahoma, sans-serif">Tahoma</option>
-                        <option value="'Palatino Linotype', Palatino, serif">Palatino</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Size: {styles.pageTitleFontSize}px</label>
+                  <div className="space-y-4 pl-4 border-l-2 border-indigo-200 dark:border-indigo-800">
+                    <div className="flex items-center gap-2">
                       <input
-                        type="range"
-                        min="14"
-                        max="32"
-                        value={styles.pageTitleFontSize}
-                        onChange={(e) => updateStyle('pageTitleFontSize', parseInt(e.target.value))}
-                        className="w-full"
+                        type="checkbox"
+                        id="pageTitleGradientEnabled"
+                        checked={styles.pageTitleGradientEnabled}
+                        onChange={(e) => updateStyle('pageTitleGradientEnabled', e.target.checked)}
+                        className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500"
                       />
+                      <label htmlFor="pageTitleGradientEnabled" className="text-sm font-medium text-slate-700 dark:text-slate-300">Enable Gradient</label>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Weight</label>
-                      <select
-                        value={styles.pageTitleFontWeight}
-                        onChange={(e) => updateStyle('pageTitleFontWeight', e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
-                      >
-                        <option value="normal">Normal</option>
-                        <option value="bold">Bold</option>
-                        <option value="100">Thin (100)</option>
-                        <option value="200">Extra Light (200)</option>
-                        <option value="300">Light (300)</option>
-                        <option value="400">Regular (400)</option>
-                        <option value="500">Medium (500)</option>
-                        <option value="600">Semi Bold (600)</option>
-                        <option value="700">Bold (700)</option>
-                        <option value="800">Extra Bold (800)</option>
-                        <option value="900">Black (900)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Style</label>
-                      <select
-                        value={styles.pageTitleFontStyle}
-                        onChange={(e) => updateStyle('pageTitleFontStyle', e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
-                      >
-                        <option value="normal">Normal</option>
-                        <option value="italic">Italic</option>
-                        <option value="oblique">Oblique</option>
-                      </select>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Family</label>
+                        <select
+                          value={styles.pageTitleFontFamily}
+                          onChange={(e) => updateStyle('pageTitleFontFamily', e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                        >
+                          <option value="inherit">Inherit (Default)</option>
+                          <option value="Arial, sans-serif">Arial</option>
+                          <option value="'Helvetica Neue', Helvetica, sans-serif">Helvetica</option>
+                          <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                          <option value="Georgia, serif">Georgia</option>
+                          <option value="'Courier New', Courier, monospace">Courier New</option>
+                          <option value="Verdana, sans-serif">Verdana</option>
+                          <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                          <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
+                          <option value="Impact, sans-serif">Impact</option>
+                          <option value="'Lucida Console', monospace">Lucida Console</option>
+                          <option value="Tahoma, sans-serif">Tahoma</option>
+                          <option value="'Palatino Linotype', Palatino, serif">Palatino</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Size: {styles.pageTitleFontSize}px</label>
+                        <input
+                          type="range"
+                          min="14"
+                          max="32"
+                          value={styles.pageTitleFontSize}
+                          onChange={(e) => updateStyle('pageTitleFontSize', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Weight</label>
+                        <select
+                          value={styles.pageTitleFontWeight}
+                          onChange={(e) => updateStyle('pageTitleFontWeight', e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                        >
+                          <option value="normal">Normal</option>
+                          <option value="bold">Bold</option>
+                          <option value="100">Thin (100)</option>
+                          <option value="200">Extra Light (200)</option>
+                          <option value="300">Light (300)</option>
+                          <option value="400">Regular (400)</option>
+                          <option value="500">Medium (500)</option>
+                          <option value="600">Semi Bold (600)</option>
+                          <option value="700">Bold (700)</option>
+                          <option value="800">Extra Bold (800)</option>
+                          <option value="900">Black (900)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Style</label>
+                        <select
+                          value={styles.pageTitleFontStyle}
+                          onChange={(e) => updateStyle('pageTitleFontStyle', e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                        >
+                          <option value="normal">Normal</option>
+                          <option value="italic">Italic</option>
+                          <option value="oblique">Oblique</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
                 </div>
