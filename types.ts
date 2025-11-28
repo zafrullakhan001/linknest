@@ -6,6 +6,7 @@ export interface LinkHealth {
 }
 
 export type LinkVisibility = 'public' | 'authenticated' | 'private';
+export type TileVisibility = 'public' | 'authenticated' | 'private';
 
 export interface Link {
   id: string;
@@ -25,6 +26,13 @@ export interface LinkSection {
   links: Link[];
 }
 
+export interface Tab {
+  id: string;
+  title: string;
+  position: number;
+  sections: LinkSection[];
+}
+
 export interface Tile {
   id: string;
   title: string;
@@ -32,9 +40,16 @@ export interface Tile {
   htmlContent?: string; // Rich HTML content for the landing page
   emoji: string;
   themeColor: ThemeColor;
-  sections: LinkSection[];
+  tabs: Tab[]; // Tabs contain sections
+  sections?: LinkSection[]; // Deprecated: kept for backward compatibility, use tabs instead
   group?: string; // New: Category/Group for the tile
   createdAt: number;
+  visibility?: TileVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
+  allowedUsers?: number[]; // Array of user IDs for private tiles/spaces
+  isFavorite?: boolean; // Whether this tile is favorited by the current user
+  isHyperlink?: boolean; // Whether this tile is a hyperlink instead of a space
+  hyperlinkUrl?: string; // URL for hyperlink tiles
+  openInNewTab?: boolean; // Whether hyperlink should open in new tab (true) or same tab (false)
 }
 
 export const THEME_COLORS = [

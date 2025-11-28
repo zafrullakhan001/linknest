@@ -43,6 +43,22 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
     }
   }, [isOpen]);
 
+  // Handle ESC key to close
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOpen, onClose]);
+
   // Drag handlers
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!dialogRef.current || !headerRef.current) return;
@@ -1170,6 +1186,78 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                       <select
                         value={styles.pageTitleFontStyle}
                         onChange={(e) => updateStyle('pageTitleFontStyle', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="italic">Italic</option>
+                        <option value="oblique">Oblique</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Spaces Title (Landing Page Heading) Typography */}
+                <div className="mb-6">
+                  <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Spaces Title (Landing Page Heading)</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-indigo-200 dark:border-indigo-800">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Family</label>
+                      <select
+                        value={styles.spacesTitleFontFamily}
+                        onChange={(e) => updateStyle('spacesTitleFontFamily', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="inherit">Inherit (Default)</option>
+                        <option value="Arial, sans-serif">Arial</option>
+                        <option value="'Helvetica Neue', Helvetica, sans-serif">Helvetica</option>
+                        <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                        <option value="Georgia, serif">Georgia</option>
+                        <option value="'Courier New', Courier, monospace">Courier New</option>
+                        <option value="Verdana, sans-serif">Verdana</option>
+                        <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                        <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
+                        <option value="Impact, sans-serif">Impact</option>
+                        <option value="'Lucida Console', monospace">Lucida Console</option>
+                        <option value="Tahoma, sans-serif">Tahoma</option>
+                        <option value="'Palatino Linotype', Palatino, serif">Palatino</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Size: {styles.spacesTitleFontSize}px</label>
+                      <input
+                        type="range"
+                        min="16"
+                        max="40"
+                        value={styles.spacesTitleFontSize}
+                        onChange={(e) => updateStyle('spacesTitleFontSize', parseInt(e.target.value))}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Weight</label>
+                      <select
+                        value={styles.spacesTitleFontWeight}
+                        onChange={(e) => updateStyle('spacesTitleFontWeight', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="bold">Bold</option>
+                        <option value="100">Thin (100)</option>
+                        <option value="200">Extra Light (200)</option>
+                        <option value="300">Light (300)</option>
+                        <option value="400">Regular (400)</option>
+                        <option value="500">Medium (500)</option>
+                        <option value="600">Semi Bold (600)</option>
+                        <option value="700">Bold (700)</option>
+                        <option value="800">Extra Bold (800)</option>
+                        <option value="900">Black (900)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Style</label>
+                      <select
+                        value={styles.spacesTitleFontStyle}
+                        onChange={(e) => updateStyle('spacesTitleFontStyle', e.target.value)}
                         className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
                       >
                         <option value="normal">Normal</option>

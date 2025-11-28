@@ -30,6 +30,7 @@ export interface AppSettings {
   logo_icon: string;
   logo_image: string;
   favicon: string;
+  guest_access_enabled?: string; // '0' or '1' - controls whether guests can view spaces
 
   // LDAP Settings
   ldap_enabled?: string;
@@ -90,6 +91,7 @@ export const settingsService = {
       logo_icon: data.settings?.logo_icon || '🔗',
       logo_image: data.settings?.logo_image || '',
       favicon: data.settings?.favicon || '',
+      guest_access_enabled: data.settings?.guest_access_enabled || '1', // Default to enabled
 
       // LDAP defaults
       ldap_enabled: data.settings?.ldap_enabled || '0',

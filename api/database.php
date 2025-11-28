@@ -52,6 +52,16 @@ function handleExportDatabase() {
         $stmt->execute();
         $export['tables']['tiles'] = $stmt->fetchAll();
         
+        // Export tabs table (if exists)
+        try {
+            $stmt = $db->prepare('SELECT * FROM tabs');
+            $stmt->execute();
+            $export['tables']['tabs'] = $stmt->fetchAll();
+        } catch (PDOException $e) {
+            // Table might not exist in older databases, skip
+            $export['tables']['tabs'] = [];
+        }
+        
         // Export sections table
         $stmt = $db->prepare('SELECT * FROM sections');
         $stmt->execute();
@@ -134,6 +144,11 @@ function handleImportDatabase() {
         }
         $db->exec('DELETE FROM links');
         $db->exec('DELETE FROM sections');
+        try {
+            $db->exec('DELETE FROM tabs');
+        } catch (PDOException $e) {
+            // Table might not exist, ignore
+        }
         $db->exec('DELETE FROM tiles');
         $db->exec('DELETE FROM settings');
         $db->exec('DELETE FROM users');
@@ -158,10 +173,19 @@ function handleImportDatabase() {
             }
         }
         
-        // Import tiles (with position column)
+        // Import tiles (with position, visibility, and hyperlink columns)
         if (isset($data['tables']['tiles']) && is_array($data['tables']['tiles'])) {
-            $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", position, visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             foreach ($data['tables']['tiles'] as $tile) {
+                $visibility = $tile['visibility'] ?? 'public';
+                $allowedUsers = null;
+                if ($visibility === 'private' && isset($tile['allowed_users']) && $tile['allowed_users']) {
+                    $allowedUsers = is_string($tile['allowed_users']) ? $tile['allowed_users'] : json_encode($tile['allowed_users']);
+                }
+                $isHyperlink = isset($tile['is_hyperlink']) ? (int)$tile['is_hyperlink'] : 0;
+                $hyperlinkUrl = $tile['hyperlink_url'] ?? null;
+                $openInNewTab = isset($tile['open_in_new_tab']) ? (int)$tile['open_in_new_tab'] : 0;
+                
                 $stmt->execute([
                     $tile['id'] ?? '',
                     $tile['user_id'] ?? null,
@@ -172,18 +196,42 @@ function handleImportDatabase() {
                     $tile['theme_color'] ?? null,
                     $tile['group'] ?? null,
                     isset($tile['position']) ? (int)$tile['position'] : 0, // Default to 0 for backward compatibility
+                    $visibility,
+                    $allowedUsers,
+                    $isHyperlink,
+                    $hyperlinkUrl,
+                    $openInNewTab,
                     $tile['created_at'] ?? time()
                 ]);
             }
         }
         
+        // Import tabs (if exists in export)
+        if (isset($data['tables']['tabs']) && is_array($data['tables']['tabs'])) {
+            try {
+                $stmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
+                foreach ($data['tables']['tabs'] as $tab) {
+                    $stmt->execute([
+                        $tab['id'] ?? '',
+                        $tab['tile_id'] ?? '',
+                        $tab['title'] ?? 'New Tab',
+                        isset($tab['position']) ? (int)$tab['position'] : 0
+                    ]);
+                }
+            } catch (PDOException $e) {
+                // Table might not exist, but that's okay - it will be created on next init
+                error_log('Warning: Could not import tabs: ' . $e->getMessage());
+            }
+        }
+        
         // Import sections
         if (isset($data['tables']['sections']) && is_array($data['tables']['sections'])) {
-            $stmt = $db->prepare('INSERT INTO sections (id, tile_id, title) VALUES (?, ?, ?)');
+            $stmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title) VALUES (?, ?, ?, ?)');
             foreach ($data['tables']['sections'] as $section) {
                 $stmt->execute([
                     $section['id'] ?? '',
                     $section['tile_id'] ?? '',
+                    $section['tab_id'] ?? null,
                     $section['title'] ?? null
                 ]);
             }
@@ -271,6 +319,7 @@ function handleImportDatabase() {
             'imported' => [
                 'users' => count($data['tables']['users'] ?? []),
                 'tiles' => count($data['tables']['tiles'] ?? []),
+                'tabs' => count($data['tables']['tabs'] ?? []),
                 'sections' => count($data['tables']['sections'] ?? []),
                 'links' => count($data['tables']['links'] ?? []),
                 'settings' => count($data['tables']['settings'] ?? []),

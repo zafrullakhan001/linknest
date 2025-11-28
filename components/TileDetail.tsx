@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Tile, Link, LinkSection, LinkVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, POPULAR_EMOJIS } from '../types';
+import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, POPULAR_EMOJIS } from '../types';
 import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
 import { authService, UserListItem } from '../services/authService';
 import { exportTileToFile } from '../services/spaceTransferService';
@@ -29,9 +29,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
   const [editHtml, setEditHtml] = useState(tile.htmlContent || '');
   const [editEmoji, setEditEmoji] = useState(tile.emoji);
   const [editColor, setEditColor] = useState<ThemeColor>(tile.themeColor);
+  const [editVisibility, setEditVisibility] = useState<TileVisibility>(tile.visibility || 'public');
+  const [editAllowedUsers, setEditAllowedUsers] = useState<number[]>(tile.allowedUsers || []);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showTileUserSelector, setShowTileUserSelector] = useState(false);
   
-  // Sections State
+  // Tabs State (new structure)
+  const [editTabs, setEditTabs] = useState<Tab[]>(tile.tabs || []);
+  // Sections State (for backward compatibility)
   const [editSections, setEditSections] = useState<LinkSection[]>(tile.sections || []);
 
   // Temporary State for Adding Links (keyed by section ID)
@@ -49,6 +54,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
   // View State
   const [searchTerm, setSearchTerm] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [selectedTabId, setSelectedTabId] = useState<string | null>(null);
   
   // Health Check State
   const [linkHealth, setLinkHealth] = useState<LinkHealthMap>({});
@@ -64,11 +70,28 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     setEditHtml(tile.htmlContent || '');
     setEditEmoji(tile.emoji);
     setEditColor(tile.themeColor);
-    setEditSections(tile.sections || []);
+    
+    // Use tabs if available, otherwise fall back to sections (backward compatibility)
+    if (tile.tabs && tile.tabs.length > 0) {
+      setEditTabs(tile.tabs);
+      // Flatten sections from tabs for backward compatibility
+      const allSections: LinkSection[] = [];
+      tile.tabs.forEach(tab => {
+        allSections.push(...tab.sections);
+      });
+      setEditSections(allSections);
+    } else {
+      setEditTabs([]);
+      setEditSections(tile.sections || []);
+    }
+    
+    setEditVisibility(tile.visibility || 'public');
+    setEditAllowedUsers(tile.allowedUsers || []);
     
     // Load health status from tile data
     const healthMap: LinkHealthMap = {};
-    tile.sections?.forEach(section => {
+    const sectionsToCheck = tile.tabs ? tile.tabs.flatMap(tab => tab.sections) : (tile.sections || []);
+    sectionsToCheck.forEach(section => {
       section.links?.forEach(link => {
         if (link.health) {
           healthMap[link.id] = link.health;
@@ -110,6 +133,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
   }, [isEditing, isAuthenticated]);
 
   const handleSaveChanges = () => {
+    // Use tabs if we have them, otherwise use sections (backward compatibility)
     const updatedTile: Tile = {
       ...tile,
       title: editTitle,
@@ -117,7 +141,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
       htmlContent: editHtml,
       emoji: editEmoji,
       themeColor: editColor,
-      sections: editSections,
+      tabs: editTabs.length > 0 ? editTabs : undefined,
+      sections: editTabs.length > 0 ? undefined : editSections, // Only include sections if no tabs
+      visibility: editVisibility,
+      allowedUsers: editVisibility === 'private' ? editAllowedUsers : undefined,
     };
     
     const updatedTiles = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
@@ -125,31 +152,101 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     setIsEditing(false);
   };
 
-  // Section Management
-  const handleAddSection = () => {
-      setEditSections([...editSections, { id: generateId(), title: 'New Section', links: [] }]);
-  };
-
-  const handleRemoveSection = (sectionId: string) => {
-      if (confirm('Delete this section and all its links?')) {
-          setEditSections(editSections.filter(s => s.id !== sectionId));
+  // Tab Management
+  const handleAddTab = () => {
+      const newTab: Tab = {
+          id: generateId(),
+          title: 'New Tab',
+          position: editTabs.length,
+          sections: []
+      };
+      setEditTabs([...editTabs, newTab]);
+      
+      // If this is the first tab and we have sections, migrate them to this tab
+      if (editTabs.length === 0 && editSections.length > 0) {
+          newTab.sections = [...editSections];
+          setEditTabs([newTab]);
+          setEditSections([]);
       }
   };
 
-  const handleUpdateSectionTitle = (sectionId: string, newTitle: string) => {
-      setEditSections(editSections.map(s => s.id === sectionId ? { ...s, title: newTitle } : s));
+  const handleRemoveTab = (tabId: string) => {
+      if (confirm('Delete this tab and all its sections and links?')) {
+          setEditTabs(editTabs.filter(t => t.id !== tabId).map((t, idx) => ({ ...t, position: idx })));
+      }
   };
 
-  const handleMoveSection = (sectionId: string, direction: 'up' | 'down') => {
-      const index = editSections.findIndex(s => s.id === sectionId);
+  const handleUpdateTabTitle = (tabId: string, newTitle: string) => {
+      setEditTabs(editTabs.map(t => t.id === tabId ? { ...t, title: newTitle } : t));
+  };
+
+  const handleMoveTab = (tabId: string, direction: 'up' | 'down') => {
+      const index = editTabs.findIndex(t => t.id === tabId);
       if (index === -1) return;
       
       const newIndex = direction === 'up' ? index - 1 : index + 1;
-      if (newIndex < 0 || newIndex >= editSections.length) return;
+      if (newIndex < 0 || newIndex >= editTabs.length) return;
       
-      const newSections = [...editSections];
-      [newSections[index], newSections[newIndex]] = [newSections[newIndex], newSections[index]];
-      setEditSections(newSections);
+      const newTabs = [...editTabs];
+      [newTabs[index], newTabs[newIndex]] = [newTabs[newIndex], newTabs[index]];
+      // Update positions
+      newTabs.forEach((t, idx) => { t.position = idx; });
+      setEditTabs(newTabs);
+  };
+
+  // Section Management (within tabs)
+  const handleAddSection = (tabId: string) => {
+      setEditTabs(editTabs.map(tab => {
+          if (tab.id === tabId) {
+              return {
+                  ...tab,
+                  sections: [...tab.sections, { id: generateId(), title: 'New Section', links: [] }]
+              };
+          }
+          return tab;
+      }));
+  };
+
+  const handleRemoveSection = (tabId: string, sectionId: string) => {
+      if (confirm('Delete this section and all its links?')) {
+          setEditTabs(editTabs.map(tab => {
+              if (tab.id === tabId) {
+                  return {
+                      ...tab,
+                      sections: tab.sections.filter(s => s.id !== sectionId)
+                  };
+              }
+              return tab;
+          }));
+      }
+  };
+
+  const handleUpdateSectionTitle = (tabId: string, sectionId: string, newTitle: string) => {
+      setEditTabs(editTabs.map(tab => {
+          if (tab.id === tabId) {
+              return {
+                  ...tab,
+                  sections: tab.sections.map(s => s.id === sectionId ? { ...s, title: newTitle } : s)
+              };
+          }
+          return tab;
+      }));
+  };
+
+  const handleMoveSection = (tabId: string, sectionId: string, direction: 'up' | 'down') => {
+      setEditTabs(editTabs.map(tab => {
+          if (tab.id !== tabId) return tab;
+          
+          const index = tab.sections.findIndex(s => s.id === sectionId);
+          if (index === -1) return tab;
+          
+          const newIndex = direction === 'up' ? index - 1 : index + 1;
+          if (newIndex < 0 || newIndex >= tab.sections.length) return tab;
+          
+          const newSections = [...tab.sections];
+          [newSections[index], newSections[newIndex]] = [newSections[newIndex], newSections[index]];
+          return { ...tab, sections: newSections };
+      }));
   };
 
   // Link Management
@@ -171,7 +268,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
       updateNewLinkState(sectionId, 'allowedUsers', newUsers);
   };
 
-  const handleAddLinkToSection = (sectionId: string) => {
+  const handleAddLinkToSection = (tabId: string, sectionId: string) => {
       const state = newLinkState[sectionId];
       if (!state || !state.label.trim() || !state.url.trim()) return;
 
@@ -185,25 +282,63 @@ export const TileDetail: React.FC<TileDetailProps> = ({
           tooltip: state.tooltip?.trim() || undefined
       };
 
-      setEditSections(editSections.map(s => {
-          if (s.id === sectionId) {
-              return { ...s, links: [...s.links, newLink] };
-          }
-          return s;
-      }));
+      if (editTabs.length > 0) {
+          // New structure with tabs
+          setEditTabs(editTabs.map(tab => {
+              if (tab.id === tabId) {
+                  return {
+                      ...tab,
+                      sections: tab.sections.map(s => {
+                          if (s.id === sectionId) {
+                              return { ...s, links: [...s.links, newLink] };
+                          }
+                          return s;
+                      })
+                  };
+              }
+              return tab;
+          }));
+      } else {
+          // Backward compatibility: sections without tabs
+          setEditSections(editSections.map(s => {
+              if (s.id === sectionId) {
+                  return { ...s, links: [...s.links, newLink] };
+              }
+              return s;
+          }));
+      }
 
       // Clear form
       setNewLinkState(prev => ({ ...prev, [sectionId]: { label: '', url: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '' } }));
       setShowUserPicker(prev => ({ ...prev, [sectionId]: false }));
   };
 
-  const handleRemoveLinkFromSection = (sectionId: string, linkId: string) => {
-      setEditSections(editSections.map(s => {
-          if (s.id === sectionId) {
-              return { ...s, links: s.links.filter(l => l.id !== linkId) };
-          }
-          return s;
-      }));
+  const handleRemoveLinkFromSection = (tabId: string, sectionId: string, linkId: string) => {
+      if (editTabs.length > 0) {
+          // New structure with tabs
+          setEditTabs(editTabs.map(tab => {
+              if (tab.id === tabId) {
+                  return {
+                      ...tab,
+                      sections: tab.sections.map(s => {
+                          if (s.id === sectionId) {
+                              return { ...s, links: s.links.filter(l => l.id !== linkId) };
+                          }
+                          return s;
+                      })
+                  };
+              }
+              return tab;
+          }));
+      } else {
+          // Backward compatibility: sections without tabs
+          setEditSections(editSections.map(s => {
+              if (s.id === sectionId) {
+                  return { ...s, links: s.links.filter(l => l.id !== linkId) };
+              }
+              return s;
+          }));
+      }
   };
 
   const handleStartEditLink = (link: Link) => {
@@ -226,30 +361,62 @@ export const TileDetail: React.FC<TileDetailProps> = ({
       setEditLinkState({});
   };
 
-  const handleUpdateLink = (sectionId: string, linkId: string) => {
+  const handleUpdateLink = (tabId: string, sectionId: string, linkId: string) => {
       const state = editLinkState[linkId];
       if (!state || !state.label.trim() || !state.url.trim()) return;
 
-      setEditSections(editSections.map(s => {
-          if (s.id !== sectionId) return s;
-          
-          return {
-              ...s,
-              links: s.links.map(l => 
-                  l.id === linkId 
-                      ? { 
-                          ...l, 
-                          label: state.label, 
-                          url: state.url.startsWith('http') ? state.url : `https://${state.url}`,
-                          visibility: state.visibility || 'public',
-                          allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
-                          notes: state.notes?.trim() || undefined,
-                          tooltip: state.tooltip?.trim() || undefined
-                      }
-                      : l
-              )
-          };
-      }));
+      if (editTabs.length > 0) {
+          // New structure with tabs
+          setEditTabs(editTabs.map(tab => {
+              if (tab.id !== tabId) return tab;
+              
+              return {
+                  ...tab,
+                  sections: tab.sections.map(s => {
+                      if (s.id !== sectionId) return s;
+                      
+                      return {
+                          ...s,
+                          links: s.links.map(l => 
+                              l.id === linkId 
+                                  ? { 
+                                      ...l, 
+                                      label: state.label, 
+                                      url: state.url.startsWith('http') ? state.url : `https://${state.url}`,
+                                      visibility: state.visibility || 'public',
+                                      allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
+                                      notes: state.notes?.trim() || undefined,
+                                      tooltip: state.tooltip?.trim() || undefined
+                                  }
+                                  : l
+                          )
+                      };
+                  })
+              };
+          }));
+      } else {
+          // Backward compatibility: sections without tabs
+          setEditSections(editSections.map(s => {
+              if (s.id !== sectionId) return s;
+              
+              return {
+                  ...s,
+                  links: s.links.map(l => 
+                      l.id === linkId 
+                          ? { 
+                              ...l, 
+                              label: state.label, 
+                              url: state.url.startsWith('http') ? state.url : `https://${state.url}`,
+                              visibility: state.visibility || 'public',
+                              allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
+                              notes: state.notes?.trim() || undefined,
+                              tooltip: state.tooltip?.trim() || undefined
+                          }
+                          : l
+                  )
+              };
+          }));
+      }
 
       setEditingLinkId(null);
       setEditLinkState({});
@@ -271,20 +438,45 @@ export const TileDetail: React.FC<TileDetailProps> = ({
       updateEditLinkState(linkId, 'allowedUsers', newUsers);
   };
 
-  const handleMoveLink = (sectionId: string, linkId: string, direction: 'up' | 'down') => {
-      setEditSections(editSections.map(s => {
-          if (s.id !== sectionId) return s;
-          
-          const index = s.links.findIndex(l => l.id === linkId);
-          if (index === -1) return s;
-          
-          const newIndex = direction === 'up' ? index - 1 : index + 1;
-          if (newIndex < 0 || newIndex >= s.links.length) return s;
-          
-          const newLinks = [...s.links];
-          [newLinks[index], newLinks[newIndex]] = [newLinks[newIndex], newLinks[index]];
-          return { ...s, links: newLinks };
-      }));
+  const handleMoveLink = (tabId: string, sectionId: string, linkId: string, direction: 'up' | 'down') => {
+      if (editTabs.length > 0) {
+          // New structure with tabs
+          setEditTabs(editTabs.map(tab => {
+              if (tab.id !== tabId) return tab;
+              
+              return {
+                  ...tab,
+                  sections: tab.sections.map(s => {
+                      if (s.id !== sectionId) return s;
+                      
+                      const index = s.links.findIndex(l => l.id === linkId);
+                      if (index === -1) return s;
+                      
+                      const newIndex = direction === 'up' ? index - 1 : index + 1;
+                      if (newIndex < 0 || newIndex >= s.links.length) return s;
+                      
+                      const newLinks = [...s.links];
+                      [newLinks[index], newLinks[newIndex]] = [newLinks[newIndex], newLinks[index]];
+                      return { ...s, links: newLinks };
+                  })
+              };
+          }));
+      } else {
+          // Backward compatibility: sections without tabs
+          setEditSections(editSections.map(s => {
+              if (s.id !== sectionId) return s;
+              
+              const index = s.links.findIndex(l => l.id === linkId);
+              if (index === -1) return s;
+              
+              const newIndex = direction === 'up' ? index - 1 : index + 1;
+              if (newIndex < 0 || newIndex >= s.links.length) return s;
+              
+              const newLinks = [...s.links];
+              [newLinks[index], newLinks[newIndex]] = [newLinks[newIndex], newLinks[index]];
+              return { ...s, links: newLinks };
+          }));
+      }
   };
 
   const handleCopy = async (e: React.MouseEvent, text: string, id: string) => {
@@ -382,10 +574,46 @@ export const TileDetail: React.FC<TileDetailProps> = ({
   };
 
   // Filter links logic for View Mode
+  // Get sections from tabs or directly (backward compatibility)
+  const getAllSections = () => {
+      if (tile.tabs && tile.tabs.length > 0) {
+          // Flatten sections from all tabs
+          return tile.tabs.flatMap(tab => tab.sections);
+      }
+      return tile.sections || [];
+  };
+
+  // Initialize selected tab to first tab if tabs exist
+  useEffect(() => {
+      if (tile.tabs && tile.tabs.length > 0 && !selectedTabId) {
+          // Sort tabs by position and select the first one
+          const sortedTabs = [...tile.tabs].sort((a, b) => (a.position || 0) - (b.position || 0));
+          if (sortedTabs.length > 0) {
+              setSelectedTabId(sortedTabs[0].id);
+          }
+      }
+  }, [tile.tabs, selectedTabId]);
+
   const getFilteredSections = () => {
-      if (!searchTerm) return tile.sections;
+      let sectionsToFilter = [];
       
-      return tile.sections.map(section => ({
+      // If tabs exist, show sections from selected tab (or first tab if none selected yet)
+      if (tile.tabs && tile.tabs.length > 0) {
+          const sortedTabs = [...tile.tabs].sort((a, b) => (a.position || 0) - (b.position || 0));
+          const tabIdToUse = selectedTabId || (sortedTabs.length > 0 ? sortedTabs[0].id : null);
+          if (tabIdToUse) {
+              const selectedTab = tile.tabs.find(tab => tab.id === tabIdToUse);
+              sectionsToFilter = selectedTab ? selectedTab.sections : [];
+          }
+      } else {
+          // Otherwise, get all sections (backward compatibility - no tabs)
+          sectionsToFilter = getAllSections();
+      }
+      
+      // Apply search filter if search term exists
+      if (!searchTerm) return sectionsToFilter;
+      
+      return sectionsToFilter.map(section => ({
           ...section,
           links: section.links.filter(link => 
             link.label.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -395,7 +623,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
   };
 
   const filteredSections = getFilteredSections();
-  const totalLinks = tile.sections?.reduce((acc, s) => acc + s.links.length, 0) || 0;
+  const allSections = getAllSections();
+  const totalLinks = allSections?.reduce((acc, s) => acc + (s.links?.length || 0), 0) || 0;
+  
+  // Get tabs for view mode (for tab navigation) - sort by position
+  const displayTabs = tile.tabs && tile.tabs.length > 0 
+      ? [...tile.tabs].sort((a, b) => (a.position || 0) - (b.position || 0))
+      : null;
 
 
   // VIEW MODE
@@ -537,6 +771,70 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             className="prose prose-sm max-w-none dark:prose-invert"
                             dangerouslySetInnerHTML={{ __html: tile.htmlContent }} 
                         />
+                    </div>
+                 )}
+
+                 {/* Tab Navigation */}
+                 {displayTabs && displayTabs.length > 0 && (
+                    <div className="border-b border-slate-200 dark:border-slate-700 -mx-4 px-4 overflow-x-auto">
+                        <div className="flex gap-1 min-w-max">
+                            {displayTabs.map((tab) => {
+                                const isActive = selectedTabId === tab.id;
+                                const tabSections = tab.sections || [];
+                                const tabLinksCount = tabSections.reduce((acc, s) => acc + (s.links?.length || 0), 0);
+                                
+                                // Get border color for active tab
+                                const getBorderColor = () => {
+                                    const colorMap: Record<string, string> = {
+                                        blue: '#3b82f6',
+                                        emerald: '#10b981',
+                                        violet: '#8b5cf6',
+                                        amber: '#f59e0b',
+                                        rose: '#f43f5e',
+                                        cyan: '#06b6d4',
+                                        fuchsia: '#d946ef',
+                                        orange: '#f97316',
+                                        red: '#ef4444',
+                                        indigo: '#6366f1',
+                                        lime: '#84cc16',
+                                        sky: '#0ea5e9',
+                                        slate: '#64748b',
+                                        teal: '#14b8a6',
+                                        pink: '#ec4899',
+                                        purple: '#a855f7',
+                                        yellow: '#eab308',
+                                        zinc: '#71717a'
+                                    };
+                                    return colorMap[tile.themeColor] || '#3b82f6';
+                                };
+                                
+                                return (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => setSelectedTabId(tab.id)}
+                                        className={`relative px-4 py-3 text-sm font-medium transition-all duration-200 whitespace-nowrap border-b-2 ${
+                                            isActive 
+                                                ? `${styles.text} font-semibold` 
+                                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 border-transparent hover:border-slate-300 dark:hover:border-slate-600'
+                                        }`}
+                                        style={isActive ? { borderBottomColor: getBorderColor() } : undefined}
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            {tab.title}
+                                            {tabLinksCount > 0 && (
+                                                <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
+                                                    isActive 
+                                                        ? styles.iconBg
+                                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                                                }`}>
+                                                    {tabLinksCount}
+                                                </span>
+                                            )}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
                     </div>
                  )}
 
@@ -685,7 +983,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
           </button>
           <button
             onClick={handleSaveChanges}
-            className="bg-brand-600 hover:bg-brand-500 text-white px-6 py-2 rounded-lg font-bold transition-all shadow-lg shadow-brand-500/20"
+            disabled={editVisibility === 'private' && editAllowedUsers.length === 0}
+            className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg font-bold transition-all shadow-lg shadow-brand-500/20"
           >
             Save Changes
           </button>
@@ -787,34 +1086,224 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                       placeholder="<p>Welcome to my page!</p>"
                   />
                </div>
+
+              {/* Visibility Settings */}
+              <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Visibility</label>
+                  <div className="space-y-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                              type="radio"
+                              name="tileVisibility"
+                              value="public"
+                              checked={editVisibility === 'public'}
+                              onChange={(e) => {
+                                  setEditVisibility(e.target.value as TileVisibility);
+                                  setShowTileUserSelector(false);
+                              }}
+                              className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                          />
+                          <span className="text-sm text-slate-700 dark:text-slate-300">Public - Available for everyone (guests and logged in users)</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                              type="radio"
+                              name="tileVisibility"
+                              value="authenticated"
+                              checked={editVisibility === 'authenticated'}
+                              onChange={(e) => {
+                                  setEditVisibility(e.target.value as TileVisibility);
+                                  setShowTileUserSelector(false);
+                              }}
+                              className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                          />
+                          <span className="text-sm text-slate-700 dark:text-slate-300">Authenticated - Available for logged in users only</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                              type="radio"
+                              name="tileVisibility"
+                              value="private"
+                              checked={editVisibility === 'private'}
+                              onChange={(e) => {
+                                  setEditVisibility(e.target.value as TileVisibility);
+                                  setShowTileUserSelector(true);
+                              }}
+                              className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                          />
+                          <span className="text-sm text-slate-700 dark:text-slate-300">Private - Available for specific users only</span>
+                      </label>
+                  </div>
+
+                  {/* User Selector for Private Visibility */}
+                  {editVisibility === 'private' && isAuthenticated && (
+                      <div className="mt-3">
+                          <div className="flex items-center justify-between mb-1.5">
+                              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Select Users</label>
+                              <button
+                                  type="button"
+                                  onClick={() => setShowTileUserSelector(!showTileUserSelector)}
+                                  className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                              >
+                                  {showTileUserSelector ? 'Hide' : 'Show'} Users
+                              </button>
+                          </div>
+                          {editAllowedUsers.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 mb-2">
+                                  {editAllowedUsers.map(userId => {
+                                      const user = usersList.find(u => u.id === userId);
+                                      return (
+                                          <span
+                                              key={userId}
+                                              className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 rounded text-xs"
+                                          >
+                                              {user?.username || `User ${userId}`}
+                                              <button
+                                                  type="button"
+                                                  onClick={() => setEditAllowedUsers(editAllowedUsers.filter(id => id !== userId))}
+                                                  className="hover:text-red-600 dark:hover:text-red-400"
+                                              >
+                                                  ×
+                                              </button>
+                                          </span>
+                                      );
+                                  })}
+                              </div>
+                          )}
+                          {showTileUserSelector && (
+                              <div className="max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
+                                  {loadingUsers ? (
+                                      <div className="text-xs text-slate-500 text-center py-2">Loading users...</div>
+                                  ) : usersList.length === 0 ? (
+                                      <div className="text-xs text-slate-500 text-center py-2">No users available</div>
+                                  ) : (
+                                      usersList.map(user => (
+                                          <label
+                                              key={user.id}
+                                              className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700 rounded cursor-pointer"
+                                          >
+                                              <input
+                                                  type="checkbox"
+                                                  checked={editAllowedUsers.includes(user.id)}
+                                                  onChange={(e) => {
+                                                      if (e.target.checked) {
+                                                          setEditAllowedUsers([...editAllowedUsers, user.id]);
+                                                      } else {
+                                                          setEditAllowedUsers(editAllowedUsers.filter(id => id !== user.id));
+                                                      }
+                                                  }}
+                                                  className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                                              />
+                                              <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
+                                              {user.auth_source && user.auth_source !== 'local' && (
+                                                  <span className="px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[10px] font-semibold">
+                                                      {user.auth_source.toUpperCase()}
+                                                  </span>
+                                              )}
+                                          </label>
+                                      ))
+                                  )}
+                              </div>
+                          )}
+                          {editVisibility === 'private' && editAllowedUsers.length === 0 && (
+                              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Please select at least one user for private spaces</p>
+                          )}
+                      </div>
+                  )}
+              </div>
            </div>
         </div>
 
-        {/* RIGHT COLUMN: Section Manager */}
+        {/* RIGHT COLUMN: Tab and Section Manager */}
         <div className="lg:col-span-2 space-y-6">
             <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold text-slate-800 dark:text-white">Manage Sections</h3>
-                <button
-                    onClick={handleAddSection}
-                    className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg text-sm font-medium border border-slate-200 dark:border-slate-700 transition-colors flex items-center gap-2 shadow-sm"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                    </svg>
-                    Add Section
-                </button>
+                <h3 className="text-lg font-bold text-slate-800 dark:text-white">Manage Tabs & Sections</h3>
+                <div className="flex gap-2">
+                    <button
+                        onClick={handleAddTab}
+                        className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg text-sm font-medium border border-slate-200 dark:border-slate-700 transition-colors flex items-center gap-2 shadow-sm"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                        Add Tab
+                    </button>
+                </div>
             </div>
 
             <div className="space-y-6">
-                {editSections.map((section, index) => (
-                    <div key={section.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm dark:shadow-black/20">
+                {/* Render tabs if available, otherwise fall back to sections (backward compatibility) */}
+                {editTabs.length > 0 ? (
+                    editTabs.map((tab, tabIndex) => (
+                        <div key={tab.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm dark:shadow-black/20">
+                            {/* Tab Header */}
+                            <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900/50 dark:to-slate-800/50 flex gap-2 items-center">
+                                {/* Tab Reorder Buttons */}
+                                <div className="flex flex-col gap-0.5">
+                                    <button
+                                        onClick={() => handleMoveTab(tab.id, 'up')}
+                                        disabled={tabIndex === 0}
+                                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-1"
+                                        title="Move Tab Up"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
+                                        </svg>
+                                    </button>
+                                    <button
+                                        onClick={() => handleMoveTab(tab.id, 'down')}
+                                        disabled={tabIndex === editTabs.length - 1}
+                                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-1"
+                                        title="Move Tab Down"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div className="text-slate-400 dark:text-slate-500 font-mono text-sm">Tab #{tabIndex + 1}</div>
+                                <input
+                                    type="text"
+                                    value={tab.title}
+                                    onChange={(e) => handleUpdateTabTitle(tab.id, e.target.value)}
+                                    placeholder="Tab Title (e.g. Resources)"
+                                    className="flex-1 bg-transparent border-none text-slate-900 dark:text-white font-bold text-lg focus:ring-0 placeholder-slate-400"
+                                />
+                                <button
+                                    onClick={() => handleRemoveTab(tab.id)}
+                                    className="text-slate-400 hover:text-red-500 p-2"
+                                    title="Delete Tab"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            {/* Tab Sections */}
+                            <div className="p-4 space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Sections in this tab</h4>
+                                    <button
+                                        onClick={() => handleAddSection(tab.id)}
+                                        className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-300 dark:border-slate-700 transition-colors flex items-center gap-2"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                        </svg>
+                                        Add Section
+                                    </button>
+                                </div>
+                                
+                                {tab.sections.map((section, sectionIndex) => (
+                                    <div key={section.id} className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
                         {/* Section Header */}
-                        <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 flex gap-2 items-center">
+                        <div className="p-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex gap-2 items-center">
                             {/* Reorder Buttons */}
                             <div className="flex flex-col gap-0.5">
                                 <button
-                                    onClick={() => handleMoveSection(section.id, 'up')}
-                                    disabled={index === 0}
+                                    onClick={() => handleMoveSection(tab.id, section.id, 'up')}
+                                    disabled={sectionIndex === 0}
                                     className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-1"
                                     title="Move Up"
                                 >
@@ -823,8 +1312,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     </svg>
                                 </button>
                                 <button
-                                    onClick={() => handleMoveSection(section.id, 'down')}
-                                    disabled={index === editSections.length - 1}
+                                    onClick={() => handleMoveSection(tab.id, section.id, 'down')}
+                                    disabled={sectionIndex === tab.sections.length - 1}
                                     className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-1"
                                     title="Move Down"
                                 >
@@ -833,16 +1322,16 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     </svg>
                                 </button>
                             </div>
-                            <div className="text-slate-400 dark:text-slate-500 font-mono text-sm">#{index + 1}</div>
+                            <div className="text-slate-400 dark:text-slate-500 font-mono text-xs">#{sectionIndex + 1}</div>
                             <input
                                 type="text"
                                 value={section.title}
-                                onChange={(e) => handleUpdateSectionTitle(section.id, e.target.value)}
+                                onChange={(e) => handleUpdateSectionTitle(tab.id, section.id, e.target.value)}
                                 placeholder="Section Header (e.g. Resources)"
-                                className="flex-1 bg-transparent border-none text-slate-900 dark:text-white font-bold focus:ring-0 placeholder-slate-400"
+                                className="flex-1 bg-transparent border-none text-slate-900 dark:text-white font-semibold focus:ring-0 placeholder-slate-400"
                             />
                             <button
-                                onClick={() => handleRemoveSection(section.id)}
+                                onClick={() => handleRemoveSection(tab.id, section.id)}
                                 className="text-slate-400 hover:text-red-500 p-2"
                                 title="Delete Section"
                             >
@@ -987,7 +1476,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     Cancel
                                                 </button>
                                                 <button
-                                                    onClick={() => handleUpdateLink(section.id, link.id)}
+                                                    onClick={() => handleUpdateLink(tab.id, section.id, link.id)}
                                                     disabled={!editLinkState[link.id]?.label?.trim() || !editLinkState[link.id]?.url?.trim()}
                                                     className="px-3 py-1.5 text-sm bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded transition-colors"
                                                 >
@@ -1001,7 +1490,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             {/* Link Reorder Buttons */}
                                             <div className="flex flex-col gap-0.5">
                                                 <button
-                                                    onClick={() => handleMoveLink(section.id, link.id, 'up')}
+                                                    onClick={() => handleMoveLink(tab.id, section.id, link.id, 'up')}
                                                     disabled={linkIndex === 0}
                                                     className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-0.5"
                                                     title="Move Up"
@@ -1011,7 +1500,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     </svg>
                                                 </button>
                                                 <button
-                                                    onClick={() => handleMoveLink(section.id, link.id, 'down')}
+                                                    onClick={() => handleMoveLink(tab.id, section.id, link.id, 'down')}
                                                     disabled={linkIndex === section.links.length - 1}
                                                     className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-0.5"
                                                     title="Move Down"
@@ -1048,7 +1537,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     </svg>
                                                 </button>
                                                 <button
-                                                    onClick={() => handleRemoveLinkFromSection(section.id, link.id)}
+                                                    onClick={() => handleRemoveLinkFromSection(tab.id, section.id, link.id)}
                                                     className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
                                                     title="Delete Link"
                                                 >
@@ -1080,7 +1569,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                          className="flex-1 min-w-0 bg-transparent border-b border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white px-2 py-1 focus:border-brand-500 focus:outline-none transition-colors font-mono"
                                      />
                                      <button
-                                        onClick={() => handleAddLinkToSection(section.id)}
+                                        onClick={() => handleAddLinkToSection(tab.id, section.id)}
                                         disabled={!newLinkState[section.id]?.label || !newLinkState[section.id]?.url}
                                         className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white p-2 rounded-md transition-colors"
                                      >
@@ -1192,12 +1681,60 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                  )}
                              </div>
                         </div>
-                    </div>
-                ))}
+                                    </div>
+                                ))}
+                                
+                                {tab.sections.length === 0 && (
+                                    <div className="text-center py-8 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl text-slate-500 text-sm">
+                                        <p>No sections in this tab. Click "Add Section" to get started.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ))
+                ) : (
+                    // Backward compatibility: Render sections without tabs
+                    editSections.map((section, index) => (
+                        <div key={section.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm dark:shadow-black/20">
+                            {/* Section Header */}
+                            <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 flex gap-2 items-center">
+                                <div className="text-slate-400 dark:text-slate-500 font-mono text-sm">#{index + 1}</div>
+                                <input
+                                    type="text"
+                                    value={section.title}
+                                    onChange={(e) => {
+                                        // For backward compatibility, update sections directly
+                                        const newSections = editSections.map(s => s.id === section.id ? { ...s, title: e.target.value } : s);
+                                        setEditSections(newSections);
+                                    }}
+                                    placeholder="Section Header (e.g. Resources)"
+                                    className="flex-1 bg-transparent border-none text-slate-900 dark:text-white font-bold focus:ring-0 placeholder-slate-400"
+                                />
+                                <button
+                                    onClick={() => {
+                                        if (confirm('Delete this section and all its links?')) {
+                                            setEditSections(editSections.filter(s => s.id !== section.id));
+                                        }
+                                    }}
+                                    className="text-slate-400 hover:text-red-500 p-2"
+                                    title="Delete Section"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <div className="p-4 bg-white dark:bg-slate-800">
+                                <p className="text-sm text-slate-500 dark:text-slate-400 italic mb-4">This section uses the old structure. Add a tab to use the new tab-based organization.</p>
+                                <p className="text-xs text-slate-400 dark:text-slate-600">Links: {section.links?.length || 0}</p>
+                            </div>
+                        </div>
+                    ))
+                )}
 
-                {editSections.length === 0 && (
+                {editTabs.length === 0 && editSections.length === 0 && (
                     <div className="text-center py-12 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl text-slate-500">
-                        <p>No sections yet. Click "Add Section" to get started.</p>
+                        <p>No tabs yet. Click "Add Tab" to get started.</p>
                     </div>
                 )}
             </div>

@@ -13,27 +13,32 @@ const transformTile = (apiTile: any): Tile => {
     themeColor: (apiTile.themeColor || 'blue') as any,
     group: apiTile.group || 'General',
     createdAt: apiTile.createdAt || Date.now(),
-    sections: apiTile.sections || []
+    tabs: apiTile.tabs || undefined, // Include tabs if present
+    sections: apiTile.sections || [], // Keep for backward compatibility
+    visibility: apiTile.visibility || 'public',
+    allowedUsers: apiTile.allowedUsers || undefined,
+    isFavorite: apiTile.isFavorite || false,
+    isHyperlink: apiTile.isHyperlink || false,
+    hyperlinkUrl: apiTile.hyperlinkUrl || undefined,
+    openInNewTab: apiTile.openInNewTab !== undefined ? apiTile.openInNewTab : undefined
   };
 };
 
 export const getTiles = async (): Promise<Tile[]> => {
-  try {
-    const response = await fetch(`${API_BASE}/tiles`, {
-      method: 'GET',
-      credentials: 'include'
-    });
+  const response = await fetch(`${API_BASE}/tiles`, {
+    method: 'GET',
+    credentials: 'include'
+  });
 
-    if (!response.ok) {
-      throw new Error('Failed to fetch tiles');
-    }
-
-    const apiTiles = await response.json();
-    return apiTiles.map(transformTile);
-  } catch (e) {
-    console.error("Failed to load tiles", e);
-    return [];
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: 'Failed to fetch tiles' }));
+    const error = new Error(errorData.error || 'Failed to fetch tiles') as any;
+    error.response = { status: response.status };
+    throw error;
   }
+
+  const apiTiles = await response.json();
+  return apiTiles.map(transformTile);
 };
 
 export const saveTiles = async (tiles: Tile[]): Promise<void> => {
@@ -216,6 +221,24 @@ export const bulkImportTiles = async (file: File): Promise<{
     return await response.json();
   } catch (e) {
     console.error("Failed to bulk import tiles", e);
+    throw e;
+  }
+};
+
+export const toggleFavorite = async (tileId: string): Promise<{ isFavorite: boolean }> => {
+  try {
+    const response = await fetch(`${API_BASE}/tiles/${tileId}/favorite`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to toggle favorite');
+    }
+
+    return await response.json();
+  } catch (e) {
+    console.error("Failed to toggle favorite", e);
     throw e;
   }
 };

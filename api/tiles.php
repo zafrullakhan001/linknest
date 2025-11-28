@@ -10,6 +10,8 @@ switch ($method) {
             handleGetTiles();
         } elseif (preg_match('#^/([^/]+)$#', $path, $matches)) {
             handleGetTile($matches[1]);
+        } elseif ($path === '/favorites' || $path === '/favorites/') {
+            handleGetFavorites();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -20,6 +22,8 @@ switch ($method) {
             handleCreateTile();
         } elseif ($path === '/bulk-import' || $path === '/bulk-import/') {
             handleBulkImport();
+        } elseif (preg_match('#^/([^/]+)/favorite$#', $path, $matches)) {
+            handleToggleFavorite($matches[1]);
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -49,6 +53,17 @@ function handleGetTiles() {
     $user = getAuthenticatedUser();
     $db = getDB();
     
+    // Check if guest access is enabled
+    $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'guest_access_enabled'");
+    $stmt->execute();
+    $guestAccessSetting = $stmt->fetchColumn();
+    $guestAccessEnabled = ($guestAccessSetting === null || $guestAccessSetting === '1'); // Default to enabled if not set
+    
+    // If guest access is disabled and user is not authenticated, require login
+    if (!$guestAccessEnabled && !$user) {
+        sendJSON(['error' => 'Authentication required. Guest access is disabled.'], 401);
+    }
+    
     // All users (authenticated and guests) see all tiles - shared public repository
     // Order ONLY by position - no secondary sorting to preserve exact saved order
     $stmt = $db->prepare('SELECT * FROM tiles ORDER BY position ASC');
@@ -60,6 +75,28 @@ function handleGetTiles() {
     $hasDuplicatePositions = false;
     
     while ($row = $stmt->fetch()) {
+        // Filter tiles based on visibility
+        $tileVisibility = $row['visibility'] ?? 'public';
+        $tileAllowedUsers = $row['allowed_users'] ? json_decode($row['allowed_users'], true) : [];
+        
+        // Check if tile should be visible to current user
+        // Admin users can see all tiles regardless of visibility
+        $isTileVisible = false;
+        if ($user && $user['is_admin']) {
+            $isTileVisible = true; // Admins see everything
+        } elseif ($tileVisibility === 'public') {
+            $isTileVisible = true; // Public tiles visible to everyone
+        } elseif ($tileVisibility === 'authenticated' && $user) {
+            $isTileVisible = true; // Authenticated tiles visible to logged-in users
+        } elseif ($tileVisibility === 'private' && $user) {
+            // Private tiles visible only to specific users
+            $isTileVisible = in_array($user['id'], $tileAllowedUsers);
+        }
+        
+        if (!$isTileVisible) {
+            continue; // Skip this tile
+        }
+        
         $position = (int)$row['position'];
         
         // Check for duplicate positions
@@ -67,6 +104,14 @@ function handleGetTiles() {
             $hasDuplicatePositions = true;
         }
         $positions[$position] = true;
+        
+        // Check if this tile is favorited by the current user
+        $isFavorite = false;
+        if ($user) {
+            $favStmt = $db->prepare('SELECT 1 FROM user_tile_favorites WHERE user_id = ? AND tile_id = ?');
+            $favStmt->execute([$user['id'], $row['id']]);
+            $isFavorite = $favStmt->fetch() !== false;
+        }
         
         $tile = [
             'id' => $row['id'],
@@ -77,12 +122,327 @@ function handleGetTiles() {
             'themeColor' => $row['theme_color'],
             'group' => $row['group'],
             'createdAt' => (int)$row['created_at'],
+            'visibility' => $tileVisibility,
+            'allowedUsers' => $tileAllowedUsers,
+            'isFavorite' => $isFavorite,
+            'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
+            'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
+            'openInNewTab' => isset($row['open_in_new_tab']) ? (bool)$row['open_in_new_tab'] : null,
+            'tabs' => []
+        ];
+        
+        // Get tabs for this tile
+        $tabStmt = $db->prepare('SELECT * FROM tabs WHERE tile_id = ? ORDER BY position ASC');
+        $tabStmt->execute([$row['id']]);
+        $tabs = [];
+        
+        while ($tabRow = $tabStmt->fetch()) {
+            $tab = [
+                'id' => $tabRow['id'],
+                'title' => $tabRow['title'],
+                'position' => (int)($tabRow['position'] ?? 0),
+                'sections' => []
+            ];
+            
+            // Get sections for this tab
+            $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tab_id = ? ORDER BY id');
+            $sectionStmt->execute([$tabRow['id']]);
+            
+            while ($sectionRow = $sectionStmt->fetch()) {
+                $section = [
+                    'id' => $sectionRow['id'],
+                    'title' => $sectionRow['title'],
+                    'links' => []
+                ];
+                
+                // Get links for this section with visibility filtering
+                $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
+                $linkStmt->execute([$sectionRow['id']]);
+                
+                while ($linkRow = $linkStmt->fetch()) {
+                    // Filter links based on visibility
+                    $visibility = $linkRow['visibility'] ?? 'public';
+                    $allowedUsers = $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [];
+                    
+                    // Check if link should be visible to current user
+                    // Admin users can see all links regardless of visibility
+                    $isVisible = false;
+                    if ($user && $user['is_admin']) {
+                        $isVisible = true; // Admins see everything
+                    } elseif ($visibility === 'public') {
+                        $isVisible = true; // Public links visible to everyone
+                    } elseif ($visibility === 'authenticated' && $user) {
+                        $isVisible = true; // Authenticated links visible to logged-in users
+                    } elseif ($visibility === 'private' && $user) {
+                        // Private links visible only to specific users
+                        $isVisible = in_array($user['id'], $allowedUsers);
+                    }
+                    
+                    if (!$isVisible) {
+                        continue; // Skip this link
+                    }
+                    
+                    $link = [
+                        'id' => $linkRow['id'],
+                        'label' => $linkRow['label'],
+                        'url' => $linkRow['url'],
+                        'visibility' => $visibility,
+                        'allowedUsers' => $allowedUsers,
+                        'notes' => $linkRow['notes'] ?? null,
+                        'tooltip' => $linkRow['tooltip'] ?? null
+                    ];
+                    
+                    // Include health data if available
+                    if (isset($linkRow['health_status'])) {
+                        $link['health'] = [
+                            'status' => $linkRow['health_status'] ?? 'unknown',
+                            'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,
+                            'error' => $linkRow['health_error'],
+                            'checkedAt' => $linkRow['health_checked_at'] ? (int)$linkRow['health_checked_at'] : null
+                        ];
+                    }
+                    
+                    $section['links'][] = $link;
+                }
+                
+                $tab['sections'][] = $section;
+            }
+            
+            $tabs[] = $tab;
+        }
+        
+        // If no tabs exist, check for legacy sections (backward compatibility)
+        if (empty($tabs)) {
+            $legacySectionStmt = $db->prepare('SELECT * FROM sections WHERE tile_id = ? AND (tab_id IS NULL OR tab_id = "")');
+            $legacySectionStmt->execute([$row['id']]);
+            
+            if ($legacySectionStmt->fetch()) {
+                $legacySectionStmt->execute([$row['id']]); // Re-execute to reset cursor
+                $allSections = [];
+                
+                while ($sectionRow = $legacySectionStmt->fetch()) {
+                    $section = [
+                        'id' => $sectionRow['id'],
+                        'title' => $sectionRow['title'],
+                        'links' => []
+                    ];
+                    
+                    $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
+                    $linkStmt->execute([$sectionRow['id']]);
+                    
+                    while ($linkRow = $linkStmt->fetch()) {
+                        $visibility = $linkRow['visibility'] ?? 'public';
+                        $allowedUsers = $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [];
+                        
+                        $isVisible = false;
+                        if ($user && $user['is_admin']) {
+                            $isVisible = true;
+                        } elseif ($visibility === 'public') {
+                            $isVisible = true;
+                        } elseif ($visibility === 'authenticated' && $user) {
+                            $isVisible = true;
+                        } elseif ($visibility === 'private' && $user) {
+                            $isVisible = in_array($user['id'], $allowedUsers);
+                        }
+                        
+                        if (!$isVisible) {
+                            continue;
+                        }
+                        
+                        $link = [
+                            'id' => $linkRow['id'],
+                            'label' => $linkRow['label'],
+                            'url' => $linkRow['url'],
+                            'visibility' => $visibility,
+                            'allowedUsers' => $allowedUsers,
+                            'notes' => $linkRow['notes'] ?? null,
+                            'tooltip' => $linkRow['tooltip'] ?? null
+                        ];
+                        
+                        if (isset($linkRow['health_status'])) {
+                            $link['health'] = [
+                                'status' => $linkRow['health_status'] ?? 'unknown',
+                                'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,
+                                'error' => $linkRow['health_error'],
+                                'checkedAt' => $linkRow['health_checked_at'] ? (int)$linkRow['health_checked_at'] : null
+                            ];
+                        }
+                        
+                        $section['links'][] = $link;
+                    }
+                    
+                    $allSections[] = $section;
+                }
+                
+                $tile['sections'] = $allSections;
+            }
+        }
+        
+        $tile['tabs'] = $tabs;
+        
+        // Backward compatibility: also include sections array for old clients
+        $allSections = [];
+        foreach ($tabs as $tab) {
+            $allSections = array_merge($allSections, $tab['sections']);
+        }
+        $tile['sections'] = $allSections;
+        
+        $tiles[] = $tile;
+        $tilesById[$row['id']] = $tile;
+    }
+    
+    // Normalize positions if there are duplicates or all positions are 0
+    // This ensures tiles always have unique, sequential positions
+    if (($hasDuplicatePositions || (count($positions) === 1 && isset($positions[0]))) && count($tiles) > 0) {
+        try {
+            $db->beginTransaction();
+            $updateStmt = $db->prepare('UPDATE tiles SET position = ? WHERE id = ?');
+            foreach ($tiles as $index => $tile) {
+                $updateStmt->execute([$index, $tile['id']]);
+            }
+            $db->commit();
+            error_log('Normalized tile positions: assigned sequential positions to ' . count($tiles) . ' tiles');
+            
+            // Reload tiles with updated positions
+            $stmt = $db->prepare('SELECT * FROM tiles ORDER BY position ASC');
+            $stmt->execute();
+            $tiles = [];
+            while ($row = $stmt->fetch()) {
+                // Check if this tile is favorited by the current user
+                $isFavorite = false;
+                if ($user) {
+                    $favStmt = $db->prepare('SELECT 1 FROM user_tile_favorites WHERE user_id = ? AND tile_id = ?');
+                    $favStmt->execute([$user['id'], $row['id']]);
+                    $isFavorite = $favStmt->fetch() !== false;
+                }
+                
+                // Reuse the tilesById data we already have instead of reloading
+                if (isset($tilesById[$row['id']])) {
+                    $tiles[] = $tilesById[$row['id']];
+                    continue;
+                }
+                
+                // If not found in cache, build from scratch (shouldn't happen, but fallback)
+                $tile = [
+                    'id' => $row['id'],
+                    'title' => $row['title'],
+                    'description' => $row['description'],
+                    'htmlContent' => $row['html_content'],
+                    'emoji' => $row['emoji'],
+                    'themeColor' => $row['theme_color'],
+                    'group' => $row['group'],
+                    'createdAt' => (int)$row['created_at'],
+                    'isFavorite' => $isFavorite,
+                    'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
+                    'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
+                    'openInNewTab' => isset($row['open_in_new_tab']) ? (bool)$row['open_in_new_tab'] : null,
+                    'tabs' => []
+                ];
+                
+                // Get tabs (simplified - just reuse data structure from above)
+                $tile['tabs'] = [];
+                $tile['sections'] = [];
+                $tiles[] = $tile;
+            }
+        } catch (PDOException $e) {
+            $db->rollBack();
+            error_log('Failed to normalize tile positions: ' . $e->getMessage());
+        }
+    }
+    
+    // We now rely on the tiles.position column for ordering.
+    // tile_arrangements is still written for compatibility, but not required for reading.
+    
+    sendJSON($tiles);
+}
+
+function handleGetTile($tileId) {
+    $user = getAuthenticatedUser();
+    $db = getDB();
+    
+    // Check if guest access is enabled
+    $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'guest_access_enabled'");
+    $stmt->execute();
+    $guestAccessSetting = $stmt->fetchColumn();
+    $guestAccessEnabled = ($guestAccessSetting === null || $guestAccessSetting === '1'); // Default to enabled if not set
+    
+    // If guest access is disabled and user is not authenticated, require login
+    if (!$guestAccessEnabled && !$user) {
+        sendJSON(['error' => 'Authentication required. Guest access is disabled.'], 401);
+    }
+    
+    $stmt = $db->prepare('SELECT * FROM tiles WHERE id = ?');
+    $stmt->execute([$tileId]);
+    $row = $stmt->fetch();
+    
+    if (!$row) {
+        sendJSON(['error' => 'Tile not found'], 404);
+    }
+    
+    // Filter tiles based on visibility
+    $tileVisibility = $row['visibility'] ?? 'public';
+    $tileAllowedUsers = $row['allowed_users'] ? json_decode($row['allowed_users'], true) : [];
+    
+    // Check if tile should be visible to current user
+    // Admin users can see all tiles regardless of visibility
+    $isTileVisible = false;
+    if ($user && $user['is_admin']) {
+        $isTileVisible = true; // Admins see everything
+    } elseif ($tileVisibility === 'public') {
+        $isTileVisible = true; // Public tiles visible to everyone
+    } elseif ($tileVisibility === 'authenticated' && $user) {
+        $isTileVisible = true; // Authenticated tiles visible to logged-in users
+    } elseif ($tileVisibility === 'private' && $user) {
+        // Private tiles visible only to specific users
+        $isTileVisible = in_array($user['id'], $tileAllowedUsers);
+    }
+    
+    if (!$isTileVisible) {
+        sendJSON(['error' => 'Tile not found'], 404);
+    }
+    
+    // Check if this tile is favorited by the current user
+    $isFavorite = false;
+    if ($user) {
+        $favStmt = $db->prepare('SELECT 1 FROM user_tile_favorites WHERE user_id = ? AND tile_id = ?');
+        $favStmt->execute([$user['id'], $row['id']]);
+        $isFavorite = $favStmt->fetch() !== false;
+    }
+    
+    $tile = [
+        'id' => $row['id'],
+        'title' => $row['title'],
+        'description' => $row['description'],
+        'htmlContent' => $row['html_content'],
+        'emoji' => $row['emoji'],
+        'themeColor' => $row['theme_color'],
+        'group' => $row['group'],
+        'createdAt' => (int)$row['created_at'],
+        'visibility' => $tileVisibility,
+        'allowedUsers' => $tileAllowedUsers,
+        'isFavorite' => $isFavorite,
+        'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
+        'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
+        'openInNewTab' => isset($row['open_in_new_tab']) ? (bool)$row['open_in_new_tab'] : null,
+        'tabs' => []
+    ];
+    
+    // Get tabs for this tile
+    $tabStmt = $db->prepare('SELECT * FROM tabs WHERE tile_id = ? ORDER BY position ASC');
+    $tabStmt->execute([$tileId]);
+    $tabs = [];
+    
+    while ($tabRow = $tabStmt->fetch()) {
+        $tab = [
+            'id' => $tabRow['id'],
+            'title' => $tabRow['title'],
+            'position' => (int)($tabRow['position'] ?? 0),
             'sections' => []
         ];
         
-        // Get sections for this tile
-        $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tile_id = ?');
-        $sectionStmt->execute([$row['id']]);
+        // Get sections for this tab
+        $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tab_id = ? ORDER BY id');
+        $sectionStmt->execute([$tabRow['id']]);
         
         while ($sectionRow = $sectionStmt->fetch()) {
             $section = [
@@ -91,7 +451,8 @@ function handleGetTiles() {
                 'links' => []
             ];
             
-            // Get links for this section with visibility filtering
+            // Get links with visibility filtering
+            $user = getAuthenticatedUser();
             $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
             $linkStmt->execute([$sectionRow['id']]);
             
@@ -106,16 +467,15 @@ function handleGetTiles() {
                 if ($user && $user['is_admin']) {
                     $isVisible = true; // Admins see everything
                 } elseif ($visibility === 'public') {
-                    $isVisible = true; // Public links visible to everyone
+                    $isVisible = true;
                 } elseif ($visibility === 'authenticated' && $user) {
-                    $isVisible = true; // Authenticated links visible to logged-in users
+                    $isVisible = true;
                 } elseif ($visibility === 'private' && $user) {
-                    // Private links visible only to specific users
                     $isVisible = in_array($user['id'], $allowedUsers);
                 }
                 
                 if (!$isVisible) {
-                    continue; // Skip this link
+                    continue;
                 }
                 
                 $link = [
@@ -141,190 +501,96 @@ function handleGetTiles() {
                 $section['links'][] = $link;
             }
             
-            $tile['sections'][] = $section;
+            $tab['sections'][] = $section;
         }
         
-        $tiles[] = $tile;
-        $tilesById[$row['id']] = $tile;
+        $tabs[] = $tab;
     }
     
-    // Normalize positions if there are duplicates or all positions are 0
-    // This ensures tiles always have unique, sequential positions
-    if (($hasDuplicatePositions || (count($positions) === 1 && isset($positions[0]))) && count($tiles) > 0) {
-        try {
-            $db->beginTransaction();
-            $updateStmt = $db->prepare('UPDATE tiles SET position = ? WHERE id = ?');
-            foreach ($tiles as $index => $tile) {
-                $updateStmt->execute([$index, $tile['id']]);
-            }
-            $db->commit();
-            error_log('Normalized tile positions: assigned sequential positions to ' . count($tiles) . ' tiles');
+    // If no tabs exist, check for legacy sections (backward compatibility)
+    if (empty($tabs)) {
+        $legacySectionStmt = $db->prepare('SELECT * FROM sections WHERE tile_id = ? AND (tab_id IS NULL OR tab_id = "")');
+        $legacySectionStmt->execute([$tileId]);
+        
+        // Create a default tab for legacy sections
+        if ($legacySectionStmt->fetch()) {
+            $legacySectionStmt->execute([$tileId]); // Re-execute to reset cursor
+            $defaultTab = [
+                'id' => 'default_' . $tileId,
+                'title' => 'Default',
+                'position' => 0,
+                'sections' => []
+            ];
             
-            // Reload tiles with updated positions
-            $stmt = $db->prepare('SELECT * FROM tiles ORDER BY position ASC');
-            $stmt->execute();
-            $tiles = [];
-            while ($row = $stmt->fetch()) {
-                $tile = [
-                    'id' => $row['id'],
-                    'title' => $row['title'],
-                    'description' => $row['description'],
-                    'htmlContent' => $row['html_content'],
-                    'emoji' => $row['emoji'],
-                    'themeColor' => $row['theme_color'],
-                    'group' => $row['group'],
-                    'createdAt' => (int)$row['created_at'],
-                    'sections' => []
+            while ($sectionRow = $legacySectionStmt->fetch()) {
+                $section = [
+                    'id' => $sectionRow['id'],
+                    'title' => $sectionRow['title'],
+                    'links' => []
                 ];
                 
-                // Get sections for this tile
-                $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tile_id = ?');
-                $sectionStmt->execute([$row['id']]);
+                $user = getAuthenticatedUser();
+                $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
+                $linkStmt->execute([$sectionRow['id']]);
                 
-                while ($sectionRow = $sectionStmt->fetch()) {
-                    $section = [
-                        'id' => $sectionRow['id'],
-                        'title' => $sectionRow['title'],
-                        'links' => []
+                while ($linkRow = $linkStmt->fetch()) {
+                    $visibility = $linkRow['visibility'] ?? 'public';
+                    $allowedUsers = $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [];
+                    
+                    $isVisible = false;
+                    if ($user && $user['is_admin']) {
+                        $isVisible = true;
+                    } elseif ($visibility === 'public') {
+                        $isVisible = true;
+                    } elseif ($visibility === 'authenticated' && $user) {
+                        $isVisible = true;
+                    } elseif ($visibility === 'private' && $user) {
+                        $isVisible = in_array($user['id'], $allowedUsers);
+                    }
+                    
+                    if (!$isVisible) {
+                        continue;
+                    }
+                    
+                    $link = [
+                        'id' => $linkRow['id'],
+                        'label' => $linkRow['label'],
+                        'url' => $linkRow['url'],
+                        'visibility' => $visibility,
+                        'allowedUsers' => $allowedUsers,
+                        'notes' => $linkRow['notes'] ?? null,
+                        'tooltip' => $linkRow['tooltip'] ?? null
                     ];
                     
-                    // Get links for this section with visibility filtering
-                    $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
-                    $linkStmt->execute([$sectionRow['id']]);
-                    
-                    while ($linkRow = $linkStmt->fetch()) {
-                        // Filter links based on visibility
-                        $visibility = $linkRow['visibility'] ?? 'public';
-                        $allowedUsers = $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [];
-                        
-                        // Check if link should be visible to current user
-                        // Admin users can see all links regardless of visibility
-                        $isVisible = false;
-                        if ($user && $user['is_admin']) {
-                            $isVisible = true; // Admins see everything
-                        } elseif ($visibility === 'public') {
-                            $isVisible = true;
-                        } elseif ($visibility === 'authenticated' && $user) {
-                            $isVisible = true;
-                        } elseif ($visibility === 'private' && $user) {
-                            $isVisible = in_array($user['id'], $allowedUsers);
-                        }
-                        
-                        if (!$isVisible) {
-                            continue;
-                        }
-                        
-                        $section['links'][] = [
-                            'id' => $linkRow['id'],
-                            'label' => $linkRow['label'],
-                            'url' => $linkRow['url'],
-                            'visibility' => $visibility,
-                            'allowedUsers' => $allowedUsers,
-                            'notes' => $linkRow['notes'] ?? null
+                    if (isset($linkRow['health_status'])) {
+                        $link['health'] = [
+                            'status' => $linkRow['health_status'] ?? 'unknown',
+                            'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,
+                            'error' => $linkRow['health_error'],
+                            'checkedAt' => $linkRow['health_checked_at'] ? (int)$linkRow['health_checked_at'] : null
                         ];
                     }
                     
-                    $tile['sections'][] = $section;
+                    $section['links'][] = $link;
                 }
                 
-                $tiles[] = $tile;
+                $defaultTab['sections'][] = $section;
             }
-        } catch (PDOException $e) {
-            $db->rollBack();
-            error_log('Failed to normalize tile positions: ' . $e->getMessage());
+            
+            if (!empty($defaultTab['sections'])) {
+                $tabs[] = $defaultTab;
+            }
         }
     }
     
-    // We now rely on the tiles.position column for ordering.
-    // tile_arrangements is still written for compatibility, but not required for reading.
+    $tile['tabs'] = $tabs;
     
-    sendJSON($tiles);
-}
-
-function handleGetTile($tileId) {
-    $db = getDB();
-    $stmt = $db->prepare('SELECT * FROM tiles WHERE id = ?');
-    $stmt->execute([$tileId]);
-    $row = $stmt->fetch();
-    
-    if (!$row) {
-        sendJSON(['error' => 'Tile not found'], 404);
+    // Backward compatibility: also include sections array for old clients
+    $allSections = [];
+    foreach ($tabs as $tab) {
+        $allSections = array_merge($allSections, $tab['sections']);
     }
-    
-    $tile = [
-        'id' => $row['id'],
-        'title' => $row['title'],
-        'description' => $row['description'],
-        'htmlContent' => $row['html_content'],
-        'emoji' => $row['emoji'],
-        'themeColor' => $row['theme_color'],
-        'group' => $row['group'],
-        'createdAt' => (int)$row['created_at'],
-        'sections' => []
-    ];
-    
-    // Get sections
-    $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tile_id = ?');
-    $sectionStmt->execute([$tileId]);
-    
-    while ($sectionRow = $sectionStmt->fetch()) {
-        $section = [
-            'id' => $sectionRow['id'],
-            'title' => $sectionRow['title'],
-            'links' => []
-        ];
-        
-        // Get links with visibility filtering
-        $user = getAuthenticatedUser();
-        $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
-        $linkStmt->execute([$sectionRow['id']]);
-        
-        while ($linkRow = $linkStmt->fetch()) {
-            // Filter links based on visibility
-            $visibility = $linkRow['visibility'] ?? 'public';
-            $allowedUsers = $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [];
-            
-            // Check if link should be visible to current user
-            // Admin users can see all links regardless of visibility
-            $isVisible = false;
-            if ($user && $user['is_admin']) {
-                $isVisible = true; // Admins see everything
-            } elseif ($visibility === 'public') {
-                $isVisible = true;
-            } elseif ($visibility === 'authenticated' && $user) {
-                $isVisible = true;
-            } elseif ($visibility === 'private' && $user) {
-                $isVisible = in_array($user['id'], $allowedUsers);
-            }
-            
-            if (!$isVisible) {
-                continue;
-            }
-            
-            $link = [
-                'id' => $linkRow['id'],
-                'label' => $linkRow['label'],
-                'url' => $linkRow['url'],
-                'visibility' => $visibility,
-                'allowedUsers' => $allowedUsers,
-                'notes' => $linkRow['notes'] ?? null
-            ];
-            
-            // Include health data if available
-            if (isset($linkRow['health_status'])) {
-                $link['health'] = [
-                    'status' => $linkRow['health_status'] ?? 'unknown',
-                    'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,
-                    'error' => $linkRow['health_error'],
-                    'checkedAt' => $linkRow['health_checked_at'] ? (int)$linkRow['health_checked_at'] : null
-                ];
-            }
-            
-            $section['links'][] = $link;
-        }
-        
-        $tile['sections'][] = $section;
-    }
+    $tile['sections'] = $allSections;
     
     sendJSON($tile);
 }
@@ -340,7 +606,19 @@ function handleCreateTile() {
     $db = getDB();
     $tileId = $data['id'] ?? uniqid('tile_', true);
     
-    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    // Handle visibility and allowed_users
+    $visibility = $data['visibility'] ?? 'public';
+    $allowedUsers = null;
+    if ($visibility === 'private' && isset($data['allowedUsers']) && is_array($data['allowedUsers'])) {
+        $allowedUsers = json_encode($data['allowedUsers']);
+    }
+    
+    // Handle hyperlink fields
+    $isHyperlink = isset($data['isHyperlink']) && $data['isHyperlink'] ? 1 : 0;
+    $hyperlinkUrl = $data['hyperlinkUrl'] ?? null;
+    $openInNewTab = isset($data['openInNewTab']) && $data['openInNewTab'] ? 1 : 0;
+    
+    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     
     if (!$stmt->execute([
         $tileId,
@@ -351,19 +629,83 @@ function handleCreateTile() {
         $data['emoji'] ?? '📁',
         $data['themeColor'] ?? 'blue',
         $data['group'] ?? 'General',
+        $visibility,
+        $allowedUsers,
+        $isHyperlink,
+        $hyperlinkUrl,
+        $openInNewTab,
         $data['createdAt'] ?? time()
     ])) {
         sendJSON(['error' => 'Failed to create tile'], 500);
     }
     
-    // Insert sections and links
-    if (isset($data['sections']) && is_array($data['sections'])) {
+    // Handle tabs (new structure) or sections (backward compatibility)
+    if (isset($data['tabs']) && is_array($data['tabs'])) {
+        // New structure with tabs
+        foreach ($data['tabs'] as $tabIndex => $tab) {
+            $tabId = $tab['id'] ?? uniqid('tab_', true);
+            $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
+            $tabStmt->execute([
+                $tabId,
+                $tileId,
+                $tab['title'] ?? 'New Tab',
+                $tab['position'] ?? $tabIndex
+            ]);
+            
+            // Insert sections for this tab
+            if (isset($tab['sections']) && is_array($tab['sections'])) {
+                foreach ($tab['sections'] as $section) {
+                    $sectionId = $section['id'] ?? uniqid('section_', true);
+                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title) VALUES (?, ?, ?, ?)');
+                    $sectionStmt->execute([
+                        $sectionId,
+                        $tileId,
+                        $tabId,
+                        $section['title'] ?? ''
+                    ]);
+                    
+                    // Insert links for this section
+                    if (isset($section['links']) && is_array($section['links'])) {
+                        foreach ($section['links'] as $link) {
+                            $linkId = $link['id'] ?? uniqid('link_', true);
+                            $visibility = $link['visibility'] ?? 'public';
+                            $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) 
+                                ? json_encode($link['allowedUsers']) 
+                                : null;
+                            $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                            $linkStmt->execute([
+                                $linkId,
+                                $sectionId,
+                                $link['label'],
+                                $link['url'],
+                                $visibility,
+                                $allowedUsers,
+                                $link['notes'] ?? null,
+                                $link['tooltip'] ?? null
+                            ]);
+                        }
+                    }
+                }
+            }
+        }
+    } elseif (isset($data['sections']) && is_array($data['sections'])) {
+        // Backward compatibility: create a default tab for sections
+        $defaultTabId = uniqid('tab_', true);
+        $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
+        $tabStmt->execute([
+            $defaultTabId,
+            $tileId,
+            'Default',
+            0
+        ]);
+        
         foreach ($data['sections'] as $section) {
             $sectionId = $section['id'] ?? uniqid('section_', true);
-            $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, title) VALUES (?, ?, ?)');
+            $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title) VALUES (?, ?, ?, ?)');
             $sectionStmt->execute([
                 $sectionId,
                 $tileId,
+                $defaultTabId,
                 $section['title'] ?? ''
             ]);
             
@@ -410,8 +752,20 @@ function handleUpdateTile($tileId) {
     
     // All authenticated users can edit any tile - shared public repository
     
+    // Handle visibility and allowed_users
+    $visibility = $data['visibility'] ?? 'public';
+    $allowedUsers = null;
+    if ($visibility === 'private' && isset($data['allowedUsers']) && is_array($data['allowedUsers'])) {
+        $allowedUsers = json_encode($data['allowedUsers']);
+    }
+    
+    // Handle hyperlink fields
+    $isHyperlink = isset($data['isHyperlink']) && $data['isHyperlink'] ? 1 : 0;
+    $hyperlinkUrl = $data['hyperlinkUrl'] ?? null;
+    $openInNewTab = isset($data['openInNewTab']) && $data['openInNewTab'] ? 1 : 0;
+    
     // Update tile
-    $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ? WHERE id = ?');
+    $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ? WHERE id = ?');
     $stmt->execute([
         $data['title'] ?? '',
         $data['description'] ?? '',
@@ -419,24 +773,91 @@ function handleUpdateTile($tileId) {
         $data['emoji'] ?? '📁',
         $data['themeColor'] ?? 'blue',
         $data['group'] ?? 'General',
+        $visibility,
+        $allowedUsers,
+        $isHyperlink,
+        $hyperlinkUrl,
+        $openInNewTab,
         $tileId
     ]);
     
-    // Delete existing sections and links
+    // Delete existing tabs, sections, and links
     $deleteLinksStmt = $db->prepare('DELETE FROM links WHERE section_id IN (SELECT id FROM sections WHERE tile_id = ?)');
     $deleteLinksStmt->execute([$tileId]);
     
     $deleteSectionsStmt = $db->prepare('DELETE FROM sections WHERE tile_id = ?');
     $deleteSectionsStmt->execute([$tileId]);
     
-    // Insert new sections and links
-    if (isset($data['sections']) && is_array($data['sections'])) {
+    $deleteTabsStmt = $db->prepare('DELETE FROM tabs WHERE tile_id = ?');
+    $deleteTabsStmt->execute([$tileId]);
+    
+    // Insert new tabs, sections, and links
+    if (isset($data['tabs']) && is_array($data['tabs'])) {
+        // New structure with tabs
+        foreach ($data['tabs'] as $tabIndex => $tab) {
+            $tabId = $tab['id'] ?? uniqid('tab_', true);
+            $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
+            $tabStmt->execute([
+                $tabId,
+                $tileId,
+                $tab['title'] ?? 'New Tab',
+                $tab['position'] ?? $tabIndex
+            ]);
+            
+            // Insert sections for this tab
+            if (isset($tab['sections']) && is_array($tab['sections'])) {
+                foreach ($tab['sections'] as $section) {
+                    $sectionId = $section['id'] ?? uniqid('section_', true);
+                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title) VALUES (?, ?, ?, ?)');
+                    $sectionStmt->execute([
+                        $sectionId,
+                        $tileId,
+                        $tabId,
+                        $section['title'] ?? ''
+                    ]);
+                    
+                    // Insert links for this section
+                    if (isset($section['links']) && is_array($section['links'])) {
+                        foreach ($section['links'] as $link) {
+                            $linkId = $link['id'] ?? uniqid('link_', true);
+                            $visibility = $link['visibility'] ?? 'public';
+                            $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) 
+                                ? json_encode($link['allowedUsers']) 
+                                : null;
+                            $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                            $linkStmt->execute([
+                                $linkId,
+                                $sectionId,
+                                $link['label'],
+                                $link['url'],
+                                $visibility,
+                                $allowedUsers,
+                                $link['notes'] ?? null,
+                                $link['tooltip'] ?? null
+                            ]);
+                        }
+                    }
+                }
+            }
+        }
+    } elseif (isset($data['sections']) && is_array($data['sections'])) {
+        // Backward compatibility: create a default tab for sections
+        $defaultTabId = uniqid('tab_', true);
+        $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
+        $tabStmt->execute([
+            $defaultTabId,
+            $tileId,
+            'Default',
+            0
+        ]);
+        
         foreach ($data['sections'] as $section) {
             $sectionId = $section['id'] ?? uniqid('section_', true);
-            $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, title) VALUES (?, ?, ?)');
+            $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title) VALUES (?, ?, ?, ?)');
             $sectionStmt->execute([
                 $sectionId,
                 $tileId,
+                $defaultTabId,
                 $section['title'] ?? ''
             ]);
             
@@ -716,4 +1137,50 @@ function handleBulkImport() {
         error_log('Bulk import transaction failed: ' . $e->getMessage());
         sendJSON(['error' => 'Bulk import failed: ' . $e->getMessage()], 500);
     }
+}
+
+function handleToggleFavorite($tileId) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Verify tile exists
+    $checkStmt = $db->prepare('SELECT id FROM tiles WHERE id = ?');
+    $checkStmt->execute([$tileId]);
+    $tile = $checkStmt->fetch();
+    
+    if (!$tile) {
+        sendJSON(['error' => 'Tile not found'], 404);
+    }
+    
+    // Check if already favorited
+    $favStmt = $db->prepare('SELECT 1 FROM user_tile_favorites WHERE user_id = ? AND tile_id = ?');
+    $favStmt->execute([$user['id'], $tileId]);
+    $isFavorite = $favStmt->fetch() !== false;
+    
+    if ($isFavorite) {
+        // Remove from favorites
+        $deleteStmt = $db->prepare('DELETE FROM user_tile_favorites WHERE user_id = ? AND tile_id = ?');
+        $deleteStmt->execute([$user['id'], $tileId]);
+        sendJSON(['success' => true, 'isFavorite' => false]);
+    } else {
+        // Add to favorites
+        $insertStmt = $db->prepare('INSERT INTO user_tile_favorites (user_id, tile_id, created_at) VALUES (?, ?, ?)');
+        $insertStmt->execute([$user['id'], $tileId, time()]);
+        sendJSON(['success' => true, 'isFavorite' => true]);
+    }
+}
+
+function handleGetFavorites() {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Get all favorited tile IDs for this user
+    $stmt = $db->prepare('SELECT tile_id FROM user_tile_favorites WHERE user_id = ? ORDER BY created_at DESC');
+    $stmt->execute([$user['id']]);
+    $favoriteTileIds = [];
+    while ($row = $stmt->fetch()) {
+        $favoriteTileIds[] = $row['tile_id'];
+    }
+    
+    sendJSON(['favoriteTileIds' => $favoriteTileIds]);
 }

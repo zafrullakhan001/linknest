@@ -1,11 +1,13 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Tile, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS } from '../types';
+import { Tile, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS, TileVisibility } from '../types';
 import { generateTileContent, GeneratedTileContent } from '../services/geminiService';
 import { useSettings } from '../contexts/SettingsContext';
-import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement } from '../services/storageService';
+import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite } from '../services/storageService';
 import {
   exportCategoryToFile
 } from '../services/spaceTransferService';
+import { authService, UserListItem } from '../services/authService';
+import { useAuth } from '../contexts/AuthContext';
 
 interface TileGridProps {
   tiles: Tile[];
@@ -265,6 +267,8 @@ interface SortableTileProps {
   isAuthenticated: boolean;
   onTileClick: (tileId: string) => void;
   onDeleteTile: (e: React.MouseEvent, tileId: string) => void;
+  onEditTile?: (tile: Tile) => void;
+  onToggleFavorite?: (tileId: string) => void;
   onMoveToCategory?: (tileId: string, categoryName: string) => void;
   onMoveLeft?: (tileId: string) => void;
   onMoveRight?: (tileId: string) => void;
@@ -280,6 +284,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
   isAuthenticated,
   onTileClick,
   onDeleteTile,
+  onEditTile,
+  onToggleFavorite,
   onMoveToCategory,
   onMoveLeft,
   onMoveRight,
@@ -292,7 +298,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
 
   const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
-  const linkCount = tile.sections?.reduce((acc, section) => acc + section.links.length, 0) || 0;
+  const linkCount = tile.isHyperlink ? 0 : (tile.sections?.reduce((acc, section) => acc + section.links.length, 0) || 0);
   const currentCategory = tile.group || 'General';
 
   const style = {
@@ -318,51 +324,6 @@ const SortableTile: React.FC<SortableTileProps> = ({
         flex flex-col h-full min-h-[140px] cursor-pointer
       `}
     >
-      {/* Arrow Buttons for Reordering - Only visible for authenticated users */}
-      {isAuthenticated && (onMoveLeft || onMoveRight) && (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 z-10">
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              if (onMoveLeft && canMoveLeft) {
-                onMoveLeft(tile.id);
-              }
-            }}
-            disabled={!canMoveLeft}
-            className={`p-1 rounded-md transition-all ${
-              canMoveLeft
-                ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
-                : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
-            }`}
-            title="Move left"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-              <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
-            </svg>
-          </button>
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              if (onMoveRight && canMoveRight) {
-                onMoveRight(tile.id);
-              }
-            }}
-            disabled={!canMoveRight}
-            className={`p-1 rounded-md transition-all ${
-              canMoveRight
-                ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
-                : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
-            }`}
-            title="Move right"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-              <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-            </svg>
-          </button>
-        </div>
-      )}
 
       {/* Compact Header */}
       <div className="flex items-start justify-between mb-3">
@@ -435,6 +396,44 @@ const SortableTile: React.FC<SortableTileProps> = ({
               </div>
             )}
             
+            {/* Favorite Button */}
+            {onToggleFavorite && (
+              <button 
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onToggleFavorite(tile.id);
+                }}
+                className={`p-1 rounded transition-all ${
+                  tile.isFavorite
+                    ? 'text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+                    : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+                }`}
+                title={tile.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill={tile.isFavorite ? 'currentColor' : 'none'} stroke="currentColor" className="w-3.5 h-3.5">
+                  <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
+                </svg>
+              </button>
+            )}
+            
+            {/* Edit Button - For all tiles */}
+            {onEditTile && (
+              <button 
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onEditTile(tile);
+                }}
+                className="p-1 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 rounded transition-all"
+                title="Edit"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                  <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                </svg>
+              </button>
+            )}
+            
             {/* Delete Button */}
             <button 
               onClick={(e) => onDeleteTile(e, tile.id)}
@@ -461,6 +460,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
       
       {/* Compact Footer */}
       <div className="pt-2.5 border-t border-slate-100 dark:border-slate-700/50 flex items-center justify-between">
+        {!tile.isHyperlink && (
         <div className={`flex items-center gap-1.5 text-xs font-medium ${styles.text}`}>
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
             <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
@@ -468,15 +468,66 @@ const SortableTile: React.FC<SortableTileProps> = ({
           </svg>
           <span>{linkCount}</span>
         </div>
+        )}
+        {tile.isHyperlink && <div></div>}
+        
+        {/* Arrow Buttons for Reordering - Centered at bottom, only visible for authenticated users */}
+        {isAuthenticated && (onMoveLeft || onMoveRight) ? (
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 z-10">
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (onMoveLeft && canMoveLeft) {
+                  onMoveLeft(tile.id);
+                }
+              }}
+              disabled={!canMoveLeft}
+              className={`p-1 rounded-md transition-all ${
+                canMoveLeft
+                  ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
+                  : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
+              }`}
+              title="Move left"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
+              </svg>
+            </button>
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (onMoveRight && canMoveRight) {
+                  onMoveRight(tile.id);
+                }
+              }}
+              disabled={!canMoveRight}
+              className={`p-1 rounded-md transition-all ${
+                canMoveRight
+                  ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
+                  : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
+              }`}
+              title="Move right"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+        ) : (
         <div className="text-slate-300 dark:text-slate-600 group-hover:text-brand-500 transition-colors">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
             <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
           </svg>
         </div>
+        )}
       </div>
     </div>
   );
 };
+
+type TabType = 'favorites' | 'public' | 'private';
 
 export const TileGrid: React.FC<TileGridProps> = ({ 
   tiles, 
@@ -487,8 +538,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
   onAuthRequired
 }) => {
   const { settings } = useSettings();
+  const { user } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingTile, setEditingTile] = useState<Tile | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState<TabType>('public');
   
   // New Tile Form State
   const [newTitle, setNewTitle] = useState('');
@@ -498,6 +553,16 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [newColor, setNewColor] = useState<ThemeColor>('blue');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedLinks, setGeneratedLinks] = useState<{label:string, url:string}[]>([]);
+  const [newVisibility, setNewVisibility] = useState<TileVisibility>('public');
+  const [newAllowedUsers, setNewAllowedUsers] = useState<number[]>([]);
+  const [availableUsers, setAvailableUsers] = useState<UserListItem[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [showUserSelector, setShowUserSelector] = useState(false);
+  
+  // Hyperlink state
+  const [tileType, setTileType] = useState<'space' | 'hyperlink'>('space');
+  const [hyperlinkUrl, setHyperlinkUrl] = useState('');
+  const [openInNewTab, setOpenInNewTab] = useState(true);
   
   // Emoji Picker State
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -569,18 +634,44 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
   // Filter and Group Tiles - Global search across all content
   const groupedTiles = useMemo(() => {
+    // First, filter tiles based on active tab
+    let filteredTiles = tiles;
+    
+    if (activeTab === 'favorites') {
+      // Show only favorited tiles
+      filteredTiles = tiles.filter(t => t.isFavorite === true);
+    } else if (activeTab === 'public') {
+      // Show only public tiles (same as current public access)
+      filteredTiles = tiles.filter(t => t.visibility === 'public');
+    } else if (activeTab === 'private') {
+      // Show only authenticated and private tiles that belong to the user
+      if (isAuthenticated && user) {
+        filteredTiles = tiles.filter(t => {
+          if (t.visibility === 'authenticated') {
+            return true; // All authenticated users can see authenticated tiles
+          } else if (t.visibility === 'private') {
+            // Only show if user is in allowedUsers list
+            return t.allowedUsers && t.allowedUsers.includes(user.id);
+          }
+          return false;
+        });
+      } else {
+        filteredTiles = []; // No private tiles for unauthenticated users
+      }
+    }
+    
     if (!searchTerm.trim()) {
-      // No search term - return all tiles grouped normally
+      // No search term - return filtered tiles grouped normally
       // IMPORTANT: Preserve the order of tiles as they come from the API
       // The API already returns tiles in the correct order based on arrangement
       const groups: Record<string, Tile[]> = {};
       
       // Debug: Log tile order from API
-      if (tiles.length > 0) {
-        console.log('Tiles from API (first 5):', tiles.slice(0, 5).map(t => ({ id: t.id, group: t.group || 'General', title: t.title })));
+      if (filteredTiles.length > 0) {
+        console.log('Tiles from API (first 5):', filteredTiles.slice(0, 5).map(t => ({ id: t.id, group: t.group || 'General', title: t.title })));
       }
       
-      tiles.forEach(tile => {
+      filteredTiles.forEach(tile => {
         const groupName = tile.group || 'General';
         if (!groups[groupName]) {
           groups[groupName] = [];
@@ -625,7 +716,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     const searchLower = searchTerm.toLowerCase();
     
     // Global search: check title, description, group, section titles, link labels, and link URLs
-    const filtered = tiles.filter(t => {
+    const filtered = filteredTiles.filter(t => {
       // Check tile-level properties
       if (
         t.title.toLowerCase().includes(searchLower) || 
@@ -671,10 +762,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
     });
 
     return groups;
-  }, [tiles, searchTerm, categoryOrder]);
+  }, [tiles, searchTerm, categoryOrder, activeTab, isAuthenticated, user]);
 
   const handleCreateTile = async () => {
     if (!newTitle.trim()) return;
+    
+    if (tileType === 'hyperlink' && !hyperlinkUrl.trim()) return;
 
     if (!isAuthenticated && onAuthRequired) {
       onAuthRequired();
@@ -687,15 +780,21 @@ export const TileGrid: React.FC<TileGridProps> = ({
       description: newDesc,
       emoji: newEmoji,
       themeColor: newColor,
-      group: newGroup.trim() || 'General',
-      sections: [
+      group: tileType === 'space' ? (newGroup.trim() || 'General') : (newGroup.trim() || 'General'),
+      sections: tileType === 'space' ? [
           {
               id: generateId(),
               title: 'General',
               links: generatedLinks.map(l => ({ ...l, id: generateId() }))
           }
-      ],
-      createdAt: Date.now()
+      ] : [],
+      tabs: [],
+      createdAt: Date.now(),
+      visibility: tileType === 'space' ? newVisibility : 'public',
+      allowedUsers: (tileType === 'space' && newVisibility === 'private') ? newAllowedUsers : undefined,
+      isHyperlink: tileType === 'hyperlink',
+      hyperlinkUrl: tileType === 'hyperlink' ? hyperlinkUrl.trim() : undefined,
+      openInNewTab: tileType === 'hyperlink' ? openInNewTab : undefined
     };
 
     if (onCreateTile) {
@@ -737,7 +836,29 @@ export const TileGrid: React.FC<TileGridProps> = ({
     setNewColor('blue');
     setGeneratedLinks([]);
     setShowEmojiPicker(false);
+    setNewVisibility('public');
+    setNewAllowedUsers([]);
+    setShowUserSelector(false);
+    setTileType('space');
+    setHyperlinkUrl('');
+    setOpenInNewTab(true);
   };
+
+  // Fetch users when modal opens and visibility is private
+  useEffect(() => {
+    if (isModalOpen && isAuthenticated && newVisibility === 'private' && availableUsers.length === 0 && !isLoadingUsers) {
+      setIsLoadingUsers(true);
+      authService.getUsers()
+        .then(users => {
+          setAvailableUsers(users);
+          setIsLoadingUsers(false);
+        })
+        .catch(err => {
+          console.error('Failed to fetch users:', err);
+          setIsLoadingUsers(false);
+        });
+    }
+  }, [isModalOpen, isAuthenticated, newVisibility]);
 
   const handleDeleteTile = async (e: React.MouseEvent, id: string) => {
     e.preventDefault();
@@ -763,7 +884,97 @@ export const TileGrid: React.FC<TileGridProps> = ({
   };
 
   const handleTileClick = (tileId: string) => {
+    const tile = tiles.find(t => t.id === tileId);
+    if (tile?.isHyperlink && tile.hyperlinkUrl) {
+      if (tile.openInNewTab) {
+        window.open(tile.hyperlinkUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        window.location.href = tile.hyperlinkUrl;
+      }
+    } else {
     window.location.hash = `#/tile/${tileId}`;
+    }
+  };
+
+  const handleOpenEditModal = (tile: Tile) => {
+    setEditingTile(tile);
+    setNewTitle(tile.title);
+    setNewDesc(tile.description);
+    setNewGroup(tile.group || '');
+    setNewEmoji(tile.emoji);
+    setNewColor(tile.themeColor);
+    setTileType(tile.isHyperlink ? 'hyperlink' : 'space');
+    setHyperlinkUrl(tile.hyperlinkUrl || '');
+    setOpenInNewTab(tile.openInNewTab !== undefined ? tile.openInNewTab : true);
+    setNewVisibility(tile.visibility || 'public');
+    setNewAllowedUsers(tile.allowedUsers || []);
+    setIsEditModalOpen(true);
+    
+    // Load users if needed for private visibility
+    if (tile.visibility === 'private' && isAuthenticated && availableUsers.length === 0 && !isLoadingUsers) {
+      setIsLoadingUsers(true);
+      authService.getUsers()
+        .then(users => {
+          setAvailableUsers(users);
+          setIsLoadingUsers(false);
+        })
+        .catch(err => {
+          console.error('Failed to fetch users:', err);
+          setIsLoadingUsers(false);
+        });
+    }
+  };
+
+  const handleUpdateTile = async () => {
+    if (!editingTile || !newTitle.trim()) return;
+    
+    if (tileType === 'hyperlink' && !hyperlinkUrl.trim()) return;
+
+    if (!isAuthenticated && onAuthRequired) {
+      onAuthRequired();
+      return;
+    }
+
+    const updatedTile: Tile = {
+      ...editingTile,
+      title: newTitle,
+      description: newDesc,
+      emoji: newEmoji,
+      themeColor: newColor,
+      group: newGroup.trim() || 'General',
+      visibility: tileType === 'space' ? newVisibility : 'public',
+      allowedUsers: (tileType === 'space' && newVisibility === 'private') ? newAllowedUsers : undefined,
+      isHyperlink: tileType === 'hyperlink',
+      hyperlinkUrl: tileType === 'hyperlink' ? hyperlinkUrl.trim() : undefined,
+      openInNewTab: tileType === 'hyperlink' ? openInNewTab : undefined
+    };
+
+    try {
+      const updatedTiles = tiles.map(t => t.id === updatedTile.id ? updatedTile : t);
+      onUpdateTiles(updatedTiles);
+      
+      // Save to backend if authenticated
+      if (isAuthenticated && onCreateTile) {
+        // Use the update API endpoint
+        const response = await fetch(`/api/tiles/${updatedTile.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(updatedTile)
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to update tile');
+        }
+      }
+      
+      resetForm();
+      setIsEditModalOpen(false);
+      setEditingTile(null);
+    } catch (error) {
+      console.error('Failed to update tile:', error);
+      alert('Failed to update tile. Please try again.');
+    }
   };
 
   const handleMoveTileToCategory = useCallback(async (tileId: string, categoryName: string) => {
@@ -1099,12 +1310,33 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
   }, [tiles, isSaving]);
 
+  const handleToggleFavorite = useCallback(async (tileId: string) => {
+    if (!isAuthenticated) {
+      if (onAuthRequired) onAuthRequired();
+      return;
+    }
+
+    try {
+      const result = await toggleFavorite(tileId);
+      // Update the tile's favorite status in local state
+      const updatedTiles = tiles.map(tile => 
+        tile.id === tileId 
+          ? { ...tile, isFavorite: result.isFavorite }
+          : tile
+      );
+      onUpdateTiles(updatedTiles);
+    } catch (error) {
+      console.error('Failed to toggle favorite:', error);
+      alert('Failed to update favorite. Please try again.');
+    }
+  }, [tiles, isAuthenticated, onUpdateTiles, onAuthRequired]);
+
   return (
     <div className="w-full space-y-6">
       {/* Compact Header Section */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{settings.spaces_title || 'My Spaces'}</h1>
+          <h1 className="linknest-spaces-title text-2xl font-bold text-slate-900 dark:text-white">{settings.spaces_title || 'My Spaces'}</h1>
         </div>
         
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
@@ -1150,6 +1382,44 @@ export const TileGrid: React.FC<TileGridProps> = ({
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700">
+        <button
+          onClick={() => setActiveTab('public')}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+            activeTab === 'public'
+              ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+              : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+          }`}
+        >
+          Public
+        </button>
+        {isAuthenticated && (
+          <>
+            <button
+              onClick={() => setActiveTab('favorites')}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                activeTab === 'favorites'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              Favorites
+            </button>
+            <button
+              onClick={() => setActiveTab('private')}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                activeTab === 'private'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              Private
+            </button>
+          </>
+        )}
+      </div>
+
       {/* Compact Stats Bar */}
       {tiles.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
@@ -1159,11 +1429,11 @@ export const TileGrid: React.FC<TileGridProps> = ({
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-brand-500"></div>
-            <span>{tiles.length} {tiles.length === 1 ? 'Tile' : 'Tiles'}</span>
+            <span>{Object.values(groupedTiles).reduce((acc, group) => acc + group.length, 0)} {Object.values(groupedTiles).reduce((acc, group) => acc + group.length, 0) === 1 ? 'Tile' : 'Tiles'}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-violet-500"></div>
-            <span>{tiles.reduce((acc, t) => acc + (t.sections?.reduce((s, sec) => s + sec.links.length, 0) || 0), 0)} Links</span>
+            <span>{Object.values(groupedTiles).flat().reduce((acc, t) => acc + (t.sections?.reduce((s, sec) => s + sec.links.length, 0) || 0), 0)} Links</span>
           </div>
         </div>
       )}
@@ -1207,6 +1477,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         isAuthenticated={isAuthenticated}
                         onTileClick={handleTileClick}
                         onDeleteTile={handleDeleteTile}
+                        onEditTile={handleOpenEditModal}
+                        onToggleFavorite={handleToggleFavorite}
                         onMoveToCategory={handleMoveTileToCategory}
                         onMoveLeft={() => handleMoveTile(tile.id, 'left')}
                         onMoveRight={() => handleMoveTile(tile.id, 'right')}
@@ -1318,7 +1590,162 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 </div>
               </div>
 
-              {/* Grouping */}
+              {/* Type Selection */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Type</label>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="tileType"
+                      value="space"
+                      checked={tileType === 'space'}
+                      onChange={(e) => {
+                        setTileType(e.target.value as 'space' | 'hyperlink');
+                        if (e.target.value === 'space') {
+                          setNewEmoji('📁'); // Reset to folder for space
+                        }
+                      }}
+                      className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">Space - Create a new space with links and sections</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="tileType"
+                      value="hyperlink"
+                      checked={tileType === 'hyperlink'}
+                      onChange={(e) => {
+                        setTileType(e.target.value as 'space' | 'hyperlink');
+                        if (e.target.value === 'hyperlink') {
+                          setNewEmoji('🔗'); // Set default link emoji
+                        } else {
+                          setNewEmoji('📁'); // Reset to folder for space
+                        }
+                      }}
+                      className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">Hyperlink - Direct link to a URL</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Hyperlink URL - Only shown when type is hyperlink */}
+              {tileType === 'hyperlink' && (
+                <>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">URL</label>
+                    <input
+                      type="url"
+                      value={hyperlinkUrl}
+                      onChange={(e) => setHyperlinkUrl(e.target.value)}
+                      placeholder="https://example.com"
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Description</label>
+                    <textarea
+                      value={newDesc}
+                      onChange={(e) => setNewDesc(e.target.value)}
+                      placeholder="Short description..."
+                      rows={2}
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-none placeholder-slate-400 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Open Link</label>
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="openInNewTab"
+                          value="new"
+                          checked={openInNewTab === true}
+                          onChange={() => setOpenInNewTab(true)}
+                          className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                        />
+                        <span className="text-sm text-slate-700 dark:text-slate-300">Open in new tab</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="openInNewTab"
+                          value="same"
+                          checked={openInNewTab === false}
+                          onChange={() => setOpenInNewTab(false)}
+                          className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                        />
+                        <span className="text-sm text-slate-700 dark:text-slate-300">Open in same tab</span>
+                      </label>
+                    </div>
+                  </div>
+                  
+                  {/* Emoji & Theme - Also shown for hyperlinks */}
+                  <div className="flex gap-3">
+                    <div className="w-24 relative">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Icon</label>
+                      <button 
+                        type="button"
+                        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                        className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50"
+                      >
+                        {newEmoji || (tileType === 'hyperlink' ? '🔗' : '📁')}
+                      </button>
+                      
+                      {/* Emoji Picker Popover */}
+                      {showEmojiPicker && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={() => setShowEmojiPicker(false)}></div>
+                          <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-20 flex flex-col overflow-hidden">
+                            <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                              <input 
+                                type="text" 
+                                value={newEmoji}
+                                onChange={(e) => setNewEmoji(e.target.value)}
+                                placeholder="Type emoji..." 
+                                className="w-full text-sm px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/50 text-slate-900 dark:text-white"
+                                autoFocus
+                              />
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-2 grid grid-cols-8 gap-1">
+                              {POPULAR_EMOJIS.map((emoji) => (
+                                <button
+                                  key={emoji}
+                                  onClick={() => { setNewEmoji(emoji); setShowEmojiPicker(false); }}
+                                  className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    
+                    <div className="flex-1">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Theme</label>
+                      <div className="grid grid-cols-9 gap-1.5">
+                        {THEME_COLORS.map(c => (
+                          <button
+                            key={c}
+                            onClick={() => setNewColor(c)}
+                            className={`
+                              w-8 h-8 rounded-lg border-2 transition-all relative overflow-hidden
+                              ${newColor === c ? 'border-brand-500 scale-110 shadow-md shadow-brand-500/30' : 'border-slate-200 dark:border-slate-700 hover:scale-105'} 
+                            `}
+                            title={c}
+                          >
+                            <div className={`absolute inset-0 ${COLOR_STYLES[c].base} rounded-md`}></div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Grouping - Also shown for hyperlinks */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Group / Category</label>
                 <input
@@ -1333,8 +1760,11 @@ export const TileGrid: React.FC<TileGridProps> = ({
                   {existingGroups.map(g => <option key={g} value={g} />)}
                 </datalist>
               </div>
+                </>
+              )}
 
-              {/* Description */}
+              {/* Description - Only shown when type is space */}
+              {tileType === 'space' && (
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Description</label>
                 <textarea
@@ -1345,8 +1775,10 @@ export const TileGrid: React.FC<TileGridProps> = ({
                   className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-none placeholder-slate-400 transition-all"
                 />
               </div>
+              )}
 
-              {/* Emoji & Theme */}
+              {/* Emoji & Theme - Only shown when type is space */}
+              {tileType === 'space' && (
               <div className="flex gap-3">
                 <div className="w-24 relative">
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Icon</label>
@@ -1408,9 +1840,103 @@ export const TileGrid: React.FC<TileGridProps> = ({
                   </div>
                 </div>
               </div>
+              )}
+
+              {/* Visibility Settings - Only shown when type is space */}
+              {tileType === 'space' && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Visibility</label>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="visibility"
+                      value="public"
+                      checked={newVisibility === 'public'}
+                      onChange={(e) => {
+                        setNewVisibility(e.target.value as TileVisibility);
+                        setShowUserSelector(false);
+                      }}
+                      className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">Public - Available for everyone (guests and logged in users)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="visibility"
+                      value="authenticated"
+                      checked={newVisibility === 'authenticated'}
+                      onChange={(e) => {
+                        setNewVisibility(e.target.value as TileVisibility);
+                        setShowUserSelector(false);
+                      }}
+                      className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">Authenticated - Available for logged in users only</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="visibility"
+                      value="private"
+                      checked={newVisibility === 'private'}
+                      onChange={(e) => {
+                        setNewVisibility(e.target.value as TileVisibility);
+                        setShowUserSelector(true);
+                      }}
+                      className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">Private - Available for specific users only</span>
+                  </label>
+                </div>
+
+                {/* User Selector for Private Visibility */}
+                {newVisibility === 'private' && isAuthenticated && (
+                  <div className="mt-3">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Select Users</label>
+                    {isLoadingUsers ? (
+                      <div className="text-sm text-slate-500 dark:text-slate-400">Loading users...</div>
+                    ) : (
+                      <div className="max-h-32 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-slate-50 dark:bg-slate-900/50">
+                        {availableUsers.length === 0 ? (
+                          <div className="text-sm text-slate-500 dark:text-slate-400">No users available</div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {availableUsers.map(user => (
+                              <label key={user.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 p-1.5 rounded">
+                                <input
+                                  type="checkbox"
+                                  checked={newAllowedUsers.includes(user.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setNewAllowedUsers([...newAllowedUsers, user.id]);
+                                    } else {
+                                      setNewAllowedUsers(newAllowedUsers.filter(id => id !== user.id));
+                                    }
+                                  }}
+                                  className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
+                                />
+                                <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
+                                {user.auth_source && user.auth_source !== 'local' && (
+                                  <span className="text-xs text-slate-500 dark:text-slate-400">({user.auth_source})</span>
+                                )}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {newVisibility === 'private' && newAllowedUsers.length === 0 && (
+                      <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Please select at least one user for private spaces</p>
+                    )}
+                  </div>
+                )}
+              </div>
+              )}
               
-              {/* Generated Links Preview */}
-              {generatedLinks.length > 0 && (
+              {/* Generated Links Preview - Only shown when type is space */}
+              {tileType === 'space' && generatedLinks.length > 0 && (
                 <div className="bg-gradient-to-br from-violet-50 to-fuchsia-50 dark:from-violet-500/10 dark:to-fuchsia-500/10 p-4 rounded-lg border border-violet-200 dark:border-violet-500/30">
                   <p className="text-xs text-violet-600 dark:text-violet-400 font-bold uppercase tracking-wider mb-2">AI Suggested Links</p>
                   <ul className="text-xs text-slate-700 dark:text-slate-300 space-y-1.5">
@@ -1434,10 +1960,313 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 </button>
                 <button
                   onClick={handleCreateTile}
-                  disabled={!newTitle.trim()}
+                  disabled={
+                    !newTitle.trim() || 
+                    (tileType === 'space' && newVisibility === 'private' && newAllowedUsers.length === 0) ||
+                    (tileType === 'hyperlink' && !hyperlinkUrl.trim())
+                  }
                   className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-brand-500/20 hover:shadow-lg hover:shadow-brand-500/30 hover:scale-105 active:scale-95"
                 >
-                  Create Space
+                  {tileType === 'hyperlink' ? 'Create Hyperlink' : 'Create Space'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Tile Modal */}
+      {isEditModalOpen && editingTile && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/70 dark:bg-slate-900/90 backdrop-blur-md" onClick={() => {
+            setIsEditModalOpen(false);
+            setEditingTile(null);
+            resetForm();
+          }}></div>
+          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">
+                  {tileType === 'hyperlink' ? 'Edit Hyperlink' : 'Edit Space'}
+                </h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {tileType === 'hyperlink' ? 'Update your hyperlink settings' : 'Update your space settings'}
+                </p>
+              </div>
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                  <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              {/* Title */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Title</label>
+                <input
+                  type="text"
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  placeholder="e.g., Design Resources"
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                />
+              </div>
+
+              {/* URL - Only for hyperlinks */}
+              {tileType === 'hyperlink' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">URL</label>
+                  <input
+                    type="url"
+                    value={hyperlinkUrl}
+                    onChange={(e) => setHyperlinkUrl(e.target.value)}
+                    placeholder="https://example.com"
+                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                  />
+                </div>
+              )}
+
+              {/* Description */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Description</label>
+                <textarea
+                  value={newDesc}
+                  onChange={(e) => setNewDesc(e.target.value)}
+                  placeholder="Short description..."
+                  rows={2}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-none placeholder-slate-400 transition-all"
+                />
+              </div>
+
+              {/* Open Link - Only for hyperlinks */}
+              {tileType === 'hyperlink' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Open Link</label>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="editOpenInNewTab"
+                        value="new"
+                        checked={openInNewTab === true}
+                        onChange={() => setOpenInNewTab(true)}
+                        className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                      />
+                      <span className="text-sm text-slate-700 dark:text-slate-300">Open in new tab</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="editOpenInNewTab"
+                        value="same"
+                        checked={openInNewTab === false}
+                        onChange={() => setOpenInNewTab(false)}
+                        className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                      />
+                      <span className="text-sm text-slate-700 dark:text-slate-300">Open in same tab</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* Visibility Settings - Only for regular spaces */}
+              {tileType === 'space' && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Visibility</label>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="editVisibility"
+                      value="public"
+                      checked={newVisibility === 'public'}
+                      onChange={(e) => {
+                        setNewVisibility(e.target.value as TileVisibility);
+                        setShowUserSelector(false);
+                      }}
+                      className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">Public - Available for everyone (guests and logged in users)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="editVisibility"
+                      value="authenticated"
+                      checked={newVisibility === 'authenticated'}
+                      onChange={(e) => {
+                        setNewVisibility(e.target.value as TileVisibility);
+                        setShowUserSelector(false);
+                      }}
+                      className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">Authenticated - Available for logged in users only</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="editVisibility"
+                      value="private"
+                      checked={newVisibility === 'private'}
+                      onChange={(e) => {
+                        setNewVisibility(e.target.value as TileVisibility);
+                        setShowUserSelector(true);
+                      }}
+                      className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">Private - Available for specific users only</span>
+                  </label>
+                </div>
+
+                {/* User Selector for Private Visibility */}
+                {newVisibility === 'private' && isAuthenticated && (
+                  <div className="mt-3">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Select Users</label>
+                    {isLoadingUsers ? (
+                      <div className="text-sm text-slate-500 dark:text-slate-400">Loading users...</div>
+                    ) : (
+                      <div className="max-h-32 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-slate-50 dark:bg-slate-900/50">
+                        {availableUsers.length === 0 ? (
+                          <div className="text-sm text-slate-500 dark:text-slate-400">No users available</div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {availableUsers.map(user => (
+                              <label key={user.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 p-1.5 rounded">
+                                <input
+                                  type="checkbox"
+                                  checked={newAllowedUsers.includes(user.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setNewAllowedUsers([...newAllowedUsers, user.id]);
+                                    } else {
+                                      setNewAllowedUsers(newAllowedUsers.filter(id => id !== user.id));
+                                    }
+                                  }}
+                                  className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
+                                />
+                                <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
+                                {user.auth_source && user.auth_source !== 'local' && (
+                                  <span className="text-xs text-slate-500 dark:text-slate-400">({user.auth_source})</span>
+                                )}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {newVisibility === 'private' && newAllowedUsers.length === 0 && (
+                      <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Please select at least one user for private spaces</p>
+                    )}
+                  </div>
+                )}
+              </div>
+              )}
+
+              {/* Emoji & Theme */}
+              <div className="flex gap-3">
+                <div className="w-24 relative">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Icon</label>
+                  <button 
+                    type="button"
+                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                    className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50"
+                  >
+                    {newEmoji || (tileType === 'hyperlink' ? '🔗' : '📁')}
+                  </button>
+                  
+                  {/* Emoji Picker Popover */}
+                  {showEmojiPicker && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowEmojiPicker(false)}></div>
+                      <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-20 flex flex-col overflow-hidden">
+                        <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                          <input 
+                            type="text" 
+                            value={newEmoji}
+                            onChange={(e) => setNewEmoji(e.target.value)}
+                            placeholder="Type emoji..." 
+                            className="w-full text-sm px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/50 text-slate-900 dark:text-white"
+                            autoFocus
+                          />
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-2 grid grid-cols-8 gap-1">
+                          {POPULAR_EMOJIS.map((emoji) => (
+                            <button
+                              key={emoji}
+                              onClick={() => { setNewEmoji(emoji); setShowEmojiPicker(false); }}
+                              className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+                
+                <div className="flex-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Theme</label>
+                  <div className="grid grid-cols-9 gap-1.5">
+                    {THEME_COLORS.map(c => (
+                      <button
+                        key={c}
+                        onClick={() => setNewColor(c)}
+                        className={`
+                          w-8 h-8 rounded-lg border-2 transition-all relative overflow-hidden
+                          ${newColor === c ? 'border-brand-500 scale-110 shadow-md shadow-brand-500/30' : 'border-slate-200 dark:border-slate-700 hover:scale-105'} 
+                        `}
+                        title={c}
+                      >
+                        <div className={`absolute inset-0 ${COLOR_STYLES[c].base} rounded-md`}></div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Grouping */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Group / Category</label>
+                <input
+                  type="text"
+                  value={newGroup}
+                  onChange={(e) => setNewGroup(e.target.value)}
+                  placeholder="e.g. Work, Personal"
+                  list="group-suggestions-edit"
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                />
+                <datalist id="group-suggestions-edit">
+                  {existingGroups.map(g => <option key={g} value={g} />)}
+                </datalist>
+              </div>
+
+              {/* Actions */}
+              <div className="pt-3 flex justify-end gap-2 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => {
+                    setIsEditModalOpen(false);
+                    setEditingTile(null);
+                    resetForm();
+                  }}
+                  className="px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleUpdateTile}
+                  disabled={
+                    !newTitle.trim() || 
+                    (tileType === 'hyperlink' && !hyperlinkUrl.trim()) ||
+                    (tileType === 'space' && newVisibility === 'private' && newAllowedUsers.length === 0)
+                  }
+                  className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-brand-500/20 hover:shadow-lg hover:shadow-brand-500/30 hover:scale-105 active:scale-95"
+                >
+                  {tileType === 'hyperlink' ? 'Update Hyperlink' : 'Update Space'}
                 </button>
               </div>
             </div>

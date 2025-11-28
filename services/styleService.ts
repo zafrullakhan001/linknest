@@ -76,6 +76,12 @@ export interface SpaceStyles {
   pageTitleFontWeight: string;
   pageTitleFontStyle: string;
   
+  // Spaces title (Landing page heading) font styling
+  spacesTitleFontFamily: string;
+  spacesTitleFontSize: number;
+  spacesTitleFontWeight: string;
+  spacesTitleFontStyle: string;
+  
   // Grid settings
   gridColumns: {
     sm: number;
@@ -140,6 +146,10 @@ export const DEFAULT_STYLES: SpaceStyles = {
   pageTitleFontSize: 20,
   pageTitleFontWeight: 'bold',
   pageTitleFontStyle: 'normal',
+  spacesTitleFontFamily: 'inherit',
+  spacesTitleFontSize: 24,
+  spacesTitleFontWeight: 'bold',
+  spacesTitleFontStyle: 'normal',
   gridColumns: {
     sm: 1,
     md: 2,
@@ -418,6 +428,13 @@ export const styleService = {
         font-size: ${styles.pageTitleFontSize}px !important;
         font-weight: ${styles.pageTitleFontWeight} !important;
         font-style: ${styles.pageTitleFontStyle} !important;
+      }
+      
+      .linknest-spaces-title {
+        font-family: ${styles.spacesTitleFontFamily} !important;
+        font-size: ${styles.spacesTitleFontSize}px !important;
+        font-weight: ${styles.spacesTitleFontWeight} !important;
+        font-style: ${styles.spacesTitleFontStyle} !important;
       }
       
       @media (min-width: 640px) {

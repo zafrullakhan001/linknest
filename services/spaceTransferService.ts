@@ -174,6 +174,40 @@ export const normalizeImportedTiles = (
         ? src.group
         : parsed.categoryName) || 'Imported';
 
+    // Handle tabs structure (new structure)
+    const tabs = Array.isArray(src.tabs) && src.tabs.length > 0
+      ? src.tabs.map((tab: any) => ({
+          id: generateId(),
+          title: String(tab.title || 'New Tab'),
+          position: typeof tab.position === 'number' ? tab.position : 0,
+          sections: Array.isArray(tab.sections)
+            ? tab.sections.map((section: any) => {
+                const links: Link[] = Array.isArray(section.links)
+                  ? section.links.map((link: any) => ({
+                      id: generateId(),
+                      label: String(link.label || ''),
+                      url: String(link.url || ''),
+                      visibility: link.visibility || 'public',
+                      allowedUsers: Array.isArray(link.allowedUsers)
+                        ? link.allowedUsers
+                        : undefined,
+                      notes: link.notes || undefined,
+                      tooltip: link.tooltip || undefined,
+                      health: link.health || undefined
+                    }))
+                  : [];
+
+                return {
+                  id: generateId(),
+                  title: String(section.title || ''),
+                  links
+                };
+              })
+            : []
+        }))
+      : [];
+
+    // Handle sections structure (backward compatibility)
     const sections: LinkSection[] = Array.isArray(src.sections)
       ? src.sections.map((section) => {
           const links: Link[] = Array.isArray(section.links)
@@ -186,7 +220,8 @@ export const normalizeImportedTiles = (
                   ? (link as any).allowedUsers
                   : undefined,
                 notes: (link as any).notes || undefined,
-                tooltip: (link as any).tooltip || undefined
+                tooltip: (link as any).tooltip || undefined,
+                health: (link as any).health || undefined
               }))
             : [];
 
@@ -205,9 +240,15 @@ export const normalizeImportedTiles = (
       htmlContent: src.htmlContent || '',
       emoji: src.emoji || '📁',
       themeColor: (src.themeColor as any) || 'blue',
-      sections,
+      tabs: tabs.length > 0 ? tabs : undefined,
+      sections: sections.length > 0 ? sections : [],
       group: baseGroup,
-      createdAt: typeof src.createdAt === 'number' ? src.createdAt : now
+      createdAt: typeof src.createdAt === 'number' ? src.createdAt : now,
+      visibility: src.visibility || 'public',
+      allowedUsers: Array.isArray(src.allowedUsers) ? src.allowedUsers : undefined,
+      isHyperlink: src.isHyperlink || false,
+      hyperlinkUrl: src.hyperlinkUrl || undefined,
+      openInNewTab: src.openInNewTab !== undefined ? src.openInNewTab : undefined
     };
 
     return tile;
@@ -215,6 +256,8 @@ export const normalizeImportedTiles = (
 
   return normalized;
 };
+
+
 
 
 

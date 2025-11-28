@@ -647,6 +647,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               const importedDetails = [
                                 `Users: ${result.imported.users}`,
                                 `Tiles: ${result.imported.tiles}`,
+                                `Tabs: ${result.imported.tabs || 0}`,
                                 `Sections: ${result.imported.sections}`,
                                 `Links: ${result.imported.links}`,
                                 `Settings: ${result.imported.settings}`
@@ -777,10 +778,39 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               
                               // Convert tiles to CSV format
                               const csvRows: string[] = [];
-                              csvRows.push('Tile Title,Tile Description,Tile Emoji,Tile Theme Color,Tile Group,Section Title,Link Label,Link URL,Link Visibility,Link Notes,Link Tooltip');
+                              csvRows.push('Tile Title,Tile Description,Tile Emoji,Tile Theme Color,Tile Group,Tab Title,Section Title,Link Label,Link URL,Link Visibility,Link Notes,Link Tooltip');
                               
                               spacesTiles.forEach(tile => {
-                                if (tile.sections && tile.sections.length > 0) {
+                                // Handle tabs structure (new structure)
+                                if (tile.tabs && tile.tabs.length > 0) {
+                                  tile.tabs.forEach(tab => {
+                                    if (tab.sections && tab.sections.length > 0) {
+                                      tab.sections.forEach(section => {
+                                        if (section.links && section.links.length > 0) {
+                                          section.links.forEach(link => {
+                                            const row = [
+                                              `"${(tile.title || '').replace(/"/g, '""')}"`,
+                                              `"${(tile.description || '').replace(/"/g, '""')}"`,
+                                              `"${(tile.emoji || '📁').replace(/"/g, '""')}"`,
+                                              `"${(tile.themeColor || 'blue').replace(/"/g, '""')}"`,
+                                              `"${(tile.group || 'General').replace(/"/g, '""')}"`,
+                                              `"${(tab.title || '').replace(/"/g, '""')}"`,
+                                              `"${(section.title || '').replace(/"/g, '""')}"`,
+                                              `"${(link.label || '').replace(/"/g, '""')}"`,
+                                              `"${(link.url || '').replace(/"/g, '""')}"`,
+                                              `"${(link.visibility || 'public').replace(/"/g, '""')}"`,
+                                              `"${((link.notes || '').replace(/"/g, '""'))}"`,
+                                              `"${((link.tooltip || '').replace(/"/g, '""'))}"`
+                                            ];
+                                            csvRows.push(row.join(','));
+                                          });
+                                        }
+                                      });
+                                    }
+                                  });
+                                }
+                                // Handle sections structure (backward compatibility)
+                                else if (tile.sections && tile.sections.length > 0) {
                                   tile.sections.forEach(section => {
                                     if (section.links && section.links.length > 0) {
                                       section.links.forEach(link => {
@@ -790,6 +820,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           `"${(tile.emoji || '📁').replace(/"/g, '""')}"`,
                                           `"${(tile.themeColor || 'blue').replace(/"/g, '""')}"`,
                                           `"${(tile.group || 'General').replace(/"/g, '""')}"`,
+                                          `""`, // No tab title for legacy sections
                                           `"${(section.title || '').replace(/"/g, '""')}"`,
                                           `"${(link.label || '').replace(/"/g, '""')}"`,
                                           `"${(link.url || '').replace(/"/g, '""')}"`,
@@ -2219,6 +2250,42 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             placeholder="https://example.com/favicon.ico"
                           />
                         </div>
+                      </div>
+
+                      {/* Guest Access Toggle */}
+                      <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                        <label className="flex items-center justify-between cursor-pointer">
+                          <div className="flex-1">
+                            <span className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                              Enable Guest Access
+                            </span>
+                            <span className="block text-xs text-slate-500 dark:text-slate-400">
+                              Allow unauthenticated users to view public spaces. When disabled, all users must login to see spaces.
+                            </span>
+                          </div>
+                          <div className="ml-4">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSettings({ 
+                                  ...settings, 
+                                  guest_access_enabled: (settings.guest_access_enabled === '1' || settings.guest_access_enabled === undefined) ? '0' : '1' 
+                                });
+                              }}
+                              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                                (settings.guest_access_enabled === '1' || settings.guest_access_enabled === undefined)
+                                  ? 'bg-brand-600' 
+                                  : 'bg-slate-300 dark:bg-slate-600'
+                              }`}
+                            >
+                              <span
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                  (settings.guest_access_enabled === '1' || settings.guest_access_enabled === undefined) ? 'translate-x-6' : 'translate-x-1'
+                                }`}
+                              />
+                            </button>
+                          </div>
+                        </label>
                       </div>
 
                       <button

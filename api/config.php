@@ -178,12 +178,90 @@ function initDatabase() {
             error_log('Tiles position migration warning: ' . $e->getMessage());
         }
         
-        // Create sections table
+        // Migrate existing tiles table to add visibility columns if they don't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $hasVisibility = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'visibility') {
+                    $hasVisibility = true;
+                    break;
+                }
+            }
+            if (!$hasVisibility) {
+                $db->exec('ALTER TABLE tiles ADD COLUMN visibility TEXT DEFAULT "public"');
+                $db->exec('ALTER TABLE tiles ADD COLUMN allowed_users TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Tiles visibility migration warning: ' . $e->getMessage());
+        }
+        
+        // Migrate existing tiles table to add hyperlink columns if they don't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $hasHyperlink = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'is_hyperlink') {
+                    $hasHyperlink = true;
+                    break;
+                }
+            }
+            if (!$hasHyperlink) {
+                $db->exec('ALTER TABLE tiles ADD COLUMN is_hyperlink INTEGER DEFAULT 0');
+                $db->exec('ALTER TABLE tiles ADD COLUMN hyperlink_url TEXT');
+                $db->exec('ALTER TABLE tiles ADD COLUMN open_in_new_tab INTEGER DEFAULT 1');
+            }
+        } catch (PDOException $e) {
+            error_log('Tiles hyperlink migration warning: ' . $e->getMessage());
+        }
+        
+        // Create tabs table
+        $db->exec('CREATE TABLE IF NOT EXISTS tabs (
+            id TEXT PRIMARY KEY,
+            tile_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            position INTEGER DEFAULT 0,
+            FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
+        )');
+        
+        // Migrate existing sections table to add tab_id column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(sections)")->fetchAll();
+            $hasTabId = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'tab_id') {
+                    $hasTabId = true;
+                    break;
+                }
+            }
+            if (!$hasTabId) {
+                $db->exec('ALTER TABLE sections ADD COLUMN tab_id TEXT');
+                // Create default tab for existing tiles and migrate sections
+                $tilesStmt = $db->query('SELECT DISTINCT tile_id FROM sections WHERE tab_id IS NULL');
+                while ($tileRow = $tilesStmt->fetch()) {
+                    $defaultTabId = uniqid('tab_', true);
+                    $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
+                    $tabStmt->execute([$defaultTabId, $tileRow['tile_id'], 'Default', 0]);
+                    
+                    // Update all sections for this tile to reference the default tab
+                    $updateStmt = $db->prepare('UPDATE sections SET tab_id = ? WHERE tile_id = ? AND tab_id IS NULL');
+                    $updateStmt->execute([$defaultTabId, $tileRow['tile_id']]);
+                }
+                // Make tab_id required after migration
+                // We'll keep tile_id for backward compatibility but tab_id is now the primary reference
+            }
+        } catch (PDOException $e) {
+            error_log('Sections tab_id migration warning: ' . $e->getMessage());
+        }
+        
+        // Create sections table (if not exists)
         $db->exec('CREATE TABLE IF NOT EXISTS sections (
             id TEXT PRIMARY KEY,
             tile_id TEXT NOT NULL,
+            tab_id TEXT,
             title TEXT,
-            FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
+            FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE,
+            FOREIGN KEY (tab_id) REFERENCES tabs(id) ON DELETE CASCADE
         )');
         
         // Create links table
@@ -298,6 +376,16 @@ function initDatabase() {
             category_name TEXT NOT NULL,
             position INTEGER NOT NULL,
             PRIMARY KEY (user_id, category_name)
+        )');
+        
+        // Create user_tile_favorites table for storing user favorites
+        $db->exec('CREATE TABLE IF NOT EXISTS user_tile_favorites (
+            user_id INTEGER NOT NULL,
+            tile_id TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, tile_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
         )');
         
         // Migrate existing tables if they exist with NULL user_id
@@ -451,8 +539,13 @@ function createDatabaseIndexes($db) {
         $db->exec('CREATE INDEX IF NOT EXISTS idx_tiles_user_id ON tiles(user_id)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_tiles_position ON tiles(position ASC)');
         
+        // Tabs table indexes
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_tabs_tile_id ON tabs(tile_id)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_tabs_position ON tabs(tile_id, position)');
+        
         // Sections table indexes
         $db->exec('CREATE INDEX IF NOT EXISTS idx_sections_tile_id ON sections(tile_id)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_sections_tab_id ON sections(tab_id)');
         
         // Links table indexes
         $db->exec('CREATE INDEX IF NOT EXISTS idx_links_section_id ON links(section_id)');
