@@ -272,3 +272,55 @@ export const cloneTile = async (tileId: string): Promise<Tile> => {
     throw e;
   }
 };
+
+export const cloneCategory = async (categoryName: string): Promise<{
+  success: boolean;
+  newCategoryName: string;
+  clonedTiles: Array<{ id: string; title: string }>;
+  clonedCount: number;
+  errors: string[];
+}> => {
+  try {
+    const encodedCategoryName = encodeURIComponent(categoryName);
+    const response = await fetch(`${API_BASE}/tiles/category/${encodedCategoryName}/clone`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Failed to clone category' }));
+      throw new Error(errorData.error || 'Failed to clone category');
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (e) {
+    console.error("Failed to clone category", e);
+    throw e;
+  }
+};
+
+export const toggleCategoryFavorite = async (categoryName: string): Promise<{
+  success: boolean;
+  isFavorite: boolean;
+  action: string;
+  tilesAffected: number;
+}> => {
+  try {
+    const encodedCategoryName = encodeURIComponent(categoryName);
+    const response = await fetch(`${API_BASE}/tiles/category/${encodedCategoryName}/favorite`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Failed to toggle category favorite' }));
+      throw new Error(errorData.error || 'Failed to toggle category favorite');
+    }
+
+    return await response.json();
+  } catch (e) {
+    console.error("Failed to toggle category favorite", e);
+    throw e;
+  }
+};

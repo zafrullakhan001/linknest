@@ -193,7 +193,7 @@ export const DEFAULT_STYLES: SpaceStyles = {
   tilePadding: 16,
   tileElevation: 0,
   tileGap: 16,
-  categorySpacing: 32,
+  categorySpacing: 5,
   useGradient: false,
   gradientType: 'linear',
   gradientDirection: 135,
@@ -686,6 +686,28 @@ export const styleService = {
       }
       
       .linknest-category {
+        margin-bottom: ${styles.categorySpacing}px !important;
+        margin-top: 0 !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        min-height: unset !important;
+      }
+      
+      .linknest-category:last-child {
+        margin-bottom: 0 !important;
+      }
+      
+      /* Ensure no spacing from parent containers or siblings */
+      .linknest-tile-grid + .linknest-category,
+      .linknest-category + .linknest-category {
+        margin-top: 0 !important;
+      }
+      
+      /* Override any Tailwind spacing utilities that might be applied */
+      .linknest-category[class*="space-y"],
+      .linknest-category[class*="mb-"],
+      .linknest-category[class*="mt-"] {
+        margin-top: 0 !important;
         margin-bottom: ${styles.categorySpacing}px !important;
       }
       

@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { Tile, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS, TileVisibility } from '../types';
 import { generateTileContent, GeneratedTileContent } from '../services/geminiService';
 import { useSettings } from '../contexts/SettingsContext';
-import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles } from '../services/storageService';
+import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles, cloneCategory, toggleCategoryFavorite } from '../services/storageService';
 import {
   exportCategoryToFile,
   exportTileToFile,
@@ -40,6 +40,9 @@ interface CategoryProps {
   onRenameCategory?: (oldName: string, newName: string) => void;
   onExportCategory?: (categoryName: string) => void;
   onImportCategory?: (categoryName: string) => void;
+  onCloneCategory?: (categoryName: string) => void;
+  onToggleCategoryFavorite?: (categoryName: string) => void;
+  isCategoryFavorited?: boolean;
 }
 
 const Category: React.FC<CategoryProps> = ({
@@ -56,7 +59,10 @@ const Category: React.FC<CategoryProps> = ({
   onSaveCategoryOrder,
   onRenameCategory,
   onExportCategory,
-  onImportCategory
+  onImportCategory,
+  onCloneCategory,
+  onToggleCategoryFavorite,
+  isCategoryFavorited = false
 }) => {
   const { user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
@@ -271,6 +277,41 @@ const Category: React.FC<CategoryProps> = ({
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                   <path d="M9.25 3.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
                   <path fillRule="evenodd" d="M2 9a7 7 0 0112.452-4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9zm14.25 0a5.5 5.5 0 11-11 0 5.5 5.5 0 0111 0z" clipRule="evenodd" />
+                </svg>
+              </button>
+            )}
+            {onCloneCategory && user?.is_admin && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onCloneCategory(categoryName);
+                }}
+                className="opacity-0 group-hover/category:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-500/10 rounded-md transition-all ml-1"
+                title="Clone this category with all tiles/spaces"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                  <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.439A1.5 1.5 0 008.378 6H4.5z" />
+                </svg>
+              </button>
+            )}
+            {onToggleCategoryFavorite && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onToggleCategoryFavorite(categoryName);
+                }}
+                className={`opacity-0 group-hover/category:opacity-100 transition-opacity p-1.5 rounded-md transition-all ml-1 ${
+                  isCategoryFavorited
+                    ? 'text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+                    : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+                }`}
+                title={isCategoryFavorited ? 'Remove all tiles from favorites' : 'Add all tiles to favorites'}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill={isCategoryFavorited ? 'currentColor' : 'none'} stroke="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
                 </svg>
               </button>
             )}
@@ -1330,6 +1371,52 @@ export const TileGrid: React.FC<TileGridProps> = ({
     [isAuthenticated, onAuthRequired, onUpdateTiles, user]
   );
 
+  const handleCloneCategory = useCallback(
+    async (categoryName: string) => {
+      if (!isAuthenticated) {
+        if (onAuthRequired) onAuthRequired();
+        return;
+      }
+      if (!user?.is_admin) {
+        alert('Only administrators can clone categories.');
+        return;
+      }
+
+      // Confirm with user
+      if (!confirm(`Are you sure you want to clone the category "${categoryName}"?\n\nThis will create a copy of all tiles/spaces in this category.`)) {
+        return;
+      }
+
+      try {
+        const result = await cloneCategory(categoryName);
+
+        // Refresh tiles from server
+        try {
+          const updatedTiles = await getTiles();
+          onUpdateTiles(updatedTiles);
+        } catch (error) {
+          console.error('Failed to refresh tiles:', error);
+        }
+
+        // Show success message
+        if (result.errors.length === 0) {
+          alert(`Successfully cloned category "${categoryName}" to "${result.newCategoryName}".\n\nCloned ${result.clonedCount} tile(s).`);
+        } else {
+          alert(
+            `Category cloned with some errors.\n\n` +
+            `Cloned ${result.clonedCount} tile(s) successfully.\n` +
+            `Errors:\n${result.errors.join('\n')}`
+          );
+        }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        alert(`Failed to clone category: ${errorMsg}`);
+        console.error('Clone category error:', error);
+      }
+    },
+    [isAuthenticated, onAuthRequired, onUpdateTiles, user]
+  );
+
   const handleRenameCategory = useCallback(async (oldName: string, newName: string) => {
     if (!isAuthenticated) return;
     if (!newName.trim() || newName.trim() === oldName) return;
@@ -1536,6 +1623,37 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
   }, [tiles, isAuthenticated, onUpdateTiles, onAuthRequired]);
 
+  // Helper function to check if all tiles in a category are favorited
+  const isCategoryFavorited = useCallback((categoryName: string): boolean => {
+    const categoryTiles = tiles.filter(tile => (tile.group || 'General') === categoryName);
+    if (categoryTiles.length === 0) return false;
+    return categoryTiles.every(tile => tile.isFavorite === true);
+  }, [tiles]);
+
+  const handleToggleCategoryFavorite = useCallback(async (categoryName: string) => {
+    if (!isAuthenticated) {
+      if (onAuthRequired) onAuthRequired();
+      return;
+    }
+
+    try {
+      const result = await toggleCategoryFavorite(categoryName);
+      
+      // Update all tiles in the category with their new favorite status
+      const updatedTiles = tiles.map(tile => {
+        if ((tile.group || 'General') === categoryName) {
+          return { ...tile, isFavorite: result.isFavorite };
+        }
+        return tile;
+      });
+      onUpdateTiles(updatedTiles);
+    } catch (error) {
+      console.error('Failed to toggle category favorite:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      alert(`Failed to update category favorites: ${errorMsg}`);
+    }
+  }, [tiles, isAuthenticated, onUpdateTiles, onAuthRequired]);
+
   return (
     <div className="w-full space-y-6">
       {/* Compact Header Section */}
@@ -1641,7 +1759,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       )}
 
       {/* Tiles Grid - Full Width with More Columns */}
-      <div className="space-y-8">
+      <div>
         {Object.keys(groupedTiles).map((groupName, groupIndex) => {
           const groupTiles = groupedTiles[groupName];
           // Use the actual display order (which respects categoryOrder)
@@ -1665,6 +1783,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
               onRenameCategory={handleRenameCategory}
               onExportCategory={handleExportCategory}
               onImportCategory={handleImportCategory}
+              onCloneCategory={handleCloneCategory}
+              onToggleCategoryFavorite={handleToggleCategoryFavorite}
+              isCategoryFavorited={isCategoryFavorited(groupName)}
             >
               {/* Grid with wider tiles */}
               {groupTiles.length > 0 ? (

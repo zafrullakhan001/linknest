@@ -22,6 +22,10 @@ switch ($method) {
             handleCreateTile();
         } elseif ($path === '/bulk-import' || $path === '/bulk-import/') {
             handleBulkImport();
+        } elseif (preg_match('#^/category/([^/]+)/clone$#', $path, $matches)) {
+            handleCloneCategory($matches[1]);
+        } elseif (preg_match('#^/category/([^/]+)/favorite$#', $path, $matches)) {
+            handleToggleCategoryFavorite($matches[1]);
         } elseif (preg_match('#^/([^/]+)/favorite$#', $path, $matches)) {
             handleToggleFavorite($matches[1]);
         } elseif (preg_match('#^/([^/]+)/clone$#', $path, $matches)) {
@@ -1287,6 +1291,244 @@ function handleCloneTile($tileId) {
     sendJSON(['success' => true, 'id' => $newTileId], 201);
 }
 
+function handleCloneCategory($categoryName) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Decode URL-encoded category name
+    $categoryName = urldecode($categoryName);
+    
+    // Get all tiles in this category
+    $stmt = $db->prepare('SELECT * FROM tiles WHERE "group" = ? ORDER BY position ASC');
+    $stmt->execute([$categoryName]);
+    $tiles = $stmt->fetchAll();
+    
+    if (empty($tiles)) {
+        sendJSON(['error' => 'Category not found or empty'], 404);
+    }
+    
+    // Check if user has permission to view at least one tile in this category
+    $hasViewPermission = false;
+    foreach ($tiles as $tile) {
+        if (canUserViewTile($user['id'], $tile['id'], $db)) {
+            $hasViewPermission = true;
+            break;
+        }
+    }
+    
+    if (!$hasViewPermission) {
+        sendJSON(['error' => 'You do not have permission to view this category'], 403);
+    }
+    
+    // Generate new category name
+    $newCategoryName = 'Copy of ' . $categoryName;
+    
+    // Check if the new category name already exists, if so, append a number
+    $counter = 1;
+    $finalCategoryName = $newCategoryName;
+    while (true) {
+        $checkStmt = $db->prepare('SELECT COUNT(*) FROM tiles WHERE "group" = ?');
+        $checkStmt->execute([$finalCategoryName]);
+        $count = $checkStmt->fetchColumn();
+        
+        if ($count == 0) {
+            break; // Category name is available
+        }
+        
+        $finalCategoryName = $newCategoryName . ' (' . $counter . ')';
+        $counter++;
+    }
+    
+    // Get current max position to append new tiles
+    $maxPositionStmt = $db->prepare('SELECT MAX(position) as max_pos FROM tiles');
+    $maxPositionStmt->execute();
+    $maxPosRow = $maxPositionStmt->fetch();
+    $nextPosition = ($maxPosRow && $maxPosRow['max_pos'] !== null) ? (int)$maxPosRow['max_pos'] + 1 : 0;
+    
+    $clonedTiles = [];
+    $errors = [];
+    
+    // Begin transaction for atomicity
+    $db->beginTransaction();
+    
+    try {
+        foreach ($tiles as $originalTile) {
+            // Check if user has permission to view this tile
+            if (!canUserViewTile($user['id'], $originalTile['id'], $db)) {
+                continue; // Skip tiles user can't view
+            }
+            
+            // Generate new tile ID
+            $newTileId = uniqid('tile_', true);
+            
+            // Create new tile with "Copy of" prefix in title
+            $newTitle = 'Copy of ' . $originalTile['title'];
+            $newVisibility = 'public'; // Cloned tiles default to public
+            $newAllowedUsers = null;
+            
+            $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            
+            if (!$insertStmt->execute([
+                $newTileId,
+                $user['id'],
+                $newTitle,
+                $originalTile['description'],
+                $originalTile['html_content'],
+                $originalTile['emoji'],
+                $originalTile['theme_color'],
+                $finalCategoryName, // Use the new category name
+                $newVisibility,
+                $newAllowedUsers,
+                $originalTile['is_hyperlink'] ?? 0,
+                $originalTile['hyperlink_url'] ?? null,
+                $originalTile['open_in_new_tab'] ?? 0,
+                $nextPosition++,
+                time()
+            ])) {
+                $errors[] = 'Failed to clone tile: ' . $originalTile['title'];
+                continue;
+            }
+            
+            // Clone tabs, sections, and links
+            $tabStmt = $db->prepare('SELECT * FROM tabs WHERE tile_id = ? ORDER BY position ASC');
+            $tabStmt->execute([$originalTile['id']]);
+            $tabs = $tabStmt->fetchAll();
+            
+            if (empty($tabs)) {
+                // Check for legacy sections (backward compatibility)
+                $legacySectionStmt = $db->prepare('SELECT * FROM sections WHERE tile_id = ? AND (tab_id IS NULL OR tab_id = "")');
+                $legacySectionStmt->execute([$originalTile['id']]);
+                $legacySections = $legacySectionStmt->fetchAll();
+                
+                if (!empty($legacySections)) {
+                    // Create a default tab for legacy sections
+                    $defaultTabId = uniqid('tab_', true);
+                    $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
+                    $tabInsertStmt->execute([
+                        $defaultTabId,
+                        $newTileId,
+                        'Default',
+                        0
+                    ]);
+                    
+                    foreach ($legacySections as $section) {
+                        $newSectionId = uniqid('section_', true);
+                        $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?)');
+                        $sectionInsertStmt->execute([
+                            $newSectionId,
+                            $newTileId,
+                            $defaultTabId,
+                            $section['title'],
+                            $section['visible_from'] ?? null,
+                            $section['expires_at'] ?? null
+                        ]);
+                        
+                        // Clone links
+                        $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
+                        $linkStmt->execute([$section['id']]);
+                        $links = $linkStmt->fetchAll();
+                        
+                        foreach ($links as $link) {
+                            $newLinkId = uniqid('link_', true);
+                            $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, notes, tooltip, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                            $linkInsertStmt->execute([
+                                $newLinkId,
+                                $newSectionId,
+                                $link['label'],
+                                $link['url'],
+                                $link['visibility'] ?? 'public',
+                                null, // Reset allowed_users for cloned links
+                                $link['notes'] ?? null,
+                                $link['tooltip'] ?? null,
+                                $link['visible_from'] ?? null,
+                                $link['expires_at'] ?? null
+                            ]);
+                        }
+                    }
+                }
+            } else {
+                // Clone tabs and their sections/links
+                foreach ($tabs as $tab) {
+                    $newTabId = uniqid('tab_', true);
+                    $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?)');
+                    $tabInsertStmt->execute([
+                        $newTabId,
+                        $newTileId,
+                        $tab['title'],
+                        $tab['position'] ?? 0,
+                        $tab['visible_from'] ?? null,
+                        $tab['expires_at'] ?? null
+                    ]);
+                    
+                    // Clone sections for this tab
+                    $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tab_id = ? ORDER BY id');
+                    $sectionStmt->execute([$tab['id']]);
+                    $sections = $sectionStmt->fetchAll();
+                    
+                    foreach ($sections as $section) {
+                        $newSectionId = uniqid('section_', true);
+                        $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?)');
+                        $sectionInsertStmt->execute([
+                            $newSectionId,
+                            $newTileId,
+                            $newTabId,
+                            $section['title'],
+                            $section['visible_from'] ?? null,
+                            $section['expires_at'] ?? null
+                        ]);
+                        
+                        // Clone links
+                        $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
+                        $linkStmt->execute([$section['id']]);
+                        $links = $linkStmt->fetchAll();
+                        
+                        foreach ($links as $link) {
+                            $newLinkId = uniqid('link_', true);
+                            $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, notes, tooltip, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                            $linkInsertStmt->execute([
+                                $newLinkId,
+                                $newSectionId,
+                                $link['label'],
+                                $link['url'],
+                                $link['visibility'] ?? 'public',
+                                null, // Reset allowed_users for cloned links
+                                $link['notes'] ?? null,
+                                $link['tooltip'] ?? null,
+                                $link['visible_from'] ?? null,
+                                $link['expires_at'] ?? null
+                            ]);
+                        }
+                    }
+                }
+            }
+            
+            $clonedTiles[] = [
+                'id' => $newTileId,
+                'title' => $newTitle
+            ];
+        }
+        
+        $db->commit();
+        
+        sendJSON([
+            'success' => true,
+            'newCategoryName' => $finalCategoryName,
+            'clonedTiles' => $clonedTiles,
+            'clonedCount' => count($clonedTiles),
+            'errors' => $errors
+        ], 201);
+        
+    } catch (PDOException $e) {
+        $db->rollBack();
+        error_log('Category clone error: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to clone category: ' . $e->getMessage()], 500);
+    } catch (Exception $e) {
+        $db->rollBack();
+        error_log('Category clone error (non-PDO): ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to clone category: ' . $e->getMessage()], 500);
+    }
+}
+
 function handleBulkImport() {
     requireAdmin(); // Only admins can bulk import
     
@@ -1545,6 +1787,87 @@ function handleToggleFavorite($tileId) {
         $insertStmt = $db->prepare('INSERT INTO user_tile_favorites (user_id, tile_id, created_at) VALUES (?, ?, ?)');
         $insertStmt->execute([$user['id'], $tileId, time()]);
         sendJSON(['success' => true, 'isFavorite' => true]);
+    }
+}
+
+function handleToggleCategoryFavorite($categoryName) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Decode URL-encoded category name
+    $categoryName = urldecode($categoryName);
+    
+    // Get all tiles in this category that the user can view
+    $stmt = $db->prepare('SELECT id FROM tiles WHERE "group" = ? ORDER BY position ASC');
+    $stmt->execute([$categoryName]);
+    $tiles = $stmt->fetchAll();
+    
+    if (empty($tiles)) {
+        sendJSON(['error' => 'Category not found or empty'], 404);
+    }
+    
+    // Filter tiles by user permissions
+    $accessibleTileIds = [];
+    foreach ($tiles as $tile) {
+        if (canUserViewTile($user['id'], $tile['id'], $db)) {
+            $accessibleTileIds[] = $tile['id'];
+        }
+    }
+    
+    if (empty($accessibleTileIds)) {
+        sendJSON(['error' => 'No accessible tiles in this category'], 403);
+    }
+    
+    // Check how many tiles are currently favorited
+    $placeholders = str_repeat('?,', count($accessibleTileIds) - 1) . '?';
+    $favStmt = $db->prepare("SELECT tile_id FROM user_tile_favorites WHERE user_id = ? AND tile_id IN ($placeholders)");
+    $favStmt->execute(array_merge([$user['id']], $accessibleTileIds));
+    $favoritedTileIds = [];
+    while ($row = $favStmt->fetch()) {
+        $favoritedTileIds[] = $row['tile_id'];
+    }
+    
+    // Determine action: if all are favorited, unfavorite all; otherwise, favorite all
+    $allFavorited = count($favoritedTileIds) === count($accessibleTileIds);
+    $action = $allFavorited ? 'unfavorite' : 'favorite';
+    
+    $db->beginTransaction();
+    
+    try {
+        if ($action === 'favorite') {
+            // Add all tiles to favorites
+            $insertStmt = $db->prepare('INSERT OR IGNORE INTO user_tile_favorites (user_id, tile_id, created_at) VALUES (?, ?, ?)');
+            $currentTime = time();
+            foreach ($accessibleTileIds as $tileId) {
+                if (!in_array($tileId, $favoritedTileIds)) {
+                    $insertStmt->execute([$user['id'], $tileId, $currentTime]);
+                }
+            }
+        } else {
+            // Remove all tiles from favorites
+            $deleteStmt = $db->prepare('DELETE FROM user_tile_favorites WHERE user_id = ? AND tile_id = ?');
+            foreach ($accessibleTileIds as $tileId) {
+                $deleteStmt->execute([$user['id'], $tileId]);
+            }
+        }
+        
+        $db->commit();
+        
+        sendJSON([
+            'success' => true,
+            'isFavorite' => !$allFavorited,
+            'action' => $action,
+            'tilesAffected' => count($accessibleTileIds)
+        ]);
+        
+    } catch (PDOException $e) {
+        $db->rollBack();
+        error_log('Category favorite toggle error: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to toggle category favorites: ' . $e->getMessage()], 500);
+    } catch (Exception $e) {
+        $db->rollBack();
+        error_log('Category favorite toggle error (non-PDO): ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to toggle category favorites: ' . $e->getMessage()], 500);
     }
 }
 

@@ -528,7 +528,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Category Spacing: {styles.categorySpacing}px</label>
                     <input
                       type="range"
-                      min="16"
+                      min="0"
                       max="64"
                       value={styles.categorySpacing}
                       onChange={(e) => updateStyle('categorySpacing', parseInt(e.target.value))}
