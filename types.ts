@@ -18,6 +18,8 @@ export interface Link {
   allowedUsers?: number[]; // Array of user IDs for private links
   notes?: string; // Optional notes/description for the link
   tooltip?: string; // Optional custom hover tooltip text
+  visibleFrom?: string; // ISO date string - link becomes visible from this date/time
+  expiresAt?: string; // ISO date string - link expires at this date/time
 }
 
 export interface LinkSection {
@@ -27,6 +29,8 @@ export interface LinkSection {
   textColor?: string; // Optional custom text color for section title (hex color code)
   visibility?: LinkVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
   allowedUsers?: number[]; // Array of user IDs for private sections
+  visibleFrom?: string; // ISO date string - section becomes visible from this date/time
+  expiresAt?: string; // ISO date string - section expires at this date/time
 }
 
 export interface Tab {
@@ -36,6 +40,8 @@ export interface Tab {
   sections: LinkSection[];
   visibility?: LinkVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
   allowedUsers?: number[]; // Array of user IDs for private tabs
+  visibleFrom?: string; // ISO date string - tab becomes visible from this date/time
+  expiresAt?: string; // ISO date string - tab expires at this date/time
 }
 
 export interface Tile {

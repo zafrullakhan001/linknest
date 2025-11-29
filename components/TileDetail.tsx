@@ -70,6 +70,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [visibilityDialogTab, setVisibilityDialogTab] = useState<string | null>(null);
     const [visibilityDialogSection, setVisibilityDialogSection] = useState<{ tabId: string; sectionId: string } | null>(null);
 
+    // Scheduling Dialog State
+    const [schedulingDialogTab, setSchedulingDialogTab] = useState<string | null>(null);
+
     // Health Check State
     const [linkHealth, setLinkHealth] = useState<LinkHealthMap>({});
     const [checkingHealth, setCheckingHealth] = useState(false);
@@ -141,7 +144,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     }, [viewLayout]);
 
-    // Handle ESC key to close visibility dialogs
+    // Handle ESC key to close visibility and scheduling dialogs
     useEffect(() => {
         const handleEscKey = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
@@ -149,15 +152,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     setVisibilityDialogTab(null);
                 } else if (visibilityDialogSection) {
                     setVisibilityDialogSection(null);
+                } else if (schedulingDialogTab) {
+                    setSchedulingDialogTab(null);
                 }
             }
         };
 
-        if (visibilityDialogTab || visibilityDialogSection) {
+        if (visibilityDialogTab || visibilityDialogSection || schedulingDialogTab) {
             document.addEventListener('keydown', handleEscKey);
             return () => document.removeEventListener('keydown', handleEscKey);
         }
-    }, [visibilityDialogTab, visibilityDialogSection]);
+    }, [visibilityDialogTab, visibilityDialogSection, schedulingDialogTab]);
 
     // Load users list when editing and authenticated
     useEffect(() => {
@@ -301,6 +306,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setEditTabs(editTabs.map(t =>
             t.id === tabId
                 ? { ...t, visibility, allowedUsers: visibility === 'private' ? allowedUsers : undefined }
+                : t
+        ));
+    };
+
+    const handleUpdateTabScheduling = (tabId: string, visibleFrom?: string, expiresAt?: string) => {
+        setEditTabs(editTabs.map(t =>
+            t.id === tabId
+                ? {
+                    ...t,
+                    visibleFrom: visibleFrom || undefined,
+                    expiresAt: expiresAt || undefined
+                }
                 : t
         ));
     };
@@ -935,24 +952,59 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         return tile.sections || [];
     };
 
-    // Initialize selected tab to first tab if tabs exist
+    // Helper to check if content is visible based on schedule
+    const isContentVisible = (item: { visibleFrom?: string; expiresAt?: string }) => {
+        if (!item.visibleFrom && !item.expiresAt) return true;
+
+        const now = new Date();
+
+        if (item.visibleFrom) {
+            const visibleFrom = new Date(item.visibleFrom);
+            if (now < visibleFrom) return false;
+        }
+
+        if (item.expiresAt) {
+            const expiresAt = new Date(item.expiresAt);
+            if (now > expiresAt) return false;
+        }
+
+        return true;
+    };
+
+    // Initialize selected tab to first visible tab if tabs exist
     useEffect(() => {
         if (tile.tabs && tile.tabs.length > 0 && !selectedTabId) {
-            // Sort tabs by position and select the first one
-            const sortedTabs = [...tile.tabs].sort((a, b) => (a.position || 0) - (b.position || 0));
+            // Sort tabs by position and select the first visible one
+            const sortedTabs = [...tile.tabs]
+                .sort((a, b) => (a.position || 0) - (b.position || 0))
+                .filter(tab => isEditing || isContentVisible(tab)); // Show all in edit mode
+
             if (sortedTabs.length > 0) {
                 setSelectedTabId(sortedTabs[0].id);
             }
         }
-    }, [tile.tabs, selectedTabId]);
+    }, [tile.tabs, selectedTabId, isEditing]);
 
     const getFilteredSections = () => {
         let sectionsToFilter = [];
 
-        // If tabs exist, show sections from selected tab (or first tab if none selected yet)
+        // If tabs exist, show sections from selected tab (or first visible tab if none selected yet)
         if (tile.tabs && tile.tabs.length > 0) {
-            const sortedTabs = [...tile.tabs].sort((a, b) => (a.position || 0) - (b.position || 0));
-            const tabIdToUse = selectedTabId || (sortedTabs.length > 0 ? sortedTabs[0].id : null);
+            const sortedTabs = [...tile.tabs]
+                .sort((a, b) => (a.position || 0) - (b.position || 0))
+                .filter(tab => isEditing || isContentVisible(tab)); // Show all in edit mode
+
+            // If selected tab is not visible (e.g. expired while viewing), switch to first visible
+            let tabIdToUse = selectedTabId;
+            if (tabIdToUse && !isEditing) {
+                const selectedTab = tile.tabs.find(t => t.id === tabIdToUse);
+                if (selectedTab && !isContentVisible(selectedTab)) {
+                    tabIdToUse = null;
+                }
+            }
+
+            tabIdToUse = tabIdToUse || (sortedTabs.length > 0 ? sortedTabs[0].id : null);
+
             if (tabIdToUse) {
                 const selectedTab = tile.tabs.find(tab => tab.id === tabIdToUse);
                 sectionsToFilter = selectedTab ? selectedTab.sections : [];
@@ -978,10 +1030,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const allSections = getAllSections();
     const totalLinks = allSections?.reduce((acc, s) => acc + (s.links?.length || 0), 0) || 0;
 
-    // Get tabs for view mode (for tab navigation) - sort by position
+    // Get tabs for view mode (for tab navigation) - sort by position and filter by schedule
     const displayTabs = tile.tabs && tile.tabs.length > 0
-        ? [...tile.tabs].sort((a, b) => (a.position || 0) - (b.position || 0))
-        : null;
+        ? [...tile.tabs]
+            .sort((a, b) => (a.position || 0) - (b.position || 0))
+            .filter(tab => isEditing || isContentVisible(tab)) // Show all in edit mode
+        : [];
 
 
     // VIEW MODE
@@ -1712,6 +1766,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
                                                 </svg>
                                             </button>
+                                            <button
+                                                onClick={() => setSchedulingDialogTab(tab.id)}
+                                                className="text-slate-400 hover:text-green-600 dark:hover:text-green-400 p-2"
+                                                title="Schedule Tab"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                    <path fillRule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75z" clipRule="evenodd" />
+                                                </svg>
+                                            </button>
+                                            {(tab.visibleFrom || tab.expiresAt) && (
+                                                <span className="text-xs px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
+                                                    📅 Scheduled
+                                                </span>
+                                            )}
                                             {tab.visibility && tab.visibility !== 'public' && (
                                                 <span className={`text-xs px-2 py-1 rounded ${tab.visibility === 'authenticated'
                                                     ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
@@ -2548,6 +2616,99 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     >
                                         Done
                                     </button>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    {/* Tab Scheduling Dialog */}
+                    {schedulingDialogTab && (() => {
+                        const tab = editTabs.find(t => t.id === schedulingDialogTab);
+                        if (!tab) return null;
+
+                        return (
+                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setSchedulingDialogTab(null)}>
+                                <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Schedule Tab: {tab.title}</h3>
+                                        <button
+                                            onClick={() => setSchedulingDialogTab(null)}
+                                            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                                            title="Close"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                            </svg>
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-4 mb-6">
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                                Visible From (optional)
+                                            </label>
+                                            <input
+                                                type="datetime-local"
+                                                value={tab.visibleFrom?.slice(0, 16) || ''}
+                                                onChange={(e) => handleUpdateTabScheduling(tab.id, e.target.value, tab.expiresAt)}
+                                                className="w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                                            />
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Tab becomes visible at this date/time</p>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                                Expires At (optional)
+                                            </label>
+                                            <input
+                                                type="datetime-local"
+                                                value={tab.expiresAt?.slice(0, 16) || ''}
+                                                onChange={(e) => handleUpdateTabScheduling(tab.id, tab.visibleFrom, e.target.value)}
+                                                className="w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                                            />
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Tab expires at this date/time</p>
+                                        </div>
+
+                                        <div className="flex items-center gap-2 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg">
+                                            <input
+                                                type="checkbox"
+                                                id="no-expiration"
+                                                checked={!tab.visibleFrom && !tab.expiresAt}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        handleUpdateTabScheduling(tab.id, undefined, undefined);
+                                                    }
+                                                }}
+                                                className="rounded border-slate-300 dark:border-slate-600"
+                                            />
+                                            <label htmlFor="no-expiration" className="text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
+                                                No expiration (always visible)
+                                            </label>
+                                        </div>
+
+                                        {(tab.visibleFrom || tab.expiresAt) && (
+                                            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                                                <p className="text-xs text-blue-700 dark:text-blue-300">
+                                                    <strong>Note:</strong> Times are in your local timezone. The tab will be automatically shown/hidden based on these dates.
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => handleUpdateTabScheduling(tab.id, undefined, undefined)}
+                                            className="flex-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg font-medium transition-colors"
+                                        >
+                                            Clear
+                                        </button>
+                                        <button
+                                            onClick={() => setSchedulingDialogTab(null)}
+                                            className="flex-1 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                                        >
+                                            Done
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         );

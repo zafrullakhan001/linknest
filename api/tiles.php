@@ -187,6 +187,8 @@ function handleGetTiles() {
                 'id' => $tabRow['id'],
                 'title' => $tabRow['title'],
                 'position' => (int)($tabRow['position'] ?? 0),
+                'visibleFrom' => $tabRow['visible_from'] ?? null,
+                'expiresAt' => $tabRow['expires_at'] ?? null,
                 'sections' => []
             ];
             
@@ -198,6 +200,8 @@ function handleGetTiles() {
                 $section = [
                     'id' => $sectionRow['id'],
                     'title' => $sectionRow['title'],
+                    'visibleFrom' => $sectionRow['visible_from'] ?? null,
+                    'expiresAt' => $sectionRow['expires_at'] ?? null,
                     'links' => []
                 ];
                 
@@ -235,7 +239,9 @@ function handleGetTiles() {
                         'visibility' => $visibility,
                         'allowedUsers' => $allowedUsers,
                         'notes' => $linkRow['notes'] ?? null,
-                        'tooltip' => $linkRow['tooltip'] ?? null
+                        'tooltip' => $linkRow['tooltip'] ?? null,
+                        'visibleFrom' => $linkRow['visible_from'] ?? null,
+                        'expiresAt' => $linkRow['expires_at'] ?? null
                     ];
                     
                     // Include health data if available
@@ -571,6 +577,8 @@ function handleGetTile($tileId) {
             'id' => $tabRow['id'],
             'title' => $tabRow['title'],
             'position' => (int)($tabRow['position'] ?? 0),
+            'visibleFrom' => $tabRow['visible_from'] ?? null,
+            'expiresAt' => $tabRow['expires_at'] ?? null,
             'sections' => []
         ];
         
@@ -582,6 +590,8 @@ function handleGetTile($tileId) {
             $section = [
                 'id' => $sectionRow['id'],
                 'title' => $sectionRow['title'],
+                'visibleFrom' => $sectionRow['visible_from'] ?? null,
+                'expiresAt' => $sectionRow['expires_at'] ?? null,
                 'links' => []
             ];
             
@@ -619,7 +629,9 @@ function handleGetTile($tileId) {
                     'visibility' => $visibility,
                     'allowedUsers' => $allowedUsers,
                     'notes' => $linkRow['notes'] ?? null,
-                    'tooltip' => $linkRow['tooltip'] ?? null
+                    'tooltip' => $linkRow['tooltip'] ?? null,
+                    'visibleFrom' => $linkRow['visible_from'] ?? null,
+                    'expiresAt' => $linkRow['expires_at'] ?? null
                 ];
                 
                 // Include health data if available
@@ -778,24 +790,28 @@ function handleCreateTile() {
         // New structure with tabs
         foreach ($data['tabs'] as $tabIndex => $tab) {
             $tabId = $tab['id'] ?? uniqid('tab_', true);
-            $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
+            $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?)');
             $tabStmt->execute([
                 $tabId,
                 $tileId,
                 $tab['title'] ?? 'New Tab',
-                $tab['position'] ?? $tabIndex
+                $tab['position'] ?? $tabIndex,
+                $tab['visibleFrom'] ?? null,
+                $tab['expiresAt'] ?? null
             ]);
             
             // Insert sections for this tab
             if (isset($tab['sections']) && is_array($tab['sections'])) {
                 foreach ($tab['sections'] as $section) {
                     $sectionId = $section['id'] ?? uniqid('section_', true);
-                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title) VALUES (?, ?, ?, ?)');
+                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?)');
                     $sectionStmt->execute([
                         $sectionId,
                         $tileId,
                         $tabId,
-                        $section['title'] ?? ''
+                        $section['title'] ?? '',
+                        $section['visibleFrom'] ?? null,
+                        $section['expiresAt'] ?? null
                     ]);
                     
                     // Insert links for this section
@@ -806,7 +822,7 @@ function handleCreateTile() {
                             $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) 
                                 ? json_encode($link['allowedUsers']) 
                                 : null;
-                            $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                            $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, notes, tooltip, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                             $linkStmt->execute([
                                 $linkId,
                                 $sectionId,
@@ -815,7 +831,9 @@ function handleCreateTile() {
                                 $visibility,
                                 $allowedUsers,
                                 $link['notes'] ?? null,
-                                $link['tooltip'] ?? null
+                                $link['tooltip'] ?? null,
+                                $link['visibleFrom'] ?? null,
+                                $link['expiresAt'] ?? null
                             ]);
                         }
                     }
@@ -937,24 +955,28 @@ function handleUpdateTile($tileId) {
             // New structure with tabs
             foreach ($data['tabs'] as $tabIndex => $tab) {
                 $tabId = $tab['id'] ?? uniqid('tab_', true);
-                $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
+                $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?)');
                 $tabStmt->execute([
                     $tabId,
                     $tileId,
                     $tab['title'] ?? 'New Tab',
-                    $tab['position'] ?? $tabIndex
+                    $tab['position'] ?? $tabIndex,
+                    $tab['visibleFrom'] ?? null,
+                    $tab['expiresAt'] ?? null
                 ]);
                 
                 // Insert sections for this tab
                 if (isset($tab['sections']) && is_array($tab['sections'])) {
                     foreach ($tab['sections'] as $section) {
                         $sectionId = $section['id'] ?? uniqid('section_', true);
-                        $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title) VALUES (?, ?, ?, ?)');
+                        $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?)');
                         $sectionStmt->execute([
                             $sectionId,
                             $tileId,
                             $tabId,
-                            $section['title'] ?? ''
+                            $section['title'] ?? '',
+                            $section['visibleFrom'] ?? null,
+                            $section['expiresAt'] ?? null
                         ]);
                         
                         // Insert links for this section
@@ -965,7 +987,7 @@ function handleUpdateTile($tileId) {
                                 $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) 
                                     ? json_encode($link['allowedUsers']) 
                                     : null;
-                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, notes, tooltip, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                                 $linkStmt->execute([
                                     $linkId,
                                     $sectionId,
@@ -974,7 +996,9 @@ function handleUpdateTile($tileId) {
                                     $visibility,
                                     $allowedUsers,
                                     $link['notes'] ?? null,
-                                    $link['tooltip'] ?? null
+                                    $link['tooltip'] ?? null,
+                                    $link['visibleFrom'] ?? null,
+                                    $link['expiresAt'] ?? null
                                 ]);
                             }
                         }

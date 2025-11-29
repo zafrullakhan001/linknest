@@ -209,13 +209,15 @@ function handleImportDatabase() {
         // Import tabs (if exists in export)
         if (isset($data['tables']['tabs']) && is_array($data['tables']['tabs'])) {
             try {
-                $stmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
+                $stmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?)');
                 foreach ($data['tables']['tabs'] as $tab) {
                     $stmt->execute([
                         $tab['id'] ?? '',
                         $tab['tile_id'] ?? '',
                         $tab['title'] ?? 'New Tab',
-                        isset($tab['position']) ? (int)$tab['position'] : 0
+                        isset($tab['position']) ? (int)$tab['position'] : 0,
+                        $tab['visible_from'] ?? null,
+                        $tab['expires_at'] ?? null
                     ]);
                 }
             } catch (PDOException $e) {
@@ -226,20 +228,22 @@ function handleImportDatabase() {
         
         // Import sections
         if (isset($data['tables']['sections']) && is_array($data['tables']['sections'])) {
-            $stmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title) VALUES (?, ?, ?, ?)');
+            $stmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?)');
             foreach ($data['tables']['sections'] as $section) {
                 $stmt->execute([
                     $section['id'] ?? '',
                     $section['tile_id'] ?? '',
                     $section['tab_id'] ?? null,
-                    $section['title'] ?? null
+                    $section['title'] ?? null,
+                    $section['visible_from'] ?? null,
+                    $section['expires_at'] ?? null
                 ]);
             }
         }
         
         // Import links (with all new columns: health, visibility, notes, tooltip)
         if (isset($data['tables']['links']) && is_array($data['tables']['links'])) {
-            $stmt = $db->prepare('INSERT INTO links (id, section_id, label, url, health_status, health_checked_at, health_http_code, health_error, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $stmt = $db->prepare('INSERT INTO links (id, section_id, label, url, health_status, health_checked_at, health_http_code, health_error, visibility, allowed_users, notes, tooltip, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             foreach ($data['tables']['links'] as $link) {
                 $stmt->execute([
                     $link['id'] ?? '',
@@ -253,7 +257,9 @@ function handleImportDatabase() {
                     $link['visibility'] ?? 'public', // Default for backward compatibility
                     $link['allowed_users'] ?? null,
                     $link['notes'] ?? null,
-                    $link['tooltip'] ?? null
+                    $link['tooltip'] ?? null,
+                    $link['visible_from'] ?? null,
+                    $link['expires_at'] ?? null
                 ]);
             }
         }

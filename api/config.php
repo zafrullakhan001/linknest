@@ -221,8 +221,28 @@ function initDatabase() {
             tile_id TEXT NOT NULL,
             title TEXT NOT NULL,
             position INTEGER DEFAULT 0,
+            visible_from TEXT,
+            expires_at TEXT,
             FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
         )');
+        
+        // Migrate existing tabs table to add scheduling columns if they don't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(tabs)")->fetchAll();
+            $hasScheduling = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'visible_from') {
+                    $hasScheduling = true;
+                    break;
+                }
+            }
+            if (!$hasScheduling) {
+                $db->exec('ALTER TABLE tabs ADD COLUMN visible_from TEXT');
+                $db->exec('ALTER TABLE tabs ADD COLUMN expires_at TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Tabs scheduling migration warning: ' . $e->getMessage());
+        }
         
         // Migrate existing sections table to add tab_id column if it doesn't exist
         try {
@@ -260,9 +280,29 @@ function initDatabase() {
             tile_id TEXT NOT NULL,
             tab_id TEXT,
             title TEXT,
+            visible_from TEXT,
+            expires_at TEXT,
             FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE,
             FOREIGN KEY (tab_id) REFERENCES tabs(id) ON DELETE CASCADE
         )');
+
+        // Migrate existing sections table to add scheduling columns if they don't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(sections)")->fetchAll();
+            $hasScheduling = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'visible_from') {
+                    $hasScheduling = true;
+                    break;
+                }
+            }
+            if (!$hasScheduling) {
+                $db->exec('ALTER TABLE sections ADD COLUMN visible_from TEXT');
+                $db->exec('ALTER TABLE sections ADD COLUMN expires_at TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Sections scheduling migration warning: ' . $e->getMessage());
+        }
         
         // Create links table
         $db->exec('CREATE TABLE IF NOT EXISTS links (
@@ -274,6 +314,8 @@ function initDatabase() {
             health_checked_at INTEGER,
             health_http_code INTEGER,
             health_error TEXT,
+            visible_from TEXT,
+            expires_at TEXT,
             FOREIGN KEY (section_id) REFERENCES sections(id) ON DELETE CASCADE
         )');
         
@@ -347,6 +389,24 @@ function initDatabase() {
             }
         } catch (PDOException $e) {
             error_log('Links tooltip migration warning: ' . $e->getMessage());
+        }
+
+        // Migrate existing links table to add scheduling columns if they don't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(links)")->fetchAll();
+            $hasScheduling = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'visible_from') {
+                    $hasScheduling = true;
+                    break;
+                }
+            }
+            if (!$hasScheduling) {
+                $db->exec('ALTER TABLE links ADD COLUMN visible_from TEXT');
+                $db->exec('ALTER TABLE links ADD COLUMN expires_at TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Links scheduling migration warning: ' . $e->getMessage());
         }
         
         // Create settings table
