@@ -180,6 +180,12 @@ export const normalizeImportedTiles = (
           id: generateId(),
           title: String(tab.title || 'New Tab'),
           position: typeof tab.position === 'number' ? tab.position : 0,
+          visibility: tab.visibility || 'public',
+          allowedUsers: Array.isArray(tab.allowedUsers)
+            ? tab.allowedUsers
+            : undefined,
+          visibleFrom: typeof tab.visibleFrom === 'string' ? tab.visibleFrom : undefined,
+          expiresAt: typeof tab.expiresAt === 'string' ? tab.expiresAt : undefined,
           sections: Array.isArray(tab.sections)
             ? tab.sections.map((section: any) => {
                 const links: Link[] = Array.isArray(section.links)
@@ -200,6 +206,13 @@ export const normalizeImportedTiles = (
                 return {
                   id: generateId(),
                   title: String(section.title || ''),
+                  textColor: typeof section.textColor === 'string' ? section.textColor : undefined,
+                  visibility: section.visibility || 'public',
+                  allowedUsers: Array.isArray(section.allowedUsers)
+                    ? section.allowedUsers
+                    : undefined,
+                  visibleFrom: typeof section.visibleFrom === 'string' ? section.visibleFrom : undefined,
+                  expiresAt: typeof section.expiresAt === 'string' ? section.expiresAt : undefined,
                   links
                 };
               })
@@ -209,25 +222,32 @@ export const normalizeImportedTiles = (
 
     // Handle sections structure (backward compatibility)
     const sections: LinkSection[] = Array.isArray(src.sections)
-      ? src.sections.map((section) => {
+      ? src.sections.map((section: any) => {
           const links: Link[] = Array.isArray(section.links)
-            ? section.links.map((link) => ({
+            ? section.links.map((link: any) => ({
                 id: generateId(),
                 label: String(link.label || ''),
                 url: String(link.url || ''),
-                visibility: (link as any).visibility || 'public',
-                allowedUsers: Array.isArray((link as any).allowedUsers)
-                  ? (link as any).allowedUsers
+                visibility: link.visibility || 'public',
+                allowedUsers: Array.isArray(link.allowedUsers)
+                  ? link.allowedUsers
                   : undefined,
-                notes: (link as any).notes || undefined,
-                tooltip: (link as any).tooltip || undefined,
-                health: (link as any).health || undefined
+                notes: link.notes || undefined,
+                tooltip: link.tooltip || undefined,
+                health: link.health || undefined
               }))
             : [];
 
           return {
             id: generateId(),
             title: String(section.title || ''),
+            textColor: typeof section.textColor === 'string' ? section.textColor : undefined,
+            visibility: section.visibility || 'public',
+            allowedUsers: Array.isArray(section.allowedUsers)
+              ? section.allowedUsers
+              : undefined,
+            visibleFrom: typeof section.visibleFrom === 'string' ? section.visibleFrom : undefined,
+            expiresAt: typeof section.expiresAt === 'string' ? section.expiresAt : undefined,
             links
           };
         })

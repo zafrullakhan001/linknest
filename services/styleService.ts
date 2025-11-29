@@ -425,7 +425,22 @@ export const styleService = {
   },
 
   exportStyles(styles: SpaceStyles): void {
-    const dataStr = JSON.stringify(styles, null, 2);
+    // Merge with defaults to ensure all properties are included in export
+    const completeStyles: SpaceStyles = {
+      ...DEFAULT_STYLES,
+      ...styles,
+      // Ensure nested objects are fully merged
+      gridColumns: {
+        ...DEFAULT_STYLES.gridColumns,
+        ...(styles.gridColumns || {})
+      },
+      contentGridColumns: {
+        ...DEFAULT_STYLES.contentGridColumns,
+        ...(styles.contentGridColumns || {})
+      }
+    };
+    
+    const dataStr = JSON.stringify(completeStyles, null, 2);
     const dataBlob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(dataBlob);
     const link = document.createElement('a');
@@ -445,15 +460,32 @@ export const styleService = {
           const content = e.target?.result as string;
           const imported = JSON.parse(content);
 
-          // Validate and merge with defaults
+          // Validate and merge with defaults - ensure all properties are included
           const styles: SpaceStyles = {
             ...DEFAULT_STYLES,
             ...imported
           };
 
-          // Validate grid columns
+          // Validate and merge gridColumns nested object
           if (!styles.gridColumns || typeof styles.gridColumns !== 'object') {
             styles.gridColumns = { ...DEFAULT_STYLES.gridColumns };
+          } else {
+            // Ensure all grid column breakpoints are present
+            styles.gridColumns = {
+              ...DEFAULT_STYLES.gridColumns,
+              ...styles.gridColumns
+            };
+          }
+
+          // Validate and merge contentGridColumns nested object
+          if (!styles.contentGridColumns || typeof styles.contentGridColumns !== 'object') {
+            styles.contentGridColumns = { ...DEFAULT_STYLES.contentGridColumns };
+          } else {
+            // Ensure all content grid column breakpoints are present
+            styles.contentGridColumns = {
+              ...DEFAULT_STYLES.contentGridColumns,
+              ...styles.contentGridColumns
+            };
           }
 
           resolve(styles);

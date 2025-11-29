@@ -61,9 +61,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         // Load saved preference from localStorage
         try {
             const saved = localStorage.getItem('linknest_view_layout');
-            return (saved === 'side-by-side' || saved === 'stacked') ? saved : 'stacked';
+            return (saved === 'side-by-side' || saved === 'stacked') ? saved : 'side-by-side';
         } catch {
-            return 'stacked';
+            return 'side-by-side';
         }
     });
 
