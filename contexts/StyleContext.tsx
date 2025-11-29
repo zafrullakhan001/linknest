@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo, ReactNode } from 'react';
 import { SpaceStyles, DEFAULT_STYLES, styleService } from '../services/styleService';
 import { useAuth } from './AuthContext';
 
@@ -11,7 +11,7 @@ interface StyleContextType {
 
 const StyleContext = createContext<StyleContextType | undefined>(undefined);
 
-export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // Initialize with cached styles if available, otherwise use defaults
   const getInitialStyles = () => {
     const cached = styleService.getCachedStyles();
@@ -33,45 +33,33 @@ export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   }, [styles]);
 
   const applyStyles = useCallback((styleData: SpaceStyles, synchronous: boolean = false) => {
-    // Prevent duplicate applications
-    if (applyingStylesRef.current && !synchronous) {
-      return;
-    }
-    applyingStylesRef.current = true;
-
     const apply = () => {
       try {
-        // Get or create style tag
-        let styleTag = styleTagRef.current;
-
-        // Check if tag exists and is still in DOM
+        // Always try to find the existing style tag first (might have been created by inline script)
+        let styleTag = document.getElementById('linknest-custom-styles') as HTMLStyleElement | null;
+        
+        // If not found or not connected, create a new one
         if (!styleTag || !styleTag.isConnected) {
-          // First check if tag was created by inline script
-          const existingStyle = document.getElementById('linknest-custom-styles');
-          if (existingStyle && existingStyle.isConnected) {
-            styleTag = existingStyle as HTMLStyleElement;
-            styleTagRef.current = styleTag;
-          } else {
-            // Remove any orphaned style tag first (just in case)
-            if (existingStyle) {
-              existingStyle.remove();
-            }
-
-            // Create new style tag
-            styleTag = document.createElement('style');
-            styleTag.id = 'linknest-custom-styles';
-            document.head.appendChild(styleTag);
-            styleTagRef.current = styleTag;
+          // Remove any orphaned style tag first (just in case)
+          if (styleTag && !styleTag.isConnected) {
+            styleTag.remove();
           }
+
+          // Create new style tag
+          styleTag = document.createElement('style');
+          styleTag.id = 'linknest-custom-styles';
+          document.head.appendChild(styleTag);
         }
+        
+        // Update the ref
+        styleTagRef.current = styleTag;
 
         // Update style content
         const isDark = document.documentElement.classList.contains('dark');
-        styleTag.textContent = styleService.generateCSS(styleData, isDark);
+        const css = styleService.generateCSS(styleData, isDark);
+        styleTag.textContent = css;
       } catch (error) {
         console.error('Error applying styles:', error);
-      } finally {
-        applyingStylesRef.current = false;
       }
     };
 
@@ -79,7 +67,15 @@ export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (synchronous) {
       apply();
     } else {
-      requestAnimationFrame(apply);
+      // For async application, prevent duplicate applications
+      if (applyingStylesRef.current) {
+        return;
+      }
+      applyingStylesRef.current = true;
+      requestAnimationFrame(() => {
+        apply();
+        applyingStylesRef.current = false;
+      });
     }
   }, []);
 
@@ -134,15 +130,55 @@ export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   useEffect(() => {
     loadStyles();
 
-    // Listen for refresh events
+    // Debounce timer to prevent excessive API calls
+    let reloadTimer: NodeJS.Timeout | null = null;
+    const debouncedLoadStyles = () => {
+      if (reloadTimer) {
+        clearTimeout(reloadTimer);
+      }
+      reloadTimer = setTimeout(() => {
+        loadStyles();
+      }, 200);
+    };
+
+    // Listen for refresh events (explicit refresh trigger)
     const handleRefresh = () => {
       loadStyles();
     };
 
+    // Reload styles when page becomes visible again (handles page refresh and tab switching)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        debouncedLoadStyles();
+      }
+    };
+
+    // Reload styles when window gains focus (handles tab switching back)
+    const handleFocus = () => {
+      debouncedLoadStyles();
+    };
+
+    // Reload styles on page show (handles page refresh and back/forward navigation)
+    const handlePageShow = (e: PageTransitionEvent) => {
+      // Reload styles after page load, including from back/forward cache
+      if (e.persisted || document.visibilityState === 'visible') {
+        debouncedLoadStyles();
+      }
+    };
+
     window.addEventListener('refreshStyles', handleRefresh);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('pageshow', handlePageShow);
 
     return () => {
+      if (reloadTimer) {
+        clearTimeout(reloadTimer);
+      }
       window.removeEventListener('refreshStyles', handleRefresh);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('pageshow', handlePageShow);
     };
   }, [loadStyles]);
 
@@ -167,7 +203,13 @@ export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     prevAuthRef.current = isAuthenticated;
   }, [isAuthenticated, authLoading]);
 
-  // Reapply styles when they change or dark mode changes
+  // Reapply styles when styles state changes
+  useEffect(() => {
+    // Apply styles whenever the styles state changes
+    applyStyles(styles, false);
+  }, [styles, applyStyles]);
+
+  // Reapply styles when dark mode changes
   useEffect(() => {
     // Reapply styles when dark mode changes
     let timeoutId: NodeJS.Timeout;
@@ -191,24 +233,35 @@ export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
   }, [applyStyles]);
 
-  const refreshStyles = async () => {
+  const refreshStyles = useCallback(async () => {
     await loadStyles();
-  };
+  }, [loadStyles]);
 
-  const updateStyles = (newStyles: SpaceStyles) => {
+  const updateStyles = useCallback((newStyles: SpaceStyles) => {
     setStyles(newStyles);
     stylesRef.current = newStyles;
     applyStyles(newStyles);
     // Cache updated styles immediately
     styleService.cacheStyles(newStyles);
-  };
+  }, [applyStyles]);
+
+  const contextValue = useMemo(() => ({
+    styles,
+    isLoading,
+    refreshStyles,
+    updateStyles
+  }), [styles, isLoading, refreshStyles, updateStyles]);
 
   return (
-    <StyleContext.Provider value={{ styles, isLoading, refreshStyles, updateStyles }}>
+    <StyleContext.Provider value={contextValue}>
       {children}
     </StyleContext.Provider>
   );
 };
+
+StyleProvider.displayName = 'StyleProvider';
+
+export { StyleProvider };
 
 export const useStyles = () => {
   const context = useContext(StyleContext);

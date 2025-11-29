@@ -1255,7 +1255,7 @@ function handleCloneTile($tileId) {
 }
 
 function handleBulkImport() {
-    $user = requireAuth();
+    requireAdmin(); // Only admins can bulk import
     
     // Check if file was uploaded
     if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {

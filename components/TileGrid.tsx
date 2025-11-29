@@ -242,7 +242,7 @@ const Category: React.FC<CategoryProps> = ({
                 </svg>
               </button>
             )}
-            {onExportCategory && (
+            {onExportCategory && user?.is_admin && (
               <button
                 onClick={(e) => {
                   e.preventDefault();
@@ -258,7 +258,7 @@ const Category: React.FC<CategoryProps> = ({
                 </svg>
               </button>
             )}
-            {onImportCategory && (
+            {onImportCategory && user?.is_admin && (
               <button
                 onClick={(e) => {
                   e.preventDefault();
@@ -322,6 +322,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
   groupIndex,
   tileIndex
 }) => {
+  const { user } = useAuth();
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
 
   const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
@@ -477,8 +478,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
             )}
 
 
-            {/* Export Button - Only show if user has edit permission */}
-            {onExportTile && tile.canEdit && (
+            {/* Export Button - Only show if user is admin */}
+            {onExportTile && user?.is_admin && (
               <button
                 onClick={(e) => {
                   e.preventDefault();
@@ -1223,22 +1224,34 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
   const handleExportCategory = useCallback(
     (categoryName: string) => {
+      if (!user?.is_admin) {
+        alert('Only administrators can export categories.');
+        return;
+      }
       exportCategoryToFile(categoryName, tiles);
     },
-    [tiles]
+    [tiles, user]
   );
 
   const handleExportTile = useCallback(
     (tile: Tile) => {
+      if (!user?.is_admin) {
+        alert('Only administrators can export tiles.');
+        return;
+      }
       exportTileToFile(tile);
     },
-    []
+    [user]
   );
 
   const handleImportCategory = useCallback(
     async (categoryName: string) => {
       if (!isAuthenticated) {
         if (onAuthRequired) onAuthRequired();
+        return;
+      }
+      if (!user?.is_admin) {
+        alert('Only administrators can import categories.');
         return;
       }
 
@@ -1314,7 +1327,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       };
       input.click();
     },
-    [isAuthenticated, onAuthRequired, onUpdateTiles]
+    [isAuthenticated, onAuthRequired, onUpdateTiles, user]
   );
 
   const handleRenameCategory = useCallback(async (oldName: string, newName: string) => {

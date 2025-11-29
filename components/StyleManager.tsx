@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SpaceStyles, DEFAULT_STYLES, styleService } from '../services/styleService';
+import { useAuth } from '../contexts/AuthContext';
 
 interface StyleManagerProps {
   isOpen: boolean;
@@ -10,6 +11,7 @@ interface StyleManagerProps {
 type StyleTab = 'spaces' | 'content';
 
 export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onStylesChange }) => {
+  const { user } = useAuth();
   const [styles, setStyles] = useState<SpaceStyles>(DEFAULT_STYLES);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -216,6 +218,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
   };
 
   const handleExport = () => {
+    if (!user?.is_admin) {
+      alert('Only administrators can export styles.');
+      return;
+    }
     try {
       styleService.exportStyles(styles);
       alert('Styles exported successfully!');
@@ -226,6 +232,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
   };
 
   const handleImport = async () => {
+    if (!user?.is_admin) {
+      alert('Only administrators can import styles.');
+      return;
+    }
     fileInputRef.current?.click();
   };
 
@@ -2137,32 +2147,38 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
         {/* Footer */}
         <div className="flex items-center justify-between p-6 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
           <div className="flex gap-2">
-            <button
-              onClick={handleExport}
-              className="px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-2"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 00-1.09 1.03l4.25 4.5a.75.75 0 001.07 0l4.25-4.5a.75.75 0 00-1.08-1.03l-2.955 3.129V2.75z" />
-                <path d="M3.5 12.75a.75.75 0 00-1.5 0v3.5A2.75 2.75 0 004.75 19h10.5A2.75 2.75 0 0018 16.25v-3.5a.75.75 0 00-1.5 0v3.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-3.5z" />
-              </svg>
-              Export
-            </button>
-            <button
-              onClick={handleImport}
-              className="px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-2"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                <path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 3.129a.75.75 0 001.08-1.03l-4.25-4.5a.75.75 0 00-1.08 0l-4.25 4.5a.75.75 0 101.08 1.03l2.955-3.13V13.25zM3.5 12.75a.75.75 0 00-1.5 0v3.5A2.75 2.75 0 004.75 19h10.5A2.75 2.75 0 0018 16.25v-3.5a.75.75 0 00-1.5 0v3.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-3.5z" />
-              </svg>
-              Import
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json"
-              onChange={handleFileChange}
-              className="hidden"
-            />
+            {user?.is_admin && (
+              <button
+                onClick={handleExport}
+                className="px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 00-1.09 1.03l4.25 4.5a.75.75 0 001.07 0l4.25-4.5a.75.75 0 00-1.08-1.03l-2.955 3.129V2.75z" />
+                  <path d="M3.5 12.75a.75.75 0 00-1.5 0v3.5A2.75 2.75 0 004.75 19h10.5A2.75 2.75 0 0018 16.25v-3.5a.75.75 0 00-1.5 0v3.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-3.5z" />
+                </svg>
+                Export
+              </button>
+            )}
+            {user?.is_admin && (
+              <>
+                <button
+                  onClick={handleImport}
+                  className="px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 3.129a.75.75 0 001.08-1.03l-4.25-4.5a.75.75 0 00-1.08 0l-4.25 4.5a.75.75 0 101.08 1.03l2.955-3.13V13.25zM3.5 12.75a.75.75 0 00-1.5 0v3.5A2.75 2.75 0 004.75 19h10.5A2.75 2.75 0 0018 16.25v-3.5a.75.75 0 00-1.5 0v3.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-3.5z" />
+                  </svg>
+                  Import
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+              </>
+            )}
             <button
               onClick={handleReset}
               disabled={isSaving}
