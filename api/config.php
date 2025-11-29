@@ -96,21 +96,44 @@ function initDatabase() {
             // Page size can only be set on empty database, ignore if already set
         }
         
-        // Set cache size to 1.95 MB for enterprise (negative value = KB)
-        // 1.95 MB = 1996.8 KB, rounded to 1997 KB for exact 1.95 MB
-        $db->exec('PRAGMA cache_size = -1997');
+        // IN-MEMORY OPTIMIZATION FOR SMALL DATABASES
+        // Memory-map the entire database file into RAM for maximum performance
+        // This allows SQLite to access the database directly from memory
+        // Value in bytes: 100 MB should be more than enough for small databases
+        try {
+            $db->exec('PRAGMA mmap_size = 104857600'); // 100 MB
+        } catch (PDOException $e) {
+            // mmap_size might not be available in all SQLite versions, ignore
+            error_log('Warning: mmap_size not available: ' . $e->getMessage());
+        }
         
-        // Set synchronous mode to FULL (2) for maximum data integrity in enterprise
-        $db->exec('PRAGMA synchronous = FULL');
+        // Increase cache size to hold entire database in memory
+        // For small databases (< 1 MB), use 4 MB cache to ensure everything fits
+        // Negative value = KB, so -4096 = 4 MB
+        $db->exec('PRAGMA cache_size = -4096'); // 4 MB cache
         
-        // Set temp_store to DEFAULT (0) for enterprise
-        $db->exec('PRAGMA temp_store = DEFAULT');
+        // Set synchronous mode to NORMAL (1) for better performance with WAL mode
+        // WAL mode provides durability, so NORMAL is safe and much faster than FULL
+        // This significantly improves write performance for small databases
+        $db->exec('PRAGMA synchronous = NORMAL');
+        
+        // Store temporary data in memory instead of disk
+        // This speeds up queries that use temporary tables, sorts, etc.
+        $db->exec('PRAGMA temp_store = MEMORY');
         
         // Set WAL auto checkpoint to 1000 pages for enterprise
         try {
             $db->exec('PRAGMA wal_autocheckpoint = 1000');
         } catch (PDOException $e) {
             // WAL checkpoint might not be available if not in WAL mode, ignore
+        }
+        
+        // Additional optimizations for small databases
+        // Optimize the query planner to use better algorithms
+        try {
+            $db->exec('PRAGMA optimize');
+        } catch (PDOException $e) {
+            // PRAGMA optimize might not be available in older SQLite versions, ignore
         }
     
         // Create users table

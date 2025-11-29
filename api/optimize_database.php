@@ -29,21 +29,37 @@ try {
     // Foreign keys disabled for enterprise (as per requirements)
     $db->exec('PRAGMA foreign_keys = OFF');
     
-    // Set synchronous mode to FULL (2) for maximum data integrity in enterprise
-    $db->exec('PRAGMA synchronous = FULL');
+    // IN-MEMORY OPTIMIZATION FOR SMALL DATABASES
+    // Memory-map the entire database file into RAM for maximum performance
+    try {
+        $db->exec('PRAGMA mmap_size = 104857600'); // 100 MB
+    } catch (PDOException $e) {
+        // mmap_size might not be available in all SQLite versions, ignore
+    }
     
-    // Set cache size to 1.95 MB for enterprise (negative value = KB)
-    // 1.95 MB = 1996.8 KB, rounded to 1997 KB for exact 1.95 MB
-    $db->exec('PRAGMA cache_size = -1997');
+    // Increase cache size to hold entire database in memory
+    // For small databases (< 1 MB), use 4 MB cache to ensure everything fits
+    $db->exec('PRAGMA cache_size = -4096'); // 4 MB cache
     
-    // Set temp_store to DEFAULT (0) for enterprise
-    $db->exec('PRAGMA temp_store = DEFAULT');
+    // Set synchronous mode to NORMAL (1) for better performance with WAL mode
+    // WAL mode provides durability, so NORMAL is safe and much faster than FULL
+    $db->exec('PRAGMA synchronous = NORMAL');
+    
+    // Store temporary data in memory instead of disk
+    $db->exec('PRAGMA temp_store = MEMORY');
     
     // Set busy timeout for concurrent access handling
     $db->exec('PRAGMA busy_timeout = 5000'); // 5000 ms
     
     // Set WAL auto checkpoint to 1000 pages for enterprise
     $db->exec('PRAGMA wal_autocheckpoint = 1000');
+    
+    // Additional optimizations for small databases
+    try {
+        $db->exec('PRAGMA optimize');
+    } catch (PDOException $e) {
+        // PRAGMA optimize might not be available in older SQLite versions, ignore
+    }
     
     // Begin transaction for all index creation
     $db->beginTransaction();
