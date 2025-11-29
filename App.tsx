@@ -132,7 +132,7 @@ const AppContent: React.FC = () => {
     }
   }, [isAuthenticated, guestAccessEnabled, settingsLoading]); // Reload when auth state or guest access changes
 
-  const handleUpdateTiles = async (newTiles: Tile[]) => {
+  const handleUpdateTiles = async (newTiles: Tile[], skipReload: boolean = false) => {
     if (!isAuthenticated) {
       // Guest mode: just update local state for viewing
       setTiles(newTiles);
@@ -142,11 +142,23 @@ const AppContent: React.FC = () => {
     try {
       setTiles(newTiles);
       await saveTiles(newTiles);
+      
+      // Reload from server after successful save to ensure we have the latest data
+      // This is especially important for tabs/sections which are stored separately
+      // Skip reload if requested (e.g., during auto-save to preserve edit mode)
+      if (!skipReload) {
+        const stored = await getTiles();
+        setTiles(stored);
+      } else {
+        console.log('Skipping tile reload to preserve edit mode');
+      }
     } catch (error) {
       console.error('Failed to save tiles:', error);
-      // Reload from server on error
-      const stored = await getTiles();
-      setTiles(stored);
+      // Reload from server on error (unless we're skipping reload)
+      if (!skipReload) {
+        const stored = await getTiles();
+        setTiles(stored);
+      }
     }
   };
 

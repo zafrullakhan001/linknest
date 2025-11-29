@@ -952,6 +952,10 @@ function handleUpdateTile($tileId) {
     
         // Insert new tabs, sections, and links
         if (isset($data['tabs']) && is_array($data['tabs'])) {
+            // Log for debugging
+            error_log('Updating tile ' . $tileId . ' with ' . count($data['tabs']) . ' tabs');
+            error_log('Tab IDs: ' . json_encode(array_map(function($t) { return $t['id'] ?? 'no-id'; }, $data['tabs'])));
+            
             // New structure with tabs
             foreach ($data['tabs'] as $tabIndex => $tab) {
                 $tabId = $tab['id'] ?? uniqid('tab_', true);
@@ -1056,6 +1060,11 @@ function handleUpdateTile($tileId) {
         
         // Commit the transaction
         $db->commit();
+        
+        // Log success with tab count for debugging
+        $finalTabCount = isset($data['tabs']) && is_array($data['tabs']) ? count($data['tabs']) : 0;
+        error_log('Successfully updated tile ' . $tileId . ' with ' . $finalTabCount . ' tabs');
+        
         sendJSON(['success' => true]);
     } catch (PDOException $e) {
         // Rollback transaction on database error

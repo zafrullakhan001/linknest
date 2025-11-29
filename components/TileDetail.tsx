@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, POPULAR_EMOJIS } from '../types';
 import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
 import { authService, UserListItem } from '../services/authService';
 import { exportTileToFile } from '../services/spaceTransferService';
-import { cloneTile, getTiles } from '../services/storageService';
+import { cloneTile, getTiles, saveTile } from '../services/storageService';
 
 interface TileDetailProps {
     tile: Tile;
     allTiles: Tile[];
-    onUpdateTiles: (tiles: Tile[]) => void;
+    onUpdateTiles: (tiles: Tile[], skipReload?: boolean) => void;
     isAuthenticated?: boolean;
     onAuthRequired?: () => void;
 }
@@ -23,6 +23,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     onAuthRequired
 }) => {
     const [isEditing, setIsEditing] = useState(false);
+    const autoSavingRef = useRef(false);
 
     // Edit State
     const [editTitle, setEditTitle] = useState(tile.title);
@@ -84,18 +85,32 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
 
-    // Sync state when tile changes
+    // Sync state when tile changes, but only when not editing to prevent losing unsaved changes.
+    // IMPORTANT: We only depend on `tile` and `isEditing` so that local edits
+    // to `editTabs` (like deleting a tab) are not immediately overwritten by
+    // the current `tile` prop until the user actually saves.
     useEffect(() => {
+        // CRITICAL: Don't sync ANYTHING if we're currently editing - user might have unsaved changes
+        // This prevents overwriting deletions or other edits while user is working
+        if (isEditing) {
+            console.log('useEffect: BLOCKED - isEditing is true, preserving unsaved changes');
+            return;
+        }
+
+        // Basic fields
         setEditTitle(tile.title);
         setEditDesc(tile.description);
         setEditHtml(tile.htmlContent || '');
         setEditEmoji(tile.emoji);
         setEditColor(tile.themeColor);
+        setEditVisibility(tile.visibility || 'public');
+        setEditAllowedUsers(tile.allowedUsers || []);
 
-        // Use tabs if available, otherwise fall back to sections (backward compatibility)
+        // Tabs / sections: always reflect the latest tile data when
+        // we're *not* editing. While editing, `editTabs` is the source
+        // of truth and won't be touched by this effect.
         if (tile.tabs && tile.tabs.length > 0) {
             setEditTabs(tile.tabs);
-            // Flatten sections from tabs for backward compatibility
             const allSections: LinkSection[] = [];
             tile.tabs.forEach(tab => {
                 allSections.push(...tab.sections);
@@ -105,9 +120,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             setEditTabs([]);
             setEditSections(tile.sections || []);
         }
-
-        setEditVisibility(tile.visibility || 'public');
-        setEditAllowedUsers(tile.allowedUsers || []);
 
         // Load health status from tile data
         const healthMap: LinkHealthMap = {};
@@ -120,7 +132,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             });
         });
         setLinkHealth(healthMap);
-    }, [tile]);
+    }, [tile, isEditing]);
+
+    // Keep edit mode active during auto-save operations
+    useEffect(() => {
+        if (autoSavingRef.current && !isEditing) {
+            console.log('Auto-save: Detected edit mode was reset, restoring it');
+            setIsEditing(true);
+        }
+    }, [isEditing]);
 
     // Load fresh health data on mount
     useEffect(() => {
@@ -182,16 +202,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     }, [isEditing, isAuthenticated, tile.canEdit]);
 
-    // Exit edit mode if user doesn't have permission
-    useEffect(() => {
-        if (isEditing && !tile.canEdit) {
-            setIsEditing(false);
-        }
-    }, [isEditing, tile.canEdit]);
-
     const handleSaveChanges = () => {
+        console.log('=== SAVE CHANGES START ===');
+        console.log('Current editTabs:', editTabs.length, 'tabs');
+        console.log('EditTabs details:', editTabs.map(t => ({ id: t.id, title: t.title, position: t.position })));
+        
         // Check if user has edit permission
         if (!tile.canEdit) {
+            console.log('ERROR: No edit permission');
             alert('You do not have permission to edit this tile.');
             setIsEditing(false);
             return;
@@ -211,9 +229,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             allowedUsers: editVisibility === 'private' ? editAllowedUsers : undefined,
         };
 
+        console.log('Updated tile tabs:', updatedTile.tabs?.length || 0);
+        console.log('Updated tile tab IDs:', updatedTile.tabs?.map(t => ({ id: t.id, title: t.title })) || []);
+        console.log('Full updatedTile tabs:', JSON.stringify(updatedTile.tabs?.map(t => ({ id: t.id, title: t.title, position: t.position })), null, 2));
+
         const updatedTiles = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
+        console.log('Calling onUpdateTiles with', updatedTiles.length, 'tiles');
+        console.log('=== SAVE CHANGES COMPLETE ===');
+        
+        // Push the updated tiles up; App will persist them and re‑pass
+        // the updated `tile` prop back down.
         onUpdateTiles(updatedTiles);
-        setIsEditing(false);
+        
+        // Only exit edit mode if this is NOT an auto-save
+        if (!autoSavingRef.current) {
+            console.log('Manual save - exiting edit mode');
+            setIsEditing(false);
+        } else {
+            console.log('Auto-save detected in handleSaveChanges - keeping edit mode active');
+        }
     };
 
     // Tab Management
@@ -235,13 +269,115 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     const handleRemoveTab = (tabId: string) => {
+        console.log('=== TAB DELETION START ===');
+        console.log('Tab ID to delete:', tabId);
+        console.log('isEditing:', isEditing);
+        console.log('Current editTabs before deletion:', editTabs.map(t => ({ id: t.id, title: t.title, position: t.position })));
+        console.log('Current editTabs count:', editTabs.length);
+        
+        // Ensure we're in edit mode
+        if (!isEditing) {
+            console.error('ERROR: Not in edit mode!');
+            alert('Please enter edit mode first before deleting tabs.');
+            return;
+        }
+        
         if (!tile.canEdit) {
+            console.log('ERROR: No edit permission');
             alert('You do not have permission to edit this tile.');
             return;
         }
-        if (confirm('Delete this tab and all its sections and links?')) {
-            setEditTabs(editTabs.filter(t => t.id !== tabId).map((t, idx) => ({ ...t, position: idx })));
+
+        // Check tab count before showing confirm dialog
+        if (editTabs.length <= 1) {
+            console.log('ERROR: Cannot delete last tab');
+            alert('Cannot delete the last tab. A tile must have at least one tab.');
+            return;
         }
+
+        // Verify the tab exists
+        const tabExists = editTabs.some(t => t.id === tabId);
+        console.log('Tab exists in editTabs:', tabExists);
+        if (!tabExists) {
+            console.error('ERROR: Tab not found in editTabs!', { tabId, availableIds: editTabs.map(t => t.id) });
+            alert('Tab not found. This may be a synchronization issue.');
+            return;
+        }
+
+        // Ask for confirmation
+        const confirmed = window.confirm('Delete this tab and all its sections and links?');
+        if (!confirmed) {
+            console.log('User cancelled deletion');
+            return;
+        }
+
+        console.log('Proceeding with deletion...');
+        
+        // Calculate the updated tabs first
+        const filteredTabs = editTabs.filter(t => t.id !== tabId);
+        const reorderedTabs = filteredTabs.map((t, idx) => ({ ...t, position: idx }));
+        
+        console.log('After filter - remaining tabs:', reorderedTabs.map(t => ({ id: t.id, title: t.title })));
+        console.log('After reorder - final tabs:', reorderedTabs.map(t => ({ id: t.id, title: t.title, position: t.position })));
+        console.log('=== TAB DELETION COMPLETE ===');
+        
+        // Update state
+        setEditTabs(reorderedTabs);
+        
+        // Automatically save after deletion
+        // Mark that we're auto-saving to prevent edit mode from exiting
+        autoSavingRef.current = true;
+        
+        // Use setTimeout to ensure state update is processed first
+        setTimeout(() => {
+            console.log('Auto-saving after tab deletion...');
+            console.log('Tabs to save:', reorderedTabs.length);
+            console.log('Current isEditing state:', isEditing);
+            
+            // Ensure we're still in edit mode before saving
+            if (!isEditing) {
+                console.log('WARNING: Not in edit mode anymore, skipping auto-save');
+                autoSavingRef.current = false;
+                return;
+            }
+            
+            // Build updated tile with the new tabs
+            const updatedTile: Tile = {
+                ...tile,
+                title: editTitle,
+                description: editDesc,
+                htmlContent: editHtml,
+                emoji: editEmoji,
+                themeColor: editColor,
+                tabs: reorderedTabs.length > 0 ? reorderedTabs : undefined,
+                sections: reorderedTabs.length > 0 ? undefined : editSections,
+                visibility: editVisibility,
+                allowedUsers: editVisibility === 'private' ? editAllowedUsers : undefined,
+            };
+
+            console.log('Auto-save: Updated tile tabs:', updatedTile.tabs?.length || 0);
+            console.log('Auto-save: Tab IDs:', updatedTile.tabs?.map(t => ({ id: t.id, title: t.title })) || []);
+
+            const updatedTiles = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
+            console.log('Auto-save: Calling onUpdateTiles with skipReload=true');
+            
+            // Call onUpdateTiles with skipReload=true to prevent reload that resets edit mode
+            try {
+                // This will save to server but skip the reload
+                onUpdateTiles(updatedTiles, true);
+                console.log('Auto-save: Tab deletion saved successfully - staying in edit mode');
+                
+                // Reset the flag after a delay
+                setTimeout(() => {
+                    autoSavingRef.current = false;
+                    console.log('Auto-save: Flag reset');
+                }, 1000);
+            } catch (error) {
+                console.error('Auto-save: Failed to save:', error);
+                alert('Failed to save tab deletion. Please try saving manually.');
+                autoSavingRef.current = false;
+            }
+        }, 150);
     };
 
     const handleUpdateTabTitle = (tabId: string, newTitle: string) => {
@@ -336,21 +472,135 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     const handleRemoveSection = (tabId: string, sectionId: string) => {
+        console.log('=== SECTION DELETION START ===');
+        console.log('Tab ID:', tabId, 'Section ID:', sectionId);
+        
         if (!tile.canEdit) {
             alert('You do not have permission to edit this tile.');
             return;
         }
-        if (confirm('Delete this section and all its links?')) {
-            setEditTabs(editTabs.map(tab => {
+        
+        // Ensure we're in edit mode
+        if (!isEditing) {
+            console.error('ERROR: Not in edit mode!');
+            alert('Please enter edit mode first before deleting sections.');
+            return;
+        }
+        
+        const confirmed = window.confirm('Delete this section and all its links?');
+        if (!confirmed) {
+            console.log('User cancelled section deletion');
+            return;
+        }
+        
+        console.log('Proceeding with section deletion...');
+        console.log('Current editTabs:', editTabs.map(t => ({ id: t.id, title: t.title, sectionsCount: t.sections.length })));
+        
+        // Find the tab and section
+        const tab = editTabs.find(t => t.id === tabId);
+        if (!tab) {
+            console.error('ERROR: Tab not found!', tabId);
+            alert('Tab not found. This may be a synchronization issue.');
+            return;
+        }
+        
+        const section = tab.sections.find(s => s.id === sectionId);
+        if (!section) {
+            console.error('ERROR: Section not found!', sectionId);
+            alert('Section not found. This may be a synchronization issue.');
+            return;
+        }
+        
+        console.log('Found tab:', tab.title, 'Found section:', section.title);
+        console.log('Tab sections before deletion:', tab.sections.map(s => ({ id: s.id, title: s.title })));
+        
+        // Calculate the updated tabs with section removed
+        const updatedTabs = editTabs.map(tab => {
+            if (tab.id === tabId) {
+                const filteredSections = tab.sections.filter(s => s.id !== sectionId);
+                console.log('Tab', tabId, '- sections before:', tab.sections.length, 'after:', filteredSections.length);
+                console.log('Filtered sections:', filteredSections.map(s => ({ id: s.id, title: s.title })));
+                return {
+                    ...tab,
+                    sections: filteredSections
+                };
+            }
+            return tab;
+        });
+        
+        console.log('=== SECTION DELETION COMPLETE ===');
+        console.log('Updated tabs:', updatedTabs.map(t => ({ id: t.id, title: t.title, sectionsCount: t.sections.length })));
+        
+        // Update state using functional update to ensure we have latest state
+        setEditTabs(prevTabs => {
+            console.log('Inside setEditTabs for section deletion - prevTabs:', prevTabs.map(t => ({ id: t.id, sectionsCount: t.sections.length })));
+            const result = prevTabs.map(tab => {
                 if (tab.id === tabId) {
+                    const filtered = tab.sections.filter(s => s.id !== sectionId);
+                    console.log('Filtering sections for tab', tabId, '- before:', tab.sections.length, 'after:', filtered.length);
                     return {
                         ...tab,
-                        sections: tab.sections.filter(s => s.id !== sectionId)
+                        sections: filtered
                     };
                 }
                 return tab;
-            }));
-        }
+            });
+            console.log('setEditTabs result:', result.map(t => ({ id: t.id, sectionsCount: t.sections.length })));
+            return result;
+        });
+        
+        // Automatically save after deletion
+        autoSavingRef.current = true;
+        
+        // Use setTimeout to ensure state update is processed first
+        setTimeout(() => {
+            console.log('Auto-saving after section deletion...');
+            
+            // Get the latest tabs state for saving
+            setEditTabs(currentTabs => {
+                // Build updated tile with the current tabs (which should have section removed)
+                const updatedTile: Tile = {
+                    ...tile,
+                    title: editTitle,
+                    description: editDesc,
+                    htmlContent: editHtml,
+                    emoji: editEmoji,
+                    themeColor: editColor,
+                    tabs: currentTabs.length > 0 ? currentTabs : undefined,
+                    sections: currentTabs.length > 0 ? undefined : editSections,
+                    visibility: editVisibility,
+                    allowedUsers: editVisibility === 'private' ? editAllowedUsers : undefined,
+                };
+
+                console.log('Auto-save: Updated tile with section removed');
+                console.log('Auto-save: Tabs to save:', currentTabs.map(t => ({ id: t.id, title: t.title, sectionsCount: t.sections.length })));
+
+                const updatedTilesArray = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
+                console.log('Auto-save: Calling onUpdateTiles with skipReload=true');
+                
+                // Call onUpdateTiles with skipReload=true to prevent reload that resets edit mode
+                // Do this outside the setState callback to avoid issues
+                setTimeout(() => {
+                    try {
+                        onUpdateTiles(updatedTilesArray, true);
+                        console.log('Auto-save: Section deletion saved successfully - staying in edit mode');
+                        
+                        // Reset the flag after a delay
+                        setTimeout(() => {
+                            autoSavingRef.current = false;
+                            console.log('Auto-save: Flag reset');
+                        }, 1000);
+                    } catch (error) {
+                        console.error('Auto-save: Failed to save:', error);
+                        alert('Failed to save section deletion. Please try saving manually.');
+                        autoSavingRef.current = false;
+                    }
+                }, 50);
+                
+                // Return current tabs unchanged (state already updated above)
+                return currentTabs;
+            });
+        }, 150);
     };
 
     const handleUpdateSectionTitle = (tabId: string, sectionId: string, newTitle: string) => {
@@ -892,14 +1142,24 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     // Health Check Handlers
-    const handleCheckTileHealth = async () => {
+    const handleCheckTileHealth = async (e?: React.MouseEvent) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
         setCheckingHealth(true);
         try {
             const results = await linkHealthService.checkTileLinks(tile.id);
-            setLinkHealth(prev => ({ ...prev, ...results }));
+            if (results && typeof results === 'object') {
+                setLinkHealth(prev => ({ ...prev, ...results }));
+            } else {
+                console.warn('Unexpected results format:', results);
+            }
         } catch (error) {
             console.error('Failed to check tile health:', error);
-            alert('Failed to check link health. Please try again.');
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            alert(`Failed to check link health: ${errorMessage}. Please try again.`);
         } finally {
             setCheckingHealth(false);
         }
@@ -1086,10 +1346,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             </button>
                             {/* Check All Links Button */}
                             <button
-                                onClick={handleCheckTileHealth}
+                                onClick={(e) => handleCheckTileHealth(e)}
                                 disabled={checkingHealth}
                                 className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex items-center gap-2 backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed"
                                 title="Check all links in this tile"
+                                type="button"
                             >
                                 {checkingHealth ? (
                                     <>
@@ -1435,17 +1696,37 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Edit Page: {editTitle}</h1>
                     <div className="flex gap-3">
                         <button
-                            onClick={() => setIsEditing(false)}
+                            onClick={() => {
+                                const confirmed = window.confirm('Are you sure you want to cancel? All unsaved changes will be lost.');
+                                if (confirmed) {
+                                    console.log('Cancel clicked - exiting edit mode');
+                                    setIsEditing(false);
+                                } else {
+                                    console.log('Cancel cancelled - staying in edit mode');
+                                }
+                            }}
                             className="px-4 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
                         >
                             Cancel
                         </button>
                         <button
-                            onClick={handleSaveChanges}
+                            onClick={() => {
+                                console.log('=== SAVE BUTTON CLICKED ===');
+                                console.log('Current editTabs count:', editTabs.length);
+                                console.log('Button disabled?', editVisibility === 'private' && editAllowedUsers.length === 0);
+                                console.log('editVisibility:', editVisibility);
+                                console.log('editAllowedUsers.length:', editAllowedUsers.length);
+                                if (editVisibility === 'private' && editAllowedUsers.length === 0) {
+                                    alert('Please select at least one user for private visibility before saving.');
+                                    return;
+                                }
+                                handleSaveChanges();
+                            }}
                             disabled={editVisibility === 'private' && editAllowedUsers.length === 0}
                             className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg font-bold transition-all shadow-lg shadow-brand-500/20"
+                            title={editVisibility === 'private' && editAllowedUsers.length === 0 ? 'Please select users for private visibility' : 'Save all changes'}
                         >
-                            Save Changes
+                            Save Changes {editTabs.length !== (tile.tabs?.length || 0) ? '⚠️' : ''}
                         </button>
                     </div>
                 </div>
@@ -1798,9 +2079,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 </svg>
                                             </button>
                                             <button
-                                                onClick={() => handleRemoveTab(tab.id)}
-                                                className="text-slate-400 hover:text-red-500 p-2"
-                                                title="Delete Tab"
+                                                type="button"
+                                                onClick={() => {
+                                                    console.log('Delete button clicked for tab:', { id: tab.id, title: tab.title });
+                                                    handleRemoveTab(tab.id);
+                                                }}
+                                                disabled={editTabs.length <= 1}
+                                                className="text-slate-400 hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed p-2"
+                                                title={editTabs.length <= 1 ? "Cannot delete the last tab" : "Delete Tab"}
                                             >
                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
                                                     <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
@@ -2000,7 +2286,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             </svg>
                                                         </button>
                                                         <button
-                                                            onClick={() => handleRemoveSection(tab.id, section.id)}
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                e.stopPropagation();
+                                                                console.log('Delete section button clicked:', { tabId: tab.id, sectionId: section.id });
+                                                                handleRemoveSection(tab.id, section.id);
+                                                            }}
                                                             className="text-slate-400 hover:text-red-500 p-2"
                                                             title="Delete Section"
                                                         >
@@ -2390,9 +2681,59 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             />
                                             <button
                                                 onClick={() => {
-                                                    if (confirm('Delete this section and all its links?')) {
-                                                        setEditSections(editSections.filter(s => s.id !== section.id));
+                                                    console.log('=== LEGACY SECTION DELETION START ===');
+                                                    console.log('Section ID:', section.id);
+                                                    
+                                                    if (!isEditing) {
+                                                        alert('Please enter edit mode first before deleting sections.');
+                                                        return;
                                                     }
+                                                    
+                                                    const confirmed = window.confirm('Delete this section and all its links?');
+                                                    if (!confirmed) {
+                                                        return;
+                                                    }
+                                                    
+                                                    console.log('Proceeding with legacy section deletion...');
+                                                    const filteredSections = editSections.filter(s => s.id !== section.id);
+                                                    console.log('Sections before:', editSections.length, 'after:', filteredSections.length);
+                                                    
+                                                    setEditSections(filteredSections);
+                                                    
+                                                    // Automatically save after deletion
+                                                    autoSavingRef.current = true;
+                                                    
+                                                    setTimeout(() => {
+                                                        console.log('Auto-saving after legacy section deletion...');
+                                                        
+                                                        const updatedTile: Tile = {
+                                                            ...tile,
+                                                            title: editTitle,
+                                                            description: editDesc,
+                                                            htmlContent: editHtml,
+                                                            emoji: editEmoji,
+                                                            themeColor: editColor,
+                                                            tabs: editTabs.length > 0 ? editTabs : undefined,
+                                                            sections: editTabs.length > 0 ? undefined : filteredSections,
+                                                            visibility: editVisibility,
+                                                            allowedUsers: editVisibility === 'private' ? editAllowedUsers : undefined,
+                                                        };
+
+                                                        const updatedTilesArray = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
+                                                        
+                                                        try {
+                                                            onUpdateTiles(updatedTilesArray, true);
+                                                            console.log('Auto-save: Legacy section deletion saved successfully');
+                                                            
+                                                            setTimeout(() => {
+                                                                autoSavingRef.current = false;
+                                                            }, 1000);
+                                                        } catch (error) {
+                                                            console.error('Auto-save: Failed to save:', error);
+                                                            alert('Failed to save section deletion. Please try saving manually.');
+                                                            autoSavingRef.current = false;
+                                                        }
+                                                    }, 150);
                                                 }}
                                                 className="text-slate-400 hover:text-red-500 p-2"
                                                 title="Delete Section"
