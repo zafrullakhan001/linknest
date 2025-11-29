@@ -581,6 +581,9 @@ function handleCheckTileLinks() {
             return;
         }
         
+        // Check if force re-check is requested (default to true for "Check Links" button)
+        $force = isset($data['force']) ? (bool)$data['force'] : true;
+        
         $db = getDB();
         // Set busy timeout to handle concurrent access
         $db->exec('PRAGMA busy_timeout = 3000');
@@ -602,40 +605,63 @@ function handleCheckTileLinks() {
         
         $results = [];
         $now = time();
-        // Only re-check links that haven't been checked in the last 5 minutes
         $tileMaxAge = 300; // 5 minutes
         
         // Separate links that need checking from those that don't
+        // Use array structure to handle duplicate URLs properly
         $linksToCheck = [];
-        $linkIdToUrl = [];
+        $urlToLinkIds = []; // Map URL to array of link IDs (handles duplicates)
         
         foreach ($links as $link) {
             $lastChecked = isset($link['health_checked_at']) ? (int)$link['health_checked_at'] : null;
             $currentStatus = $link['health_status'] ?? null;
             
-            // Skip checking if:
-            // 1. Recently checked (within 5 minutes) AND has a status
-            // 2. Already marked as "restricted" (403/401) - these will always be restricted, no need to re-check
-            if ($lastChecked !== null && ($now - $lastChecked) < $tileMaxAge && !empty($currentStatus)) {
-                // Recently checked - return existing health info
-                $results[$link['id']] = [
-                    'status' => $currentStatus,
-                    'httpCode' => $link['health_http_code'] ? (int)$link['health_http_code'] : null,
-                    'error' => $link['health_error'],
-                    'checkedAt' => $lastChecked
-                ];
-            } elseif ($currentStatus === 'restricted' && $link['health_http_code'] == 403) {
-                // Already marked as restricted (403) - skip re-checking, it will always be 403
-                $results[$link['id']] = [
-                    'status' => 'restricted',
-                    'httpCode' => 403,
-                    'error' => 'Access forbidden (403)',
-                    'checkedAt' => $lastChecked ?: $now
-                ];
+            // If force is true, check all links regardless of when they were last checked
+            // Only skip restricted links (403) even when forcing, as they will always be restricted
+            if ($force) {
+                // Force mode: check all links except permanently restricted ones
+                if ($currentStatus === 'restricted' && $link['health_http_code'] == 403) {
+                    // Already marked as restricted (403) - skip re-checking, it will always be 403
+                    $results[$link['id']] = [
+                        'status' => 'restricted',
+                        'httpCode' => 403,
+                        'error' => 'Access forbidden (403)',
+                        'checkedAt' => $lastChecked ?: $now
+                    ];
+                } else {
+                    // Add to check queue
+                    if (!isset($urlToLinkIds[$link['url']])) {
+                        $urlToLinkIds[$link['url']] = [];
+                        $linksToCheck[] = $link['url'];
+                    }
+                    $urlToLinkIds[$link['url']][] = $link['id'];
+                }
             } else {
-                // Needs a fresh check - add to batch
-                $linksToCheck[] = $link['url'];
-                $linkIdToUrl[$link['url']] = $link['id'];
+                // Non-force mode: skip recently checked links
+                if ($lastChecked !== null && ($now - $lastChecked) < $tileMaxAge && !empty($currentStatus)) {
+                    // Recently checked - return existing health info
+                    $results[$link['id']] = [
+                        'status' => $currentStatus,
+                        'httpCode' => $link['health_http_code'] ? (int)$link['health_http_code'] : null,
+                        'error' => $link['health_error'],
+                        'checkedAt' => $lastChecked
+                    ];
+                } elseif ($currentStatus === 'restricted' && $link['health_http_code'] == 403) {
+                    // Already marked as restricted (403) - skip re-checking
+                    $results[$link['id']] = [
+                        'status' => 'restricted',
+                        'httpCode' => 403,
+                        'error' => 'Access forbidden (403)',
+                        'checkedAt' => $lastChecked ?: $now
+                    ];
+                } else {
+                    // Needs a fresh check - add to batch
+                    if (!isset($urlToLinkIds[$link['url']])) {
+                        $urlToLinkIds[$link['url']] = [];
+                        $linksToCheck[] = $link['url'];
+                    }
+                    $urlToLinkIds[$link['url']][] = $link['id'];
+                }
             }
         }
         
@@ -646,15 +672,19 @@ function handleCheckTileLinks() {
             // Prepare batch update
             $batchUpdates = [];
             foreach ($healthResults as $url => $healthResult) {
-                $linkId = $linkIdToUrl[$url];
-                $batchUpdates[$linkId] = $healthResult;
-                
-                $results[$linkId] = [
-                    'status' => $healthResult['status'],
-                    'httpCode' => $healthResult['http_code'],
-                    'error' => $healthResult['error'],
-                    'checkedAt' => $now
-                ];
+                // Handle multiple links with the same URL
+                if (isset($urlToLinkIds[$url])) {
+                    foreach ($urlToLinkIds[$url] as $linkId) {
+                        $batchUpdates[$linkId] = $healthResult;
+                        
+                        $results[$linkId] = [
+                            'status' => $healthResult['status'],
+                            'httpCode' => $healthResult['http_code'],
+                            'error' => $healthResult['error'],
+                            'checkedAt' => $now
+                        ];
+                    }
+                }
             }
             
             // Batch update database (faster than individual updates)
@@ -702,14 +732,19 @@ function handleCheckAllLinks() {
     
     if (empty($links)) {
         sendJSON(['success' => true, 'checked' => 0, 'message' => 'All links are up to date']);
+        return;
     }
     
     // Prepare URLs for parallel checking
+    // Use array structure to handle duplicate URLs properly
     $urls = [];
-    $linkIdToUrl = [];
+    $urlToLinkIds = []; // Map URL to array of link IDs (handles duplicates)
     foreach ($links as $link) {
-        $urls[] = $link['url'];
-        $linkIdToUrl[$link['url']] = $link['id'];
+        if (!isset($urlToLinkIds[$link['url']])) {
+            $urlToLinkIds[$link['url']] = [];
+            $urls[] = $link['url'];
+        }
+        $urlToLinkIds[$link['url']][] = $link['id'];
     }
     
     // Check all URLs in parallel (process in batches of 10 for very large sets)
@@ -733,14 +768,18 @@ function handleCheckAllLinks() {
     ];
     
     foreach ($allHealthResults as $url => $healthResult) {
-        $linkId = $linkIdToUrl[$url];
-        $batchUpdates[$linkId] = $healthResult;
-        
-        $status = $healthResult['status'];
-        if (isset($results[$status])) {
-            $results[$status]++;
-        } else {
-            $results['unknown']++;
+        // Handle multiple links with the same URL
+        if (isset($urlToLinkIds[$url])) {
+            foreach ($urlToLinkIds[$url] as $linkId) {
+                $batchUpdates[$linkId] = $healthResult;
+                
+                $status = $healthResult['status'];
+                if (isset($results[$status])) {
+                    $results[$status]++;
+                } else {
+                    $results['unknown']++;
+                }
+            }
         }
     }
     

@@ -126,9 +126,18 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
-        // Optimize HMR
+        // Optimize HMR for Fast Refresh
         hmr: {
-          overlay: true
+          overlay: true,
+          // When server host is 0.0.0.0, ensure HMR connects to localhost
+          // This is critical for Fast Refresh to work in dev mode
+          host: mode === 'development' ? 'localhost' : undefined,
+          port: 3000
+        },
+        // Ensure proper WebSocket connection for HMR
+        watch: {
+          usePolling: false,
+          interval: 100
         },
         proxy: {
           '/api': {
@@ -166,7 +175,8 @@ export default defineConfig(({ mode }) => {
       plugins: [
         react({
           // Optimize JSX runtime
-          jsxRuntime: 'automatic'
+          jsxRuntime: 'automatic',
+          // Fast Refresh is enabled by default in dev mode for React 19
         })
       ],
       define: {

@@ -101,13 +101,13 @@ export const linkHealthService = {
   /**
    * Check all links in a tile
    */
-  async checkTileLinks(tileId: string): Promise<LinkHealthMap> {
+  async checkTileLinks(tileId: string, force: boolean = true): Promise<LinkHealthMap> {
     const response = await withTimeout(
       fetch(`${API_BASE}/linkhealth/check-tile`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ tileId })
+        body: JSON.stringify({ tileId, force })
       }),
       15000, // Allow a bit more time for whole-tile checks
       'checkTileLinks'
