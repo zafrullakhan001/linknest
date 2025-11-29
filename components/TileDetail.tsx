@@ -73,6 +73,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     // Scheduling Dialog State
     const [schedulingDialogTab, setSchedulingDialogTab] = useState<string | null>(null);
+    const [schedulingDialogSection, setSchedulingDialogSection] = useState<{ tabId: string; sectionId: string } | null>(null);
+    const [schedulingDialogLink, setSchedulingDialogLink] = useState<{ tabId: string; sectionId: string; linkId: string } | null>(null);
 
     // Health Check State
     const [linkHealth, setLinkHealth] = useState<LinkHealthMap>({});
@@ -174,15 +176,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     setVisibilityDialogSection(null);
                 } else if (schedulingDialogTab) {
                     setSchedulingDialogTab(null);
+                } else if (schedulingDialogSection) {
+                    setSchedulingDialogSection(null);
+                } else if (schedulingDialogLink) {
+                    setSchedulingDialogLink(null);
                 }
             }
         };
 
-        if (visibilityDialogTab || visibilityDialogSection || schedulingDialogTab) {
+        if (visibilityDialogTab || visibilityDialogSection || schedulingDialogTab || schedulingDialogSection || schedulingDialogLink) {
             document.addEventListener('keydown', handleEscKey);
             return () => document.removeEventListener('keydown', handleEscKey);
         }
-    }, [visibilityDialogTab, visibilityDialogSection, schedulingDialogTab]);
+    }, [visibilityDialogTab, visibilityDialogSection, schedulingDialogTab, schedulingDialogSection, schedulingDialogLink]);
 
     // Load users list when editing and authenticated
     useEffect(() => {
@@ -455,6 +461,51 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     expiresAt: expiresAt || undefined
                 }
                 : t
+        ));
+    };
+
+    const handleUpdateSectionScheduling = (tabId: string, sectionId: string, visibleFrom?: string, expiresAt?: string) => {
+        setEditTabs(editTabs.map(tab =>
+            tab.id === tabId
+                ? {
+                    ...tab,
+                    sections: tab.sections.map(section =>
+                        section.id === sectionId
+                            ? {
+                                ...section,
+                                visibleFrom: visibleFrom || undefined,
+                                expiresAt: expiresAt || undefined
+                            }
+                            : section
+                    )
+                }
+                : tab
+        ));
+    };
+
+    const handleUpdateLinkScheduling = (tabId: string, sectionId: string, linkId: string, visibleFrom?: string, expiresAt?: string) => {
+        setEditTabs(editTabs.map(tab =>
+            tab.id === tabId
+                ? {
+                    ...tab,
+                    sections: tab.sections.map(section =>
+                        section.id === sectionId
+                            ? {
+                                ...section,
+                                links: section.links.map(link =>
+                                    link.id === linkId
+                                        ? {
+                                            ...link,
+                                            visibleFrom: visibleFrom || undefined,
+                                            expiresAt: expiresAt || undefined
+                                        }
+                                        : link
+                                )
+                            }
+                            : section
+                    )
+                }
+                : tab
         ));
     };
 
@@ -1272,6 +1323,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         } else {
             // Otherwise, get all sections (backward compatibility - no tabs)
             sectionsToFilter = getAllSections();
+        }
+
+        // Filter sections and links by schedule in view mode
+        if (!isEditing) {
+            sectionsToFilter = sectionsToFilter
+                .filter(section => isContentVisible(section))
+                .map(section => ({
+                    ...section,
+                    links: section.links.filter(link => isContentVisible(link))
+                }))
+                .filter(section => section.links.length > 0);
         }
 
         // Apply search filter if search term exists
@@ -2268,6 +2330,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
                                                             </svg>
                                                         </button>
+                                                        <button
+                                                            onClick={() => setSchedulingDialogSection({ tabId: tab.id, sectionId: section.id })}
+                                                            className="text-slate-400 hover:text-green-600 dark:hover:text-green-400 p-2"
+                                                            title="Schedule Section"
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                <path fillRule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75z" clipRule="evenodd" />
+                                                            </svg>
+                                                        </button>
+                                                        {(section.visibleFrom || section.expiresAt) && (
+                                                            <span className="text-xs px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
+                                                                📅 Scheduled
+                                                            </span>
+                                                        )}
                                                         {section.visibility && section.visibility !== 'public' && (
                                                             <span className={`text-xs px-2 py-1 rounded ${section.visibility === 'authenticated'
                                                                 ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
@@ -2482,6 +2558,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         {link.visibility === 'authenticated' ? '🔒' : '🔐'}
                                                                                     </span>
                                                                                 )}
+                                                                                {(link.visibleFrom || link.expiresAt) && (
+                                                                                    <span className="text-xs px-1.5 py-0.5 rounded shrink-0 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
+                                                                                        📅
+                                                                                    </span>
+                                                                                )}
                                                                             </div>
                                                                             <div className="text-xs text-slate-500 truncate font-mono">{link.url}</div>
                                                                         </div>
@@ -2503,6 +2584,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                                                                                     <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
                                                                                     <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
+                                                                                </svg>
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => setSchedulingDialogLink({ tabId: tab.id, sectionId: section.id, linkId: link.id })}
+                                                                                className="p-1.5 text-slate-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
+                                                                                title="Schedule Link"
+                                                                            >
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                                    <path fillRule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75z" clipRule="evenodd" />
                                                                                 </svg>
                                                                             </button>
                                                                             <button
@@ -3045,6 +3135,195 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         </button>
                                         <button
                                             onClick={() => setSchedulingDialogTab(null)}
+                                            className="flex-1 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                                        >
+                                            Done
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    {/* Section Scheduling Dialog */}
+                    {schedulingDialogSection && (() => {
+                        const tab = editTabs.find(t => t.id === schedulingDialogSection.tabId);
+                        const section = tab?.sections.find(s => s.id === schedulingDialogSection.sectionId);
+                        if (!section) return null;
+
+                        return (
+                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setSchedulingDialogSection(null)}>
+                                <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Schedule Section: {section.title}</h3>
+                                        <button
+                                            onClick={() => setSchedulingDialogSection(null)}
+                                            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                                            title="Close"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                            </svg>
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-4 mb-6">
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                                Visible From (optional)
+                                            </label>
+                                            <input
+                                                type="datetime-local"
+                                                value={section.visibleFrom?.slice(0, 16) || ''}
+                                                onChange={(e) => handleUpdateSectionScheduling(schedulingDialogSection.tabId, schedulingDialogSection.sectionId, e.target.value, section.expiresAt)}
+                                                className="w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                                            />
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Section becomes visible at this date/time</p>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                                Expires At (optional)
+                                            </label>
+                                            <input
+                                                type="datetime-local"
+                                                value={section.expiresAt?.slice(0, 16) || ''}
+                                                onChange={(e) => handleUpdateSectionScheduling(schedulingDialogSection.tabId, schedulingDialogSection.sectionId, section.visibleFrom, e.target.value)}
+                                                className="w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                                            />
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Section expires at this date/time</p>
+                                        </div>
+
+                                        <div className="flex items-center gap-2 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg">
+                                            <input
+                                                type="checkbox"
+                                                id="no-expiration-section"
+                                                checked={!section.visibleFrom && !section.expiresAt}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        handleUpdateSectionScheduling(schedulingDialogSection.tabId, schedulingDialogSection.sectionId, undefined, undefined);
+                                                    }
+                                                }}
+                                                className="rounded border-slate-300 dark:border-slate-600"
+                                            />
+                                            <label htmlFor="no-expiration-section" className="text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
+                                                No expiration (always visible)
+                                            </label>
+                                        </div>
+
+                                        {(section.visibleFrom || section.expiresAt) && (
+                                            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                                                <p className="text-xs text-blue-700 dark:text-blue-300">
+                                                    <strong>Note:</strong> Times are in your local timezone. The section will be automatically shown/hidden based on these dates.
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => handleUpdateSectionScheduling(schedulingDialogSection.tabId, schedulingDialogSection.sectionId, undefined, undefined)}
+                                            className="flex-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg font-medium transition-colors"
+                                        >
+                                            Clear
+                                        </button>
+                                        <button
+                                            onClick={() => setSchedulingDialogSection(null)}
+                                            className="flex-1 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                                        >
+                                            Done
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    {/* Link Scheduling Dialog */}
+                    {schedulingDialogLink && (() => {
+                        const tab = editTabs.find(t => t.id === schedulingDialogLink.tabId);
+                        const section = tab?.sections.find(s => s.id === schedulingDialogLink.sectionId);
+                        const link = section?.links.find(l => l.id === schedulingDialogLink.linkId);
+                        if (!link) return null;
+
+                        return (
+                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setSchedulingDialogLink(null)}>
+                                <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Schedule Link: {link.label}</h3>
+                                        <button
+                                            onClick={() => setSchedulingDialogLink(null)}
+                                            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                                            title="Close"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                            </svg>
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-4 mb-6">
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                                Visible From (optional)
+                                            </label>
+                                            <input
+                                                type="datetime-local"
+                                                value={link.visibleFrom?.slice(0, 16) || ''}
+                                                onChange={(e) => handleUpdateLinkScheduling(schedulingDialogLink.tabId, schedulingDialogLink.sectionId, schedulingDialogLink.linkId, e.target.value, link.expiresAt)}
+                                                className="w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                                            />
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Link becomes visible at this date/time</p>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                                Expires At (optional)
+                                            </label>
+                                            <input
+                                                type="datetime-local"
+                                                value={link.expiresAt?.slice(0, 16) || ''}
+                                                onChange={(e) => handleUpdateLinkScheduling(schedulingDialogLink.tabId, schedulingDialogLink.sectionId, schedulingDialogLink.linkId, link.visibleFrom, e.target.value)}
+                                                className="w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                                            />
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Link expires at this date/time</p>
+                                        </div>
+
+                                        <div className="flex items-center gap-2 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg">
+                                            <input
+                                                type="checkbox"
+                                                id="no-expiration-link"
+                                                checked={!link.visibleFrom && !link.expiresAt}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        handleUpdateLinkScheduling(schedulingDialogLink.tabId, schedulingDialogLink.sectionId, schedulingDialogLink.linkId, undefined, undefined);
+                                                    }
+                                                }}
+                                                className="rounded border-slate-300 dark:border-slate-600"
+                                            />
+                                            <label htmlFor="no-expiration-link" className="text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
+                                                No expiration (always visible)
+                                            </label>
+                                        </div>
+
+                                        {(link.visibleFrom || link.expiresAt) && (
+                                            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                                                <p className="text-xs text-blue-700 dark:text-blue-300">
+                                                    <strong>Note:</strong> Times are in your local timezone. The link will be automatically shown/hidden based on these dates.
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => handleUpdateLinkScheduling(schedulingDialogLink.tabId, schedulingDialogLink.sectionId, schedulingDialogLink.linkId, undefined, undefined)}
+                                            className="flex-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg font-medium transition-colors"
+                                        >
+                                            Clear
+                                        </button>
+                                        <button
+                                            onClick={() => setSchedulingDialogLink(null)}
                                             className="flex-1 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg font-medium transition-colors"
                                         >
                                             Done
