@@ -124,12 +124,15 @@ export interface SpaceStyles {
   contentHeaderOpacity: number; // 0-100
 
   // Content Section Styling
-  contentSectionStyle: 'card' | 'flat' | 'bordered' | 'elevated';
+  contentSectionStyle: 'card' | 'flat' | 'bordered' | 'elevated' | 'gradient';
   contentSectionBackgroundColor: string;
   contentSectionBorderColor: string;
   contentSectionBorderRadius: number;
   contentSectionElevation: number;
   contentSectionSpacing: number;
+  contentSectionGradientStart: string;
+  contentSectionGradientEnd: string;
+  contentSectionGradientDirection: number;
 
   // Content Link Styling
   contentLinkStyle: 'pill' | 'card' | 'minimal' | 'button';
@@ -262,6 +265,9 @@ export const DEFAULT_STYLES: SpaceStyles = {
   contentSectionBorderRadius: 16,
   contentSectionElevation: 1,
   contentSectionSpacing: 24,
+  contentSectionGradientStart: '#3b82f6',
+  contentSectionGradientEnd: '#8b5cf6',
+  contentSectionGradientDirection: 135,
 
   contentLinkStyle: 'card',
   contentLinkBackgroundColor: '#ffffff',
@@ -1010,6 +1016,11 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       sectionBackground = isDark ? 'rgba(30, 41, 59, 0.8)' : styles.contentSectionBackgroundColor;
       sectionBorder = 'none';
       sectionShadow = contentShadows[Math.min(styles.contentSectionElevation + 2, 5)];
+      break;
+    case 'gradient':
+      sectionBackground = `linear-gradient(${styles.contentSectionGradientDirection}deg, ${styles.contentSectionGradientStart}, ${styles.contentSectionGradientEnd})`;
+      sectionBorder = 'none';
+      sectionShadow = contentShadows[Math.min(styles.contentSectionElevation, 5)];
       break;
   }
 

@@ -1577,32 +1577,84 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Section Style</label>
                     <select
                       value={styles.contentSectionStyle}
-                      onChange={(e) => updateStyle('contentSectionStyle', e.target.value as 'card' | 'flat' | 'bordered' | 'elevated')}
+                      onChange={(e) => updateStyle('contentSectionStyle', e.target.value as 'card' | 'flat' | 'bordered' | 'elevated' | 'gradient')}
                       className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
                     >
                       <option value="card">Card</option>
                       <option value="flat">Flat</option>
                       <option value="bordered">Bordered</option>
                       <option value="elevated">Elevated</option>
+                      <option value="gradient">Gradient</option>
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Background Color</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="color"
-                        value={styles.contentSectionBackgroundColor}
-                        onChange={(e) => updateStyle('contentSectionBackgroundColor', e.target.value)}
-                        className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
-                      />
-                      <input
-                        type="text"
-                        value={styles.contentSectionBackgroundColor}
-                        onChange={(e) => updateStyle('contentSectionBackgroundColor', e.target.value)}
-                        className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
-                      />
+                  {styles.contentSectionStyle === 'gradient' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Direction: {styles.contentSectionGradientDirection}°</label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="360"
+                          value={styles.contentSectionGradientDirection}
+                          onChange={(e) => updateStyle('contentSectionGradientDirection', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Start Color</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="color"
+                            value={styles.contentSectionGradientStart}
+                            onChange={(e) => updateStyle('contentSectionGradientStart', e.target.value)}
+                            className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                          />
+                          <input
+                            type="text"
+                            value={styles.contentSectionGradientStart}
+                            onChange={(e) => updateStyle('contentSectionGradientStart', e.target.value)}
+                            className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">End Color</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="color"
+                            value={styles.contentSectionGradientEnd}
+                            onChange={(e) => updateStyle('contentSectionGradientEnd', e.target.value)}
+                            className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                          />
+                          <input
+                            type="text"
+                            value={styles.contentSectionGradientEnd}
+                            onChange={(e) => updateStyle('contentSectionGradientEnd', e.target.value)}
+                            className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+                  {styles.contentSectionStyle !== 'gradient' && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Background Color</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="color"
+                          value={styles.contentSectionBackgroundColor}
+                          onChange={(e) => updateStyle('contentSectionBackgroundColor', e.target.value)}
+                          className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                        />
+                        <input
+                          type="text"
+                          value={styles.contentSectionBackgroundColor}
+                          onChange={(e) => updateStyle('contentSectionBackgroundColor', e.target.value)}
+                          className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                        />
+                      </div>
                     </div>
-                  </div>
+                  )}
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Border Radius: {styles.contentSectionBorderRadius}px</label>
                     <input
