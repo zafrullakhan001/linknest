@@ -7,6 +7,7 @@ import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import { StyleProvider, useStyles } from './contexts/StyleContext';
 import { AuthModal } from './components/AuthModal';
 import { TimezoneDisplay } from './components/TimezoneDisplay';
+import { HelpAboutDialog } from './components/HelpAboutDialog';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -50,6 +51,7 @@ const AppContent: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [styleManagerOpen, setStyleManagerOpen] = useState(false);
+  const [helpAboutOpen, setHelpAboutOpen] = useState(false);
   const [authRequired, setAuthRequired] = useState(false); // Track if we got 401 error
   const { user, isAuthenticated, loading: authLoading } = useAuth();
   const { updateStyles, styles, isLoading: stylesLoading } = useStyles();
@@ -368,6 +370,7 @@ const AppContent: React.FC = () => {
         toggleTheme={toggleTheme}
         user={user}
         onLoginClick={() => setAuthModalOpen(true)}
+        onHelpClick={() => setHelpAboutOpen(true)}
       />
       <main className={`flex-grow container mx-auto px-4 py-8 max-w-6xl-plus ${styles?.backgroundRaised ? 'linknest-page-background' : ''} ${!guestAccessEnabled && !isAuthenticated ? 'flex items-center justify-center' : ''}`}>
         {content}
@@ -406,6 +409,10 @@ const AppContent: React.FC = () => {
       <div className="fixed bottom-4 right-4 z-40">
         <TimezoneDisplay />
       </div>
+      <HelpAboutDialog
+        isOpen={helpAboutOpen}
+        onClose={() => setHelpAboutOpen(false)}
+      />
     </div>
   );
 };
