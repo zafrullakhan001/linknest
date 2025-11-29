@@ -10,6 +10,14 @@ interface StyleManagerProps {
 
 type StyleTab = 'spaces' | 'content';
 
+interface StyleProfile {
+  id: number;
+  name: string;
+  is_active: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
 export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onStylesChange }) => {
   const { user } = useAuth();
   const [styles, setStyles] = useState<SpaceStyles>(DEFAULT_STYLES);
@@ -17,25 +25,51 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [activeTab, setActiveTab] = useState<StyleTab>('spaces');
+  const [profiles, setProfiles] = useState<StyleProfile[]>([]);
+  const [activeProfileId, setActiveProfileId] = useState<number | null>(null);
+  const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [dialogSize, setDialogSize] = useState({ width: 900, height: 650 });
+  const [isResizing, setIsResizing] = useState(false);
+  const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0, handle: '' });
+
+  const loadProfiles = async () => {
+    if (!user?.is_admin) return;
+    
+    setIsLoadingProfiles(true);
+    try {
+      const profileList = await styleService.getProfiles();
+      setProfiles(profileList);
+      const activeProfile = profileList.find(p => p.is_active);
+      if (activeProfile) {
+        setActiveProfileId(activeProfile.id);
+      } else if (profileList.length > 0 && !activeProfileId) {
+        // If no active profile but profiles exist, select the first one
+        setActiveProfileId(profileList[0].id);
+      }
+    } catch (error) {
+      console.error('Failed to load profiles:', error);
+    } finally {
+      setIsLoadingProfiles(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
       loadStyles();
+      loadProfiles();
       // Reset initial mount flag when dialog opens
       isInitialMount.current = true;
       // Center the dialog on open - wait for next frame to get dialog dimensions
       setTimeout(() => {
         if (dialogRef.current) {
-          const dialogWidth = dialogRef.current.offsetWidth;
-          const dialogHeight = dialogRef.current.offsetHeight;
-          const centerX = (window.innerWidth - dialogWidth) / 2 + dialogWidth / 2;
-          const centerY = (window.innerHeight - dialogHeight) / 2 + dialogHeight / 2;
+          const centerX = window.innerWidth / 2;
+          const centerY = window.innerHeight / 2;
           setPosition({ x: centerX, y: centerY });
         } else {
           // Fallback: center of screen
@@ -119,6 +153,68 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
     };
   }, [isDragging, dragOffset]);
 
+  // Resize handlers
+  const handleResizeStart = (e: React.MouseEvent<HTMLDivElement>, handle: string) => {
+    if (!dialogRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const rect = dialogRef.current.getBoundingClientRect();
+    setIsResizing(true);
+    setResizeStart({
+      x: e.clientX,
+      y: e.clientY,
+      width: rect.width,
+      height: rect.height,
+      handle: handle
+    });
+  };
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!dialogRef.current) return;
+
+      const deltaX = e.clientX - resizeStart.x;
+      const deltaY = e.clientY - resizeStart.y;
+
+      const minWidth = 600;
+      const minHeight = 450;
+      const maxWidth = window.innerWidth - 40;
+      const maxHeight = window.innerHeight - 40;
+
+      let newWidth = resizeStart.width;
+      let newHeight = resizeStart.height;
+
+      // Handle different resize directions
+      if (resizeStart.handle.includes('e')) {
+        newWidth = resizeStart.width + deltaX;
+      }
+      if (resizeStart.handle.includes('s')) {
+        newHeight = resizeStart.height + deltaY;
+      }
+
+      // Constrain to min/max dimensions
+      newWidth = Math.max(minWidth, Math.min(newWidth, maxWidth));
+      newHeight = Math.max(minHeight, Math.min(newHeight, maxHeight));
+
+      setDialogSize({ width: newWidth, height: newHeight });
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing, resizeStart]);
+
   const loadStyles = async () => {
     setIsLoading(true);
     try {
@@ -177,18 +273,86 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
   };
 
   const handleSave = async () => {
+    if (!user?.is_admin) {
+      alert('Only administrators can save styles.');
+      return;
+    }
+
+    // Prompt for profile name
+    const profileName = prompt('Enter a name for this style profile:', `Profile ${new Date().toLocaleString()}`);
+    if (!profileName) {
+      return; // User cancelled
+    }
+
     setIsSaving(true);
     try {
-      await styleService.saveStyles(styles);
+      const result = await styleService.saveStyles(styles, profileName);
       setHasChanges(false);
+      setActiveProfileId(result.profileId);
+      // Reload profiles to get updated list
+      await loadProfiles();
       // Trigger a refresh of styles in the context
       window.dispatchEvent(new CustomEvent('refreshStyles'));
-      alert('Styles saved successfully!');
+      alert(`Style profile "${result.profileName}" created and activated successfully!`);
     } catch (error) {
       console.error('Failed to save styles:', error);
       alert('Failed to save styles: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleProfileSwitch = async (profileId: number) => {
+    if (!user?.is_admin) return;
+    
+    setIsLoading(true);
+    try {
+      // Activate the profile
+      await styleService.activateProfile(profileId);
+      
+      // Load the profile's styles
+      const profile = await styleService.getProfile(profileId);
+      setStyles(profile.styles);
+      setActiveProfileId(profileId);
+      setHasChanges(false);
+      
+      // Update profiles list
+      await loadProfiles();
+      
+      // Trigger a refresh of styles in the context
+      window.dispatchEvent(new CustomEvent('refreshStyles'));
+      
+      if (onStylesChange) {
+        onStylesChange(profile.styles);
+      }
+    } catch (error) {
+      console.error('Failed to switch profile:', error);
+      alert('Failed to switch profile: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteProfile = async (profileId: number, profileName: string) => {
+    if (!user?.is_admin) return;
+    
+    if (!confirm(`Are you sure you want to delete the profile "${profileName}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await styleService.deleteProfile(profileId);
+      await loadProfiles();
+      
+      // If the deleted profile was active, clear the active profile
+      if (activeProfileId === profileId) {
+        setActiveProfileId(null);
+      }
+      
+      alert('Profile deleted successfully!');
+    } catch (error) {
+      console.error('Failed to delete profile:', error);
+      alert('Failed to delete profile: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   };
 
@@ -217,17 +381,17 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
     }
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (!user?.is_admin) {
       alert('Only administrators can export styles.');
       return;
     }
     try {
-      styleService.exportStyles(styles);
-      alert('Styles exported successfully!');
+      await styleService.exportStyles(styles, true);
+      alert('Styles and profiles exported successfully!');
     } catch (error) {
       console.error('Failed to export styles:', error);
-      alert('Failed to export styles');
+      alert('Failed to export styles: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   };
 
@@ -244,13 +408,34 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
     if (!file) return;
 
     try {
-      const importedStyles = await styleService.importStyles(file);
-      setStyles(importedStyles);
+      const result = await styleService.importStyles(file);
+      setStyles(result.styles);
       setHasChanges(true);
       if (onStylesChange) {
-        onStylesChange(importedStyles);
+        onStylesChange(result.styles);
       }
-      alert('Styles imported successfully! Click Save to apply.');
+      
+      // Import profiles if they exist in the file
+      if (result.profiles && result.profiles.length > 0) {
+        const importProfiles = confirm(`Found ${result.profiles.length} profile(s) in the import file. Would you like to import them?`);
+        if (importProfiles) {
+          let importedCount = 0;
+          for (const profile of result.profiles) {
+            try {
+              await styleService.saveStyles(profile.styles, profile.name);
+              importedCount++;
+            } catch (error) {
+              console.error(`Failed to import profile "${profile.name}":`, error);
+            }
+          }
+          await loadProfiles();
+          alert(`Styles imported successfully! ${importedCount} profile(s) imported. Click Save to apply current styles.`);
+        } else {
+          alert('Styles imported successfully! Click Save to apply.');
+        }
+      } else {
+        alert('Styles imported successfully! Click Save to apply.');
+      }
     } catch (error) {
       console.error('Failed to import styles:', error);
       alert('Failed to import styles: ' + (error instanceof Error ? error.message : 'Invalid file format'));
@@ -271,17 +456,23 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
         onClick={onClose}
       ></div>
 
-      {/* Dialog - draggable */}
+      {/* Dialog - draggable and resizable */}
       <div
         ref={dialogRef}
-        className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl relative pointer-events-auto"
+        className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-2xl relative pointer-events-auto flex flex-col"
         style={{
           position: 'absolute',
           left: `${position.x}px`,
           top: `${position.y}px`,
           transform: 'translate(-50%, -50%)',
           cursor: isDragging ? 'grabbing' : 'default',
-          userSelect: 'none'
+          userSelect: 'none',
+          width: `${dialogSize.width}px`,
+          height: `${dialogSize.height}px`,
+          maxWidth: '95vw',
+          maxHeight: '95vh',
+          minWidth: '600px',
+          minHeight: '400px'
         }}
       >
         {/* Header - draggable area */}
@@ -293,7 +484,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
             if (target.closest('button')) return;
             handleMouseDown(e);
           }}
-          className={`flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700 bg-gradient-to-r from-brand-50 to-violet-50 dark:from-brand-500/10 dark:to-violet-500/10 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+          className={`flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700 bg-gradient-to-r from-brand-50 to-violet-50 dark:from-brand-500/10 dark:to-violet-500/10 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
         >
           <div className="flex items-center gap-3 flex-1">
             <div className="flex items-center gap-2 text-slate-400 dark:text-slate-500">
@@ -301,9 +492,98 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                 <path d="M7 2a2 2 0 00-2 2v12a2 2 0 002 2h6a2 2 0 002-2V4a2 2 0 00-2-2h-3a2 2 0 00-2-2H7zM7 4h3a1 1 0 011 1v10a1 1 0 01-1 1H7a1 1 0 01-1-1V5a1 1 0 011-1z" />
               </svg>
             </div>
-            <div>
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">Style Manager</h2>
-              <p className="text-sm text-slate-600 dark:text-slate-400">Customize the appearance of your spaces • Drag to move</p>
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-1">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Style Manager</h2>
+                {user?.is_admin && (
+                  <div className="flex items-center gap-2">
+                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Profile:</label>
+                  {isLoadingProfiles ? (
+                    <div className="flex items-center gap-2">
+                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-brand-500"></div>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">Loading...</span>
+                    </div>
+                  ) : profiles.length > 0 ? (
+                    <div className="flex items-center gap-1">
+                      <select
+                        value={activeProfileId || profiles.find(p => p.is_active)?.id || ''}
+                        onChange={async (e) => {
+                          const profileId = parseInt(e.target.value);
+                          if (profileId) {
+                            // Just load the profile styles without activating
+                            setIsLoading(true);
+                            try {
+                              const profile = await styleService.getProfile(profileId);
+                              setStyles(profile.styles);
+                              setActiveProfileId(profileId);
+                              setHasChanges(false);
+                              
+                              if (onStylesChange) {
+                                onStylesChange(profile.styles);
+                              }
+                            } catch (error) {
+                              console.error('Failed to load profile:', error);
+                              alert('Failed to load profile: ' + (error instanceof Error ? error.message : 'Unknown error'));
+                            } finally {
+                              setIsLoading(false);
+                            }
+                          }
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white hover:border-brand-500 dark:hover:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-colors cursor-pointer"
+                      >
+                        {profiles.map((profile) => (
+                          <option key={profile.id} value={profile.id}>
+                            {profile.name} {profile.is_active ? '(Active)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {/* Show activate and delete buttons for selected profile if it's not active */}
+                      {(() => {
+                        const currentProfileId = activeProfileId || profiles.find(p => p.is_active)?.id;
+                        const currentProfile = profiles.find(p => p.id === currentProfileId);
+                        if (currentProfile && !currentProfile.is_active) {
+                          return (
+                            <div className="flex items-center gap-1 ml-1 border-l border-slate-300 dark:border-slate-600 pl-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleProfileSwitch(currentProfile.id);
+                                }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                className="p-1.5 text-green-600 hover:text-green-700 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-500/10 rounded transition-colors flex-shrink-0"
+                                title={`Activate profile "${currentProfile.name}"`}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                  <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteProfile(currentProfile.id, currentProfile.name);
+                                }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                className="p-1.5 text-red-500 hover:text-red-700 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors flex-shrink-0"
+                                title={`Delete profile "${currentProfile.name}"`}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                  <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                                </svg>
+                              </button>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-slate-500 dark:text-slate-400 italic">No profiles yet</span>
+                  )}
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Customize appearance • Drag to move • Resize from corners</p>
             </div>
           </div>
           <button
@@ -318,7 +598,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-slate-200 dark:border-slate-700 px-6 bg-slate-50 dark:bg-slate-900/50">
+        <div className="flex border-b border-slate-200 dark:border-slate-700 px-4 bg-slate-50 dark:bg-slate-900/50 flex-shrink-0">
           <button
             onClick={() => setActiveTab('spaces')}
             className={`px-6 py-3 text-sm font-semibold transition-all relative ${activeTab === 'spaces'
@@ -356,7 +636,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
         </div>
 
         {/* Content */}
-        <div className="overflow-y-auto max-h-[calc(90vh-230px)] p-6">
+        <div className="overflow-y-auto flex-1 p-6" style={{ minHeight: 0 }}>
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
@@ -1931,6 +2211,52 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                       className="w-full"
                     />
                   </div>
+                  <div className="md:col-span-2">
+                    <div className="flex items-center gap-2 mb-2">
+                      <input
+                        type="checkbox"
+                        id="contentSectionTopBarEnabled"
+                        checked={styles.contentSectionTopBarEnabled || false}
+                        onChange={(e) => updateStyle('contentSectionTopBarEnabled', e.target.checked)}
+                        className="w-4 h-4 text-blue-600 bg-slate-100 border-slate-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-slate-800 focus:ring-2 dark:bg-slate-700 dark:border-slate-600"
+                      />
+                      <label htmlFor="contentSectionTopBarEnabled" className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Enable Top Bar (Lip)
+                      </label>
+                    </div>
+                  </div>
+                  {styles.contentSectionTopBarEnabled && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Top Bar Color</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="color"
+                            value={styles.contentSectionTopBarColor || '#3b82f6'}
+                            onChange={(e) => updateStyle('contentSectionTopBarColor', e.target.value)}
+                            className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                          />
+                          <input
+                            type="text"
+                            value={styles.contentSectionTopBarColor || '#3b82f6'}
+                            onChange={(e) => updateStyle('contentSectionTopBarColor', e.target.value)}
+                            className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Top Bar Height: {styles.contentSectionTopBarHeight || 4}px</label>
+                        <input
+                          type="range"
+                          min="2"
+                          max="16"
+                          value={styles.contentSectionTopBarHeight || 4}
+                          onChange={(e) => updateStyle('contentSectionTopBarHeight', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               </section>
 
@@ -2501,7 +2827,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between p-6 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+        <div className="flex items-center justify-between p-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex-shrink-0">
           <div className="flex gap-2">
             {user?.is_admin && (
               <button
@@ -2569,12 +2895,34 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 00-1.09 1.03l4.25 4.5a.75.75 0 001.07 0l4.25-4.5a.75.75 0 00-1.08-1.03l-2.955 3.129V2.75z" />
                     <path d="M3.5 12.75a.75.75 0 00-1.5 0v3.5A2.75 2.75 0 004.75 19h10.5A2.75 2.75 0 0018 16.25v-3.5a.75.75 0 00-1.5 0v3.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-3.5z" />
                   </svg>
-                  Save
+                  Save as Profile
                 </>
               )}
             </button>
           </div>
         </div>
+
+        {/* Resize handles */}
+        {/* Corner handles */}
+        <div
+          onMouseDown={(e) => handleResizeStart(e, 'se')}
+          className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-20 hover:bg-slate-200/50 dark:hover:bg-slate-600/50"
+          title="Resize"
+        >
+          <svg className="w-full h-full opacity-0 hover:opacity-100 transition-opacity" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M13 13v-2h-2v2h2zm0-4V7h-2v2h2zm-4 4v-2H7v2h2zm0-4V7H7v2h2zm-4 4v-2H1v2h4zm0-4V7H1v2h4z"/>
+          </svg>
+        </div>
+        
+        {/* Edge handles */}
+        <div
+          onMouseDown={(e) => handleResizeStart(e, 's')}
+          className="absolute bottom-0 left-0 right-4 h-2 cursor-ns-resize z-10 hover:bg-slate-200/30 dark:hover:bg-slate-600/30"
+        />
+        <div
+          onMouseDown={(e) => handleResizeStart(e, 'e')}
+          className="absolute top-0 right-0 bottom-4 w-2 cursor-ew-resize z-10 hover:bg-slate-200/30 dark:hover:bg-slate-600/30"
+        />
       </div>
     </div>
   );

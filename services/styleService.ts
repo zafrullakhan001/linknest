@@ -150,6 +150,9 @@ export interface SpaceStyles {
   contentSectionGradientStart: string;
   contentSectionGradientEnd: string;
   contentSectionGradientDirection: number;
+  contentSectionTopBarEnabled: boolean;
+  contentSectionTopBarColor: string;
+  contentSectionTopBarHeight: number;
 
   // Content Link Styling
   contentLinkStyle: 'pill' | 'card' | 'minimal' | 'button';
@@ -302,6 +305,9 @@ export const DEFAULT_STYLES: SpaceStyles = {
   contentSectionGradientStart: '#3b82f6',
   contentSectionGradientEnd: '#8b5cf6',
   contentSectionGradientDirection: 135,
+  contentSectionTopBarEnabled: false,
+  contentSectionTopBarColor: '#3b82f6',
+  contentSectionTopBarHeight: 4,
 
   contentLinkStyle: 'card',
   contentLinkBackgroundColor: '#ffffff',
@@ -429,14 +435,14 @@ export const styleService = {
     }
   },
 
-  async saveStyles(styles: SpaceStyles): Promise<void> {
+  async saveStyles(styles: SpaceStyles, profileName?: string): Promise<{ profileId: number; profileName: string }> {
     // Cache styles immediately when saving
     this.cacheStyles(styles);
     const response = await fetch(`${API_BASE}/styles`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ styles })
+      body: JSON.stringify({ styles, profileName })
     });
 
     const data = await response.json();
@@ -444,6 +450,11 @@ export const styleService = {
     if (!response.ok) {
       throw new Error(data.error || 'Failed to save styles');
     }
+
+    return {
+      profileId: data.profileId,
+      profileName: data.profileName
+    };
   },
 
   async resetStyles(): Promise<void> {
@@ -462,7 +473,76 @@ export const styleService = {
     }
   },
 
-  exportStyles(styles: SpaceStyles): void {
+  async getProfiles(): Promise<Array<{
+    id: number;
+    name: string;
+    is_active: boolean;
+    created_at: number;
+    updated_at: number;
+  }>> {
+    const response = await fetch(`${API_BASE}/styles/profiles`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to fetch profiles');
+    }
+
+    return data.profiles || [];
+  },
+
+  async getProfile(profileId: number): Promise<{
+    id: number;
+    name: string;
+    styles: SpaceStyles;
+    is_active: boolean;
+    created_at: number;
+    updated_at: number;
+  }> {
+    const response = await fetch(`${API_BASE}/styles/profiles/${profileId}`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to fetch profile');
+    }
+
+    return data.profile;
+  },
+
+  async activateProfile(profileId: number): Promise<void> {
+    const response = await fetch(`${API_BASE}/styles/profiles/${profileId}/activate`, {
+      method: 'PUT',
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to activate profile');
+    }
+  },
+
+  async deleteProfile(profileId: number): Promise<void> {
+    const response = await fetch(`${API_BASE}/styles/profiles/${profileId}`, {
+      method: 'DELETE',
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to delete profile');
+    }
+  },
+
+  async exportStyles(styles: SpaceStyles, includeProfiles: boolean = true): Promise<void> {
     // Merge with defaults to ensure all properties are included in export
     const completeStyles: SpaceStyles = {
       ...DEFAULT_STYLES,
@@ -478,7 +558,38 @@ export const styleService = {
       }
     };
     
-    const dataStr = JSON.stringify(completeStyles, null, 2);
+    const exportData: any = {
+      version: '1.0',
+      exportedAt: new Date().toISOString(),
+      styles: completeStyles
+    };
+    
+    // Include profiles if requested
+    if (includeProfiles) {
+      try {
+        const profiles = await this.getProfiles();
+        // Get full profile data including styles
+        const profilesWithStyles = await Promise.all(
+          profiles.map(async (profile) => {
+            const fullProfile = await this.getProfile(profile.id);
+            return {
+              id: profile.id,
+              name: profile.name,
+              styles: fullProfile.styles,
+              is_active: profile.is_active,
+              created_at: profile.created_at,
+              updated_at: profile.updated_at
+            };
+          })
+        );
+        exportData.profiles = profilesWithStyles;
+      } catch (error) {
+        console.warn('Could not include profiles in export:', error);
+        // Continue with export even if profiles fail
+      }
+    }
+    
+    const dataStr = JSON.stringify(exportData, null, 2);
     const dataBlob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(dataBlob);
     const link = document.createElement('a');
@@ -490,18 +601,31 @@ export const styleService = {
     URL.revokeObjectURL(url);
   },
 
-  async importStyles(file: File): Promise<SpaceStyles> {
+  async importStyles(file: File): Promise<{ styles: SpaceStyles; profiles?: any[] }> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
         try {
           const content = e.target?.result as string;
           const imported = JSON.parse(content);
 
+          // Handle new format with version and profiles
+          let stylesData: any;
+          let profilesData: any[] | undefined;
+
+          if (imported.version && imported.styles) {
+            // New format with profiles
+            stylesData = imported.styles;
+            profilesData = imported.profiles;
+          } else {
+            // Old format - just styles
+            stylesData = imported;
+          }
+
           // Validate and merge with defaults - ensure all properties are included
           const styles: SpaceStyles = {
             ...DEFAULT_STYLES,
-            ...imported
+            ...stylesData
           };
 
           // Validate and merge gridColumns nested object
@@ -526,7 +650,7 @@ export const styleService = {
             };
           }
 
-          resolve(styles);
+          resolve({ styles, profiles: profilesData });
         } catch (error) {
           reject(new Error('Invalid style file format'));
         }
@@ -1264,7 +1388,26 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       box-shadow: ${sectionShadow} !important;
       margin-bottom: ${styles.contentSectionVerticalSpacing || 32}px !important;
       padding: ${styles.contentSectionSpacing}px !important;
+      ${styles.contentSectionTopBarEnabled ? 'position: relative; overflow: hidden;' : ''}
     }
+    
+    ${styles.contentSectionTopBarEnabled ? `
+    .linknest-content-section::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: ${styles.contentSectionTopBarHeight}px;
+      background: ${styles.contentSectionTopBarColor};
+      border-radius: ${styles.contentSectionBorderRadius}px ${styles.contentSectionBorderRadius}px 0 0;
+      z-index: 0;
+    }
+    .linknest-content-section > * {
+      position: relative;
+      z-index: 1;
+    }
+    ` : ''}
     
     .linknest-content-section:last-child {
       margin-bottom: 0 !important;
