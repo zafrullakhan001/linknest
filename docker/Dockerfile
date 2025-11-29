@@ -1,4 +1,6 @@
-# Multi-stage build for LinkNest
+# Single Container Dockerfile for LinkNest
+# Multi-stage build (build-time only) - final result is ONE container
+# Stage 1: Build frontend assets
 FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app
@@ -39,7 +41,8 @@ RUN npm run build -- --config vite.docker.config.ts && \
     fi && \
     echo "✓ Build verification passed"
 
-# Production stage
+# Stage 2: Final single container with PHP, Apache, and SQLite
+# This is the ONLY container that runs - everything is included here
 FROM php:8.2-apache
 
 # Install required PHP extensions and utilities
@@ -73,10 +76,19 @@ RUN if [ ! -f dist/index.html ]; then echo "ERROR: dist/index.html not found!" &
     cp dist/index.html index.html && \
     echo "✓ Copied dist/index.html to root"
 
-# Create necessary directories
-RUN mkdir -p data uploads && \
-    chown -R www-data:www-data /var/www/html && \
-    chmod -R 755 /var/www/html
+# Create necessary directories first
+RUN mkdir -p data uploads
+
+# Copy existing SQLite database file(s) from host to container
+# This copies the existing database into the image
+# Note: The volume mount in docker-compose.yml will use the host database at runtime,
+# but having it in the image ensures it's available even without volume mounts
+COPY data/ ./data/
+
+# Set proper permissions for all files
+RUN chown -R www-data:www-data /var/www/html && \
+    chmod -R 755 /var/www/html && \
+    chmod 644 data/*.db 2>/dev/null || echo "Note: Database will be created on first run if not present"
 
 # Configure Apache
 COPY docker/apache-config.conf /etc/apache2/sites-available/000-default.conf
