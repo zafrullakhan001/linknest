@@ -118,6 +118,23 @@ export const authService = {
     }
   },
 
+  async bulkApproveUsers(userIds: number[]): Promise<{ approved_count: number }> {
+    const response = await fetch(`${API_BASE}/auth/bulk-approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ user_ids: userIds })
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to approve users');
+    }
+    
+    return { approved_count: data.approved_count || 0 };
+  },
+
   async rejectUser(userId: number): Promise<void> {
     const response = await fetch(`${API_BASE}/auth/reject/${userId}`, {
       method: 'PUT',
@@ -283,6 +300,50 @@ export const authService = {
     }
     
     return { is_admin: data.is_admin };
+  },
+
+  async bulkImportLocalUsers(csvFile: File): Promise<{ results: any; summary: any; message: string }> {
+    const formData = new FormData();
+    formData.append('csv_file', csvFile);
+
+    const response = await fetch(`${API_BASE}/auth/bulk-import-local`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to import users');
+    }
+    
+    return {
+      results: data.results,
+      summary: data.summary,
+      message: data.message
+    };
+  },
+
+  async bulkImportLdapUsers(users: Array<{ username: string; email: string; dn: string; displayName?: string }>): Promise<{ results: any; summary: any; message: string }> {
+    const response = await fetch(`${API_BASE}/auth/bulk-import-ldap`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ users })
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to import LDAP users');
+    }
+    
+    return {
+      results: data.results,
+      summary: data.summary,
+      message: data.message
+    };
   }
 };
 

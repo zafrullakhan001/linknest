@@ -96,7 +96,9 @@ echo Deployment Successful!
 echo ==========================================
 echo.
 echo Application is now running at:
-echo http://localhost:8090
+echo HTTP:  http://localhost:8090
+echo HTTPS: https://localhost:8443
+echo Note: Using self-signed certificate - browser will show security warning
 echo.
 echo Container information:
 docker ps | findstr linknest

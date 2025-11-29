@@ -23,6 +23,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [processing, setProcessing] = useState<number | null>(null);
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(new Set());
+  const [bulkProcessing, setBulkProcessing] = useState(false);
   const [resetPasswordModal, setResetPasswordModal] = useState<{ open: boolean; userId: number | null; username: string }>({ open: false, userId: null, username: '' });
   const [newPassword, setNewPassword] = useState('');
   const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
@@ -92,6 +94,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [ldapSearchLoading, setLdapSearchLoading] = useState(false);
   const [selectedLdapUser, setSelectedLdapUser] = useState<{ username: string; email: string; displayName: string; dn: string } | null>(null);
   const [addUserLoading, setAddUserLoading] = useState(false);
+  
+  // Bulk import state
+  const [bulkImportMode, setBulkImportMode] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [ldapUsersText, setLdapUsersText] = useState('');
+  const [bulkImportLoading, setBulkImportLoading] = useState(false);
+  const [bulkImportResults, setBulkImportResults] = useState<{ results: any; summary: any; message: string } | null>(null);
 
   // Access Manager state
   const [permissions, setPermissions] = useState<TilePermission[]>([]);
@@ -164,6 +173,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       loadPermissions();
     }
   }, [activeTab]);
+
+  // Clean up selection when pending users change (e.g., after approval/rejection)
+  useEffect(() => {
+    const pendingUserIds = new Set(pendingUsers.map(user => user.id));
+    setSelectedUserIds(prev => {
+      const newSelection = new Set(Array.from(prev).filter(id => pendingUserIds.has(id)));
+      return newSelection.size !== prev.size ? newSelection : prev;
+    });
+  }, [pendingUsers]);
 
   const loadSpaces = async () => {
     try {
@@ -272,6 +290,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setProcessing(userId);
       await authService.approveUser(userId);
       await loadData();
+      setSelectedUserIds(new Set()); // Clear selection after approval
       if (onUserApproved) {
         onUserApproved();
       }
@@ -291,10 +310,54 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setProcessing(userId);
       await authService.rejectUser(userId);
       await loadData();
+      setSelectedUserIds(new Set()); // Clear selection after rejection
     } catch (err: any) {
       setError(err.message || 'Failed to reject user');
     } finally {
       setProcessing(null);
+    }
+  };
+
+  const handleBulkApprove = async () => {
+    if (selectedUserIds.size === 0) {
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to approve ${selectedUserIds.size} user(s)?`)) {
+      return;
+    }
+
+    try {
+      setBulkProcessing(true);
+      const userIdsArray = Array.from(selectedUserIds);
+      const result = await authService.bulkApproveUsers(userIdsArray);
+      await loadData();
+      setSelectedUserIds(new Set()); // Clear selection after approval
+      if (onUserApproved) {
+        onUserApproved();
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to approve users');
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
+  const handleToggleUserSelection = (userId: number) => {
+    const newSelection = new Set(selectedUserIds);
+    if (newSelection.has(userId)) {
+      newSelection.delete(userId);
+    } else {
+      newSelection.add(userId);
+    }
+    setSelectedUserIds(newSelection);
+  };
+
+  const handleSelectAll = () => {
+    if (selectedUserIds.size === pendingUsers.length) {
+      setSelectedUserIds(new Set());
+    } else {
+      setSelectedUserIds(new Set(pendingUsers.map(user => user.id)));
     }
   };
 
@@ -410,15 +473,86 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         selectedLdapUser.displayName
       );
       setAddUserModal(false);
+      setBulkImportMode(false);
       setLdapSearchTerm('');
       setLdapSearchResults([]);
       setSelectedLdapUser(null);
+      setCsvFile(null);
+      setLdapUsersText('');
+      setBulkImportResults(null);
       await loadData();
       alert('LDAP user added successfully. User is pending admin approval.');
     } catch (err: any) {
       setError(err.message || 'Failed to add LDAP user');
     } finally {
       setAddUserLoading(false);
+    }
+  };
+
+  const handleBulkImportLocal = async () => {
+    if (!csvFile) {
+      setError('Please select a CSV file');
+      return;
+    }
+
+    try {
+      setBulkImportLoading(true);
+      setError('');
+      const result = await authService.bulkImportLocalUsers(csvFile);
+      setBulkImportResults(result);
+      await loadData();
+    } catch (err: any) {
+      setError(err.message || 'Failed to import users');
+    } finally {
+      setBulkImportLoading(false);
+    }
+  };
+
+  const handleBulkImportLdap = async () => {
+    if (!ldapUsersText.trim()) {
+      setError('Please enter LDAP user data');
+      return;
+    }
+
+    // Parse comma-separated values
+    // Format: username,email,dn,displayName (one per line)
+    const lines = ldapUsersText.trim().split('\n').filter(line => line.trim());
+    const users: Array<{ username: string; email: string; dn: string; displayName?: string }> = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+
+      const parts = line.split(',').map(p => p.trim());
+      if (parts.length < 3) {
+        setError(`Line ${i + 1}: Invalid format. Expected: username,email,dn[,displayName]`);
+        return;
+      }
+
+      users.push({
+        username: parts[0],
+        email: parts[1],
+        dn: parts[2],
+        displayName: parts[3] || undefined
+      });
+    }
+
+    if (users.length === 0) {
+      setError('No valid users found');
+      return;
+    }
+
+    try {
+      setBulkImportLoading(true);
+      setError('');
+      const result = await authService.bulkImportLdapUsers(users);
+      setBulkImportResults(result);
+      setLdapUsersText('');
+      await loadData();
+    } catch (err: any) {
+      setError(err.message || 'Failed to import LDAP users');
+    } finally {
+      setBulkImportLoading(false);
     }
   };
 
@@ -559,76 +693,124 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 <p className="text-slate-500 dark:text-slate-500 text-sm mt-1">All users have been processed</p>
               </div>
             ) : (
-              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">User</th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Email</th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Registered</th>
-                        <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                      {pendingUsers.map((user) => (
-                        <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-colors">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-500 to-brand-600 flex items-center justify-center text-white font-bold">
-                                {user.username.charAt(0).toUpperCase()}
-                              </div>
-                              <span className="font-medium text-slate-900 dark:text-white">{user.username}</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">
-                            {user.email}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-500">
-                            {formatDate(user.created_at)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                onClick={() => handleApprove(user.id)}
-                                disabled={processing === user.id}
-                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                              >
-                                {processing === user.id ? (
-                                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                  </svg>
-                                ) : (
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                    <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                                  </svg>
-                                )}
-                                Approve
-                              </button>
-                              <button
-                                onClick={() => handleReject(user.id)}
-                                disabled={processing === user.id}
-                                className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                              >
-                                {processing === user.id ? (
-                                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                  </svg>
-                                ) : (
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                    <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-                                  </svg>
-                                )}
-                                Reject
-                              </button>
-                            </div>
-                          </td>
+              <div className="space-y-4">
+                {selectedUserIds.size > 0 && (
+                  <div className="flex items-center justify-between bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-lg px-4 py-3">
+                    <span className="text-sm font-medium text-brand-900 dark:text-brand-100">
+                      {selectedUserIds.size} user{selectedUserIds.size !== 1 ? 's' : ''} selected
+                    </span>
+                    <button
+                      onClick={handleBulkApprove}
+                      disabled={bulkProcessing}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                    >
+                      {bulkProcessing ? (
+                        <>
+                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Approving...
+                        </>
+                      ) : (
+                        <>
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                          </svg>
+                          Approve Selected
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                        <tr>
+                          <th className="px-6 py-3 text-left">
+                            <input
+                              type="checkbox"
+                              checked={pendingUsers.length > 0 && selectedUserIds.size === pendingUsers.length}
+                              onChange={handleSelectAll}
+                              className="w-4 h-4 text-brand-600 bg-gray-100 border-gray-300 rounded focus:ring-brand-500 focus:ring-2"
+                            />
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">User</th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Email</th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Registered</th>
+                          <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                        {pendingUsers.map((user) => (
+                          <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-colors">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <input
+                                type="checkbox"
+                                checked={selectedUserIds.has(user.id)}
+                                onChange={() => handleToggleUserSelection(user.id)}
+                                disabled={bulkProcessing || processing === user.id}
+                                className="w-4 h-4 text-brand-600 bg-gray-100 border-gray-300 rounded focus:ring-brand-500 focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                              />
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-500 to-brand-600 flex items-center justify-center text-white font-bold">
+                                  {user.username.charAt(0).toUpperCase()}
+                                </div>
+                                <span className="font-medium text-slate-900 dark:text-white">{user.username}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">
+                              {user.email}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-500">
+                              {formatDate(user.created_at)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  onClick={() => handleApprove(user.id)}
+                                  disabled={processing === user.id || bulkProcessing}
+                                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                                >
+                                  {processing === user.id ? (
+                                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                  ) : (
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                      <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                                    </svg>
+                                  )}
+                                  Approve
+                                </button>
+                                <button
+                                  onClick={() => handleReject(user.id)}
+                                  disabled={processing === user.id || bulkProcessing}
+                                  className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                                >
+                                  {processing === user.id ? (
+                                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                  ) : (
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                      <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                                    </svg>
+                                  )}
+                                  Reject
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             )
@@ -3080,12 +3262,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           <div className="absolute inset-0 bg-slate-900/20 dark:bg-slate-900/40" onClick={() => {
             setAddUserModal(false);
             setAddUserType('local');
+            setBulkImportMode(false);
             setLocalUsername('');
             setLocalEmail('');
             setLocalPassword('');
             setLdapSearchTerm('');
             setLdapSearchResults([]);
             setSelectedLdapUser(null);
+            setCsvFile(null);
+            setLdapUsersText('');
+            setBulkImportResults(null);
             setError('');
           }}></div>
           <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-2xl p-6 relative shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -3096,10 +3282,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               <button
                 onClick={() => {
                   setAddUserType('local');
+                  setBulkImportMode(false);
                   setError('');
+                  setBulkImportResults(null);
                 }}
                 className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-                  addUserType === 'local'
+                  addUserType === 'local' && !bulkImportMode
                     ? 'border-brand-500 text-brand-600 dark:text-brand-400'
                     : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
                 }`}
@@ -3109,15 +3297,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               <button
                 onClick={() => {
                   setAddUserType('ldap');
+                  setBulkImportMode(false);
                   setError('');
+                  setBulkImportResults(null);
                 }}
                 className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-                  addUserType === 'ldap'
+                  addUserType === 'ldap' && !bulkImportMode
                     ? 'border-brand-500 text-brand-600 dark:text-brand-400'
                     : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
                 }`}
               >
                 LDAP User
+              </button>
+              <button
+                onClick={() => {
+                  setBulkImportMode(true);
+                  setError('');
+                  setBulkImportResults(null);
+                }}
+                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                  bulkImportMode
+                    ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                Bulk Import
               </button>
             </div>
 
@@ -3189,11 +3393,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   <button
                     type="button"
                     onClick={() => {
-                      setAddUserModal(false);
-                      setLocalUsername('');
-                      setLocalEmail('');
-                      setLocalPassword('');
-                      setError('');
+      setAddUserModal(false);
+      setBulkImportMode(false);
+      setLocalUsername('');
+      setLocalEmail('');
+      setLocalPassword('');
+      setCsvFile(null);
+      setLdapUsersText('');
+      setBulkImportResults(null);
+      setError('');
                     }}
                     className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
                   >
@@ -3306,9 +3514,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   <button
                     onClick={() => {
                       setAddUserModal(false);
+                      setBulkImportMode(false);
                       setLdapSearchTerm('');
                       setLdapSearchResults([]);
                       setSelectedLdapUser(null);
+                      setCsvFile(null);
+                      setLdapUsersText('');
+                      setBulkImportResults(null);
                       setError('');
                     }}
                     className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
@@ -3323,6 +3535,196 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     {addUserLoading ? 'Adding...' : 'Add User'}
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* Bulk Import Section */}
+            {bulkImportMode && (
+              <div className="space-y-4">
+                <div className="flex gap-2 border-b border-slate-200 dark:border-slate-700 mb-4">
+                  <button
+                    onClick={() => {
+                      setAddUserType('local');
+                      setCsvFile(null);
+                      setBulkImportResults(null);
+                      setError('');
+                    }}
+                    className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                      addUserType === 'local'
+                        ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                        : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                    }`}
+                  >
+                    Import Local Users (CSV)
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAddUserType('ldap');
+                      setLdapUsersText('');
+                      setBulkImportResults(null);
+                      setError('');
+                    }}
+                    className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                      addUserType === 'ldap'
+                        ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                        : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                    }`}
+                  >
+                    Import LDAP Users (Text)
+                  </button>
+                </div>
+
+                {/* Local Users CSV Import */}
+                {addUserType === 'local' && (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        Upload CSV File *
+                      </label>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                        CSV format: username,email,password (one per line, header row optional)
+                      </p>
+                      <input
+                        type="file"
+                        accept=".csv,text/csv"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          setCsvFile(file || null);
+                          setBulkImportResults(null);
+                          setError('');
+                        }}
+                        className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer"
+                      />
+                      {csvFile && (
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-2">
+                          Selected: {csvFile.name}
+                        </p>
+                      )}
+                    </div>
+                    <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-3">
+                      <p className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">CSV Format Example:</p>
+                      <pre className="text-xs text-slate-600 dark:text-slate-400 font-mono whitespace-pre-wrap">username,email,password
+john.doe,john@example.com,SecurePass123
+jane.smith,jane@example.com,AnotherPass456</pre>
+                    </div>
+                    {bulkImportResults && (
+                      <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                        <p className="text-sm font-medium text-slate-900 dark:text-white mb-2">
+                          {bulkImportResults.message}
+                        </p>
+                        <div className="text-xs text-slate-600 dark:text-slate-400 space-y-1">
+                          <p>✓ Created: {bulkImportResults.summary.created}</p>
+                          <p>⊘ Skipped: {bulkImportResults.summary.skipped}</p>
+                          <p>✗ Errors: {bulkImportResults.summary.errors}</p>
+                        </div>
+                        {bulkImportResults.results.errors.length > 0 && (
+                          <div className="mt-3 max-h-40 overflow-y-auto">
+                            <p className="text-xs font-medium text-red-600 dark:text-red-400 mb-1">Errors:</p>
+                            {bulkImportResults.results.errors.map((err: any, idx: number) => (
+                              <p key={idx} className="text-xs text-red-600 dark:text-red-400">
+                                Line {err.line || err.index}: {err.username} - {err.reason}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex justify-end gap-3 pt-2">
+                      <button
+                        onClick={() => {
+                          setAddUserModal(false);
+                          setBulkImportMode(false);
+                          setCsvFile(null);
+                          setBulkImportResults(null);
+                          setError('');
+                        }}
+                        className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleBulkImportLocal}
+                        disabled={bulkImportLoading || !csvFile}
+                        className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
+                      >
+                        {bulkImportLoading ? 'Importing...' : 'Import Users'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* LDAP Users Text Import */}
+                {addUserType === 'ldap' && (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        Enter LDAP Users (Comma-separated) *
+                      </label>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                        Format: username,email,dn,displayName (one per line, displayName is optional)
+                      </p>
+                      <textarea
+                        value={ldapUsersText}
+                        onChange={(e) => {
+                          setLdapUsersText(e.target.value);
+                          setBulkImportResults(null);
+                          setError('');
+                        }}
+                        placeholder="username1,email1@example.com,CN=User1,OU=Users,DC=example,DC=com,Display Name 1&#10;username2,email2@example.com,CN=User2,OU=Users,DC=example,DC=com,Display Name 2"
+                        rows={8}
+                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
+                      />
+                    </div>
+                    <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-3">
+                      <p className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Format Example:</p>
+                      <pre className="text-xs text-slate-600 dark:text-slate-400 font-mono whitespace-pre-wrap">john.doe,john@example.com,CN=John Doe,OU=Users,DC=company,DC=com,John Doe
+jane.smith,jane@example.com,CN=Jane Smith,OU=Users,DC=company,DC=com,Jane Smith</pre>
+                    </div>
+                    {bulkImportResults && (
+                      <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                        <p className="text-sm font-medium text-slate-900 dark:text-white mb-2">
+                          {bulkImportResults.message}
+                        </p>
+                        <div className="text-xs text-slate-600 dark:text-slate-400 space-y-1">
+                          <p>✓ Created: {bulkImportResults.summary.created}</p>
+                          <p>⊘ Skipped: {bulkImportResults.summary.skipped}</p>
+                          <p>✗ Errors: {bulkImportResults.summary.errors}</p>
+                        </div>
+                        {bulkImportResults.results.errors.length > 0 && (
+                          <div className="mt-3 max-h-40 overflow-y-auto">
+                            <p className="text-xs font-medium text-red-600 dark:text-red-400 mb-1">Errors:</p>
+                            {bulkImportResults.results.errors.map((err: any, idx: number) => (
+                              <p key={idx} className="text-xs text-red-600 dark:text-red-400">
+                                Line {err.index}: {err.username} - {err.reason}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex justify-end gap-3 pt-2">
+                      <button
+                        onClick={() => {
+                          setAddUserModal(false);
+                          setBulkImportMode(false);
+                          setLdapUsersText('');
+                          setBulkImportResults(null);
+                          setError('');
+                        }}
+                        className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleBulkImportLdap}
+                        disabled={bulkImportLoading || !ldapUsersText.trim()}
+                        className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
+                      >
+                        {bulkImportLoading ? 'Importing...' : 'Import Users'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

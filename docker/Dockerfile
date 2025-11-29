@@ -50,13 +50,14 @@ RUN apt-get update && apt-get install -y \
     libsqlite3-dev \
     sqlite3 \
     curl \
+    openssl \
     && docker-php-ext-install pdo pdo_sqlite \
     && docker-php-ext-enable pdo_sqlite \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Enable Apache modules
-RUN a2enmod rewrite headers mime
+# Enable Apache modules (including SSL)
+RUN a2enmod rewrite headers mime ssl
 
 # Set working directory
 WORKDIR /var/www/html
@@ -90,8 +91,19 @@ RUN chown -R www-data:www-data /var/www/html && \
     chmod -R 755 /var/www/html && \
     chmod 644 data/*.db 2>/dev/null || echo "Note: Database will be created on first run if not present"
 
+# Copy SSL certificate generation script
+COPY docker/generate-ssl-cert.sh /usr/local/bin/generate-ssl-cert.sh
+RUN chmod +x /usr/local/bin/generate-ssl-cert.sh
+
+# Generate self-signed SSL certificate
+RUN /usr/local/bin/generate-ssl-cert.sh
+
 # Configure Apache
 COPY docker/apache-config.conf /etc/apache2/sites-available/000-default.conf
+COPY docker/apache-ssl-config.conf /etc/apache2/sites-available/000-default-ssl.conf
+
+# Enable SSL site
+RUN a2ensite 000-default-ssl.conf
 
 # Configure PHP
 COPY docker/php-config.ini /usr/local/etc/php/conf.d/linknest.ini
@@ -107,8 +119,8 @@ RUN /usr/local/bin/verify-php.sh
 ENV APACHE_DOCUMENT_ROOT=/var/www/html
 ENV PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d
 
-# Expose port
-EXPOSE 80
+# Expose ports (HTTP and HTTPS)
+EXPOSE 80 443
 
 # Start Apache
 CMD ["apache2-foreground"]

@@ -35,6 +35,12 @@ switch ($method) {
             handleAddLocalUser();
         } elseif ($path === '/add-ldap-user') {
             handleAddLdapUser();
+        } elseif ($path === '/bulk-approve') {
+            handleBulkApproveUsers();
+        } elseif ($path === '/bulk-import-local') {
+            handleBulkImportLocalUsers();
+        } elseif ($path === '/bulk-import-ldap') {
+            handleBulkImportLdapUsers();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -847,6 +853,52 @@ function handleApproveUser($userId) {
     }
 }
 
+function handleBulkApproveUsers() {
+    requireAdmin(); // Only admins can approve users
+    
+    $input = json_decode(file_get_contents('php://input'), true);
+    
+    if (!isset($input['user_ids']) || !is_array($input['user_ids']) || empty($input['user_ids'])) {
+        sendJSON(['error' => 'Invalid request: user_ids array is required'], 400);
+    }
+    
+    $userIds = $input['user_ids'];
+    
+    // Validate all IDs are integers
+    $validIds = [];
+    foreach ($userIds as $id) {
+        $id = (int)$id;
+        if ($id > 0) {
+            $validIds[] = $id;
+        }
+    }
+    
+    if (empty($validIds)) {
+        sendJSON(['error' => 'No valid user IDs provided'], 400);
+    }
+    
+    $db = getDB();
+    
+    // Create placeholders for IN clause
+    $placeholders = str_repeat('?,', count($validIds) - 1) . '?';
+    
+    // Update all users in a single query
+    $stmt = $db->prepare("UPDATE users SET is_approved = 1 WHERE id IN ($placeholders) AND is_admin = 0 AND is_approved = 0");
+    $stmt->execute($validIds);
+    
+    $approvedCount = $stmt->rowCount();
+    
+    if ($approvedCount > 0) {
+        sendJSON([
+            'success' => true, 
+            'message' => "Successfully approved $approvedCount user(s)",
+            'approved_count' => $approvedCount
+        ]);
+    } else {
+        sendJSON(['error' => 'No users were approved. They may have already been approved or do not exist.'], 404);
+    }
+}
+
 function handleRejectUser($userId) {
     requireAdmin(); // Only admins can reject users
     
@@ -1632,5 +1684,374 @@ function handleAddLdapUser() {
     } catch (Exception $e) {
         sendJSON(['error' => 'LDAP error: ' . $e->getMessage()], 500);
     }
+}
+
+function handleBulkImportLocalUsers() {
+    requireAdmin(); // Only admins can bulk import users
+    
+    if (!isset($_FILES['csv_file']) || $_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
+        sendJSON(['error' => 'CSV file is required'], 400);
+    }
+    
+    $file = $_FILES['csv_file'];
+    
+    // Validate file type
+    $allowedTypes = ['text/csv', 'text/plain', 'application/csv', 'application/vnd.ms-excel'];
+    $fileExtension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    
+    if (!in_array($file['type'], $allowedTypes) && $fileExtension !== 'csv') {
+        sendJSON(['error' => 'Invalid file type. Please upload a CSV file.'], 400);
+    }
+    
+    // Read CSV file
+    $handle = fopen($file['tmp_name'], 'r');
+    if ($handle === false) {
+        sendJSON(['error' => 'Failed to read CSV file'], 500);
+    }
+    
+    $users = [];
+    $lineNumber = 0;
+    $headerSkipped = false;
+    
+    while (($row = fgetcsv($handle)) !== false) {
+        $lineNumber++;
+        
+        // Skip empty rows
+        if (empty(array_filter($row))) {
+            continue;
+        }
+        
+        // Skip header row if it exists (check for common header values)
+        if (!$headerSkipped && (strtolower(trim($row[0] ?? '')) === 'username' || 
+                                strtolower(trim($row[0] ?? '')) === 'user' ||
+                                strtolower(trim($row[1] ?? '')) === 'email')) {
+            $headerSkipped = true;
+            continue;
+        }
+        
+        // Validate row has at least 3 columns (username, email, password)
+        if (count($row) < 3) {
+            continue; // Skip invalid rows
+        }
+        
+        $username = trim($row[0] ?? '');
+        $email = trim($row[1] ?? '');
+        $password = trim($row[2] ?? '');
+        
+        // Validate required fields
+        if (empty($username) || empty($email) || empty($password)) {
+            continue; // Skip rows with missing data
+        }
+        
+        // Validate username length
+        if (strlen($username) < 3) {
+            continue; // Skip invalid usernames
+        }
+        
+        // Validate email format
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            continue; // Skip invalid emails
+        }
+        
+        // Validate password length
+        if (strlen($password) < 6) {
+            continue; // Skip invalid passwords
+        }
+        
+        $users[] = [
+            'username' => $username,
+            'email' => $email,
+            'password' => $password,
+            'line' => $lineNumber
+        ];
+    }
+    
+    fclose($handle);
+    
+    if (empty($users)) {
+        sendJSON(['error' => 'No valid users found in CSV file'], 400);
+    }
+    
+    $db = getDB();
+    $results = [
+        'success' => [],
+        'errors' => [],
+        'skipped' => []
+    ];
+    
+    foreach ($users as $userData) {
+        $username = $userData['username'];
+        $email = $userData['email'];
+        $password = $userData['password'];
+        $line = $userData['line'];
+        
+        try {
+            // Check if username exists
+            $stmt = $db->prepare('SELECT id FROM users WHERE username = ?');
+            $stmt->execute([$username]);
+            if ($stmt->fetch()) {
+                $results['skipped'][] = [
+                    'line' => $line,
+                    'username' => $username,
+                    'reason' => 'Username already exists'
+                ];
+                continue;
+            }
+            
+            // Check if email exists
+            $stmt = $db->prepare('SELECT id FROM users WHERE email = ?');
+            $stmt->execute([$email]);
+            if ($stmt->fetch()) {
+                $results['skipped'][] = [
+                    'line' => $line,
+                    'username' => $username,
+                    'reason' => 'Email already exists'
+                ];
+                continue;
+            }
+            
+            // Create user
+            $passwordHash = password_hash($password, PASSWORD_DEFAULT);
+            $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, created_at) VALUES (?, ?, ?, 0, 0, ?, ?)');
+            
+            if ($stmt->execute([$username, $email, $passwordHash, 'local', time()])) {
+                $results['success'][] = [
+                    'line' => $line,
+                    'username' => $username,
+                    'email' => $email
+                ];
+            } else {
+                $results['errors'][] = [
+                    'line' => $line,
+                    'username' => $username,
+                    'reason' => 'Database error'
+                ];
+            }
+        } catch (Exception $e) {
+            $results['errors'][] = [
+                'line' => $line,
+                'username' => $username,
+                'reason' => $e->getMessage()
+            ];
+        }
+    }
+    
+    $totalProcessed = count($results['success']) + count($results['errors']) + count($results['skipped']);
+    
+    sendJSON([
+        'success' => true,
+        'message' => "Processed $totalProcessed users. " . count($results['success']) . " created, " . count($results['skipped']) . " skipped, " . count($results['errors']) . " errors.",
+        'results' => $results,
+        'summary' => [
+            'total' => $totalProcessed,
+            'created' => count($results['success']),
+            'skipped' => count($results['skipped']),
+            'errors' => count($results['errors'])
+        ]
+    ]);
+}
+
+function handleBulkImportLdapUsers() {
+    requireAdmin(); // Only admins can bulk import LDAP users
+    
+    $data = getJSONInput();
+    
+    if (!isset($data['users']) || !is_array($data['users']) || empty($data['users'])) {
+        sendJSON(['error' => 'Users array is required'], 400);
+    }
+    
+    $users = $data['users'];
+    
+    // Validate LDAP is enabled
+    $db = getDB();
+    $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'ldap_%'");
+    $stmt->execute();
+    $settings = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $settings[$row['key']] = $row['value'];
+    }
+    
+    $ldapEnabled = !empty($settings['ldap_enabled']) && $settings['ldap_enabled'] == '1';
+    
+    if (!$ldapEnabled) {
+        sendJSON(['error' => 'LDAP is not enabled'], 400);
+    }
+    
+    if (!extension_loaded('ldap')) {
+        sendJSON(['error' => 'LDAP extension is not loaded'], 500);
+    }
+    
+    $results = [
+        'success' => [],
+        'errors' => [],
+        'skipped' => []
+    ];
+    
+    // Connect to LDAP once for all users
+    try {
+        $server = trim($settings['ldap_server'] ?? '');
+        $port = (int)($settings['ldap_port'] ?? 389);
+        $protocol = trim($settings['ldap_protocol'] ?? 'ldap');
+        $tls = !empty($settings['ldap_tls']);
+        $timeout = (int)($settings['ldap_timeout'] ?? 30);
+        
+        $prefix = ($protocol === 'ldaps') ? 'ldaps://' : 'ldap://';
+        $uri = $prefix . $server . ':' . $port;
+        
+        $ldap = @ldap_connect($uri);
+        if (!$ldap) {
+            sendJSON(['error' => 'Failed to connect to LDAP server'], 500);
+        }
+        
+        ldap_set_option($ldap, LDAP_OPT_PROTOCOL_VERSION, 3);
+        $followReferrals = !empty($settings['ldap_referrals']) && $settings['ldap_referrals'] == '1';
+        ldap_set_option($ldap, LDAP_OPT_REFERRALS, $followReferrals ? 1 : 0);
+        ldap_set_option($ldap, LDAP_OPT_NETWORK_TIMEOUT, $timeout);
+        
+        if ($tls && $protocol !== 'ldaps') {
+            if (!@ldap_start_tls($ldap)) {
+                @ldap_close($ldap);
+                sendJSON(['error' => 'TLS start failed: ' . ldap_error($ldap)], 500);
+            }
+        }
+        
+        // Bind with service account
+        $bindDn = trim($settings['ldap_bind_dn'] ?? '');
+        $bindPass = $settings['ldap_bind_password'] ?? '';
+        
+        $bound = false;
+        if (!empty($bindDn) && !empty($bindPass)) {
+            $bound = @ldap_bind($ldap, $bindDn, $bindPass);
+        } else {
+            $bound = @ldap_bind($ldap);
+        }
+        
+        if (!$bound) {
+            @ldap_close($ldap);
+            sendJSON(['error' => 'LDAP bind failed: ' . ldap_error($ldap)], 500);
+        }
+    } catch (Exception $e) {
+        sendJSON(['error' => 'LDAP connection error: ' . $e->getMessage()], 500);
+    }
+    
+    // Process each user
+    foreach ($users as $index => $userData) {
+        $username = trim($userData['username'] ?? '');
+        $email = trim($userData['email'] ?? '');
+        $dn = trim($userData['dn'] ?? '');
+        $displayName = trim($userData['displayName'] ?? '');
+        
+        // Validate required fields
+        if (empty($username) || empty($email) || empty($dn)) {
+            $results['errors'][] = [
+                'index' => $index + 1,
+                'username' => $username ?: 'N/A',
+                'reason' => 'Missing required fields (username, email, or DN)'
+            ];
+            continue;
+        }
+        
+        // Validate email format
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $results['errors'][] = [
+                'index' => $index + 1,
+                'username' => $username,
+                'reason' => 'Invalid email address'
+            ];
+            continue;
+        }
+        
+        try {
+            // Check if username exists in database
+            $stmt = $db->prepare('SELECT id FROM users WHERE username = ?');
+            $stmt->execute([$username]);
+            if ($stmt->fetch()) {
+                $results['skipped'][] = [
+                    'index' => $index + 1,
+                    'username' => $username,
+                    'reason' => 'Username already exists'
+                ];
+                continue;
+            }
+            
+            // Check if email exists in database
+            $stmt = $db->prepare('SELECT id FROM users WHERE email = ?');
+            $stmt->execute([$email]);
+            if ($stmt->fetch()) {
+                $results['skipped'][] = [
+                    'index' => $index + 1,
+                    'username' => $username,
+                    'reason' => 'Email already exists'
+                ];
+                continue;
+            }
+            
+            // Verify user exists in LDAP
+            $attributes = ['sAMAccountName', 'mail', 'displayName', 'userPrincipalName'];
+            $result = @ldap_read($ldap, $dn, '(objectClass=*)', $attributes);
+            
+            if ($result === false) {
+                $results['errors'][] = [
+                    'index' => $index + 1,
+                    'username' => $username,
+                    'reason' => 'User not found in LDAP directory'
+                ];
+                continue;
+            }
+            
+            $entries = @ldap_get_entries($ldap, $result);
+            
+            if ($entries === false || $entries['count'] === 0) {
+                $results['errors'][] = [
+                    'index' => $index + 1,
+                    'username' => $username,
+                    'reason' => 'User not found in LDAP directory'
+                ];
+                continue;
+            }
+            
+            // Create user in database
+            $randomPass = bin2hex(random_bytes(16));
+            $passwordHash = password_hash($randomPass, PASSWORD_DEFAULT);
+            
+            $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, created_at) VALUES (?, ?, ?, 0, 0, ?, ?)');
+            
+            if ($stmt->execute([$username, $email, $passwordHash, 'ldap', time()])) {
+                $results['success'][] = [
+                    'index' => $index + 1,
+                    'username' => $username,
+                    'email' => $email
+                ];
+            } else {
+                $results['errors'][] = [
+                    'index' => $index + 1,
+                    'username' => $username,
+                    'reason' => 'Database error'
+                ];
+            }
+        } catch (Exception $e) {
+            $results['errors'][] = [
+                'index' => $index + 1,
+                'username' => $username,
+                'reason' => $e->getMessage()
+            ];
+        }
+    }
+    
+    @ldap_close($ldap);
+    
+    $totalProcessed = count($results['success']) + count($results['errors']) + count($results['skipped']);
+    
+    sendJSON([
+        'success' => true,
+        'message' => "Processed $totalProcessed users. " . count($results['success']) . " created, " . count($results['skipped']) . " skipped, " . count($results['errors']) . " errors.",
+        'results' => $results,
+        'summary' => [
+            'total' => $totalProcessed,
+            'created' => count($results['success']),
+            'skipped' => count($results['skipped']),
+            'errors' => count($results['errors'])
+        ]
+    ]);
 }
 

@@ -19,7 +19,10 @@ cd docker
 ## Access Your Application
 
 After deployment, open your browser and go to:
-**http://localhost:8090**
+- **HTTP**: http://localhost:8090
+- **HTTPS**: https://localhost:8443 (recommended)
+
+⚠️ **Note**: The HTTPS certificate is self-signed. Your browser will show a security warning - click "Advanced" and "Proceed to localhost" to continue.
 
 ### Default Login
 - Username: `admin`

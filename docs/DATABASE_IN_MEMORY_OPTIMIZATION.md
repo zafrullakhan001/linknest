@@ -179,3 +179,4 @@ If you encounter issues with older SQLite versions:
 - Remove `PRAGMA optimize` (if not supported)
 - Use `PRAGMA synchronous = FULL` (more compatible, but slower)
 
+

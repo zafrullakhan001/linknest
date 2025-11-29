@@ -6,7 +6,8 @@ services:
       dockerfile: docker/Dockerfile
     container_name: linknest
     ports:
-      - "8090:80"
+      - "8090:80"   # HTTP
+      - "8443:443"  # HTTPS
     volumes:
       - ../data:/var/www/html/data
       - ../uploads:/var/www/html/uploads
@@ -18,7 +19,7 @@ services:
       - PHP_POST_MAX_SIZE=10M
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/api/settings"]
+      test: ["CMD", "curl", "-f", "-k", "https://localhost/api/settings"]
       interval: 30s
       timeout: 10s
       retries: 3
