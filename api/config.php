@@ -74,7 +74,7 @@ function initDatabase() {
         $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
         
         // Set busy timeout immediately to prevent locks
-        $db->exec('PRAGMA busy_timeout = 2000'); // 2 second timeout
+        $db->exec('PRAGMA busy_timeout = 5000'); // 5 second timeout for extra safety
         
         // Enable foreign keys
         $db->exec('PRAGMA foreign_keys = ON');
@@ -388,6 +388,20 @@ function initDatabase() {
             FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
         )');
         
+        // Create user_tile_permissions table for managing tile access permissions
+        $db->exec('CREATE TABLE IF NOT EXISTS user_tile_permissions (
+            user_id INTEGER NOT NULL,
+            tile_id TEXT NOT NULL,
+            can_view INTEGER DEFAULT 1,
+            can_edit INTEGER DEFAULT 0,
+            can_delete INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, tile_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
+        )');
+        
         // Migrate existing tables if they exist with NULL user_id
         // SQLite doesn't allow NULL in composite PRIMARY KEY, so we need to migrate to use 0 instead
         // Only migrate once by checking if migration flag exists in settings
@@ -569,17 +583,28 @@ function createDatabaseIndexes($db) {
             // Table might not exist yet, ignore
         }
         
-        // Analyze database to update query planner statistics
-        $db->exec('ANALYZE');
+        // Note: ANALYZE removed from here since we now use connection pooling
+        // With singleton pattern, this only runs once per request anyway
+        // Run ANALYZE manually via optimize_database.php if needed
+        // $db->exec('ANALYZE');
     } catch (PDOException $e) {
         // Log but don't fail - indexes are performance optimizations, not critical
         error_log('Warning: Failed to create some database indexes: ' . $e->getMessage());
     }
 }
 
-// Get database connection
+// Get database connection (singleton pattern - reuse connection within same request)
 function getDB() {
-    return initDatabase();
+    static $dbInstance = null;
+    
+    // Return cached instance if it exists
+    if ($dbInstance !== null) {
+        return $dbInstance;
+    }
+    
+    // Create new connection and cache it
+    $dbInstance = initDatabase();
+    return $dbInstance;
 }
 
 // Helper function to get authenticated user
@@ -619,6 +644,81 @@ function requireAdmin() {
         exit;
     }
     return $user;
+}
+
+// Helper function to check if user has permission to edit a tile
+function canUserEditTile($userId, $tileId, $db) {
+    // Admins can always edit - check if current authenticated user is admin
+    $user = getAuthenticatedUser();
+    if ($user && $user['is_admin']) {
+        return true;
+    }
+    
+    // Check if user is the creator of the tile
+    $tileStmt = $db->prepare('SELECT user_id FROM tiles WHERE id = ?');
+    $tileStmt->execute([$tileId]);
+    $tile = $tileStmt->fetch();
+    
+    if ($tile && isset($tile['user_id']) && (int)$tile['user_id'] === (int)$userId) {
+        return true; // User is the creator, allow edit
+    }
+    
+    // Check if user has explicit edit permission
+    $stmt = $db->prepare('SELECT can_edit FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+    $stmt->execute([$userId, $tileId]);
+    $permission = $stmt->fetch();
+    
+    // If no explicit permission exists, default to false (view-only access)
+    // Users must be explicitly granted edit permission
+    if ($permission === false) {
+        return false; // No permission record = view-only (no edit access)
+    }
+    
+    return (bool)$permission['can_edit'];
+}
+
+// Helper function to check if user has permission to delete a tile
+function canUserDeleteTile($userId, $tileId, $db) {
+    // Admins can always delete - check if current authenticated user is admin
+    $user = getAuthenticatedUser();
+    if ($user && $user['is_admin']) {
+        return true;
+    }
+    
+    // Check if user has explicit delete permission
+    $stmt = $db->prepare('SELECT can_delete FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+    $stmt->execute([$userId, $tileId]);
+    $permission = $stmt->fetch();
+    
+    // If no explicit permission exists, default to false (view-only access)
+    // Users must be explicitly granted delete permission
+    if ($permission === false) {
+        return false; // No permission record = view-only (no delete access)
+    }
+    
+    return (bool)$permission['can_delete'];
+}
+
+// Helper function to check if user has permission to view a tile (for edit operations)
+function canUserViewTile($userId, $tileId, $db) {
+    // Admins can always view - check if current authenticated user is admin
+    $user = getAuthenticatedUser();
+    if ($user && $user['is_admin']) {
+        return true;
+    }
+    
+    // Check if user has explicit view permission
+    $stmt = $db->prepare('SELECT can_view FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+    $stmt->execute([$userId, $tileId]);
+    $permission = $stmt->fetch();
+    
+    // If no explicit permission exists, default to true (users can view by default)
+    // Only deny if explicitly set to false
+    if ($permission === false) {
+        return true; // No permission record = default view access
+    }
+    
+    return (bool)$permission['can_view'];
 }
 
 // Helper function to require authentication

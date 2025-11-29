@@ -50,6 +50,9 @@ export interface Tile {
   isHyperlink?: boolean; // Whether this tile is a hyperlink instead of a space
   hyperlinkUrl?: string; // URL for hyperlink tiles
   openInNewTab?: boolean; // Whether hyperlink should open in new tab (true) or same tab (false)
+  canView?: boolean; // Whether the current user can view this tile (based on tile access permissions)
+  canEdit?: boolean; // Whether the current user can edit this tile (based on tile access permissions)
+  canDelete?: boolean; // Whether the current user can delete this tile (based on tile access permissions)
 }
 
 export const THEME_COLORS = [

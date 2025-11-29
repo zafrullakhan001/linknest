@@ -67,6 +67,8 @@ switch ($method) {
             handleDeleteUser((int)$matches[1]);
         } elseif (preg_match('#^/toggle-auth-source/(\d+)$#', $path, $matches)) {
             handleToggleAuthSource((int)$matches[1]);
+        } elseif (preg_match('#^/toggle-admin/(\d+)$#', $path, $matches)) {
+            handleToggleAdmin((int)$matches[1]);
         } elseif ($path === '/change-admin-password') {
             handleChangeAdminPassword();
         } else {
@@ -1090,6 +1092,45 @@ function handleToggleAuthSource($userId) {
         sendJSON(['success' => true, 'message' => "Auth source updated to {$newAuthSource}", 'auth_source' => $newAuthSource]);
     } else {
         sendJSON(['error' => 'Failed to update auth source'], 500);
+    }
+}
+
+function handleToggleAdmin($userId) {
+    requireAdmin(); // Only admins can promote/demote other users
+    
+    $db = getDB();
+    
+    // Check if user exists
+    $stmt = $db->prepare('SELECT id, is_admin FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $user = $stmt->fetch();
+    
+    if (!$user) {
+        sendJSON(['error' => 'User not found'], 404);
+    }
+    
+    // Get current admin user to prevent self-demotion
+    $currentUser = getAuthenticatedUser();
+    if ($currentUser && (int)$currentUser['id'] === (int)$userId && $user['is_admin']) {
+        sendJSON(['error' => 'You cannot demote yourself from admin'], 403);
+    }
+    
+    // Toggle admin status
+    $newAdminStatus = $user['is_admin'] ? 0 : 1;
+    
+    // When promoting to admin, also approve the user if not already approved
+    if ($newAdminStatus) {
+        $stmt = $db->prepare('UPDATE users SET is_admin = 1, is_approved = 1 WHERE id = ?');
+    } else {
+        $stmt = $db->prepare('UPDATE users SET is_admin = 0 WHERE id = ?');
+    }
+    $stmt->execute([$userId]);
+    
+    if ($stmt->rowCount() > 0) {
+        $action = $newAdminStatus ? 'promoted to admin' : 'demoted from admin';
+        sendJSON(['success' => true, 'message' => "User {$action} successfully", 'is_admin' => (bool)$newAdminStatus]);
+    } else {
+        sendJSON(['error' => 'Failed to update admin status'], 500);
     }
 }
 

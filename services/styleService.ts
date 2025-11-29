@@ -182,7 +182,7 @@ export interface SpaceStyles {
 }
 
 export const DEFAULT_STYLES: SpaceStyles = {
-  pageZoom: 80,
+  pageZoom: 100,
   tileBackgroundColor: '#ffffff',
   tileBorderColor: '#e2e8f0',
   tileBorderWidth: 1,
@@ -551,7 +551,7 @@ export const styleService = {
       ? raisedShadow
       : shadows[Math.min(shadowIntensity, 5)];
 
-    const zoomValue = styles.pageZoom || 80;
+    const zoomValue = styles.pageZoom || 100;
 
     return `
       /* Global Page Zoom */

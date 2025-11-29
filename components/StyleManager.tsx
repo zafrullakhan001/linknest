@@ -364,7 +364,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                 <div className="flex items-center gap-6">
                   <div className="flex-1 max-w-md">
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Page Zoom: {styles.pageZoom || 80}%
+                      Page Zoom: {styles.pageZoom || 100}%
                     </label>
                     <div className="flex items-center gap-4">
                       <input
@@ -372,26 +372,26 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                         min="50"
                         max="150"
                         step="5"
-                        value={styles.pageZoom || 80}
+                        value={styles.pageZoom || 100}
                         onChange={(e) => updateStyle('pageZoom', parseInt(e.target.value))}
                         className="flex-1"
                       />
                       <div className="flex gap-1">
                         <button
                           onClick={() => updateStyle('pageZoom', 80)}
-                          className={`px-2 py-1 text-xs rounded ${(styles.pageZoom || 80) === 80 ? 'bg-brand-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+                          className={`px-2 py-1 text-xs rounded ${(styles.pageZoom || 100) === 80 ? 'bg-brand-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
                         >
                           80%
                         </button>
                         <button
                           onClick={() => updateStyle('pageZoom', 100)}
-                          className={`px-2 py-1 text-xs rounded ${(styles.pageZoom || 80) === 100 ? 'bg-brand-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+                          className={`px-2 py-1 text-xs rounded ${(styles.pageZoom || 100) === 100 ? 'bg-brand-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
                         >
                           100%
                         </button>
                         <button
                           onClick={() => updateStyle('pageZoom', 120)}
-                          className={`px-2 py-1 text-xs rounded ${(styles.pageZoom || 80) === 120 ? 'bg-brand-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+                          className={`px-2 py-1 text-xs rounded ${(styles.pageZoom || 100) === 120 ? 'bg-brand-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
                         >
                           120%
                         </button>

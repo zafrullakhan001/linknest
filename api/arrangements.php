@@ -51,8 +51,8 @@ function handleGetArrangement() {
 }
 
 function handleSaveArrangement() {
-    // Global arrangement - no authentication required
-    // $user = requireAuth(); // Allow guests to update arrangement
+    // Require admin access to save global arrangement
+    requireAdmin();
     $data = getJSONInput();
     
     if (!isset($data['arrangement']) || !is_array($data['arrangement'])) {
@@ -215,8 +215,8 @@ function handleGetCategoryArrangement() {
 }
 
 function handleSaveCategoryArrangement() {
-    // Require authentication to save global arrangement
-    $user = requireAuth();
+    // Require admin access to save global category arrangement
+    requireAdmin();
     $data = getJSONInput();
     
     if (!isset($data['categories']) || !is_array($data['categories'])) {

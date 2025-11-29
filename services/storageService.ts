@@ -22,7 +22,10 @@ const transformTile = (apiTile: any): Tile => {
     isFavorite: apiTile.isFavorite || false,
     isHyperlink: apiTile.isHyperlink || false,
     hyperlinkUrl: apiTile.hyperlinkUrl || undefined,
-    openInNewTab: apiTile.openInNewTab !== undefined ? apiTile.openInNewTab : undefined
+    openInNewTab: apiTile.openInNewTab !== undefined ? apiTile.openInNewTab : undefined,
+    canView: apiTile.canView !== undefined ? apiTile.canView : true, // Default to true if not set
+    canEdit: apiTile.canEdit !== undefined ? apiTile.canEdit : false, // Default to false if not set
+    canDelete: apiTile.canDelete !== undefined ? apiTile.canDelete : false // Default to false if not set
   };
 };
 

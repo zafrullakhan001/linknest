@@ -115,6 +115,47 @@ function handleGetTiles() {
             $isFavorite = $favStmt->fetch() !== false;
         }
         
+        // Get user tile permissions for the current user
+        $canView = true; // Default: everyone can view (unless explicitly denied)
+        $canEdit = false; // Default: no edit access (unless explicitly granted)
+        $canDelete = false; // Default: no delete access (unless explicitly granted)
+        
+        if ($user) {
+            // Admins have full access to everything
+            if ($user['is_admin']) {
+                $canView = true;
+                $canEdit = true;
+                $canDelete = true;
+            } else {
+                // Check if user is the creator of the tile
+                $isCreator = isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id'];
+                
+                if ($isCreator) {
+                    // Creators have full access to their own tiles
+                    $canView = true;
+                    $canEdit = true;
+                    $canDelete = true;
+                } else {
+                    // Check for explicit permissions
+                    $permStmt = $db->prepare('SELECT can_view, can_edit, can_delete FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+                    $permStmt->execute([$user['id'], $row['id']]);
+                    $permission = $permStmt->fetch();
+                    
+                    if ($permission) {
+                        $canView = (bool)$permission['can_view'];
+                        $canEdit = (bool)$permission['can_edit'];
+                        $canDelete = (bool)$permission['can_delete'];
+                    }
+                    // If no permission record exists, use defaults (view only)
+                }
+            }
+        }
+        
+        // Skip tiles where user doesn't have view permission
+        if ($user && !$canView) {
+            continue;
+        }
+        
         $tile = [
             'id' => $row['id'],
             'title' => $row['title'],
@@ -130,6 +171,9 @@ function handleGetTiles() {
             'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
             'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
             'openInNewTab' => isset($row['open_in_new_tab']) ? (bool)$row['open_in_new_tab'] : null,
+            'canView' => $canView,
+            'canEdit' => $canEdit,
+            'canDelete' => $canDelete,
             'tabs' => []
         ];
         
@@ -325,6 +369,47 @@ function handleGetTiles() {
                 }
                 
                 // If not found in cache, build from scratch (shouldn't happen, but fallback)
+                // Get user tile permissions for the current user
+                $canView = true; // Default: everyone can view (unless explicitly denied)
+                $canEdit = false; // Default: no edit access (unless explicitly granted)
+                $canDelete = false; // Default: no delete access (unless explicitly granted)
+                
+                if ($user) {
+                    // Admins have full access to everything
+                    if ($user['is_admin']) {
+                        $canView = true;
+                        $canEdit = true;
+                        $canDelete = true;
+                    } else {
+                        // Check if user is the creator of the tile
+                        $isCreator = isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id'];
+                        
+                        if ($isCreator) {
+                            // Creators have full access to their own tiles
+                            $canView = true;
+                            $canEdit = true;
+                            $canDelete = true;
+                        } else {
+                            // Check for explicit permissions
+                            $permStmt = $db->prepare('SELECT can_view, can_edit, can_delete FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+                            $permStmt->execute([$user['id'], $row['id']]);
+                            $permission = $permStmt->fetch();
+                            
+                            if ($permission) {
+                                $canView = (bool)$permission['can_view'];
+                                $canEdit = (bool)$permission['can_edit'];
+                                $canDelete = (bool)$permission['can_delete'];
+                            }
+                            // If no permission record exists, use defaults (view only)
+                        }
+                    }
+                }
+                
+                // Skip tiles where user doesn't have view permission
+                if ($user && !$canView) {
+                    continue;
+                }
+                
                 $tile = [
                     'id' => $row['id'],
                     'title' => $row['title'],
@@ -338,6 +423,9 @@ function handleGetTiles() {
                     'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
                     'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
                     'openInNewTab' => isset($row['open_in_new_tab']) ? (bool)$row['open_in_new_tab'] : null,
+                    'canView' => $canView,
+                    'canEdit' => $canEdit,
+                    'canDelete' => $canDelete,
                     'tabs' => []
                 ];
                 
@@ -411,6 +499,47 @@ function handleGetTile($tileId) {
         $isFavorite = $favStmt->fetch() !== false;
     }
     
+    // Get user tile permissions for the current user
+    $canView = true; // Default: everyone can view (unless explicitly denied)
+    $canEdit = false; // Default: no edit access (unless explicitly granted)
+    $canDelete = false; // Default: no delete access (unless explicitly granted)
+    
+    if ($user) {
+        // Admins have full access to everything
+        if ($user['is_admin']) {
+            $canView = true;
+            $canEdit = true;
+            $canDelete = true;
+        } else {
+            // Check if user is the creator of the tile
+            $isCreator = isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id'];
+            
+            if ($isCreator) {
+                // Creators have full access to their own tiles
+                $canView = true;
+                $canEdit = true;
+                $canDelete = true;
+            } else {
+                // Check for explicit permissions
+                $permStmt = $db->prepare('SELECT can_view, can_edit, can_delete FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+                $permStmt->execute([$user['id'], $row['id']]);
+                $permission = $permStmt->fetch();
+                
+                if ($permission) {
+                    $canView = (bool)$permission['can_view'];
+                    $canEdit = (bool)$permission['can_edit'];
+                    $canDelete = (bool)$permission['can_delete'];
+                }
+                // If no permission record exists, use defaults (view only)
+            }
+        }
+    }
+    
+    // Check if user has view permission - deny access if not
+    if ($user && !$canView) {
+        sendJSON(['error' => 'Access denied. You do not have permission to view this tile.'], 403);
+    }
+    
     $tile = [
         'id' => $row['id'],
         'title' => $row['title'],
@@ -426,6 +555,9 @@ function handleGetTile($tileId) {
         'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
         'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
         'openInNewTab' => isset($row['open_in_new_tab']) ? (bool)$row['open_in_new_tab'] : null,
+        'canView' => $canView,
+        'canEdit' => $canEdit,
+        'canDelete' => $canDelete,
         'tabs' => []
     ];
     
@@ -738,7 +870,7 @@ function handleCreateTile() {
 }
 
 function handleUpdateTile($tileId) {
-    $user = requireAuth(); // Any authenticated user can edit any tile
+    $user = requireAuth();
     $data = getJSONInput();
     
     $db = getDB();
@@ -752,145 +884,174 @@ function handleUpdateTile($tileId) {
         sendJSON(['error' => 'Tile not found'], 404);
     }
     
-    // All authenticated users can edit any tile - shared public repository
-    
-    // Handle visibility and allowed_users
-    $visibility = $data['visibility'] ?? 'public';
-    $allowedUsers = null;
-    if ($visibility === 'private' && isset($data['allowedUsers']) && is_array($data['allowedUsers'])) {
-        $allowedUsers = json_encode($data['allowedUsers']);
+    // Check if user has permission to edit this tile
+    if (!canUserEditTile($user['id'], $tileId, $db)) {
+        sendJSON(['error' => 'You do not have permission to edit this tile'], 403);
     }
+
+    // Begin transaction to prevent database locking issues
+    $db->beginTransaction();
     
-    // Handle hyperlink fields
-    $isHyperlink = isset($data['isHyperlink']) && $data['isHyperlink'] ? 1 : 0;
-    $hyperlinkUrl = $data['hyperlinkUrl'] ?? null;
-    $openInNewTab = isset($data['openInNewTab']) && $data['openInNewTab'] ? 1 : 0;
+    try {
+        // Handle visibility and allowed_users
+        $visibility = $data['visibility'] ?? 'public';
+        $allowedUsers = null;
+        if ($visibility === 'private' && isset($data['allowedUsers']) && is_array($data['allowedUsers'])) {
+            $allowedUsers = json_encode($data['allowedUsers']);
+        }
+        
+        // Handle hyperlink fields
+        $isHyperlink = isset($data['isHyperlink']) && $data['isHyperlink'] ? 1 : 0;
+        $hyperlinkUrl = $data['hyperlinkUrl'] ?? null;
+        $openInNewTab = isset($data['openInNewTab']) && $data['openInNewTab'] ? 1 : 0;
+        
+        // Update tile
+        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ? WHERE id = ?');
+        $stmt->execute([
+            $data['title'] ?? '',
+            $data['description'] ?? '',
+            $data['htmlContent'] ?? '',
+            $data['emoji'] ?? '📁',
+            $data['themeColor'] ?? 'blue',
+            $data['group'] ?? 'General',
+            $visibility,
+            $allowedUsers,
+            $isHyperlink,
+            $hyperlinkUrl,
+            $openInNewTab,
+            $tileId
+        ]);
+        
+        // Delete existing tabs, sections, and links
+        $deleteLinksStmt = $db->prepare('DELETE FROM links WHERE section_id IN (SELECT id FROM sections WHERE tile_id = ?)');
+        $deleteLinksStmt->execute([$tileId]);
+        
+        $deleteSectionsStmt = $db->prepare('DELETE FROM sections WHERE tile_id = ?');
+        $deleteSectionsStmt->execute([$tileId]);
+        
+        $deleteTabsStmt = $db->prepare('DELETE FROM tabs WHERE tile_id = ?');
+        $deleteTabsStmt->execute([$tileId]);
     
-    // Update tile
-    $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ? WHERE id = ?');
-    $stmt->execute([
-        $data['title'] ?? '',
-        $data['description'] ?? '',
-        $data['htmlContent'] ?? '',
-        $data['emoji'] ?? '📁',
-        $data['themeColor'] ?? 'blue',
-        $data['group'] ?? 'General',
-        $visibility,
-        $allowedUsers,
-        $isHyperlink,
-        $hyperlinkUrl,
-        $openInNewTab,
-        $tileId
-    ]);
-    
-    // Delete existing tabs, sections, and links
-    $deleteLinksStmt = $db->prepare('DELETE FROM links WHERE section_id IN (SELECT id FROM sections WHERE tile_id = ?)');
-    $deleteLinksStmt->execute([$tileId]);
-    
-    $deleteSectionsStmt = $db->prepare('DELETE FROM sections WHERE tile_id = ?');
-    $deleteSectionsStmt->execute([$tileId]);
-    
-    $deleteTabsStmt = $db->prepare('DELETE FROM tabs WHERE tile_id = ?');
-    $deleteTabsStmt->execute([$tileId]);
-    
-    // Insert new tabs, sections, and links
-    if (isset($data['tabs']) && is_array($data['tabs'])) {
-        // New structure with tabs
-        foreach ($data['tabs'] as $tabIndex => $tab) {
-            $tabId = $tab['id'] ?? uniqid('tab_', true);
-            $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
-            $tabStmt->execute([
-                $tabId,
-                $tileId,
-                $tab['title'] ?? 'New Tab',
-                $tab['position'] ?? $tabIndex
-            ]);
-            
-            // Insert sections for this tab
-            if (isset($tab['sections']) && is_array($tab['sections'])) {
-                foreach ($tab['sections'] as $section) {
-                    $sectionId = $section['id'] ?? uniqid('section_', true);
-                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title) VALUES (?, ?, ?, ?)');
-                    $sectionStmt->execute([
-                        $sectionId,
-                        $tileId,
-                        $tabId,
-                        $section['title'] ?? ''
-                    ]);
-                    
-                    // Insert links for this section
-                    if (isset($section['links']) && is_array($section['links'])) {
-                        foreach ($section['links'] as $link) {
-                            $linkId = $link['id'] ?? uniqid('link_', true);
-                            $visibility = $link['visibility'] ?? 'public';
-                            $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) 
-                                ? json_encode($link['allowedUsers']) 
-                                : null;
-                            $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-                            $linkStmt->execute([
-                                $linkId,
-                                $sectionId,
-                                $link['label'],
-                                $link['url'],
-                                $visibility,
-                                $allowedUsers,
-                                $link['notes'] ?? null,
-                                $link['tooltip'] ?? null
-                            ]);
+        // Insert new tabs, sections, and links
+        if (isset($data['tabs']) && is_array($data['tabs'])) {
+            // New structure with tabs
+            foreach ($data['tabs'] as $tabIndex => $tab) {
+                $tabId = $tab['id'] ?? uniqid('tab_', true);
+                $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
+                $tabStmt->execute([
+                    $tabId,
+                    $tileId,
+                    $tab['title'] ?? 'New Tab',
+                    $tab['position'] ?? $tabIndex
+                ]);
+                
+                // Insert sections for this tab
+                if (isset($tab['sections']) && is_array($tab['sections'])) {
+                    foreach ($tab['sections'] as $section) {
+                        $sectionId = $section['id'] ?? uniqid('section_', true);
+                        $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title) VALUES (?, ?, ?, ?)');
+                        $sectionStmt->execute([
+                            $sectionId,
+                            $tileId,
+                            $tabId,
+                            $section['title'] ?? ''
+                        ]);
+                        
+                        // Insert links for this section
+                        if (isset($section['links']) && is_array($section['links'])) {
+                            foreach ($section['links'] as $link) {
+                                $linkId = $link['id'] ?? uniqid('link_', true);
+                                $visibility = $link['visibility'] ?? 'public';
+                                $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) 
+                                    ? json_encode($link['allowedUsers']) 
+                                    : null;
+                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                                $linkStmt->execute([
+                                    $linkId,
+                                    $sectionId,
+                                    $link['label'],
+                                    $link['url'],
+                                    $visibility,
+                                    $allowedUsers,
+                                    $link['notes'] ?? null,
+                                    $link['tooltip'] ?? null
+                                ]);
+                            }
                         }
                     }
                 }
             }
-        }
-    } elseif (isset($data['sections']) && is_array($data['sections'])) {
-        // Backward compatibility: create a default tab for sections
-        $defaultTabId = uniqid('tab_', true);
-        $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
-        $tabStmt->execute([
-            $defaultTabId,
-            $tileId,
-            'Default',
-            0
-        ]);
-        
-        foreach ($data['sections'] as $section) {
-            $sectionId = $section['id'] ?? uniqid('section_', true);
-            $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title) VALUES (?, ?, ?, ?)');
-            $sectionStmt->execute([
-                $sectionId,
-                $tileId,
+        } elseif (isset($data['sections']) && is_array($data['sections'])) {
+            // Backward compatibility: create a default tab for sections
+            $defaultTabId = uniqid('tab_', true);
+            $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
+            $tabStmt->execute([
                 $defaultTabId,
-                $section['title'] ?? ''
+                $tileId,
+                'Default',
+                0
             ]);
             
-            if (isset($section['links']) && is_array($section['links'])) {
-                foreach ($section['links'] as $link) {
-                    $linkId = $link['id'] ?? uniqid('link_', true);
-                    $visibility = $link['visibility'] ?? 'public';
-                    $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) 
-                        ? json_encode($link['allowedUsers']) 
-                        : null;
-                    $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-                    $linkStmt->execute([
-                        $linkId,
-                        $sectionId,
-                        $link['label'],
-                        $link['url'],
-                        $visibility,
-                        $allowedUsers,
-                        $link['notes'] ?? null,
-                        $link['tooltip'] ?? null
-                    ]);
+            foreach ($data['sections'] as $section) {
+                $sectionId = $section['id'] ?? uniqid('section_', true);
+                $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title) VALUES (?, ?, ?, ?)');
+                $sectionStmt->execute([
+                    $sectionId,
+                    $tileId,
+                    $defaultTabId,
+                    $section['title'] ?? ''
+                ]);
+                
+                if (isset($section['links']) && is_array($section['links'])) {
+                    foreach ($section['links'] as $link) {
+                        // Validate required fields
+                        if (!isset($link['label']) || !isset($link['url'])) {
+                            continue; // Skip invalid links
+                        }
+                        
+                        $linkId = $link['id'] ?? uniqid('link_', true);
+                        $visibility = $link['visibility'] ?? 'public';
+                        $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) 
+                            ? json_encode($link['allowedUsers']) 
+                            : null;
+                        $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                        $linkStmt->execute([
+                            $linkId,
+                            $sectionId,
+                            $link['label'],
+                            $link['url'],
+                            $visibility,
+                            $allowedUsers,
+                            $link['notes'] ?? null,
+                            $link['tooltip'] ?? null
+                        ]);
+                    }
                 }
             }
         }
+        
+        // Commit the transaction
+        $db->commit();
+        sendJSON(['success' => true]);
+    } catch (PDOException $e) {
+        // Rollback transaction on database error
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        error_log('Database error in handleUpdateTile: ' . $e->getMessage());
+        sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
+    } catch (Exception $e) {
+        // Rollback transaction on any other error
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        error_log('Error in handleUpdateTile: ' . $e->getMessage());
+        sendJSON(['error' => 'An error occurred while updating the tile: ' . $e->getMessage()], 500);
     }
-    
-    sendJSON(['success' => true]);
 }
 
 function handleDeleteTile($tileId) {
-    $user = requireAuth(); // Any authenticated user can delete any tile
+    $user = requireAuth();
     $db = getDB();
     
     // Verify tile exists
@@ -902,7 +1063,10 @@ function handleDeleteTile($tileId) {
         sendJSON(['error' => 'Tile not found'], 404);
     }
     
-    // All authenticated users can delete any tile - shared public repository
+    // Check if user has permission to delete this tile
+    if (!canUserDeleteTile($user['id'], $tileId, $db)) {
+        sendJSON(['error' => 'You do not have permission to delete this tile'], 403);
+    }
     
     // Delete tile (cascade will delete sections and links)
     $stmt = $db->prepare('DELETE FROM tiles WHERE id = ?');
@@ -922,6 +1086,11 @@ function handleCloneTile($tileId) {
     
     if (!$originalTile) {
         sendJSON(['error' => 'Tile not found'], 404);
+    }
+    
+    // Check if user has permission to view this tile (required to clone it)
+    if (!canUserViewTile($user['id'], $tileId, $db)) {
+        sendJSON(['error' => 'You do not have permission to view this tile'], 403);
     }
     
     // Check visibility - user must be able to see the tile to clone it

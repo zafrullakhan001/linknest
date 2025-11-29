@@ -9,6 +9,7 @@ import { exportAllCategoriesToFile, parseSpaceExportObject, normalizeImportedTil
 import { Tile } from '../types';
 import { getCategoryArrangement } from '../services/storageService';
 import { SecurePasswordInput } from './SecurePasswordInput';
+import { accessService, TilePermission } from '../services/accessService';
 
 interface AdminPanelProps {
   onUserApproved?: () => void;
@@ -16,7 +17,7 @@ interface AdminPanelProps {
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const { refreshSettings } = useSettings();
-  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer'>('pending');
+  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'access'>('pending');
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
   const [allUsers, setAllUsers] = useState<AllUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,6 +93,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [selectedLdapUser, setSelectedLdapUser] = useState<{ username: string; email: string; displayName: string; dn: string } | null>(null);
   const [addUserLoading, setAddUserLoading] = useState(false);
 
+  // Access Manager state
+  const [permissions, setPermissions] = useState<TilePermission[]>([]);
+  const [permissionsLoading, setPermissionsLoading] = useState(false);
+  const [selectedTileId, setSelectedTileId] = useState<string | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [showPermissionModal, setShowPermissionModal] = useState(false);
+  const [permissionForm, setPermissionForm] = useState({
+    userId: 0,
+    tileId: '',
+    canView: true,
+    canEdit: false,
+    canDelete: false
+  });
+
   const loadPendingUsers = async () => {
     try {
       setError('');
@@ -142,8 +157,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   useEffect(() => {
     loadData();
     loadSettings();
-    if (activeTab === 'spaces') {
+    if (activeTab === 'spaces' || activeTab === 'access') {
       loadSpaces();
+    }
+    if (activeTab === 'access') {
+      loadPermissions();
     }
   }, [activeTab]);
 
@@ -157,6 +175,95 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load spaces');
+    }
+  };
+
+  const loadPermissions = async () => {
+    try {
+      setPermissionsLoading(true);
+      setError('');
+      const perms = await accessService.getAllPermissions();
+      setPermissions(perms);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load permissions');
+    } finally {
+      setPermissionsLoading(false);
+    }
+  };
+
+  const handleAddPermission = () => {
+    setPermissionForm({
+      userId: 0,
+      tileId: '',
+      canView: true,
+      canEdit: false,
+      canDelete: false
+    });
+    setShowPermissionModal(true);
+  };
+
+  const handleEditPermission = (perm: TilePermission) => {
+    setPermissionForm({
+      userId: perm.userId,
+      tileId: perm.tileId,
+      canView: perm.canView,
+      canEdit: perm.canEdit,
+      canDelete: perm.canDelete
+    });
+    setShowPermissionModal(true);
+  };
+
+  const handleSavePermission = async () => {
+    if (!permissionForm.userId || !permissionForm.tileId) {
+      setError('Please select both user and tile');
+      return;
+    }
+
+    try {
+      setError('');
+      // Check if this is an update (permission already exists)
+      const existingPerm = permissions.find(
+        p => p.userId === permissionForm.userId && p.tileId === permissionForm.tileId
+      );
+      
+      if (existingPerm) {
+        // Update existing permission
+        await accessService.updatePermission(
+          permissionForm.userId,
+          permissionForm.tileId,
+          permissionForm.canView,
+          permissionForm.canEdit,
+          permissionForm.canDelete
+        );
+      } else {
+        // Create new permission
+        await accessService.setPermission(permissionForm);
+      }
+      setShowPermissionModal(false);
+      setPermissionForm({
+        userId: 0,
+        tileId: '',
+        canView: true,
+        canEdit: false,
+        canDelete: false
+      });
+      await loadPermissions();
+    } catch (err: any) {
+      setError(err.message || 'Failed to save permission');
+    }
+  };
+
+  const handleDeletePermission = async (userId: number, tileId: string) => {
+    if (!confirm('Are you sure you want to remove this permission?')) {
+      return;
+    }
+
+    try {
+      setError('');
+      await accessService.deletePermission(userId, tileId);
+      await loadPermissions();
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete permission');
     }
   };
 
@@ -416,6 +523,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         >
           Footer
         </button>
+        <button
+          onClick={() => setActiveTab('access')}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'access'
+            ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+            : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+        >
+          Access Manager
+        </button>
       </div>
 
       {error && (
@@ -594,75 +710,119 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           {formatDate(user.created_at)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right">
-                          {!user.is_admin && (
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                onClick={async () => {
-                                  try {
-                                    setProcessing(user.id);
-                                    setError('');
-                                    const result = await authService.toggleAuthSource(user.id);
-                                    // Update the user in the local state
-                                    setAllUsers(prevUsers => 
-                                      prevUsers.map(u => 
-                                        u.id === user.id ? { ...u, auth_source: result.auth_source } : u
-                                      )
-                                    );
-                                  } catch (err: any) {
-                                    setError(err.message || 'Failed to toggle auth source');
-                                  } finally {
-                                    setProcessing(null);
-                                  }
-                                }}
-                                disabled={processing === user.id}
-                                className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
-                                title={`Toggle Auth Source (Current: ${user.auth_source === 'ldap' ? 'LDAP' : 'Local'})`}
-                              >
-                                {processing === user.id ? (
-                                  <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                  </svg>
-                                ) : (
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                    <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                                  </svg>
-                                )}
-                                Toggle
-                              </button>
-                              {user.auth_source !== 'ldap' && (
-                                <button
-                                  onClick={() => setResetPasswordModal({ open: true, userId: user.id, username: user.username })}
-                                  disabled={processing === user.id}
-                                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
-                                  title="Reset Password"
-                                >
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                    <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
-                                  </svg>
-                                  Reset
-                                </button>
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={async () => {
+                                try {
+                                  setProcessing(user.id);
+                                  setError('');
+                                  const result = await authService.toggleAdmin(user.id);
+                                  // Update the user in the local state
+                                  setAllUsers(prevUsers => 
+                                    prevUsers.map(u => 
+                                      u.id === user.id ? { ...u, is_admin: result.is_admin } : u
+                                    )
+                                  );
+                                } catch (err: any) {
+                                  setError(err.message || 'Failed to toggle admin status');
+                                } finally {
+                                  setProcessing(null);
+                                }
+                              }}
+                              disabled={processing === user.id}
+                              className={`px-3 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                                user.is_admin 
+                                  ? 'bg-amber-600 hover:bg-amber-500' 
+                                  : 'bg-emerald-600 hover:bg-emerald-500'
+                              }`}
+                              title={user.is_admin ? 'Demote from Admin' : 'Promote to Admin'}
+                            >
+                              {processing === user.id ? (
+                                <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                              ) : user.is_admin ? (
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                                </svg>
+                              ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                                </svg>
                               )}
-                              <button
-                                onClick={() => handleDeleteUser(user.id, user.username)}
-                                disabled={processing === user.id}
-                                className="px-3 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
-                                title="Delete User"
-                              >
-                                {processing === user.id ? (
-                                  <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                  </svg>
-                                ) : (
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                    <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-                                  </svg>
+                              {user.is_admin ? 'Demote' : 'Promote'}
+                            </button>
+                            {!user.is_admin && (
+                              <>
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      setProcessing(user.id);
+                                      setError('');
+                                      const result = await authService.toggleAuthSource(user.id);
+                                      // Update the user in the local state
+                                      setAllUsers(prevUsers => 
+                                        prevUsers.map(u => 
+                                          u.id === user.id ? { ...u, auth_source: result.auth_source } : u
+                                        )
+                                      );
+                                    } catch (err: any) {
+                                      setError(err.message || 'Failed to toggle auth source');
+                                    } finally {
+                                      setProcessing(null);
+                                    }
+                                  }}
+                                  disabled={processing === user.id}
+                                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
+                                  title={`Toggle Auth Source (Current: ${user.auth_source === 'ldap' ? 'LDAP' : 'Local'})`}
+                                >
+                                  {processing === user.id ? (
+                                    <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                  ) : (
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                      <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                                    </svg>
+                                  )}
+                                  Toggle
+                                </button>
+                                {user.auth_source !== 'ldap' && (
+                                  <button
+                                    onClick={() => setResetPasswordModal({ open: true, userId: user.id, username: user.username })}
+                                    disabled={processing === user.id}
+                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
+                                    title="Reset Password"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                      <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
+                                    </svg>
+                                    Reset
+                                  </button>
                                 )}
-                                Delete
-                              </button>
-                            </div>
-                          )}
+                                <button
+                                  onClick={() => handleDeleteUser(user.id, user.username)}
+                                  disabled={processing === user.id}
+                                  className="px-3 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
+                                  title="Delete User"
+                                >
+                                  {processing === user.id ? (
+                                    <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                  ) : (
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                      <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                                    </svg>
+                                  )}
+                                  Delete
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -2001,6 +2161,124 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             </div>
           )}
 
+          {/* Access Manager Tab */}
+          {activeTab === 'access' && (
+            <div className="space-y-6">
+              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Tile Access Permissions</h3>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                      Manage which users can view, edit, or delete specific tiles
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleAddPermission}
+                    className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                      <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                    </svg>
+                    Add Permission
+                  </button>
+                </div>
+
+                {permissionsLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                  </div>
+                ) : permissions.length === 0 ? (
+                  <div className="text-center py-12 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl">
+                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-slate-400">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-400 font-medium">No permissions configured</p>
+                    <p className="text-slate-500 dark:text-slate-500 text-sm mt-1">Add permissions to restrict tile access</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">User</th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Tile</th>
+                          <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">View</th>
+                          <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Edit</th>
+                          <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Delete</th>
+                          <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                        {permissions.map((perm) => (
+                          <tr key={`${perm.userId}_${perm.tileId}`} className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm font-medium text-slate-900 dark:text-white">{perm.username}</div>
+                              <div className="text-xs text-slate-500 dark:text-slate-400">{perm.email}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-slate-900 dark:text-white">{perm.tileTitle || perm.tileId}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              {perm.canView ? (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-500/20 text-green-800 dark:text-green-400">
+                                  ✓
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-400">
+                                  ✗
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              {perm.canEdit ? (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-500/20 text-green-800 dark:text-green-400">
+                                  ✓
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-400">
+                                  ✗
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              {perm.canDelete ? (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-500/20 text-green-800 dark:text-green-400">
+                                  ✓
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-400">
+                                  ✗
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                              <div className="flex justify-end gap-3">
+                                <button
+                                  onClick={() => handleEditPermission(perm)}
+                                  className="text-brand-600 dark:text-brand-400 hover:text-brand-900 dark:hover:text-brand-300 transition-colors"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleDeletePermission(perm.userId, perm.tileId)}
+                                  className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition-colors"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Settings Tab */}
           {activeTab === 'settings' && (
             <div className="space-y-6">
@@ -2525,6 +2803,128 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             </div>
           )}
         </>
+      )}
+
+      {/* Permission Modal */}
+      {showPermissionModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full mx-4 border border-slate-200 dark:border-slate-700">
+            <div className="p-6">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">
+                {permissionForm.userId && permissionForm.tileId && permissions.find(
+                  p => p.userId === permissionForm.userId && p.tileId === permissionForm.tileId
+                ) ? 'Edit Tile Permission' : 'Add Tile Permission'}
+              </h3>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    User *
+                  </label>
+                  <select
+                    value={permissionForm.userId}
+                    onChange={(e) => setPermissionForm({ ...permissionForm, userId: parseInt(e.target.value) })}
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    required
+                    disabled={permissionForm.userId > 0 && permissionForm.tileId !== '' && permissions.find(
+                      p => p.userId === permissionForm.userId && p.tileId === permissionForm.tileId
+                    ) !== undefined}
+                  >
+                    <option value={0}>Select a user</option>
+                    {allUsers.filter(u => !u.is_admin).map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.username} ({user.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Tile *
+                  </label>
+                  <select
+                    value={permissionForm.tileId}
+                    onChange={(e) => setPermissionForm({ ...permissionForm, tileId: e.target.value })}
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    required
+                    disabled={permissionForm.userId > 0 && permissionForm.tileId !== '' && permissions.find(
+                      p => p.userId === permissionForm.userId && p.tileId === permissionForm.tileId
+                    ) !== undefined}
+                  >
+                    <option value="">Select a tile</option>
+                    {spacesTiles.map((tile) => (
+                      <option key={tile.id} value={tile.id}>
+                        {tile.emoji} {tile.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-3 pt-2">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Permissions
+                  </label>
+                  <div className="space-y-2">
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={permissionForm.canView}
+                        onChange={(e) => setPermissionForm({ ...permissionForm, canView: e.target.checked })}
+                        className="w-4 h-4 text-brand-600 border-slate-300 rounded focus:ring-brand-500"
+                      />
+                      <span className="ml-2 text-sm text-slate-700 dark:text-slate-300">Can View</span>
+                    </label>
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={permissionForm.canEdit}
+                        onChange={(e) => setPermissionForm({ ...permissionForm, canEdit: e.target.checked })}
+                        className="w-4 h-4 text-brand-600 border-slate-300 rounded focus:ring-brand-500"
+                      />
+                      <span className="ml-2 text-sm text-slate-700 dark:text-slate-300">Can Edit</span>
+                    </label>
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={permissionForm.canDelete}
+                        onChange={(e) => setPermissionForm({ ...permissionForm, canDelete: e.target.checked })}
+                        className="w-4 h-4 text-brand-600 border-slate-300 rounded focus:ring-brand-500"
+                      />
+                      <span className="ml-2 text-sm text-slate-700 dark:text-slate-300">Can Delete</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4">
+                  <button
+                    onClick={() => {
+                      setShowPermissionModal(false);
+                      setPermissionForm({
+                        userId: 0,
+                        tileId: '',
+                        canView: true,
+                        canEdit: false,
+                        canDelete: false
+                      });
+                      setError('');
+                    }}
+                    className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSavePermission}
+                    disabled={!permissionForm.userId || !permissionForm.tileId}
+                    className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
+                  >
+                    Save Permission
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Reset Password Modal */}

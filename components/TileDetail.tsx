@@ -121,7 +121,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     // Load users list when editing and authenticated
     useEffect(() => {
-        if (isEditing && isAuthenticated) {
+        if (isEditing && isAuthenticated && tile.canEdit) {
             const loadUsers = async () => {
                 try {
                     setLoadingUsers(true);
@@ -135,9 +135,23 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             };
             loadUsers();
         }
-    }, [isEditing, isAuthenticated]);
+    }, [isEditing, isAuthenticated, tile.canEdit]);
+
+    // Exit edit mode if user doesn't have permission
+    useEffect(() => {
+        if (isEditing && !tile.canEdit) {
+            setIsEditing(false);
+        }
+    }, [isEditing, tile.canEdit]);
 
     const handleSaveChanges = () => {
+        // Check if user has edit permission
+        if (!tile.canEdit) {
+            alert('You do not have permission to edit this tile.');
+            setIsEditing(false);
+            return;
+        }
+
         // Use tabs if we have them, otherwise use sections (backward compatibility)
         const updatedTile: Tile = {
             ...tile,
@@ -176,6 +190,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     const handleRemoveTab = (tabId: string) => {
+        if (!tile.canEdit) {
+            alert('You do not have permission to edit this tile.');
+            return;
+        }
         if (confirm('Delete this tab and all its sections and links?')) {
             setEditTabs(editTabs.filter(t => t.id !== tabId).map((t, idx) => ({ ...t, position: idx })));
         }
@@ -213,6 +231,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     const handleRemoveSection = (tabId: string, sectionId: string) => {
+        if (!tile.canEdit) {
+            alert('You do not have permission to edit this tile.');
+            return;
+        }
         if (confirm('Delete this section and all its links?')) {
             setEditTabs(editTabs.map(tab => {
                 if (tab.id === tabId) {
@@ -319,6 +341,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     const handleRemoveLinkFromSection = (tabId: string, sectionId: string, linkId: string) => {
+        if (!tile.canEdit) {
+            alert('You do not have permission to edit this tile.');
+            return;
+        }
         if (editTabs.length > 0) {
             // New structure with tabs
             setEditTabs(editTabs.map(tab => {
@@ -850,10 +876,16 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 )}
                             </button>
 
-                            {isAuthenticated && (
+                            {isAuthenticated && tile.canEdit && (
                                 <>
                                     <button
-                                        onClick={() => setIsEditing(true)}
+                                        onClick={() => {
+                                            if (!tile.canEdit) {
+                                                alert('You do not have permission to edit this tile.');
+                                                return;
+                                            }
+                                            setIsEditing(true);
+                                        }}
                                         className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex items-center gap-2 backdrop-blur-sm"
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -866,6 +898,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         onClick={async () => {
                                             if (!isAuthenticated) {
                                                 if (onAuthRequired) onAuthRequired();
+                                                return;
+                                            }
+                                            if (!tile.canEdit) {
+                                                alert('You do not have permission to clone this space.');
                                                 return;
                                             }
                                             try {
@@ -1120,10 +1156,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         );
     }
 
-    // EDIT MODE
-    return (
-        <div className="animate-in fade-in zoom-in duration-300 w-full">
-            <div className="flex items-center justify-between mb-6">
+    // EDIT MODE - Only show if user has edit permission
+    if (isEditing && tile.canEdit) {
+        return (
+            <div className="animate-in fade-in zoom-in duration-300 w-full">
+                <div className="flex items-center justify-between mb-6">
                 <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Edit Page: {editTitle}</h1>
                 <div className="flex gap-3">
                     <button
@@ -1951,4 +1988,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             </div>
         </div>
     );
+    }
+
+    // Fallback: if somehow in edit mode without permission, return view mode
+    // (useEffect will handle resetting isEditing state)
+    return null;
 };

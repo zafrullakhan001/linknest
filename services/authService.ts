@@ -268,6 +268,21 @@ export const authService = {
     }
     
     return { user: data.user, message: data.message };
+  },
+
+  async toggleAdmin(userId: number): Promise<{ is_admin: boolean }> {
+    const response = await fetch(`${API_BASE}/auth/toggle-admin/${userId}`, {
+      method: 'PUT',
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to toggle admin status');
+    }
+    
+    return { is_admin: data.is_admin };
   }
 };
 

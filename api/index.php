@@ -73,6 +73,9 @@ if (empty($path) || $path === '/') {
 } elseif (strpos($path, '/styles') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 7); // Remove '/styles'
     require __DIR__ . '/styles.php';
+} elseif (strpos($path, '/access') === 0) {
+    $_SERVER['PATH_INFO'] = substr($path, 7); // Remove '/access'
+    require __DIR__ . '/access.php';
 } elseif (strpos($path, '/ldap_test.php') === 0) {
     require __DIR__ . '/ldap_test.php';
 } else {

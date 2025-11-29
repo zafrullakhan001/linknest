@@ -58,6 +58,7 @@ const Category: React.FC<CategoryProps> = ({
   onExportCategory,
   onImportCategory
 }) => {
+  const { user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(categoryName);
 
@@ -91,7 +92,7 @@ const Category: React.FC<CategoryProps> = ({
   };
 
   const categoryAnimationDelay = groupIndex * 100;
-  
+
   return (
     <div
       className="linknest-category linknest-category-animated"
@@ -110,11 +111,10 @@ const Category: React.FC<CategoryProps> = ({
                 }
               }}
               disabled={!canMoveUp}
-              className={`p-1 rounded-md transition-all ${
-                canMoveUp
+              className={`p-1 rounded-md transition-all ${canMoveUp
                   ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
                   : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
-              }`}
+                }`}
               title="Move category up"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -130,11 +130,10 @@ const Category: React.FC<CategoryProps> = ({
                 }
               }}
               disabled={!canMoveDown}
-              className={`p-1 rounded-md transition-all ${
-                canMoveDown
+              className={`p-1 rounded-md transition-all ${canMoveDown
                   ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
                   : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
-              }`}
+                }`}
               title="Move category down"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -184,7 +183,7 @@ const Category: React.FC<CategoryProps> = ({
         ) : (
           <>
             <h2 className="linknest-category-header text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">{categoryName}</h2>
-            {isAuthenticated && onRenameCategory && (
+            {isAuthenticated && onRenameCategory && user?.is_admin && (
               <button
                 onClick={(e) => {
                   e.preventDefault();
@@ -205,7 +204,7 @@ const Category: React.FC<CategoryProps> = ({
           {tileCount}
         </span>
         <div className="h-px bg-slate-200 dark:border-slate-700 flex-1"></div>
-        
+
         {/* Save Order Button (only visible for authenticated users) */}
         {isAuthenticated && onSaveCategoryOrder && (
           <button
@@ -278,7 +277,7 @@ const Category: React.FC<CategoryProps> = ({
           </>
         )}
       </div>
-      
+
       {/* Category Content (tiles grid) */}
       {children}
     </div>
@@ -330,7 +329,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
   const currentCategory = tile.group || 'General';
 
   const animationDelay = (groupIndex * 80) + (tileIndex * 50);
-  
+
   const style = {
     animationDelay: `${animationDelay}ms`,
   };
@@ -381,12 +380,12 @@ const SortableTile: React.FC<SortableTileProps> = ({
                     <path fillRule="evenodd" d="M5.5 17a4.5 4.5 0 01-1.44-8.765 4.5 4.5 0 018.302-3.046 3.5 3.5 0 014.504 4.272A4 4 0 0115 17H5.5zm3.75-2a.75.75 0 00-1.5 0v.5a.75.75 0 001.5 0v-.5zm0-2a.75.75 0 00-1.5 0v.5a.75.75 0 001.5 0v-.5zM9 12a.75.75 0 00-1.5 0v.5a.75.75 0 001.5 0V12z" clipRule="evenodd" />
                   </svg>
                 </button>
-                
+
                 {/* Category Dropdown Menu */}
                 {showCategoryMenu && (
                   <>
-                    <div 
-                      className="fixed inset-0 z-[100]" 
+                    <div
+                      className="fixed inset-0 z-[100]"
                       onClick={() => setShowCategoryMenu(false)}
                     ></div>
                     <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-2xl z-[101] py-1 max-h-64 overflow-y-auto">
@@ -404,11 +403,10 @@ const SortableTile: React.FC<SortableTileProps> = ({
                             }
                             setShowCategoryMenu(false);
                           }}
-                          className={`w-full text-left px-3 py-2 text-sm transition-colors ${
-                            category === currentCategory
+                          className={`w-full text-left px-3 py-2 text-sm transition-colors ${category === currentCategory
                               ? 'bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400 font-medium'
                               : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-                          }`}
+                            }`}
                         >
                           <div className="flex items-center justify-between">
                             <span>{category}</span>
@@ -425,20 +423,19 @@ const SortableTile: React.FC<SortableTileProps> = ({
                 )}
               </div>
             )}
-            
+
             {/* Favorite Button */}
             {onToggleFavorite && (
-              <button 
+              <button
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
                   onToggleFavorite(tile.id);
                 }}
-                className={`p-1 rounded transition-all ${
-                  tile.isFavorite
+                className={`p-1 rounded transition-all ${tile.isFavorite
                     ? 'text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10'
                     : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10'
-                }`}
+                  }`}
                 title={tile.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill={tile.isFavorite ? 'currentColor' : 'none'} stroke="currentColor" className="w-3.5 h-3.5">
@@ -446,10 +443,10 @@ const SortableTile: React.FC<SortableTileProps> = ({
                 </svg>
               </button>
             )}
-            
-            {/* Edit Button - For all tiles */}
-            {onEditTile && (
-              <button 
+
+            {/* Edit Button - Only show if user has edit permission */}
+            {onEditTile && tile.canEdit && (
+              <button
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -463,10 +460,11 @@ const SortableTile: React.FC<SortableTileProps> = ({
                 </svg>
               </button>
             )}
-            
-            {/* Clone Button */}
-            {onCloneTile && (
-              <button 
+
+
+            {/* Clone Button - Only show if user has edit permission (creating a copy requires edit rights) */}
+            {onCloneTile && tile.canEdit && (
+              <button
                 onClick={(e) => onCloneTile(e, tile.id)}
                 className="p-1 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded transition-all"
                 title="Clone"
@@ -477,10 +475,11 @@ const SortableTile: React.FC<SortableTileProps> = ({
                 </svg>
               </button>
             )}
-            
-            {/* Export Button */}
-            {onExportTile && (
-              <button 
+
+
+            {/* Export Button - Only show if user has edit permission */}
+            {onExportTile && tile.canEdit && (
+              <button
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -495,21 +494,24 @@ const SortableTile: React.FC<SortableTileProps> = ({
                 </svg>
               </button>
             )}
-            
-            {/* Delete Button */}
-            <button 
-              onClick={(e) => onDeleteTile(e, tile.id)}
-              className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all"
-              title="Delete"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-              </svg>
-            </button>
+
+
+            {/* Delete Button - Only show if user has delete permission */}
+            {tile.canDelete && (
+              <button
+                onClick={(e) => onDeleteTile(e, tile.id)}
+                className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all"
+                title="Delete"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                  <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                </svg>
+              </button>
+            )}
           </div>
         )}
       </div>
-      
+
       {/* Compact Title and Description */}
       <div className="flex-1 mb-3">
         <h3 className={`font-bold text-sm leading-tight line-clamp-2 mb-1.5 ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}>
@@ -519,20 +521,20 @@ const SortableTile: React.FC<SortableTileProps> = ({
           {tile.description || 'No description'}
         </p>
       </div>
-      
+
       {/* Compact Footer */}
       <div className="pt-2.5 border-t border-slate-100 dark:border-slate-700/50 flex items-center justify-between">
         {!tile.isHyperlink && (
-        <div className={`flex items-center gap-1.5 text-xs font-medium ${styles.text}`}>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-            <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
-            <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01-.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
-          </svg>
-          <span>{linkCount}</span>
-        </div>
+          <div className={`flex items-center gap-1.5 text-xs font-medium ${styles.text}`}>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+              <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
+              <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01-.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
+            </svg>
+            <span>{linkCount}</span>
+          </div>
         )}
         {tile.isHyperlink && <div></div>}
-        
+
         {/* Arrow Buttons for Reordering - Centered at bottom, only visible for authenticated users */}
         {isAuthenticated && (onMoveLeft || onMoveRight) ? (
           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 z-10">
@@ -545,11 +547,10 @@ const SortableTile: React.FC<SortableTileProps> = ({
                 }
               }}
               disabled={!canMoveLeft}
-              className={`p-1 rounded-md transition-all ${
-                canMoveLeft
+              className={`p-1 rounded-md transition-all ${canMoveLeft
                   ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
                   : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
-              }`}
+                }`}
               title="Move left"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
@@ -565,11 +566,10 @@ const SortableTile: React.FC<SortableTileProps> = ({
                 }
               }}
               disabled={!canMoveRight}
-              className={`p-1 rounded-md transition-all ${
-                canMoveRight
+              className={`p-1 rounded-md transition-all ${canMoveRight
                   ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
                   : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
-              }`}
+                }`}
               title="Move right"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
@@ -578,11 +578,11 @@ const SortableTile: React.FC<SortableTileProps> = ({
             </button>
           </div>
         ) : (
-        <div className="text-slate-300 dark:text-slate-600 group-hover:text-brand-500 transition-colors">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-            <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-          </svg>
-        </div>
+          <div className="text-slate-300 dark:text-slate-600 group-hover:text-brand-500 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+            </svg>
+          </div>
         )}
       </div>
     </div>
@@ -591,9 +591,9 @@ const SortableTile: React.FC<SortableTileProps> = ({
 
 type TabType = 'favorites' | 'public' | 'private';
 
-export const TileGrid: React.FC<TileGridProps> = ({ 
-  tiles, 
-  onUpdateTiles, 
+export const TileGrid: React.FC<TileGridProps> = ({
+  tiles,
+  onUpdateTiles,
   onCreateTile,
   onDeleteTile,
   onCloneTile,
@@ -607,7 +607,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [editingTile, setEditingTile] = useState<Tile | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<TabType>('public');
-  
+
   // New Tile Form State
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
@@ -615,18 +615,18 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [newEmoji, setNewEmoji] = useState('📁');
   const [newColor, setNewColor] = useState<ThemeColor>('blue');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedLinks, setGeneratedLinks] = useState<{label:string, url:string}[]>([]);
+  const [generatedLinks, setGeneratedLinks] = useState<{ label: string, url: string }[]>([]);
   const [newVisibility, setNewVisibility] = useState<TileVisibility>('public');
   const [newAllowedUsers, setNewAllowedUsers] = useState<number[]>([]);
   const [availableUsers, setAvailableUsers] = useState<UserListItem[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [showUserSelector, setShowUserSelector] = useState(false);
-  
+
   // Hyperlink state
   const [tileType, setTileType] = useState<'space' | 'hyperlink'>('space');
   const [hyperlinkUrl, setHyperlinkUrl] = useState('');
   const [openInNewTab, setOpenInNewTab] = useState(true);
-  
+
   // Emoji Picker State
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
@@ -668,11 +668,11 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const allCategories = useMemo(() => {
     const categoriesFromTiles = new Set<string>();
     tiles.forEach(t => categoriesFromTiles.add(t.group || 'General'));
-    
+
     // Start with saved category order
     const result: string[] = [];
     const seen = new Set<string>();
-    
+
     // Add categories from saved order first
     if (categoryOrder.length > 0) {
       categoryOrder.forEach(cat => {
@@ -682,7 +682,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
         }
       });
     }
-    
+
     // Add any remaining categories from tiles in their order of appearance
     tiles.forEach(t => {
       const cat = t.group || 'General';
@@ -691,7 +691,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
         seen.add(cat);
       }
     });
-    
+
     return result;
   }, [tiles, categoryOrder, isAuthenticated]);
 
@@ -699,7 +699,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const groupedTiles = useMemo(() => {
     // First, filter tiles based on active tab
     let filteredTiles = tiles;
-    
+
     if (activeTab === 'favorites') {
       // Show only favorited tiles
       filteredTiles = tiles.filter(t => t.isFavorite === true);
@@ -722,18 +722,18 @@ export const TileGrid: React.FC<TileGridProps> = ({
         filteredTiles = []; // No private tiles for unauthenticated users
       }
     }
-    
+
     if (!searchTerm.trim()) {
       // No search term - return filtered tiles grouped normally
       // IMPORTANT: Preserve the order of tiles as they come from the API
       // The API already returns tiles in the correct order based on arrangement
       const groups: Record<string, Tile[]> = {};
-      
+
       // Debug: Log tile order from API
       if (filteredTiles.length > 0) {
         console.log('Tiles from API (first 5):', filteredTiles.slice(0, 5).map(t => ({ id: t.id, group: t.group || 'General', title: t.title })));
       }
-      
+
       filteredTiles.forEach(tile => {
         const groupName = tile.group || 'General';
         if (!groups[groupName]) {
@@ -742,19 +742,19 @@ export const TileGrid: React.FC<TileGridProps> = ({
         // Push tiles in the order they appear (preserving API order)
         groups[groupName].push(tile);
       });
-      
+
       // Debug: Log grouped tiles order
       Object.keys(groups).forEach(cat => {
         if (groups[cat].length > 0) {
           console.log(`Category "${cat}" tiles order:`, groups[cat].map(t => ({ id: t.id, title: t.title })));
         }
       });
-      
+
       // Apply global category order if available (works for all users)
       if (categoryOrder.length > 0) {
         const finalGroups: Record<string, Tile[]> = {};
         const seenCategories = new Set<string>();
-        
+
         // Add categories in saved order first
         categoryOrder.forEach(category => {
           if (groups[category]) {
@@ -762,33 +762,33 @@ export const TileGrid: React.FC<TileGridProps> = ({
             seenCategories.add(category);
           }
         });
-        
+
         // Add any remaining categories in their order of appearance from tiles
         Object.keys(groups).forEach(category => {
           if (!seenCategories.has(category)) {
             finalGroups[category] = groups[category];
           }
         });
-        
+
         return finalGroups;
       }
-      
+
       return groups;
     }
 
     const searchLower = searchTerm.toLowerCase();
-    
+
     // Global search: check title, description, group, section titles, link labels, and link URLs
     const filtered = filteredTiles.filter(t => {
       // Check tile-level properties
       if (
-        t.title.toLowerCase().includes(searchLower) || 
+        t.title.toLowerCase().includes(searchLower) ||
         t.description.toLowerCase().includes(searchLower) ||
         (t.group || '').toLowerCase().includes(searchLower)
       ) {
         return true;
       }
-      
+
       // Check sections and links within the tile
       if (t.sections && t.sections.length > 0) {
         for (const section of t.sections) {
@@ -796,7 +796,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
           if (section.title.toLowerCase().includes(searchLower)) {
             return true;
           }
-          
+
           // Check links in this section
           if (section.links && section.links.length > 0) {
             for (const link of section.links) {
@@ -810,12 +810,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
           }
         }
       }
-      
+
       return false;
     });
 
     const groups: Record<string, Tile[]> = {};
-    
+
     filtered.forEach(tile => {
       const groupName = tile.group || 'General';
       if (!groups[groupName]) {
@@ -829,7 +829,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
   const handleCreateTile = async () => {
     if (!newTitle.trim()) return;
-    
+
     if (tileType === 'hyperlink' && !hyperlinkUrl.trim()) return;
 
     if (!isAuthenticated && onAuthRequired) {
@@ -845,11 +845,11 @@ export const TileGrid: React.FC<TileGridProps> = ({
       themeColor: newColor,
       group: tileType === 'space' ? (newGroup.trim() || 'General') : (newGroup.trim() || 'General'),
       sections: tileType === 'space' ? [
-          {
-              id: generateId(),
-              title: 'General',
-              links: generatedLinks.map(l => ({ ...l, id: generateId() }))
-          }
+        {
+          id: generateId(),
+          title: 'General',
+          links: generatedLinks.map(l => ({ ...l, id: generateId() }))
+        }
       ] : [],
       tabs: [],
       createdAt: Date.now(),
@@ -957,12 +957,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const handleDeleteTile = async (e: React.MouseEvent, id: string) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     if (!isAuthenticated) {
       if (onAuthRequired) onAuthRequired();
       return;
     }
-    
+
     if (confirm("Are you sure you want to delete this space?")) {
       if (onDeleteTile) {
         try {
@@ -980,12 +980,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const handleCloneTile = async (e: React.MouseEvent, id: string) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     if (!isAuthenticated) {
       if (onAuthRequired) onAuthRequired();
       return;
     }
-    
+
     if (onCloneTile) {
       try {
         await onCloneTile(id);
@@ -1005,7 +1005,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
         window.location.href = tile.hyperlinkUrl;
       }
     } else {
-    window.location.hash = `#/tile/${tileId}`;
+      window.location.hash = `#/tile/${tileId}`;
     }
   };
 
@@ -1022,7 +1022,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     setNewVisibility(tile.visibility || 'public');
     setNewAllowedUsers(tile.allowedUsers || []);
     setIsEditModalOpen(true);
-    
+
     // Load users if needed for private visibility
     if (tile.visibility === 'private' && isAuthenticated && availableUsers.length === 0 && !isLoadingUsers) {
       setIsLoadingUsers(true);
@@ -1040,7 +1040,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
   const handleUpdateTile = async () => {
     if (!editingTile || !newTitle.trim()) return;
-    
+
     if (tileType === 'hyperlink' && !hyperlinkUrl.trim()) return;
 
     if (!isAuthenticated && onAuthRequired) {
@@ -1065,12 +1065,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
     try {
       const updatedTiles = tiles.map(t => t.id === updatedTile.id ? updatedTile : t);
       onUpdateTiles(updatedTiles);
-      
+
       // Save to backend if authenticated
       if (isAuthenticated) {
         await saveTile(updatedTile);
       }
-      
+
       resetForm();
       setIsEditModalOpen(false);
       setEditingTile(null);
@@ -1084,8 +1084,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
     if (!isAuthenticated) return;
 
     try {
-      const updatedTiles = tiles.map(tile => 
-        tile.id === tileId 
+      const updatedTiles = tiles.map(tile =>
+        tile.id === tileId
           ? { ...tile, group: categoryName }
           : tile
       );
@@ -1108,11 +1108,11 @@ export const TileGrid: React.FC<TileGridProps> = ({
         // Build arrangement preserving order within each category
         const arrangement: Array<{ tileId: string; position: number; groupName: string }> = [];
         let globalPosition = 0;
-        
+
         // Use categoryOrder if available, otherwise use order from tiles
         const orderedCategories: string[] = [];
         const seenCats = new Set<string>();
-        
+
         if (categoryOrder.length > 0) {
           // Add categories from saved order first
           categoryOrder.forEach(cat => {
@@ -1122,7 +1122,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
             }
           });
         }
-        
+
         // Add any remaining categories in their order of appearance
         Object.keys(grouped).forEach(cat => {
           if (!seenCats.has(cat)) {
@@ -1168,7 +1168,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
         seenCats.add(cat);
       }
     });
-    
+
     // Build current order: use categoryOrder if available, otherwise use order from tiles
     let currentCategories: string[];
     if (categoryOrder.length > 0) {
@@ -1184,26 +1184,26 @@ export const TileGrid: React.FC<TileGridProps> = ({
       // No saved order, use order from tiles
       currentCategories = [...allCategoriesFromTiles];
     }
-    
+
     const currentIndex = currentCategories.indexOf(categoryName);
-    
+
     if (currentIndex === -1) {
       console.error('Category not found in order:', categoryName);
       return;
     }
-    
+
     const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
     if (newIndex < 0 || newIndex >= currentCategories.length) {
       return; // Already at top or bottom
     }
-    
+
     // Create new order by swapping
     const newCategoryOrder = [...currentCategories];
     [newCategoryOrder[currentIndex], newCategoryOrder[newIndex]] = [newCategoryOrder[newIndex], newCategoryOrder[currentIndex]];
-    
+
     // Update state immediately for instant feedback
     setCategoryOrder(newCategoryOrder);
-    
+
     // Save category arrangement to database (global for all users)
     try {
       const arrangement = newCategoryOrder.map((category, index) => ({
@@ -1253,13 +1253,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
         try {
           const text = await file.text();
           const data = JSON.parse(text);
-          
+
           // Validate and parse the import file
           const parsed = parseSpaceExportObject(data);
-          
+
           // Normalize imported tiles and assign to the target category
           const normalizedTiles = normalizeImportedTiles(parsed);
-          
+
           // Update group to target category
           const tilesToImport = normalizedTiles.map(tile => ({
             ...tile,
@@ -1336,7 +1336,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       onUpdateTiles(updatedTiles);
 
       // Update category order
-      const newCategoryOrder = categoryOrder.map(cat => 
+      const newCategoryOrder = categoryOrder.map(cat =>
         cat === oldName ? trimmedNewName : cat
       );
       setCategoryOrder(newCategoryOrder);
@@ -1437,7 +1437,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     // Find all tiles in this group to determine the target
     const groupTiles = tiles.filter(t => (t.group || 'General') === currentGroup);
     const indexInGroup = groupTiles.findIndex(t => t.id === tileId);
-    
+
     if (indexInGroup === -1) return;
 
     // Calculate target index within the group
@@ -1511,8 +1511,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
     try {
       const result = await toggleFavorite(tileId);
       // Update the tile's favorite status in local state
-      const updatedTiles = tiles.map(tile => 
-        tile.id === tileId 
+      const updatedTiles = tiles.map(tile =>
+        tile.id === tileId
           ? { ...tile, isFavorite: result.isFavorite }
           : tile
       );
@@ -1530,7 +1530,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
         <div className="flex items-center gap-3">
           <h1 className="linknest-spaces-title text-2xl font-bold text-slate-900 dark:text-white">{settings.spaces_title || 'My Spaces'}</h1>
         </div>
-        
+
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
           {/* Compact Search Bar */}
           <div className="relative flex-1 sm:w-64">
@@ -1539,9 +1539,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
               </svg>
             </div>
-            <input 
-              type="text" 
-              placeholder="Search..." 
+            <input
+              type="text"
+              placeholder="Search..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-8 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
@@ -1578,11 +1578,10 @@ export const TileGrid: React.FC<TileGridProps> = ({
       <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700">
         <button
           onClick={() => setActiveTab('public')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-            activeTab === 'public'
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'public'
               ? 'border-brand-500 text-brand-600 dark:text-brand-400'
               : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-          }`}
+            }`}
         >
           Public
         </button>
@@ -1590,21 +1589,19 @@ export const TileGrid: React.FC<TileGridProps> = ({
           <>
             <button
               onClick={() => setActiveTab('favorites')}
-              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-                activeTab === 'favorites'
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'favorites'
                   ? 'border-brand-500 text-brand-600 dark:text-brand-400'
                   : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-              }`}
+                }`}
             >
               Favorites
             </button>
             <button
               onClick={() => setActiveTab('private')}
-              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-                activeTab === 'private'
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'private'
                   ? 'border-brand-500 text-brand-600 dark:text-brand-400'
                   : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-              }`}
+                }`}
             >
               Private
             </button>
@@ -1638,7 +1635,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
           const categoryKeys = Object.keys(groupedTiles);
           const canMoveUp = groupIndex > 0;
           const canMoveDown = groupIndex < categoryKeys.length - 1;
-          
+
           return (
             <Category
               key={groupName}
@@ -1662,7 +1659,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                   {groupTiles.map((tile, tileIndex) => {
                     const canMoveLeft = tileIndex > 0;
                     const canMoveRight = tileIndex < groupTiles.length - 1;
-                    
+
                     return (
                       <SortableTile
                         key={tile.id}
@@ -1694,10 +1691,10 @@ export const TileGrid: React.FC<TileGridProps> = ({
             </Category>
           );
         })}
-        
+
         {/* Compact Empty State */}
         {tiles.length === 0 && isAuthenticated && (
-          <div 
+          <div
             onClick={() => setIsModalOpen(true)}
             className="group flex flex-col items-center justify-center h-48 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl text-slate-500 hover:text-brand-600 dark:hover:text-brand-400 hover:border-brand-400 dark:hover:border-brand-500 transition-all cursor-pointer hover:bg-gradient-to-br hover:from-brand-50/50 hover:to-transparent dark:hover:from-brand-500/5 dark:hover:to-transparent"
           >
@@ -1719,15 +1716,15 @@ export const TileGrid: React.FC<TileGridProps> = ({
             </div>
             <p className="text-base font-semibold text-slate-700 dark:text-slate-300 mb-1">No spaces found</p>
             <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">Try adjusting your search terms</p>
-            <button 
-              onClick={() => setSearchTerm('')} 
+            <button
+              onClick={() => setSearchTerm('')}
               className="text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 text-sm font-medium underline"
             >
               Clear search
             </button>
           </div>
         )}
-          </div>
+      </div>
 
       {/* Compact Add Tile Modal */}
       {isModalOpen && (
@@ -1748,7 +1745,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 </svg>
               </button>
             </div>
-            
+
             <div className="space-y-4">
               {/* Title & AI */}
               <div>
@@ -1761,7 +1758,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                     placeholder="e.g., Design Resources"
                     className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
                   />
-                  <button 
+                  <button
                     onClick={handleMagicFill}
                     disabled={isGenerating || !newTitle}
                     className={`
@@ -1778,7 +1775,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                       </svg>
                     ) : (
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                         <path fillRule="evenodd" d="M9 4.5a.75.75 0 01.721.544l.813 2.846a3.75 3.75 0 002.576 2.576l2.846.813a.75.75 0 010 1.442l-2.846.813a3.75 3.75 0 00-2.576 2.576l-.813 2.846a.75.75 0 01-1.442 0l-.813-2.846a3.75 3.75 0 00-2.576-2.576l-2.846-.813a.75.75 0 010-1.442l2.846-.813a3.75 3.75 0 002.576-2.576l.813-2.846A.75.75 0 019 4.5zM12 1.5a.75.75 0 01.728.568L12.94 3.08a2.25 2.25 0 001.48 1.48l1.012.212a.75.75 0 010 1.456l-1.012.212a2.25 2.25 0 00-1.48 1.48l-.212 1.012a.75.75 0 01-1.456 0l-.212-1.012a2.25 2.25 0 00-1.48-1.48l-1.012-.212a.75.75 0 010-1.456l1.012-.212a2.25 2.25 0 001.48-1.48l.212-1.012A.75.75 0 0112 1.5z" clipRule="evenodd" />
+                        <path fillRule="evenodd" d="M9 4.5a.75.75 0 01.721.544l.813 2.846a3.75 3.75 0 002.576 2.576l2.846.813a.75.75 0 010 1.442l-2.846.813a3.75 3.75 0 00-2.576 2.576l-.813 2.846a.75.75 0 01-1.442 0l-.813-2.846a3.75 3.75 0 00-2.576-2.576l-2.846-.813a.75.75 0 010-1.442l2.846-.813a3.75 3.75 0 002.576-2.576l.813-2.846A.75.75 0 019 4.5zM12 1.5a.75.75 0 01.728.568L12.94 3.08a2.25 2.25 0 001.48 1.48l1.012.212a.75.75 0 010 1.456l-1.012.212a2.25 2.25 0 00-1.48 1.48l-.212 1.012a.75.75 0 01-1.456 0l-.212-1.012a2.25 2.25 0 00-1.48-1.48l-1.012-.212a.75.75 0 010-1.456l1.012-.212a2.25 2.25 0 001.48-1.48l.212-1.012A.75.75 0 0112 1.5z" clipRule="evenodd" />
                       </svg>
                     )}
                   </button>
@@ -1876,30 +1873,30 @@ export const TileGrid: React.FC<TileGridProps> = ({
                       </label>
                     </div>
                   </div>
-                  
+
                   {/* Emoji & Theme - Also shown for hyperlinks */}
                   <div className="flex gap-3">
                     <div className="w-24 relative">
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Icon</label>
-                      <button 
+                      <button
                         type="button"
                         onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                         className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50"
                       >
                         {newEmoji || (tileType === 'hyperlink' ? '🔗' : '📁')}
                       </button>
-                      
+
                       {/* Emoji Picker Popover */}
                       {showEmojiPicker && (
                         <>
                           <div className="fixed inset-0 z-10" onClick={() => setShowEmojiPicker(false)}></div>
                           <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-20 flex flex-col overflow-hidden">
                             <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
-                              <input 
-                                type="text" 
+                              <input
+                                type="text"
                                 value={newEmoji}
                                 onChange={(e) => setNewEmoji(e.target.value)}
-                                placeholder="Type emoji..." 
+                                placeholder="Type emoji..."
                                 className="w-full text-sm px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/50 text-slate-900 dark:text-white"
                                 autoFocus
                               />
@@ -1919,7 +1916,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         </>
                       )}
                     </div>
-                    
+
                     <div className="flex-1">
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Theme</label>
                       <div className="grid grid-cols-9 gap-1.5">
@@ -1939,197 +1936,197 @@ export const TileGrid: React.FC<TileGridProps> = ({
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* Grouping - Also shown for hyperlinks */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Group / Category</label>
-                <input
-                  type="text"
-                  value={newGroup}
-                  onChange={(e) => setNewGroup(e.target.value)}
-                  placeholder="e.g. Work, Personal"
-                  list="group-suggestions"
-                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
-                />
-                <datalist id="group-suggestions">
-                  {existingGroups.map(g => <option key={g} value={g} />)}
-                </datalist>
-              </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Group / Category</label>
+                    <input
+                      type="text"
+                      value={newGroup}
+                      onChange={(e) => setNewGroup(e.target.value)}
+                      placeholder="e.g. Work, Personal"
+                      list="group-suggestions"
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                    />
+                    <datalist id="group-suggestions">
+                      {existingGroups.map(g => <option key={g} value={g} />)}
+                    </datalist>
+                  </div>
                 </>
               )}
 
               {/* Description - Only shown when type is space */}
               {tileType === 'space' && (
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Description</label>
-                <textarea
-                  value={newDesc}
-                  onChange={(e) => setNewDesc(e.target.value)}
-                  placeholder="Short description..."
-                  rows={2}
-                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-none placeholder-slate-400 transition-all"
-                />
-              </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Description</label>
+                  <textarea
+                    value={newDesc}
+                    onChange={(e) => setNewDesc(e.target.value)}
+                    placeholder="Short description..."
+                    rows={2}
+                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-none placeholder-slate-400 transition-all"
+                  />
+                </div>
               )}
 
               {/* Emoji & Theme - Only shown when type is space */}
               {tileType === 'space' && (
-              <div className="flex gap-3">
-                <div className="w-24 relative">
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Icon</label>
-                  <button 
-                    type="button"
-                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                    className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50"
-                  >
-                    {newEmoji || '✨'}
-                  </button>
-                  
-                  {/* Emoji Picker Popover */}
-                  {showEmojiPicker && (
-                    <>
-                      <div className="fixed inset-0 z-10" onClick={() => setShowEmojiPicker(false)}></div>
-                      <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-20 flex flex-col overflow-hidden">
-                        <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
-                          <input 
-                            type="text" 
-                            value={newEmoji}
-                            onChange={(e) => setNewEmoji(e.target.value)}
-                            placeholder="Type emoji..." 
-                            className="w-full text-sm px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/50 text-slate-900 dark:text-white"
-                            autoFocus
-                          />
+                <div className="flex gap-3">
+                  <div className="w-24 relative">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Icon</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                      className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50"
+                    >
+                      {newEmoji || '✨'}
+                    </button>
+
+                    {/* Emoji Picker Popover */}
+                    {showEmojiPicker && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setShowEmojiPicker(false)}></div>
+                        <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-20 flex flex-col overflow-hidden">
+                          <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                            <input
+                              type="text"
+                              value={newEmoji}
+                              onChange={(e) => setNewEmoji(e.target.value)}
+                              placeholder="Type emoji..."
+                              className="w-full text-sm px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/50 text-slate-900 dark:text-white"
+                              autoFocus
+                            />
+                          </div>
+                          <div className="flex-1 overflow-y-auto p-2 grid grid-cols-8 gap-1">
+                            {POPULAR_EMOJIS.map((emoji) => (
+                              <button
+                                key={emoji}
+                                onClick={() => { setNewEmoji(emoji); setShowEmojiPicker(false); }}
+                                className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-2 grid grid-cols-8 gap-1">
-                          {POPULAR_EMOJIS.map((emoji) => (
-                            <button
-                              key={emoji}
-                              onClick={() => { setNewEmoji(emoji); setShowEmojiPicker(false); }}
-                              className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                            >
-                              {emoji}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-                
-                <div className="flex-1">
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Theme</label>
-                  <div className="grid grid-cols-9 gap-1.5">
-                    {THEME_COLORS.map(c => (
-                      <button
-                        key={c}
-                        onClick={() => setNewColor(c)}
-                        className={`
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex-1">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Theme</label>
+                    <div className="grid grid-cols-9 gap-1.5">
+                      {THEME_COLORS.map(c => (
+                        <button
+                          key={c}
+                          onClick={() => setNewColor(c)}
+                          className={`
                           w-8 h-8 rounded-lg border-2 transition-all relative overflow-hidden
                           ${newColor === c ? 'border-brand-500 scale-110 shadow-md shadow-brand-500/30' : 'border-slate-200 dark:border-slate-700 hover:scale-105'} 
                         `}
-                        title={c}
-                      >
-                        <div className={`absolute inset-0 ${COLOR_STYLES[c].base} rounded-md`}></div>
-                      </button>
-                    ))}
+                          title={c}
+                        >
+                          <div className={`absolute inset-0 ${COLOR_STYLES[c].base} rounded-md`}></div>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
               )}
 
               {/* Visibility Settings - Only shown when type is space */}
               {tileType === 'space' && (
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Visibility</label>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="visibility"
-                      value="public"
-                      checked={newVisibility === 'public'}
-                      onChange={(e) => {
-                        setNewVisibility(e.target.value as TileVisibility);
-                        setShowUserSelector(false);
-                      }}
-                      className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                    />
-                    <span className="text-sm text-slate-700 dark:text-slate-300">Public - Available for everyone (guests and logged in users)</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="visibility"
-                      value="authenticated"
-                      checked={newVisibility === 'authenticated'}
-                      onChange={(e) => {
-                        setNewVisibility(e.target.value as TileVisibility);
-                        setShowUserSelector(false);
-                      }}
-                      className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                    />
-                    <span className="text-sm text-slate-700 dark:text-slate-300">Authenticated - Available for logged in users only</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="visibility"
-                      value="private"
-                      checked={newVisibility === 'private'}
-                      onChange={(e) => {
-                        setNewVisibility(e.target.value as TileVisibility);
-                        setShowUserSelector(true);
-                      }}
-                      className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                    />
-                    <span className="text-sm text-slate-700 dark:text-slate-300">Private - Available for specific users only</span>
-                  </label>
-                </div>
-
-                {/* User Selector for Private Visibility */}
-                {newVisibility === 'private' && isAuthenticated && (
-                  <div className="mt-3">
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Select Users</label>
-                    {isLoadingUsers ? (
-                      <div className="text-sm text-slate-500 dark:text-slate-400">Loading users...</div>
-                    ) : (
-                      <div className="max-h-32 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-slate-50 dark:bg-slate-900/50">
-                        {availableUsers.length === 0 ? (
-                          <div className="text-sm text-slate-500 dark:text-slate-400">No users available</div>
-                        ) : (
-                          <div className="space-y-1.5">
-                            {availableUsers.map(user => (
-                              <label key={user.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 p-1.5 rounded">
-                                <input
-                                  type="checkbox"
-                                  checked={newAllowedUsers.includes(user.id)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setNewAllowedUsers([...newAllowedUsers, user.id]);
-                                    } else {
-                                      setNewAllowedUsers(newAllowedUsers.filter(id => id !== user.id));
-                                    }
-                                  }}
-                                  className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
-                                />
-                                <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
-                                {user.auth_source && user.auth_source !== 'local' && (
-                                  <span className="text-xs text-slate-500 dark:text-slate-400">({user.auth_source})</span>
-                                )}
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {newVisibility === 'private' && newAllowedUsers.length === 0 && (
-                      <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Please select at least one user for private spaces</p>
-                    )}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Visibility</label>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="visibility"
+                        value="public"
+                        checked={newVisibility === 'public'}
+                        onChange={(e) => {
+                          setNewVisibility(e.target.value as TileVisibility);
+                          setShowUserSelector(false);
+                        }}
+                        className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                      />
+                      <span className="text-sm text-slate-700 dark:text-slate-300">Public - Available for everyone (guests and logged in users)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="visibility"
+                        value="authenticated"
+                        checked={newVisibility === 'authenticated'}
+                        onChange={(e) => {
+                          setNewVisibility(e.target.value as TileVisibility);
+                          setShowUserSelector(false);
+                        }}
+                        className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                      />
+                      <span className="text-sm text-slate-700 dark:text-slate-300">Authenticated - Available for logged in users only</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="visibility"
+                        value="private"
+                        checked={newVisibility === 'private'}
+                        onChange={(e) => {
+                          setNewVisibility(e.target.value as TileVisibility);
+                          setShowUserSelector(true);
+                        }}
+                        className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                      />
+                      <span className="text-sm text-slate-700 dark:text-slate-300">Private - Available for specific users only</span>
+                    </label>
                   </div>
-                )}
-              </div>
+
+                  {/* User Selector for Private Visibility */}
+                  {newVisibility === 'private' && isAuthenticated && (
+                    <div className="mt-3">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Select Users</label>
+                      {isLoadingUsers ? (
+                        <div className="text-sm text-slate-500 dark:text-slate-400">Loading users...</div>
+                      ) : (
+                        <div className="max-h-32 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-slate-50 dark:bg-slate-900/50">
+                          {availableUsers.length === 0 ? (
+                            <div className="text-sm text-slate-500 dark:text-slate-400">No users available</div>
+                          ) : (
+                            <div className="space-y-1.5">
+                              {availableUsers.map(user => (
+                                <label key={user.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 p-1.5 rounded">
+                                  <input
+                                    type="checkbox"
+                                    checked={newAllowedUsers.includes(user.id)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setNewAllowedUsers([...newAllowedUsers, user.id]);
+                                      } else {
+                                        setNewAllowedUsers(newAllowedUsers.filter(id => id !== user.id));
+                                      }
+                                    }}
+                                    className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
+                                  />
+                                  <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
+                                  {user.auth_source && user.auth_source !== 'local' && (
+                                    <span className="text-xs text-slate-500 dark:text-slate-400">({user.auth_source})</span>
+                                  )}
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {newVisibility === 'private' && newAllowedUsers.length === 0 && (
+                        <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Please select at least one user for private spaces</p>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
-              
+
               {/* Generated Links Preview - Only shown when type is space */}
               {tileType === 'space' && generatedLinks.length > 0 && (
                 <div className="bg-gradient-to-br from-violet-50 to-fuchsia-50 dark:from-violet-500/10 dark:to-fuchsia-500/10 p-4 rounded-lg border border-violet-200 dark:border-violet-500/30">
@@ -2156,7 +2153,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 <button
                   onClick={handleCreateTile}
                   disabled={
-                    !newTitle.trim() || 
+                    !newTitle.trim() ||
                     (tileType === 'space' && newVisibility === 'private' && newAllowedUsers.length === 0) ||
                     (tileType === 'hyperlink' && !hyperlinkUrl.trim())
                   }
@@ -2197,7 +2194,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 </svg>
               </button>
             </div>
-            
+
             <div className="space-y-4">
               {/* Title */}
               <div>
@@ -2270,120 +2267,120 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
               {/* Visibility Settings - Only for regular spaces */}
               {tileType === 'space' && (
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Visibility</label>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="editVisibility"
-                      value="public"
-                      checked={newVisibility === 'public'}
-                      onChange={(e) => {
-                        setNewVisibility(e.target.value as TileVisibility);
-                        setShowUserSelector(false);
-                      }}
-                      className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                    />
-                    <span className="text-sm text-slate-700 dark:text-slate-300">Public - Available for everyone (guests and logged in users)</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="editVisibility"
-                      value="authenticated"
-                      checked={newVisibility === 'authenticated'}
-                      onChange={(e) => {
-                        setNewVisibility(e.target.value as TileVisibility);
-                        setShowUserSelector(false);
-                      }}
-                      className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                    />
-                    <span className="text-sm text-slate-700 dark:text-slate-300">Authenticated - Available for logged in users only</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="editVisibility"
-                      value="private"
-                      checked={newVisibility === 'private'}
-                      onChange={(e) => {
-                        setNewVisibility(e.target.value as TileVisibility);
-                        setShowUserSelector(true);
-                      }}
-                      className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                    />
-                    <span className="text-sm text-slate-700 dark:text-slate-300">Private - Available for specific users only</span>
-                  </label>
-                </div>
-
-                {/* User Selector for Private Visibility */}
-                {newVisibility === 'private' && isAuthenticated && (
-                  <div className="mt-3">
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Select Users</label>
-                    {isLoadingUsers ? (
-                      <div className="text-sm text-slate-500 dark:text-slate-400">Loading users...</div>
-                    ) : (
-                      <div className="max-h-32 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-slate-50 dark:bg-slate-900/50">
-                        {availableUsers.length === 0 ? (
-                          <div className="text-sm text-slate-500 dark:text-slate-400">No users available</div>
-                        ) : (
-                          <div className="space-y-1.5">
-                            {availableUsers.map(user => (
-                              <label key={user.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 p-1.5 rounded">
-                                <input
-                                  type="checkbox"
-                                  checked={newAllowedUsers.includes(user.id)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setNewAllowedUsers([...newAllowedUsers, user.id]);
-                                    } else {
-                                      setNewAllowedUsers(newAllowedUsers.filter(id => id !== user.id));
-                                    }
-                                  }}
-                                  className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
-                                />
-                                <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
-                                {user.auth_source && user.auth_source !== 'local' && (
-                                  <span className="text-xs text-slate-500 dark:text-slate-400">({user.auth_source})</span>
-                                )}
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {newVisibility === 'private' && newAllowedUsers.length === 0 && (
-                      <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Please select at least one user for private spaces</p>
-                    )}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Visibility</label>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="editVisibility"
+                        value="public"
+                        checked={newVisibility === 'public'}
+                        onChange={(e) => {
+                          setNewVisibility(e.target.value as TileVisibility);
+                          setShowUserSelector(false);
+                        }}
+                        className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                      />
+                      <span className="text-sm text-slate-700 dark:text-slate-300">Public - Available for everyone (guests and logged in users)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="editVisibility"
+                        value="authenticated"
+                        checked={newVisibility === 'authenticated'}
+                        onChange={(e) => {
+                          setNewVisibility(e.target.value as TileVisibility);
+                          setShowUserSelector(false);
+                        }}
+                        className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                      />
+                      <span className="text-sm text-slate-700 dark:text-slate-300">Authenticated - Available for logged in users only</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="editVisibility"
+                        value="private"
+                        checked={newVisibility === 'private'}
+                        onChange={(e) => {
+                          setNewVisibility(e.target.value as TileVisibility);
+                          setShowUserSelector(true);
+                        }}
+                        className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                      />
+                      <span className="text-sm text-slate-700 dark:text-slate-300">Private - Available for specific users only</span>
+                    </label>
                   </div>
-                )}
-              </div>
+
+                  {/* User Selector for Private Visibility */}
+                  {newVisibility === 'private' && isAuthenticated && (
+                    <div className="mt-3">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Select Users</label>
+                      {isLoadingUsers ? (
+                        <div className="text-sm text-slate-500 dark:text-slate-400">Loading users...</div>
+                      ) : (
+                        <div className="max-h-32 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-slate-50 dark:bg-slate-900/50">
+                          {availableUsers.length === 0 ? (
+                            <div className="text-sm text-slate-500 dark:text-slate-400">No users available</div>
+                          ) : (
+                            <div className="space-y-1.5">
+                              {availableUsers.map(user => (
+                                <label key={user.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 p-1.5 rounded">
+                                  <input
+                                    type="checkbox"
+                                    checked={newAllowedUsers.includes(user.id)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setNewAllowedUsers([...newAllowedUsers, user.id]);
+                                      } else {
+                                        setNewAllowedUsers(newAllowedUsers.filter(id => id !== user.id));
+                                      }
+                                    }}
+                                    className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
+                                  />
+                                  <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
+                                  {user.auth_source && user.auth_source !== 'local' && (
+                                    <span className="text-xs text-slate-500 dark:text-slate-400">({user.auth_source})</span>
+                                  )}
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {newVisibility === 'private' && newAllowedUsers.length === 0 && (
+                        <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Please select at least one user for private spaces</p>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* Emoji & Theme */}
               <div className="flex gap-3">
                 <div className="w-24 relative">
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Icon</label>
-                  <button 
+                  <button
                     type="button"
                     onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                     className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50"
                   >
                     {newEmoji || (tileType === 'hyperlink' ? '🔗' : '📁')}
                   </button>
-                  
+
                   {/* Emoji Picker Popover */}
                   {showEmojiPicker && (
                     <>
                       <div className="fixed inset-0 z-10" onClick={() => setShowEmojiPicker(false)}></div>
                       <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-20 flex flex-col overflow-hidden">
                         <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
-                          <input 
-                            type="text" 
+                          <input
+                            type="text"
                             value={newEmoji}
                             onChange={(e) => setNewEmoji(e.target.value)}
-                            placeholder="Type emoji..." 
+                            placeholder="Type emoji..."
                             className="w-full text-sm px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/50 text-slate-900 dark:text-white"
                             autoFocus
                           />
@@ -2403,7 +2400,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                     </>
                   )}
                 </div>
-                
+
                 <div className="flex-1">
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Theme</label>
                   <div className="grid grid-cols-9 gap-1.5">
@@ -2455,7 +2452,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 <button
                   onClick={handleUpdateTile}
                   disabled={
-                    !newTitle.trim() || 
+                    !newTitle.trim() ||
                     (tileType === 'hyperlink' && !hyperlinkUrl.trim()) ||
                     (tileType === 'space' && newVisibility === 'private' && newAllowedUsers.length === 0)
                   }
