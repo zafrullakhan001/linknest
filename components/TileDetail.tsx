@@ -66,6 +66,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     });
 
+    // Visibility Dialog State
+    const [visibilityDialogTab, setVisibilityDialogTab] = useState<string | null>(null);
+    const [visibilityDialogSection, setVisibilityDialogSection] = useState<{ tabId: string; sectionId: string } | null>(null);
+
     // Health Check State
     const [linkHealth, setLinkHealth] = useState<LinkHealthMap>({});
     const [checkingHealth, setCheckingHealth] = useState(false);
@@ -136,6 +140,24 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             console.error('Failed to save view layout preference:', error);
         }
     }, [viewLayout]);
+
+    // Handle ESC key to close visibility dialogs
+    useEffect(() => {
+        const handleEscKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                if (visibilityDialogTab) {
+                    setVisibilityDialogTab(null);
+                } else if (visibilityDialogSection) {
+                    setVisibilityDialogSection(null);
+                }
+            }
+        };
+
+        if (visibilityDialogTab || visibilityDialogSection) {
+            document.addEventListener('keydown', handleEscKey);
+            return () => document.removeEventListener('keydown', handleEscKey);
+        }
+    }, [visibilityDialogTab, visibilityDialogSection]);
 
     // Load users list when editing and authenticated
     useEffect(() => {
@@ -235,6 +257,54 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setEditTabs(newTabs);
     };
 
+    const handleCloneTab = (tabId: string) => {
+        const tabToClone = editTabs.find(t => t.id === tabId);
+        if (!tabToClone) return;
+
+        // Deep clone the tab with new IDs
+        const clonedTab: Tab = {
+            id: generateId(),
+            title: `${tabToClone.title} (Copy)`,
+            position: tabToClone.position + 1,
+            sections: tabToClone.sections.map(section => ({
+                id: generateId(),
+                title: section.title,
+                textColor: section.textColor,
+                links: section.links.map(link => ({
+                    id: generateId(),
+                    label: link.label,
+                    url: link.url,
+                    icon: link.icon,
+                    visibility: link.visibility,
+                    allowedUsers: link.allowedUsers ? [...link.allowedUsers] : undefined,
+                    notes: link.notes,
+                    tooltip: link.tooltip,
+                    health: link.health
+                }))
+            }))
+        };
+
+        // Insert cloned tab after the original
+        const index = editTabs.findIndex(t => t.id === tabId);
+        const newTabs = [
+            ...editTabs.slice(0, index + 1),
+            clonedTab,
+            ...editTabs.slice(index + 1)
+        ];
+
+        // Update positions
+        newTabs.forEach((t, idx) => { t.position = idx; });
+        setEditTabs(newTabs);
+    };
+
+    const handleUpdateTabVisibility = (tabId: string, visibility: LinkVisibility, allowedUsers?: number[]) => {
+        setEditTabs(editTabs.map(t =>
+            t.id === tabId
+                ? { ...t, visibility, allowedUsers: visibility === 'private' ? allowedUsers : undefined }
+                : t
+        ));
+    };
+
     // Section Management (within tabs)
     const handleAddSection = (tabId: string) => {
         setEditTabs(editTabs.map(tab => {
@@ -291,6 +361,58 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             const newSections = [...tab.sections];
             [newSections[index], newSections[newIndex]] = [newSections[newIndex], newSections[index]];
             return { ...tab, sections: newSections };
+        }));
+    };
+
+    const handleCloneSection = (tabId: string, sectionId: string) => {
+        setEditTabs(editTabs.map(tab => {
+            if (tab.id !== tabId) return tab;
+
+            const sectionToClone = tab.sections.find(s => s.id === sectionId);
+            if (!sectionToClone) return tab;
+
+            // Deep clone the section with new IDs
+            const clonedSection: LinkSection = {
+                id: generateId(),
+                title: `${sectionToClone.title} (Copy)`,
+                textColor: sectionToClone.textColor,
+                links: sectionToClone.links.map(link => ({
+                    id: generateId(),
+                    label: link.label,
+                    url: link.url,
+                    icon: link.icon,
+                    visibility: link.visibility,
+                    allowedUsers: link.allowedUsers ? [...link.allowedUsers] : undefined,
+                    notes: link.notes,
+                    tooltip: link.tooltip,
+                    health: link.health
+                }))
+            };
+
+            // Insert cloned section after the original
+            const index = tab.sections.findIndex(s => s.id === sectionId);
+            const newSections = [
+                ...tab.sections.slice(0, index + 1),
+                clonedSection,
+                ...tab.sections.slice(index + 1)
+            ];
+
+            return { ...tab, sections: newSections };
+        }));
+    };
+
+    const handleUpdateSectionVisibility = (tabId: string, sectionId: string, visibility: LinkVisibility, allowedUsers?: number[]) => {
+        setEditTabs(editTabs.map(tab => {
+            if (tab.id !== tabId) return tab;
+
+            return {
+                ...tab,
+                sections: tab.sections.map(s =>
+                    s.id === sectionId
+                        ? { ...s, visibility, allowedUsers: visibility === 'private' ? allowedUsers : undefined }
+                        : s
+                )
+            };
         }));
     };
 
@@ -668,6 +790,45 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 return { ...s, links: newLinks };
             }));
         }
+    };
+
+    const handleCloneLink = (tabId: string, sectionId: string, linkId: string) => {
+        setEditTabs(editTabs.map(tab => {
+            if (tab.id !== tabId) return tab;
+
+            return {
+                ...tab,
+                sections: tab.sections.map(section => {
+                    if (section.id !== sectionId) return section;
+
+                    const linkToClone = section.links.find(l => l.id === linkId);
+                    if (!linkToClone) return section;
+
+                    // Clone the link with a new ID
+                    const clonedLink: Link = {
+                        id: generateId(),
+                        label: `${linkToClone.label} (Copy)`,
+                        url: linkToClone.url,
+                        icon: linkToClone.icon,
+                        visibility: linkToClone.visibility,
+                        allowedUsers: linkToClone.allowedUsers ? [...linkToClone.allowedUsers] : undefined,
+                        notes: linkToClone.notes,
+                        tooltip: linkToClone.tooltip,
+                        health: linkToClone.health
+                    };
+
+                    // Insert cloned link after the original
+                    const index = section.links.findIndex(l => l.id === linkId);
+                    const newLinks = [
+                        ...section.links.slice(0, index + 1),
+                        clonedLink,
+                        ...section.links.slice(index + 1)
+                    ];
+
+                    return { ...section, links: newLinks };
+                })
+            };
+        }));
     };
 
     const handleCopy = async (e: React.MouseEvent, text: string, id: string) => {
@@ -1475,11 +1636,39 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             </div>
                         </div>
 
+                        {/* Tab Navigation Bar - Sticky */}
+                        {editTabs.length > 1 && (
+                            <div className="sticky top-0 z-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
+                                <div className="flex items-center gap-2 overflow-x-auto">
+                                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">Quick Nav:</span>
+                                    <div className="flex gap-2">
+                                        {editTabs.map((tab, index) => (
+                                            <button
+                                                key={tab.id}
+                                                onClick={() => {
+                                                    const element = document.getElementById(`tab-${tab.id}`);
+                                                    if (element) {
+                                                        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                    }
+                                                }}
+                                                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-brand-100 dark:hover:bg-brand-900/30 text-slate-700 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 transition-colors whitespace-nowrap flex items-center gap-1.5"
+                                            >
+                                                <span className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 text-[10px] font-bold flex items-center justify-center">
+                                                    {index + 1}
+                                                </span>
+                                                {tab.title || 'Untitled'}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         <div className="space-y-6">
                             {/* Render tabs if available, otherwise fall back to sections (backward compatibility) */}
                             {editTabs.length > 0 ? (
                                 editTabs.map((tab, tabIndex) => (
-                                    <div key={tab.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm dark:shadow-black/20">
+                                    <div id={`tab-${tab.id}`} key={tab.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm dark:shadow-black/20 scroll-mt-24">
                                         {/* Tab Header */}
                                         <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900/50 dark:to-slate-800/50 flex gap-2 items-center">
                                             {/* Tab Reorder Buttons */}
@@ -1513,6 +1702,33 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 placeholder="Tab Title (e.g. Resources)"
                                                 className="flex-1 bg-transparent border-none text-slate-900 dark:text-white font-bold text-lg focus:ring-0 placeholder-slate-400"
                                             />
+                                            <button
+                                                onClick={() => handleCloneTab(tab.id)}
+                                                className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2"
+                                                title="Clone Tab"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                    <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                                                    <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
+                                                </svg>
+                                            </button>
+                                            {tab.visibility && tab.visibility !== 'public' && (
+                                                <span className={`text-xs px-2 py-1 rounded ${tab.visibility === 'authenticated'
+                                                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                                                    : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
+                                                    }`}>
+                                                    {tab.visibility === 'authenticated' ? '🔒 Auth' : '🔐 Private'}
+                                                </span>
+                                            )}
+                                            <button
+                                                onClick={() => setVisibilityDialogTab(tab.id)}
+                                                className="text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 p-2"
+                                                title="Set Tab Visibility"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                    <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                                                </svg>
+                                            </button>
                                             <button
                                                 onClick={() => handleRemoveTab(tab.id)}
                                                 className="text-slate-400 hover:text-red-500 p-2"
@@ -1688,6 +1904,33 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 </div>
                                                             )}
                                                         </div>
+                                                        <button
+                                                            onClick={() => handleCloneSection(tab.id, section.id)}
+                                                            className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2"
+                                                            title="Clone Section"
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                                                                <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
+                                                            </svg>
+                                                        </button>
+                                                        {section.visibility && section.visibility !== 'public' && (
+                                                            <span className={`text-xs px-2 py-1 rounded ${section.visibility === 'authenticated'
+                                                                ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                                                                : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
+                                                                }`}>
+                                                                {section.visibility === 'authenticated' ? '🔒' : '🔐'}
+                                                            </span>
+                                                        )}
+                                                        <button
+                                                            onClick={() => setVisibilityDialogSection({ tabId: tab.id, sectionId: section.id })}
+                                                            className="text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 p-2"
+                                                            title="Set Section Visibility"
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                                                            </svg>
+                                                        </button>
                                                         <button
                                                             onClick={() => handleRemoveSection(tab.id, section.id)}
                                                             className="text-slate-400 hover:text-red-500 p-2"
@@ -1894,6 +2137,16 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 </svg>
                                                                             </button>
                                                                             <button
+                                                                                onClick={() => handleCloneLink(tab.id, section.id, link.id)}
+                                                                                className="p-1.5 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
+                                                                                title="Clone Link"
+                                                                            >
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                                    <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                                                                                    <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
+                                                                                </svg>
+                                                                            </button>
+                                                                            <button
                                                                                 onClick={() => handleRemoveLinkFromSection(tab.id, section.id, link.id)}
                                                                                 className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
                                                                                 title="Delete Link"
@@ -2096,6 +2349,209 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             )}
                         </div>
                     </div>
+
+                    {/* Tab Visibility Dialog */}
+                    {visibilityDialogTab && (() => {
+                        const tab = editTabs.find(t => t.id === visibilityDialogTab);
+                        if (!tab) return null;
+
+                        return (
+                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setVisibilityDialogTab(null)}>
+                                <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Tab Visibility: {tab.title}</h3>
+                                        <button
+                                            onClick={() => setVisibilityDialogTab(null)}
+                                            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                                            title="Close"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                            </svg>
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-3 mb-6">
+                                        <label className="flex items-center gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 cursor-pointer transition-colors">
+                                            <input
+                                                type="radio"
+                                                name="tabVisibility"
+                                                checked={!tab.visibility || tab.visibility === 'public'}
+                                                onChange={() => handleUpdateTabVisibility(tab.id, 'public')}
+                                                className="w-4 h-4"
+                                            />
+                                            <div>
+                                                <div className="font-semibold text-slate-900 dark:text-white">🌐 Public</div>
+                                                <div className="text-xs text-slate-500">Available for everyone</div>
+                                            </div>
+                                        </label>
+
+                                        <label className="flex items-center gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 cursor-pointer transition-colors">
+                                            <input
+                                                type="radio"
+                                                name="tabVisibility"
+                                                checked={tab.visibility === 'authenticated'}
+                                                onChange={() => handleUpdateTabVisibility(tab.id, 'authenticated')}
+                                                className="w-4 h-4"
+                                            />
+                                            <div>
+                                                <div className="font-semibold text-slate-900 dark:text-white">🔒 Authenticated</div>
+                                                <div className="text-xs text-slate-500">Logged in users only</div>
+                                            </div>
+                                        </label>
+
+                                        <label className="flex items-center gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 cursor-pointer transition-colors">
+                                            <input
+                                                type="radio"
+                                                name="tabVisibility"
+                                                checked={tab.visibility === 'private'}
+                                                onChange={() => handleUpdateTabVisibility(tab.id, 'private', tab.allowedUsers || [])}
+                                                className="w-4 h-4"
+                                            />
+                                            <div>
+                                                <div className="font-semibold text-slate-900 dark:text-white">🔐 Private</div>
+                                                <div className="text-xs text-slate-500">Specific users only</div>
+                                            </div>
+                                        </label>
+                                    </div>
+
+                                    {tab.visibility === 'private' && (
+                                        <div className="mb-6">
+                                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Select Users:</label>
+                                            <div className="max-h-48 overflow-y-auto border border-slate-300 dark:border-slate-700 rounded-lg p-2 space-y-1">
+                                                {usersList.map(user => (
+                                                    <label key={user.id} className="flex items-center gap-2 p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={tab.allowedUsers?.includes(user.id) || false}
+                                                            onChange={(e) => {
+                                                                const currentUsers = tab.allowedUsers || [];
+                                                                const newUsers = e.target.checked
+                                                                    ? [...currentUsers, user.id]
+                                                                    : currentUsers.filter(id => id !== user.id);
+                                                                handleUpdateTabVisibility(tab.id, 'private', newUsers);
+                                                            }}
+                                                            className="rounded"
+                                                        />
+                                                        <span className="text-sm">{user.username}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <button
+                                        onClick={() => setVisibilityDialogTab(null)}
+                                        className="w-full bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                                    >
+                                        Done
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    {/* Section Visibility Dialog */}
+                    {visibilityDialogSection && (() => {
+                        const tab = editTabs.find(t => t.id === visibilityDialogSection.tabId);
+                        const section = tab?.sections.find(s => s.id === visibilityDialogSection.sectionId);
+                        if (!section) return null;
+
+                        return (
+                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setVisibilityDialogSection(null)}>
+                                <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Section Visibility: {section.title}</h3>
+                                        <button
+                                            onClick={() => setVisibilityDialogSection(null)}
+                                            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                                            title="Close"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                            </svg>
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-3 mb-6">
+                                        <label className="flex items-center gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 cursor-pointer transition-colors">
+                                            <input
+                                                type="radio"
+                                                name="sectionVisibility"
+                                                checked={!section.visibility || section.visibility === 'public'}
+                                                onChange={() => handleUpdateSectionVisibility(visibilityDialogSection.tabId, section.id, 'public')}
+                                                className="w-4 h-4"
+                                            />
+                                            <div>
+                                                <div className="font-semibold text-slate-900 dark:text-white">🌐 Public</div>
+                                                <div className="text-xs text-slate-500">Available for everyone</div>
+                                            </div>
+                                        </label>
+
+                                        <label className="flex items-center gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 cursor-pointer transition-colors">
+                                            <input
+                                                type="radio"
+                                                name="sectionVisibility"
+                                                checked={section.visibility === 'authenticated'}
+                                                onChange={() => handleUpdateSectionVisibility(visibilityDialogSection.tabId, section.id, 'authenticated')}
+                                                className="w-4 h-4"
+                                            />
+                                            <div>
+                                                <div className="font-semibold text-slate-900 dark:text-white">🔒 Authenticated</div>
+                                                <div className="text-xs text-slate-500">Logged in users only</div>
+                                            </div>
+                                        </label>
+
+                                        <label className="flex items-center gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 cursor-pointer transition-colors">
+                                            <input
+                                                type="radio"
+                                                name="sectionVisibility"
+                                                checked={section.visibility === 'private'}
+                                                onChange={() => handleUpdateSectionVisibility(visibilityDialogSection.tabId, section.id, 'private', section.allowedUsers || [])}
+                                                className="w-4 h-4"
+                                            />
+                                            <div>
+                                                <div className="font-semibold text-slate-900 dark:text-white">🔐 Private</div>
+                                                <div className="text-xs text-slate-500">Specific users only</div>
+                                            </div>
+                                        </label>
+                                    </div>
+
+                                    {section.visibility === 'private' && (
+                                        <div className="mb-6">
+                                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Select Users:</label>
+                                            <div className="max-h-48 overflow-y-auto border border-slate-300 dark:border-slate-700 rounded-lg p-2 space-y-1">
+                                                {usersList.map(user => (
+                                                    <label key={user.id} className="flex items-center gap-2 p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={section.allowedUsers?.includes(user.id) || false}
+                                                            onChange={(e) => {
+                                                                const currentUsers = section.allowedUsers || [];
+                                                                const newUsers = e.target.checked
+                                                                    ? [...currentUsers, user.id]
+                                                                    : currentUsers.filter(id => id !== user.id);
+                                                                handleUpdateSectionVisibility(visibilityDialogSection.tabId, section.id, 'private', newUsers);
+                                                            }}
+                                                            className="rounded"
+                                                        />
+                                                        <span className="text-sm">{user.username}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <button
+                                        onClick={() => setVisibilityDialogSection(null)}
+                                        className="w-full bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                                    >
+                                        Done
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })()}
 
                 </div>
             </div>

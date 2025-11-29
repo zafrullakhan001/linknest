@@ -25,6 +25,8 @@ export interface LinkSection {
   title: string;
   links: Link[];
   textColor?: string; // Optional custom text color for section title (hex color code)
+  visibility?: LinkVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
+  allowedUsers?: number[]; // Array of user IDs for private sections
 }
 
 export interface Tab {
@@ -32,6 +34,8 @@ export interface Tab {
   title: string;
   position: number;
   sections: LinkSection[];
+  visibility?: LinkVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
+  allowedUsers?: number[]; // Array of user IDs for private tabs
 }
 
 export interface Tile {
