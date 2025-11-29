@@ -1,8 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Tile, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS, TileVisibility } from '../types';
-import { generateTileContent, GeneratedTileContent } from '../services/geminiService';
 import { useSettings } from '../contexts/SettingsContext';
-import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles, cloneCategory, toggleCategoryFavorite } from '../services/storageService';
+import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles, cloneCategory, toggleCategoryFavorite, getRecycleBin, restoreTile, purgeRecycleBin, permanentDeleteTile, permanentDeleteCategory, deleteTile, getArchive, archiveTile, unarchiveTile, purgeArchive, archiveCategory, unarchiveCategory } from '../services/storageService';
 import {
   exportCategoryToFile,
   exportTileToFile,
@@ -36,6 +35,7 @@ interface CategoryProps {
   onMoveDown?: () => void;
   children: React.ReactNode;
   onDeleteCategory?: (categoryName: string) => void;
+  onArchiveCategory?: (categoryName: string) => void;
   onSaveCategoryOrder?: () => void;
   onRenameCategory?: (oldName: string, newName: string) => void;
   onExportCategory?: (categoryName: string) => void;
@@ -43,6 +43,11 @@ interface CategoryProps {
   onCloneCategory?: (categoryName: string) => void;
   onToggleCategoryFavorite?: (categoryName: string) => void;
   isCategoryFavorited?: boolean;
+  onPermanentDeleteCategory?: (categoryName: string) => void;
+  isRecycleBin?: boolean;
+  isArchive?: boolean;
+  onScheduleCategory?: (categoryName: string) => void;
+  onUnarchiveCategory?: (categoryName: string) => void;
 }
 
 const Category: React.FC<CategoryProps> = ({
@@ -56,13 +61,19 @@ const Category: React.FC<CategoryProps> = ({
   onMoveDown,
   children,
   onDeleteCategory,
+  onArchiveCategory,
   onSaveCategoryOrder,
   onRenameCategory,
   onExportCategory,
   onImportCategory,
   onCloneCategory,
   onToggleCategoryFavorite,
-  isCategoryFavorited = false
+  isCategoryFavorited = false,
+  onPermanentDeleteCategory,
+  isRecycleBin = false,
+  isArchive = false,
+  onScheduleCategory,
+  onUnarchiveCategory
 }) => {
   const { user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
@@ -231,12 +242,28 @@ const Category: React.FC<CategoryProps> = ({
 
         {isAuthenticated && (
           <>
-            {onDeleteCategory && (
+            {isRecycleBin && onPermanentDeleteCategory ? (
+              // Show permanent delete button in recycle bin
               <button
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  if (confirm(`Are you sure you want to delete the category "${categoryName}"?${tileCount > 0 ? `\n\nThis will move ${tileCount} tile(s) to "General" category.` : ''}`)) {
+                  onPermanentDeleteCategory(categoryName);
+                }}
+                className="opacity-0 group-hover/category:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition-all ml-2"
+                title="Permanently delete category"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                </svg>
+              </button>
+            ) : onDeleteCategory ? (
+              // Show regular delete button (moves to recycle bin)
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (confirm(`Are you sure you want to delete the category "${categoryName}"?${tileCount > 0 ? `\n\nThis will move ${tileCount} tile(s) to the recycle bin.` : ''}`)) {
                     onDeleteCategory(categoryName);
                   }
                 }}
@@ -245,6 +272,42 @@ const Category: React.FC<CategoryProps> = ({
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                   <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                </svg>
+              </button>
+            ) : null}
+            {isArchive && onUnarchiveCategory && (
+              // Show restore category button in archive
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (confirm(`Are you sure you want to restore the category "${categoryName}"?${tileCount > 0 ? `\n\nThis will restore ${tileCount} tile(s) from the archive.` : ''}`)) {
+                    onUnarchiveCategory(categoryName);
+                  }
+                }}
+                className="opacity-0 group-hover/category:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-md transition-all ml-2"
+                title="Restore category"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-1.281z" clipRule="evenodd" />
+                </svg>
+              </button>
+            )}
+            {onArchiveCategory && !isRecycleBin && !isArchive && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (confirm(`Are you sure you want to archive the category "${categoryName}"?${tileCount > 0 ? `\n\nThis will move ${tileCount} tile(s) to the archive.` : ''}`)) {
+                    onArchiveCategory(categoryName);
+                  }
+                }}
+                className="opacity-0 group-hover/category:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 rounded-md transition-all ml-2"
+                title="Archive category"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M2 3a1 1 0 00-1 1v1a1 1 0 001 1h16a1 1 0 001-1V4a1 1 0 00-1-1H2z" />
+                  <path fillRule="evenodd" d="M2 7.5h16l-.811 7.71a2 2 0 01-1.99 1.79H4.801a2 2 0 01-1.99-1.79L2 7.5zm5.22 1.22a.75.75 0 011.06 0L10 10.94l1.72-1.22a.75.75 0 111.06 1.06L11 12.06l1.72 1.22a.75.75 0 11-1.06 1.06L10 13.06l-1.72 1.22a.75.75 0 01-1.06-1.06L9 12.06l-1.72-1.22a.75.75 0 010-1.06z" clipRule="evenodd" />
                 </svg>
               </button>
             )}
@@ -280,7 +343,7 @@ const Category: React.FC<CategoryProps> = ({
                 </svg>
               </button>
             )}
-            {onCloneCategory && user?.is_admin && (
+            {onCloneCategory && user?.is_admin && !isRecycleBin && (
               <button
                 onClick={(e) => {
                   e.preventDefault();
@@ -296,7 +359,22 @@ const Category: React.FC<CategoryProps> = ({
                 </svg>
               </button>
             )}
-            {onToggleCategoryFavorite && (
+            {onScheduleCategory && user?.is_admin && !isRecycleBin && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onScheduleCategory(categoryName);
+                }}
+                className="opacity-0 group-hover/category:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 rounded-md transition-all ml-1"
+                title="Schedule category availability"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75z" clipRule="evenodd" />
+                </svg>
+              </button>
+            )}
+            {onToggleCategoryFavorite && !isRecycleBin && (
               <button
                 onClick={(e) => {
                   e.preventDefault();
@@ -338,6 +416,12 @@ interface SortableTileProps {
   onMoveLeft?: (tileId: string) => void;
   onMoveRight?: (tileId: string) => void;
   onExportTile?: (tile: Tile) => void;
+  onRestoreTile?: (e: React.MouseEvent, tileId: string) => void;
+  onPermanentDeleteTile?: (e: React.MouseEvent, tileId: string) => void;
+  onArchiveTile?: (e: React.MouseEvent, tileId: string) => void;
+  onUnarchiveTile?: (e: React.MouseEvent, tileId: string) => void;
+  isRecycleBin?: boolean;
+  isArchive?: boolean;
   canMoveLeft?: boolean;
   canMoveRight?: boolean;
   availableCategories: string[];
@@ -357,6 +441,12 @@ const SortableTile: React.FC<SortableTileProps> = ({
   onMoveLeft,
   onMoveRight,
   onExportTile,
+  onRestoreTile,
+  onPermanentDeleteTile,
+  onArchiveTile,
+  onUnarchiveTile,
+  isRecycleBin = false,
+  isArchive = false,
   canMoveLeft = false,
   canMoveRight = false,
   availableCategories,
@@ -466,8 +556,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
               </div>
             )}
 
-            {/* Favorite Button */}
-            {onToggleFavorite && (
+            {/* Favorite Button - Hide in recycle bin */}
+            {onToggleFavorite && !isRecycleBin && (
               <button
                 onClick={(e) => {
                   e.preventDefault();
@@ -538,18 +628,94 @@ const SortableTile: React.FC<SortableTileProps> = ({
             )}
 
 
-            {/* Delete Button - Only show if user has delete permission */}
-            {tile.canDelete && (
-              <button
-                onClick={(e) => onDeleteTile(e, tile.id)}
-                className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all"
-                title="Delete"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                  <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-                </svg>
-              </button>
-            )}
+            {/* Delete/Restore Button */}
+            {isRecycleBin && onRestoreTile ? (
+              // Show restore and permanent delete buttons in recycle bin
+              <>
+                <button
+                  onClick={(e) => onRestoreTile(e, tile.id)}
+                  className="p-1 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded transition-all"
+                  title="Restore"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                    <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-1.281z" clipRule="evenodd" />
+                  </svg>
+                </button>
+                {onPermanentDeleteTile && (
+                  <button
+                    onClick={(e) => onPermanentDeleteTile(e, tile.id)}
+                    className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all"
+                    title="Permanently Delete"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                      <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                )}
+              </>
+            ) : isArchive ? (
+              // Show restore, delete, and remove favorite buttons in archive
+              <>
+                {onUnarchiveTile && (
+                  <button
+                    onClick={(e) => onUnarchiveTile(e, tile.id)}
+                    className="p-1 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded transition-all"
+                    title="Restore"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                      <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-1.281z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                )}
+                {tile.canDelete && onDeleteTile && (
+                  <button
+                    onClick={(e) => onDeleteTile(e, tile.id)}
+                    className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all"
+                    title="Delete (Move to Recycle Bin)"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                      <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                )}
+                {onToggleFavorite && tile.isFavorite && (
+                  <button
+                    onClick={() => onToggleFavorite(tile.id)}
+                    className="p-1 text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10 rounded transition-all"
+                    title="Remove Favorite"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                      <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                )}
+              </>
+            ) : tile.canDelete ? (
+              // Show delete and archive buttons if user has delete permission
+              <>
+                <button
+                  onClick={(e) => onDeleteTile(e, tile.id)}
+                  className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all"
+                  title="Delete"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                    <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                  </svg>
+                </button>
+                {onArchiveTile && (
+                  <button
+                    onClick={(e) => onArchiveTile(e, tile.id)}
+                    className="p-1 text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 rounded transition-all"
+                    title="Archive"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                      <path d="M2 3a1 1 0 00-1 1v1a1 1 0 001 1h16a1 1 0 001-1V4a1 1 0 00-1-1H2z" />
+                      <path fillRule="evenodd" d="M2 7.5h16l-.811 7.71a2 2 0 01-1.99 1.79H4.801a2 2 0 01-1.99-1.79L2 7.5zm5.22 1.22a.75.75 0 011.06 0L10 10.94l1.72-1.22a.75.75 0 111.06 1.06L11 12.06l1.72 1.22a.75.75 0 11-1.06 1.06L10 13.06l-1.72 1.22a.75.75 0 01-1.06-1.06L9 12.06l-1.72-1.22a.75.75 0 010-1.06z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                )}
+              </>
+            ) : null}
           </div>
         )}
       </div>
@@ -631,7 +797,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
   );
 };
 
-type TabType = 'favorites' | 'public' | 'private';
+type TabType = 'favorites' | 'public' | 'private' | 'scheduled' | 'expired' | 'archive' | 'recycle-bin';
 
 export const TileGrid: React.FC<TileGridProps> = ({
   tiles,
@@ -649,6 +815,10 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [editingTile, setEditingTile] = useState<Tile | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<TabType>('public');
+  const [recycleBinTiles, setRecycleBinTiles] = useState<Tile[]>([]);
+  const [isLoadingRecycleBin, setIsLoadingRecycleBin] = useState(false);
+  const [archiveTiles, setArchiveTiles] = useState<Tile[]>([]);
+  const [isLoadingArchive, setIsLoadingArchive] = useState(false);
 
   // New Tile Form State
   const [newTitle, setNewTitle] = useState('');
@@ -656,9 +826,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [newGroup, setNewGroup] = useState('');
   const [newEmoji, setNewEmoji] = useState('📁');
   const [newColor, setNewColor] = useState<ThemeColor>('blue');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedLinks, setGeneratedLinks] = useState<{ label: string, url: string }[]>([]);
   const [newVisibility, setNewVisibility] = useState<TileVisibility>('public');
+  const [visibleFrom, setVisibleFrom] = useState<string>('');
+  const [expiresAt, setExpiresAt] = useState<string>('');
   const [newAllowedUsers, setNewAllowedUsers] = useState<number[]>([]);
   const [availableUsers, setAvailableUsers] = useState<UserListItem[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
@@ -675,7 +845,11 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
   // Category order state
   const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
+  const [categoryMetadata, setCategoryMetadata] = useState<Record<string, { visibleFrom?: string | null; expiresAt?: string | null }>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [editingCategorySchedule, setEditingCategorySchedule] = useState<string | null>(null);
+  const [categoryVisibleFrom, setCategoryVisibleFrom] = useState<string>('');
+  const [categoryExpiresAt, setCategoryExpiresAt] = useState<string>('');
 
   // Load global category arrangement on mount (works for all users)
   useEffect(() => {
@@ -686,14 +860,27 @@ export const TileGrid: React.FC<TileGridProps> = ({
           // Read categories in saved order (already sorted by position from API)
           const ordered = arrangement.map(c => c.categoryName);
           setCategoryOrder(ordered);
+          // Store category metadata (scheduling)
+          const metadata: Record<string, { visibleFrom?: string | null; expiresAt?: string | null }> = {};
+          arrangement.forEach(c => {
+            if (c.visibleFrom || c.expiresAt) {
+              metadata[c.categoryName] = {
+                visibleFrom: c.visibleFrom || null,
+                expiresAt: c.expiresAt || null
+              };
+            }
+          });
+          setCategoryMetadata(metadata);
         } else {
           // Reset to empty if no arrangement found
           setCategoryOrder([]);
+          setCategoryMetadata({});
         }
       } catch (error) {
         console.error('Failed to load category arrangement:', error);
         // On error, reset to empty to avoid stale data
         setCategoryOrder([]);
+        setCategoryMetadata({});
       }
     };
     loadCategoryOrder();
@@ -737,12 +924,112 @@ export const TileGrid: React.FC<TileGridProps> = ({
     return result;
   }, [tiles, categoryOrder, isAuthenticated]);
 
+  // Load recycle bin count on mount and when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      getRecycleBin()
+        .then(tiles => {
+          setRecycleBinTiles(tiles);
+        })
+        .catch(error => {
+          console.error('Failed to load recycle bin:', error);
+        });
+      
+      // Also load archive count on mount
+      getArchive()
+        .then(tiles => {
+          setArchiveTiles(tiles);
+        })
+        .catch(error => {
+          console.error('Failed to load archive:', error);
+        });
+    }
+  }, [isAuthenticated]);
+
+  // Reload recycle bin when tab is active
+  useEffect(() => {
+    if (activeTab === 'recycle-bin' && isAuthenticated) {
+      setIsLoadingRecycleBin(true);
+      getRecycleBin()
+        .then(tiles => {
+          setRecycleBinTiles(tiles);
+          setIsLoadingRecycleBin(false);
+        })
+        .catch(error => {
+          console.error('Failed to load recycle bin:', error);
+          setIsLoadingRecycleBin(false);
+        });
+    }
+  }, [activeTab, isAuthenticated]);
+
+  // Reload archive when tab is active
+  useEffect(() => {
+    if (activeTab === 'archive' && isAuthenticated) {
+      setIsLoadingArchive(true);
+      getArchive()
+        .then(tiles => {
+          setArchiveTiles(tiles);
+          setIsLoadingArchive(false);
+        })
+        .catch(error => {
+          console.error('Failed to load archive:', error);
+          setIsLoadingArchive(false);
+        });
+    }
+  }, [activeTab, isAuthenticated]);
+
+  // Calculate counts for tabs
+  const favoriteTilesCount = useMemo(() => {
+    return tiles.filter(t => t.isFavorite === true).length;
+  }, [tiles]);
+
+  const privateTilesCount = useMemo(() => {
+    if (!isAuthenticated || !user) return 0;
+    return tiles.filter(t => {
+      if (t.visibility === 'authenticated') {
+        return true; // All authenticated users can see authenticated tiles
+      } else if (t.visibility === 'private') {
+        // Only show if user is in allowedUsers list
+        return t.allowedUsers && t.allowedUsers.includes(user.id);
+      }
+      return false;
+    }).length;
+  }, [tiles, isAuthenticated, user]);
+
+  const scheduledTilesCount = useMemo(() => {
+    const now = new Date();
+    return tiles.filter(t => {
+      if (t.visibleFrom) {
+        const visibleFrom = new Date(t.visibleFrom);
+        return now < visibleFrom;
+      }
+      return false;
+    }).length;
+  }, [tiles]);
+
+  const expiredTilesCount = useMemo(() => {
+    const now = new Date();
+    return tiles.filter(t => {
+      if (t.expiresAt) {
+        const expiresAt = new Date(t.expiresAt);
+        return now > expiresAt;
+      }
+      return false;
+    }).length;
+  }, [tiles]);
+
   // Filter and Group Tiles - Global search across all content
   const groupedTiles = useMemo(() => {
     // First, filter tiles based on active tab
     let filteredTiles = tiles;
 
-    if (activeTab === 'favorites') {
+    if (activeTab === 'recycle-bin') {
+      // Show recycle bin tiles
+      filteredTiles = recycleBinTiles;
+    } else if (activeTab === 'archive') {
+      // Show archived tiles
+      filteredTiles = archiveTiles;
+    } else if (activeTab === 'favorites') {
       // Show only favorited tiles
       filteredTiles = tiles.filter(t => t.isFavorite === true);
     } else if (activeTab === 'public') {
@@ -763,6 +1050,50 @@ export const TileGrid: React.FC<TileGridProps> = ({
       } else {
         filteredTiles = []; // No private tiles for unauthenticated users
       }
+    } else if (activeTab === 'scheduled') {
+      // Show only tiles/spaces that are scheduled for future (visibleFrom is in the future)
+      const now = new Date();
+      filteredTiles = tiles.filter(t => {
+        if (t.visibleFrom) {
+          const visibleFrom = new Date(t.visibleFrom);
+          return now < visibleFrom;
+        }
+        return false;
+      });
+    } else if (activeTab === 'expired') {
+      // Show only tiles/spaces that have expired (expiresAt is in the past)
+      const now = new Date();
+      filteredTiles = tiles.filter(t => {
+        if (t.expiresAt) {
+          const expiresAt = new Date(t.expiresAt);
+          return now > expiresAt;
+        }
+        return false;
+      });
+    }
+
+    // For all tabs except 'scheduled' and 'expired', filter out scheduled and expired tiles
+    // Scheduled tiles should only appear in the scheduled tab
+    // Expired tiles should only appear in the expired tab
+    if (activeTab !== 'scheduled' && activeTab !== 'expired' && activeTab !== 'recycle-bin' && activeTab !== 'archive') {
+      const now = new Date();
+      filteredTiles = filteredTiles.filter(t => {
+        // Hide tiles that are scheduled for the future
+        if (t.visibleFrom) {
+          const visibleFrom = new Date(t.visibleFrom);
+          if (now < visibleFrom) {
+            return false; // Hide scheduled tiles from non-scheduled views
+          }
+        }
+        // Hide tiles that have expired
+        if (t.expiresAt) {
+          const expiresAt = new Date(t.expiresAt);
+          if (now > expiresAt) {
+            return false; // Hide expired tiles from non-expired views
+          }
+        }
+        return true;
+      });
     }
 
     if (!searchTerm.trim()) {
@@ -797,18 +1128,128 @@ export const TileGrid: React.FC<TileGridProps> = ({
         const finalGroups: Record<string, Tile[]> = {};
         const seenCategories = new Set<string>();
 
-        // Add categories in saved order first
+        // Add categories in saved order first (respecting scheduling and active tab)
         categoryOrder.forEach(category => {
           if (groups[category]) {
-            finalGroups[category] = groups[category];
-            seenCategories.add(category);
+            const metadata = categoryMetadata[category];
+            const now = new Date();
+            let shouldShow = true;
+            
+            if (activeTab === 'scheduled') {
+              // Show categories scheduled for future OR categories with scheduled tiles
+              let categoryScheduled = false;
+              if (metadata?.visibleFrom) {
+                const visibleFrom = new Date(metadata.visibleFrom);
+                categoryScheduled = now < visibleFrom;
+              }
+              // Also check if any tile in this category is scheduled
+              const hasScheduledTiles = groups[category].some(tile => {
+                if (tile.visibleFrom) {
+                  const tileVisibleFrom = new Date(tile.visibleFrom);
+                  return now < tileVisibleFrom;
+                }
+                return false;
+              });
+              shouldShow = categoryScheduled || hasScheduledTiles;
+            } else if (activeTab === 'expired') {
+              // Show expired categories OR categories with expired tiles
+              let categoryExpired = false;
+              if (metadata?.expiresAt) {
+                const expiresAt = new Date(metadata.expiresAt);
+                categoryExpired = now > expiresAt;
+              }
+              // Also check if any tile in this category is expired
+              const hasExpiredTiles = groups[category].some(tile => {
+                if (tile.expiresAt) {
+                  const tileExpiresAt = new Date(tile.expiresAt);
+                  return now > tileExpiresAt;
+                }
+                return false;
+              });
+              shouldShow = categoryExpired || hasExpiredTiles;
+            } else {
+              // For other tabs, hide scheduled/expired categories
+              if (metadata?.visibleFrom) {
+                const visibleFrom = new Date(metadata.visibleFrom);
+                if (now < visibleFrom) {
+                  shouldShow = false;
+                }
+              }
+              
+              if (metadata?.expiresAt && shouldShow) {
+                const expiresAt = new Date(metadata.expiresAt);
+                if (now > expiresAt) {
+                  shouldShow = false;
+                }
+              }
+            }
+            
+            if (shouldShow) {
+              finalGroups[category] = groups[category];
+              seenCategories.add(category);
+            }
           }
         });
 
-        // Add any remaining categories in their order of appearance from tiles
+        // Add any remaining categories in their order of appearance from tiles (respecting scheduling and active tab)
         Object.keys(groups).forEach(category => {
           if (!seenCategories.has(category)) {
-            finalGroups[category] = groups[category];
+            const metadata = categoryMetadata[category];
+            const now = new Date();
+            let shouldShow = true;
+            
+            if (activeTab === 'scheduled') {
+              // Show categories scheduled for future OR categories with scheduled tiles
+              let categoryScheduled = false;
+              if (metadata?.visibleFrom) {
+                const visibleFrom = new Date(metadata.visibleFrom);
+                categoryScheduled = now < visibleFrom;
+              }
+              // Also check if any tile in this category is scheduled
+              const hasScheduledTiles = groups[category].some(tile => {
+                if (tile.visibleFrom) {
+                  const tileVisibleFrom = new Date(tile.visibleFrom);
+                  return now < tileVisibleFrom;
+                }
+                return false;
+              });
+              shouldShow = categoryScheduled || hasScheduledTiles;
+            } else if (activeTab === 'expired') {
+              // Show expired categories OR categories with expired tiles
+              let categoryExpired = false;
+              if (metadata?.expiresAt) {
+                const expiresAt = new Date(metadata.expiresAt);
+                categoryExpired = now > expiresAt;
+              }
+              // Also check if any tile in this category is expired
+              const hasExpiredTiles = groups[category].some(tile => {
+                if (tile.expiresAt) {
+                  const tileExpiresAt = new Date(tile.expiresAt);
+                  return now > tileExpiresAt;
+                }
+                return false;
+              });
+              shouldShow = categoryExpired || hasExpiredTiles;
+            } else {
+              // For other tabs, hide scheduled/expired categories
+              if (metadata?.visibleFrom) {
+                const visibleFrom = new Date(metadata.visibleFrom);
+                if (now < visibleFrom) {
+                  shouldShow = false;
+                }
+              }
+              
+              if (metadata?.expiresAt && shouldShow) {
+                const expiresAt = new Date(metadata.expiresAt);
+                if (now > expiresAt) {
+                  shouldShow = false;
+                }
+              }
+            }
+            
+            if (shouldShow) {
+              finalGroups[category] = groups[category];
+            }
           }
         });
 
@@ -866,8 +1307,59 @@ export const TileGrid: React.FC<TileGridProps> = ({
       groups[groupName].push(tile);
     });
 
+    // Apply category scheduling filtering for scheduled/expired tabs
+    if (activeTab === 'scheduled' || activeTab === 'expired') {
+      const filteredGroups: Record<string, Tile[]> = {};
+      const now = new Date();
+      
+      Object.keys(groups).forEach(category => {
+        const metadata = categoryMetadata[category];
+        let shouldShow = false;
+        
+        if (activeTab === 'scheduled') {
+          // Show categories scheduled for future OR categories with scheduled tiles
+          let categoryScheduled = false;
+          if (metadata?.visibleFrom) {
+            const visibleFrom = new Date(metadata.visibleFrom);
+            categoryScheduled = now < visibleFrom;
+          }
+          // Also check if any tile in this category is scheduled
+          const hasScheduledTiles = groups[category].some(tile => {
+            if (tile.visibleFrom) {
+              const tileVisibleFrom = new Date(tile.visibleFrom);
+              return now < tileVisibleFrom;
+            }
+            return false;
+          });
+          shouldShow = categoryScheduled || hasScheduledTiles;
+        } else if (activeTab === 'expired') {
+          // Show expired categories OR categories with expired tiles
+          let categoryExpired = false;
+          if (metadata?.expiresAt) {
+            const expiresAt = new Date(metadata.expiresAt);
+            categoryExpired = now > expiresAt;
+          }
+          // Also check if any tile in this category is expired
+          const hasExpiredTiles = groups[category].some(tile => {
+            if (tile.expiresAt) {
+              const tileExpiresAt = new Date(tile.expiresAt);
+              return now > tileExpiresAt;
+            }
+            return false;
+          });
+          shouldShow = categoryExpired || hasExpiredTiles;
+        }
+        
+        if (shouldShow) {
+          filteredGroups[category] = groups[category];
+        }
+      });
+      
+      return filteredGroups;
+    }
+
     return groups;
-  }, [tiles, searchTerm, categoryOrder, activeTab, isAuthenticated, user]);
+  }, [tiles, searchTerm, categoryOrder, categoryMetadata, activeTab, isAuthenticated, user, recycleBinTiles, archiveTiles]);
 
   const handleCreateTile = async () => {
     if (!newTitle.trim()) return;
@@ -890,7 +1382,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
         {
           id: generateId(),
           title: 'General',
-          links: generatedLinks.map(l => ({ ...l, id: generateId() }))
+          links: []
         }
       ] : [],
       tabs: [],
@@ -899,7 +1391,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
       allowedUsers: (tileType === 'space' && newVisibility === 'private') ? newAllowedUsers : undefined,
       isHyperlink: tileType === 'hyperlink',
       hyperlinkUrl: tileType === 'hyperlink' ? hyperlinkUrl.trim() : undefined,
-      openInNewTab: tileType === 'hyperlink' ? openInNewTab : undefined
+      openInNewTab: tileType === 'hyperlink' ? openInNewTab : undefined,
+      visibleFrom: visibleFrom.trim() ? new Date(visibleFrom).toISOString() : undefined,
+      expiresAt: expiresAt.trim() ? new Date(expiresAt).toISOString() : undefined
     };
 
     if (onCreateTile) {
@@ -918,20 +1412,6 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
   };
 
-  const handleMagicFill = async () => {
-    if (!newTitle) return;
-    setIsGenerating(true);
-    try {
-      const result: GeneratedTileContent = await generateTileContent(newTitle);
-      setNewDesc(result.description);
-      setNewEmoji(result.emoji);
-      setGeneratedLinks(result.suggestedLinks);
-    } catch (e) {
-      alert("Failed to generate content. Please ensure API key is set.");
-    } finally {
-      setIsGenerating(false);
-    }
-  };
 
   const resetForm = () => {
     setNewTitle('');
@@ -939,7 +1419,6 @@ export const TileGrid: React.FC<TileGridProps> = ({
     setNewGroup('');
     setNewEmoji('📁');
     setNewColor('blue');
-    setGeneratedLinks([]);
     setShowEmojiPicker(false);
     setNewVisibility('public');
     setNewAllowedUsers([]);
@@ -947,6 +1426,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
     setTileType('space');
     setHyperlinkUrl('');
     setOpenInNewTab(true);
+    setVisibleFrom('');
+    setExpiresAt('');
   };
 
   // Fetch users when modal opens and visibility is private
@@ -1005,10 +1486,26 @@ export const TileGrid: React.FC<TileGridProps> = ({
       return;
     }
 
-    if (confirm("Are you sure you want to delete this space?")) {
+    const isFromArchive = activeTab === 'archive';
+    const confirmMessage = isFromArchive 
+      ? "Are you sure you want to delete this space from archive? It will be moved to the recycle bin."
+      : "Are you sure you want to delete this space? It will be moved to the recycle bin.";
+
+    if (confirm(confirmMessage)) {
       if (onDeleteTile) {
         try {
           await onDeleteTile(id);
+          // Reload tiles to reflect the deletion
+          const updatedTiles = await getTiles();
+          onUpdateTiles(updatedTiles);
+          
+          // If deleting from archive, reload archive and recycle bin
+          if (isFromArchive) {
+            const updatedArchive = await getArchive();
+            setArchiveTiles(updatedArchive);
+            const updatedRecycleBin = await getRecycleBin();
+            setRecycleBinTiles(updatedRecycleBin);
+          }
         } catch (error) {
           console.error('Failed to delete tile:', error);
           alert('Failed to delete space. Please try again.');
@@ -1016,6 +1513,175 @@ export const TileGrid: React.FC<TileGridProps> = ({
       } else {
         onUpdateTiles(tiles.filter(t => t.id !== id));
       }
+    }
+  };
+
+  const handleArchiveTile = async (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!isAuthenticated) {
+      if (onAuthRequired) onAuthRequired();
+      return;
+    }
+
+    if (confirm("Are you sure you want to archive this space? It will be moved to the archive.")) {
+      try {
+        await archiveTile(id);
+        // Reload tiles to reflect the archive
+        const updatedTiles = await getTiles();
+        onUpdateTiles(updatedTiles);
+        // Always reload archive to update the count
+        const updatedArchive = await getArchive();
+        setArchiveTiles(updatedArchive);
+      } catch (error) {
+        console.error('Failed to archive tile:', error);
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        alert(`Failed to archive space: ${errorMsg}`);
+      }
+    }
+  };
+
+  const handleUnarchiveTile = async (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!isAuthenticated) {
+      if (onAuthRequired) onAuthRequired();
+      return;
+    }
+
+    try {
+      await unarchiveTile(id);
+      // Reload tiles and archive
+      const updatedTiles = await getTiles();
+      onUpdateTiles(updatedTiles);
+      const updatedArchive = await getArchive();
+      setArchiveTiles(updatedArchive);
+    } catch (error) {
+      console.error('Failed to unarchive tile:', error);
+      alert('Failed to restore space. Please try again.');
+    }
+  };
+
+  const handleRestoreTile = async (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!isAuthenticated) {
+      if (onAuthRequired) onAuthRequired();
+      return;
+    }
+
+    try {
+      await restoreTile(id);
+      // Reload recycle bin and main tiles
+      const updatedRecycleBin = await getRecycleBin();
+      setRecycleBinTiles(updatedRecycleBin);
+      const updatedTiles = await getTiles();
+      onUpdateTiles(updatedTiles);
+    } catch (error) {
+      console.error('Failed to restore tile:', error);
+      alert('Failed to restore space. Please try again.');
+    }
+  };
+
+  const handlePermanentDeleteTile = async (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!isAuthenticated) {
+      if (onAuthRequired) onAuthRequired();
+      return;
+    }
+
+    if (!confirm("Are you sure you want to permanently delete this space? This action cannot be undone.")) {
+      return;
+    }
+
+    try {
+      await permanentDeleteTile(id);
+      // Reload recycle bin and main tiles
+      const updatedRecycleBin = await getRecycleBin();
+      setRecycleBinTiles(updatedRecycleBin);
+      const updatedTiles = await getTiles();
+      onUpdateTiles(updatedTiles);
+    } catch (error) {
+      console.error('Failed to permanently delete tile:', error);
+      alert('Failed to permanently delete space. Please try again.');
+    }
+  };
+
+  const handlePermanentDeleteCategory = async (categoryName: string) => {
+    if (!isAuthenticated) {
+      if (onAuthRequired) onAuthRequired();
+      return;
+    }
+
+    const categoryTiles = recycleBinTiles.filter(tile => (tile.group || 'General') === categoryName);
+    
+    if (categoryTiles.length === 0) {
+      alert('No tiles found in this category in recycle bin.');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to permanently delete the category "${categoryName}"? This will permanently delete ${categoryTiles.length} space(s). This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const result = await permanentDeleteCategory(categoryName);
+      // Reload recycle bin
+      const updatedRecycleBin = await getRecycleBin();
+      setRecycleBinTiles(updatedRecycleBin);
+      alert(`Successfully permanently deleted ${result.purgedCount} space(s) from category "${categoryName}".`);
+    } catch (error) {
+      console.error('Failed to permanently delete category:', error);
+      alert('Failed to permanently delete category. Please try again.');
+    }
+  };
+
+  const handlePurgeRecycleBin = async () => {
+    if (!isAuthenticated || !user?.is_admin) {
+      alert('Only administrators can purge the recycle bin.');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to permanently delete all ${recycleBinTiles.length} space(s) from the recycle bin? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const result = await purgeRecycleBin();
+      setRecycleBinTiles([]);
+      alert(`Successfully purged ${result.purgedCount} space(s) from the recycle bin.`);
+    } catch (error) {
+      console.error('Failed to purge recycle bin:', error);
+      alert('Failed to purge recycle bin. Please try again.');
+    }
+  };
+
+  const handlePurgeArchive = async () => {
+    if (!isAuthenticated || !user?.is_admin) {
+      alert('Only administrators can purge the archive.');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to move all ${archiveTiles.length} space(s) from the archive to the recycle bin? They can be permanently deleted from the recycle bin later.`)) {
+      return;
+    }
+
+    try {
+      const result = await purgeArchive();
+      // Reload archive and recycle bin to reflect the changes
+      const updatedArchive = await getArchive();
+      setArchiveTiles(updatedArchive);
+      const updatedRecycleBin = await getRecycleBin();
+      setRecycleBinTiles(updatedRecycleBin);
+      alert(`Successfully moved ${result.purgedCount} space(s) from archive to recycle bin.`);
+    } catch (error) {
+      console.error('Failed to purge archive:', error);
+      alert('Failed to purge archive. Please try again.');
     }
   };
 
@@ -1063,6 +1729,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
     setOpenInNewTab(tile.openInNewTab !== undefined ? tile.openInNewTab : true);
     setNewVisibility(tile.visibility || 'public');
     setNewAllowedUsers(tile.allowedUsers || []);
+    // Convert ISO date strings to datetime-local format (YYYY-MM-DDTHH:mm)
+    setVisibleFrom(tile.visibleFrom ? new Date(tile.visibleFrom).toISOString().slice(0, 16) : '');
+    setExpiresAt(tile.expiresAt ? new Date(tile.expiresAt).toISOString().slice(0, 16) : '');
     setIsEditModalOpen(true);
 
     // Load users if needed for private visibility
@@ -1101,7 +1770,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
       allowedUsers: (tileType === 'space' && newVisibility === 'private') ? newAllowedUsers : undefined,
       isHyperlink: tileType === 'hyperlink',
       hyperlinkUrl: tileType === 'hyperlink' ? hyperlinkUrl.trim() : undefined,
-      openInNewTab: tileType === 'hyperlink' ? openInNewTab : undefined
+      openInNewTab: tileType === 'hyperlink' ? openInNewTab : undefined,
+      visibleFrom: visibleFrom.trim() ? new Date(visibleFrom).toISOString() : undefined,
+      expiresAt: expiresAt.trim() ? new Date(expiresAt).toISOString() : undefined
     };
 
     try {
@@ -1250,7 +1921,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
     try {
       const arrangement = newCategoryOrder.map((category, index) => ({
         categoryName: category,
-        position: index
+        position: index,
+        visibleFrom: categoryMetadata[category]?.visibleFrom || null,
+        expiresAt: categoryMetadata[category]?.expiresAt || null
       }));
       await saveCategoryArrangement(arrangement);
       // Success - order is now saved globally and will be visible to all users
@@ -1261,7 +1934,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       const errorMsg = error instanceof Error ? error.message : 'Failed to save category order. Please try again.';
       alert(errorMsg);
     }
-  }, [tiles, isAuthenticated, categoryOrder]);
+  }, [tiles, isAuthenticated, categoryOrder, categoryMetadata]);
 
   const handleExportCategory = useCallback(
     (categoryName: string) => {
@@ -1455,7 +2128,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
         if (newCategoryOrder.length > 0) {
           const categoryArrangement = newCategoryOrder.map((category, index) => ({
             categoryName: category,
-            position: index
+            position: index,
+            visibleFrom: categoryMetadata[category]?.visibleFrom || null,
+            expiresAt: categoryMetadata[category]?.expiresAt || null
           }));
           await saveCategoryArrangement(categoryArrangement);
         }
@@ -1470,59 +2145,184 @@ export const TileGrid: React.FC<TileGridProps> = ({
       console.error('Failed to rename category:', error);
       alert('Failed to rename category. Please try again.');
     }
-  }, [tiles, isAuthenticated, onUpdateTiles, categoryOrder]);
+  }, [tiles, isAuthenticated, onUpdateTiles, categoryOrder, categoryMetadata]);
+
+  const handleArchiveCategory = useCallback(async (categoryName: string) => {
+    if (!isAuthenticated) return;
+
+    const categoryTiles = tiles.filter(tile => (tile.group || 'General') === categoryName);
+    
+    if (categoryTiles.length === 0) {
+      alert('Category is empty. Nothing to archive.');
+      return;
+    }
+
+    try {
+      // Archive all tiles in this category
+      const result = await archiveCategory(categoryName);
+      
+      // Reload tiles and archive
+      const updatedTiles = await getTiles();
+      onUpdateTiles(updatedTiles);
+      const updatedArchive = await getArchive();
+      setArchiveTiles(updatedArchive);
+      
+      alert(`Successfully archived ${result.archivedCount} space(s) from category "${categoryName}".`);
+    } catch (error) {
+      console.error('Failed to archive category:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      alert(`Failed to archive category: ${errorMsg}`);
+    }
+  }, [tiles, isAuthenticated, onUpdateTiles]);
+
+  const handleUnarchiveCategory = useCallback(async (categoryName: string) => {
+    if (!isAuthenticated) return;
+
+    try {
+      // Unarchive all tiles in this category
+      const result = await unarchiveCategory(categoryName);
+      
+      // Reload tiles and archive
+      const updatedTiles = await getTiles();
+      onUpdateTiles(updatedTiles);
+      const updatedArchive = await getArchive();
+      setArchiveTiles(updatedArchive);
+      
+      alert(`Successfully restored ${result.unarchivedCount} space(s) from category "${categoryName}".`);
+    } catch (error) {
+      console.error('Failed to unarchive category:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      alert(`Failed to restore category: ${errorMsg}`);
+    }
+  }, [isAuthenticated, onUpdateTiles]);
 
   const handleDeleteCategory = useCallback(async (categoryName: string) => {
     if (!isAuthenticated) return;
 
-    try {
-      // Move all tiles in this category to "General"
-      const updatedTiles = tiles.map(tile => {
-        if ((tile.group || 'General') === categoryName) {
-          return { ...tile, group: 'General' };
-        }
-        return tile;
-      });
+    // Get tiles from the appropriate source based on active tab
+    let categoryTiles: Tile[];
+    if (activeTab === 'archive') {
+      // In archive view, get tiles from archiveTiles
+      categoryTiles = archiveTiles.filter(tile => (tile.group || 'General') === categoryName);
+    } else {
+      // In normal view, get tiles from tiles
+      categoryTiles = tiles.filter(tile => (tile.group || 'General') === categoryName);
+    }
+    
+    if (categoryTiles.length === 0) {
+      // No tiles in category, just remove the category
+      const newCategoryOrder = categoryOrder.filter(cat => cat !== categoryName);
+      setCategoryOrder(newCategoryOrder);
+      if (newCategoryOrder.length > 0) {
+        const categoryArrangement = newCategoryOrder.map((category, index) => ({
+          categoryName: category,
+          position: index
+        }));
+        await saveCategoryArrangement(categoryArrangement);
+      } else {
+        await saveCategoryArrangement([]);
+      }
+      return;
+    }
 
-      // Update tiles
-      onUpdateTiles(updatedTiles);
+    const isFromArchive = activeTab === 'archive';
+    const confirmMessage = isFromArchive
+      ? `Are you sure you want to delete the category "${categoryName}" from archive? This will move ${categoryTiles.length} tile(s) to the recycle bin.`
+      : `Are you sure you want to delete the category "${categoryName}"? This will move ${categoryTiles.length} tile(s) to the recycle bin.`;
+
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      // Soft delete all tiles in this category (move to recycle bin)
+      const deletePromises = categoryTiles.map(tile => deleteTile(tile.id));
+      await Promise.all(deletePromises);
 
       // Remove category from category order
       const newCategoryOrder = categoryOrder.filter(cat => cat !== categoryName);
       setCategoryOrder(newCategoryOrder);
 
-      // Save updated arrangements
-      try {
-        // Save tile arrangement
-        const arrangement = updatedTiles.map((tile, index) => ({
-          tileId: tile.id,
+      // Save category arrangement
+      if (newCategoryOrder.length > 0) {
+        const categoryArrangement = newCategoryOrder.map((category, index) => ({
+          categoryName: category,
           position: index,
-          groupName: tile.group || 'General'
+          visibleFrom: categoryMetadata[category]?.visibleFrom || null,
+          expiresAt: categoryMetadata[category]?.expiresAt || null
         }));
-        await saveTileArrangement(arrangement);
+        await saveCategoryArrangement(categoryArrangement);
+      } else {
+        await saveCategoryArrangement([]);
+      }
+      
+      // Remove category metadata
+      const newMetadata = { ...categoryMetadata };
+      delete newMetadata[categoryName];
+      setCategoryMetadata(newMetadata);
 
-        // Save category arrangement
-        if (newCategoryOrder.length > 0) {
-          const categoryArrangement = newCategoryOrder.map((category, index) => ({
-            categoryName: category,
-            position: index
-          }));
-          await saveCategoryArrangement(categoryArrangement);
-        } else {
-          // If no categories left, clear the arrangement
-          await saveCategoryArrangement([]);
-        }
-      } catch (error) {
-        console.error('Failed to save arrangements:', error);
-        // Revert on error
-        onUpdateTiles(tiles);
-        setCategoryOrder(categoryOrder);
+      // Reload tiles, recycle bin, and archive
+      const updatedTiles = await getTiles();
+      onUpdateTiles(updatedTiles);
+      if (activeTab === 'recycle-bin') {
+        const updatedRecycleBin = await getRecycleBin();
+        setRecycleBinTiles(updatedRecycleBin);
+      } else if (activeTab === 'archive') {
+        const updatedArchive = await getArchive();
+        setArchiveTiles(updatedArchive);
+        const updatedRecycleBin = await getRecycleBin();
+        setRecycleBinTiles(updatedRecycleBin);
       }
     } catch (error) {
       console.error('Failed to delete category:', error);
       alert('Failed to delete category. Please try again.');
     }
-  }, [tiles, isAuthenticated, onUpdateTiles, categoryOrder]);
+  }, [tiles, archiveTiles, isAuthenticated, onUpdateTiles, categoryOrder, categoryMetadata, activeTab]);
+
+  const handleOpenCategorySchedule = useCallback((categoryName: string) => {
+    const metadata = categoryMetadata[categoryName];
+    setCategoryVisibleFrom(metadata?.visibleFrom ? new Date(metadata.visibleFrom).toISOString().slice(0, 16) : '');
+    setCategoryExpiresAt(metadata?.expiresAt ? new Date(metadata.expiresAt).toISOString().slice(0, 16) : '');
+    setEditingCategorySchedule(categoryName);
+  }, [categoryMetadata]);
+
+  const handleSaveCategorySchedule = useCallback(async () => {
+    if (!editingCategorySchedule || !isAuthenticated) return;
+
+    try {
+      const newMetadata = {
+        ...categoryMetadata,
+        [editingCategorySchedule]: {
+          visibleFrom: categoryVisibleFrom.trim() || null,
+          expiresAt: categoryExpiresAt.trim() || null
+        }
+      };
+      
+      // Remove entry if both dates are empty
+      if (!categoryVisibleFrom.trim() && !categoryExpiresAt.trim()) {
+        delete newMetadata[editingCategorySchedule];
+      }
+      
+      setCategoryMetadata(newMetadata);
+
+      // Save category arrangement with updated metadata
+      const allCategories = [...categoryOrder];
+      const arrangement = allCategories.map((category, index) => ({
+        categoryName: category,
+        position: index,
+        visibleFrom: newMetadata[category]?.visibleFrom || null,
+        expiresAt: newMetadata[category]?.expiresAt || null
+      }));
+      
+      await saveCategoryArrangement(arrangement);
+      setEditingCategorySchedule(null);
+      setCategoryVisibleFrom('');
+      setCategoryExpiresAt('');
+    } catch (error) {
+      console.error('Failed to save category schedule:', error);
+      alert('Failed to save category schedule. Please try again.');
+    }
+  }, [editingCategorySchedule, categoryVisibleFrom, categoryExpiresAt, categoryMetadata, categoryOrder, isAuthenticated]);
 
   const handleMoveTile = useCallback(async (tileId: string, direction: 'left' | 'right') => {
     // Only authenticated users can move tiles
@@ -1709,10 +2509,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
       <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700">
         <button
           onClick={() => setActiveTab('public')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'public'
-            ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-            : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            }`}
+          data-active={activeTab === 'public'}
+          className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'public' ? 'active' : ''}`}
         >
           Public
         </button>
@@ -1720,25 +2518,172 @@ export const TileGrid: React.FC<TileGridProps> = ({
           <>
             <button
               onClick={() => setActiveTab('favorites')}
-              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'favorites'
-                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                }`}
+              data-active={activeTab === 'favorites'}
+              className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'favorites' ? 'active' : ''}`}
             >
               Favorites
+              {favoriteTilesCount > 0 && (
+                <span className="ml-2 px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
+                  {favoriteTilesCount}
+                </span>
+              )}
             </button>
             <button
               onClick={() => setActiveTab('private')}
-              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'private'
+              data-active={activeTab === 'private'}
+              className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'private' ? 'active' : ''}`}
+            >
+              Private
+              {privateTilesCount > 0 && (
+                <span className="ml-2 px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
+                  {privateTilesCount}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab('scheduled')}
+              data-active={activeTab === 'scheduled'}
+              className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'scheduled' ? 'active' : ''}`}
+            >
+              Scheduled
+              {scheduledTilesCount > 0 && (
+                <span className="ml-2 px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
+                  {scheduledTilesCount}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab('expired')}
+              data-active={activeTab === 'expired'}
+              className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'expired' ? 'active' : ''}`}
+            >
+              Expired
+              {expiredTilesCount > 0 && (
+                <span className="ml-2 px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
+                  {expiredTilesCount}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab('archive')}
+              data-active={activeTab === 'archive'}
+              className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'archive' ? 'active' : ''}`}
+            >
+              Archive
+              {isAuthenticated && (
+                <span className="ml-2 px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
+                  {archiveTiles.length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab('recycle-bin')}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'recycle-bin'
                 ? 'border-brand-500 text-brand-600 dark:text-brand-400'
                 : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
             >
-              Private
+              Recycle Bin
+              {isAuthenticated && (
+                <span className="ml-2 px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
+                  {recycleBinTiles.length}
+                </span>
+              )}
             </button>
           </>
         )}
       </div>
+
+      {/* Archive Actions */}
+      {activeTab === 'archive' && isAuthenticated && (
+        <div className="flex items-center justify-between py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+          <div className="text-sm text-slate-600 dark:text-slate-400">
+            {isLoadingArchive ? (
+              'Loading archive...'
+            ) : archiveTiles.length === 0 ? (
+              'Archive is empty'
+            ) : (
+              `${archiveTiles.length} space(s) in archive`
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={async () => {
+                setIsLoadingArchive(true);
+                try {
+                  const updatedTiles = await getArchive();
+                  setArchiveTiles(updatedTiles);
+                } catch (error) {
+                  console.error('Failed to refresh archive:', error);
+                } finally {
+                  setIsLoadingArchive(false);
+                }
+              }}
+              className="px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors flex items-center gap-1.5"
+              title="Refresh archive"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-1.281z" clipRule="evenodd" />
+              </svg>
+              Refresh
+            </button>
+            {archiveTiles.length > 0 && user?.is_admin && (
+              <button
+                onClick={handlePurgeArchive}
+                className="px-4 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                title="Move all archived spaces to recycle bin"
+              >
+                Delete All
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Recycle Bin Actions */}
+      {activeTab === 'recycle-bin' && isAuthenticated && (
+        <div className="flex items-center justify-between py-3 px-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+          <div className="text-sm text-slate-600 dark:text-slate-400">
+            {isLoadingRecycleBin ? (
+              'Loading recycle bin...'
+            ) : recycleBinTiles.length === 0 ? (
+              'Recycle bin is empty'
+            ) : (
+              `${recycleBinTiles.length} space(s) in recycle bin`
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={async () => {
+                setIsLoadingRecycleBin(true);
+                try {
+                  const updatedTiles = await getRecycleBin();
+                  setRecycleBinTiles(updatedTiles);
+                } catch (error) {
+                  console.error('Failed to refresh recycle bin:', error);
+                } finally {
+                  setIsLoadingRecycleBin(false);
+                }
+              }}
+              className="px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors flex items-center gap-1.5"
+              title="Refresh recycle bin"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-1.281z" clipRule="evenodd" />
+              </svg>
+              Refresh
+            </button>
+            {recycleBinTiles.length > 0 && user?.is_admin && (
+              <button
+                onClick={handlePurgeRecycleBin}
+                className="px-4 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+              >
+                Purge All
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Compact Stats Bar */}
       {tiles.length > 0 && (
@@ -1778,7 +2723,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
               canMoveDown={canMoveDown}
               onMoveUp={() => handleMoveCategory(groupName, 'up')}
               onMoveDown={() => handleMoveCategory(groupName, 'down')}
-              onDeleteCategory={handleDeleteCategory}
+              onDeleteCategory={activeTab !== 'recycle-bin' ? handleDeleteCategory : undefined}
+              onArchiveCategory={activeTab !== 'recycle-bin' && activeTab !== 'archive' ? handleArchiveCategory : undefined}
+              onUnarchiveCategory={activeTab === 'archive' ? handleUnarchiveCategory : undefined}
+              onPermanentDeleteCategory={activeTab === 'recycle-bin' ? handlePermanentDeleteCategory : undefined}
+              isRecycleBin={activeTab === 'recycle-bin'}
+              isArchive={activeTab === 'archive'}
               onSaveCategoryOrder={handleManualSave}
               onRenameCategory={handleRenameCategory}
               onExportCategory={handleExportCategory}
@@ -1786,6 +2736,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               onCloneCategory={handleCloneCategory}
               onToggleCategoryFavorite={handleToggleCategoryFavorite}
               isCategoryFavorited={isCategoryFavorited(groupName)}
+              onScheduleCategory={handleOpenCategorySchedule}
             >
               {/* Grid with wider tiles */}
               {groupTiles.length > 0 ? (
@@ -1808,6 +2759,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         onMoveLeft={() => handleMoveTile(tile.id, 'left')}
                         onMoveRight={() => handleMoveTile(tile.id, 'right')}
                         onExportTile={handleExportTile}
+                        onRestoreTile={activeTab === 'recycle-bin' ? handleRestoreTile : undefined}
+                        onPermanentDeleteTile={activeTab === 'recycle-bin' ? handlePermanentDeleteTile : undefined}
+                        onArchiveTile={activeTab !== 'archive' && activeTab !== 'recycle-bin' ? handleArchiveTile : undefined}
+                        onUnarchiveTile={activeTab === 'archive' ? handleUnarchiveTile : undefined}
+                        isRecycleBin={activeTab === 'recycle-bin'}
+                        isArchive={activeTab === 'archive'}
                         canMoveLeft={canMoveLeft}
                         canMoveRight={canMoveRight}
                         availableCategories={allCategories}
@@ -1881,39 +2838,16 @@ export const TileGrid: React.FC<TileGridProps> = ({
             </div>
 
             <div className="space-y-4">
-              {/* Title & AI */}
+              {/* Title */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Title</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    placeholder="e.g., Design Resources"
-                    className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
-                  />
-                  <button
-                    onClick={handleMagicFill}
-                    disabled={isGenerating || !newTitle}
-                    className={`
-                      px-3 py-2.5 rounded-lg bg-gradient-to-br from-violet-600 to-fuchsia-600 text-white
-                      disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:shadow-lg hover:shadow-violet-500/30
-                      hover:scale-105 active:scale-95
-                    `}
-                    title="AI Generate"
-                  >
-                    {isGenerating ? (
-                      <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                    ) : (
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                        <path fillRule="evenodd" d="M9 4.5a.75.75 0 01.721.544l.813 2.846a3.75 3.75 0 002.576 2.576l2.846.813a.75.75 0 010 1.442l-2.846.813a3.75 3.75 0 00-2.576 2.576l-.813 2.846a.75.75 0 01-1.442 0l-.813-2.846a3.75 3.75 0 00-2.576-2.576l-2.846-.813a.75.75 0 010-1.442l2.846-.813a3.75 3.75 0 002.576-2.576l.813-2.846A.75.75 0 019 4.5zM12 1.5a.75.75 0 01.728.568L12.94 3.08a2.25 2.25 0 001.48 1.48l1.012.212a.75.75 0 010 1.456l-1.012.212a2.25 2.25 0 00-1.48 1.48l-.212 1.012a.75.75 0 01-1.456 0l-.212-1.012a2.25 2.25 0 00-1.48-1.48l-1.012-.212a.75.75 0 010-1.456l1.012-.212a2.25 2.25 0 001.48-1.48l.212-1.012A.75.75 0 0112 1.5z" clipRule="evenodd" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
+                <input
+                  type="text"
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  placeholder="e.g., Design Resources"
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                />
               </div>
 
               {/* Type Selection */}
@@ -2261,18 +3195,33 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 </div>
               )}
 
-              {/* Generated Links Preview - Only shown when type is space */}
-              {tileType === 'space' && generatedLinks.length > 0 && (
-                <div className="bg-gradient-to-br from-violet-50 to-fuchsia-50 dark:from-violet-500/10 dark:to-fuchsia-500/10 p-4 rounded-lg border border-violet-200 dark:border-violet-500/30">
-                  <p className="text-xs text-violet-600 dark:text-violet-400 font-bold uppercase tracking-wider mb-2">AI Suggested Links</p>
-                  <ul className="text-xs text-slate-700 dark:text-slate-300 space-y-1.5">
-                    {generatedLinks.map((l, i) => (
-                      <li key={i} className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0"></span>
-                        <span className="truncate">{l.label}</span>
-                      </li>
-                    ))}
-                  </ul>
+              {/* Scheduling - Only shown when type is space */}
+              {tileType === 'space' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Scheduling</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Available From (optional)</label>
+                      <input
+                        type="datetime-local"
+                        value={visibleFrom}
+                        onChange={(e) => setVisibleFrom(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                      />
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for immediate availability</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Expires At (optional)</label>
+                      <input
+                        type="datetime-local"
+                        value={expiresAt}
+                        onChange={(e) => setExpiresAt(e.target.value)}
+                        min={visibleFrom || undefined}
+                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                      />
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for no expiry</p>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -2571,6 +3520,36 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 </datalist>
               </div>
 
+              {/* Scheduling - Only shown when type is space */}
+              {tileType === 'space' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Scheduling</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Available From (optional)</label>
+                      <input
+                        type="datetime-local"
+                        value={visibleFrom}
+                        onChange={(e) => setVisibleFrom(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                      />
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for immediate availability</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Expires At (optional)</label>
+                      <input
+                        type="datetime-local"
+                        value={expiresAt}
+                        onChange={(e) => setExpiresAt(e.target.value)}
+                        min={visibleFrom || undefined}
+                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                      />
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for no expiry</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Actions */}
               <div className="pt-3 flex justify-end gap-2 border-t border-slate-200 dark:border-slate-700">
                 <button
@@ -2593,6 +3572,85 @@ export const TileGrid: React.FC<TileGridProps> = ({
                   className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-brand-500/20 hover:shadow-lg hover:shadow-brand-500/30 hover:scale-105 active:scale-95"
                 >
                   {tileType === 'hyperlink' ? 'Update Hyperlink' : 'Update Space'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Category Scheduling Modal */}
+      {editingCategorySchedule && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/70 dark:bg-slate-900/90 backdrop-blur-md" onClick={() => {
+            setEditingCategorySchedule(null);
+            setCategoryVisibleFrom('');
+            setCategoryExpiresAt('');
+          }}></div>
+          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-md p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">Schedule Category</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400">{editingCategorySchedule}</p>
+              </div>
+              <button
+                onClick={() => {
+                  setEditingCategorySchedule(null);
+                  setCategoryVisibleFrom('');
+                  setCategoryExpiresAt('');
+                }}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                  <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Scheduling</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Available From (optional)</label>
+                    <input
+                      type="datetime-local"
+                      value={categoryVisibleFrom}
+                      onChange={(e) => setCategoryVisibleFrom(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                    />
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for immediate availability</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Expires At (optional)</label>
+                    <input
+                      type="datetime-local"
+                      value={categoryExpiresAt}
+                      onChange={(e) => setCategoryExpiresAt(e.target.value)}
+                      min={categoryVisibleFrom || undefined}
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                    />
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for no expiry</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-3 flex justify-end gap-2 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => {
+                    setEditingCategorySchedule(null);
+                    setCategoryVisibleFrom('');
+                    setCategoryExpiresAt('');
+                  }}
+                  className="px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveCategorySchedule}
+                  className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-brand-500/20 hover:shadow-lg hover:shadow-brand-500/30 hover:scale-105 active:scale-95"
+                >
+                  Save Schedule
                 </button>
               </div>
             </div>

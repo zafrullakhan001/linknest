@@ -89,6 +89,23 @@ export interface SpaceStyles {
   spacesTitleFontWeight: string;
   spacesTitleFontStyle: string;
 
+  // Footer font styling
+  footerFontFamily: string;
+  footerFontSize: number;
+  footerFontWeight: string;
+  footerFontStyle: string;
+  footerColor: string;
+
+  // Spaces Grid Tab Styling
+  spacesTabStyle: 'underline' | 'pill' | 'box' | 'minimal';
+  spacesTabActiveColor: string;
+  spacesTabInactiveColor: string;
+  spacesTabBorderRadius: number;
+  spacesTabFontFamily: string;
+  spacesTabFontSize: number;
+  spacesTabFontWeight: string;
+  spacesTabFontStyle: string;
+
   // Grid settings
   gridColumns: {
     sm: number;
@@ -150,6 +167,10 @@ export interface SpaceStyles {
   contentTabActiveColor: string;
   contentTabInactiveColor: string;
   contentTabBorderRadius: number;
+  contentTabFontFamily: string;
+  contentTabFontSize: number;
+  contentTabFontWeight: string;
+  contentTabFontStyle: string;
 
   // Content Typography
   contentTitleFontFamily: string;
@@ -228,6 +249,19 @@ export const DEFAULT_STYLES: SpaceStyles = {
   spacesTitleFontSize: 24,
   spacesTitleFontWeight: 'bold',
   spacesTitleFontStyle: 'normal',
+  footerFontFamily: 'inherit',
+  footerFontSize: 14,
+  footerFontWeight: 'normal',
+  footerFontStyle: 'normal',
+  footerColor: '#94a3b8',
+  spacesTabStyle: 'underline',
+  spacesTabActiveColor: '#3b82f6',
+  spacesTabInactiveColor: '#64748b',
+  spacesTabBorderRadius: 0,
+  spacesTabFontFamily: 'inherit',
+  spacesTabFontSize: 14,
+  spacesTabFontWeight: '500',
+  spacesTabFontStyle: 'normal',
   gridColumns: {
     sm: 1,
     md: 2,
@@ -283,6 +317,10 @@ export const DEFAULT_STYLES: SpaceStyles = {
   contentTabActiveColor: '#3b82f6',
   contentTabInactiveColor: '#64748b',
   contentTabBorderRadius: 8,
+  contentTabFontFamily: 'inherit',
+  contentTabFontSize: 14,
+  contentTabFontWeight: '500',
+  contentTabFontStyle: 'normal',
 
   contentTitleFontFamily: 'inherit',
   contentTitleFontSize: 24,
@@ -752,6 +790,17 @@ export const styleService = {
         font-weight: ${styles.spacesTitleFontWeight} !important;
         font-style: ${styles.spacesTitleFontStyle} !important;
       }
+      
+      .linknest-footer {
+        font-family: ${styles.footerFontFamily} !important;
+        font-size: ${styles.footerFontSize}px !important;
+        font-weight: ${styles.footerFontWeight} !important;
+        font-style: ${styles.footerFontStyle} !important;
+        color: ${styles.footerColor} !important;
+      }
+      
+      /* Spaces Grid Tabs */
+      ${generateSpacesTabCSS(styles, isDark)}
       
       /* Tile Grid Responsive - Independent breakpoints */
       @media (min-width: 640px) {
@@ -1293,12 +1342,20 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
     /* Content Tabs */
     .linknest-content-tab {
       ${tabInactiveStyles}
+      font-family: ${styles.contentTabFontFamily} !important;
+      font-size: ${styles.contentTabFontSize}px !important;
+      font-weight: ${styles.contentTabFontWeight} !important;
+      font-style: ${styles.contentTabFontStyle} !important;
       transition: all 0.2s ease !important;
     }
     
     .linknest-content-tab.active,
     .linknest-content-tab[data-active="true"] {
       ${tabActiveStyles}
+      font-family: ${styles.contentTabFontFamily} !important;
+      font-size: ${styles.contentTabFontSize}px !important;
+      font-weight: ${styles.contentTabFontWeight} !important;
+      font-style: ${styles.contentTabFontStyle} !important;
     }
     
     .linknest-content-tab:hover:not(.active):not([data-active="true"]) {
@@ -1346,6 +1403,89 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       .linknest-content-link-grid {
         grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)) !important;
       }
+    }
+  `;
+}
+
+// Generate Spaces Grid Tab CSS
+function generateSpacesTabCSS(styles: SpaceStyles, isDark: boolean): string {
+  // Tab styles
+  let tabActiveStyles = '';
+  let tabInactiveStyles = '';
+  switch (styles.spacesTabStyle) {
+    case 'underline':
+      tabActiveStyles = `
+        color: ${styles.spacesTabActiveColor} !important;
+        border-bottom: 2px solid ${styles.spacesTabActiveColor} !important;
+        background: transparent !important;
+      `;
+      tabInactiveStyles = `
+        color: ${styles.spacesTabInactiveColor} !important;
+        border-bottom: 2px solid transparent !important;
+        background: transparent !important;
+      `;
+      break;
+    case 'pill':
+      tabActiveStyles = `
+        color: white !important;
+        background: ${styles.spacesTabActiveColor} !important;
+        border-radius: ${styles.spacesTabBorderRadius}px !important;
+      `;
+      tabInactiveStyles = `
+        color: ${styles.spacesTabInactiveColor} !important;
+        background: ${isDark ? 'rgba(51, 65, 85, 0.3)' : 'rgba(0, 0, 0, 0.05)'} !important;
+        border-radius: ${styles.spacesTabBorderRadius}px !important;
+      `;
+      break;
+    case 'box':
+      tabActiveStyles = `
+        color: ${styles.spacesTabActiveColor} !important;
+        background: ${isDark ? 'rgba(59, 130, 246, 0.15)' : `${styles.spacesTabActiveColor}10`} !important;
+        border: 1px solid ${styles.spacesTabActiveColor} !important;
+        border-radius: ${styles.spacesTabBorderRadius}px !important;
+      `;
+      tabInactiveStyles = `
+        color: ${styles.spacesTabInactiveColor} !important;
+        background: transparent !important;
+        border: 1px solid ${isDark ? 'rgba(71, 85, 105, 0.5)' : '#e2e8f0'} !important;
+        border-radius: ${styles.spacesTabBorderRadius}px !important;
+      `;
+      break;
+    case 'minimal':
+      tabActiveStyles = `
+        color: ${styles.spacesTabActiveColor} !important;
+        background: transparent !important;
+        font-weight: 600 !important;
+      `;
+      tabInactiveStyles = `
+        color: ${styles.spacesTabInactiveColor} !important;
+        background: transparent !important;
+      `;
+      break;
+  }
+
+  return `
+    .linknest-spaces-tab {
+      ${tabInactiveStyles}
+      font-family: ${styles.spacesTabFontFamily} !important;
+      font-size: ${styles.spacesTabFontSize}px !important;
+      font-weight: ${styles.spacesTabFontWeight} !important;
+      font-style: ${styles.spacesTabFontStyle} !important;
+      transition: all 0.2s ease !important;
+    }
+    
+    .linknest-spaces-tab.active,
+    .linknest-spaces-tab[data-active="true"] {
+      ${tabActiveStyles}
+      font-family: ${styles.spacesTabFontFamily} !important;
+      font-size: ${styles.spacesTabFontSize}px !important;
+      font-weight: ${styles.spacesTabFontWeight} !important;
+      font-style: ${styles.spacesTabFontStyle} !important;
+    }
+    
+    .linknest-spaces-tab:hover:not(.active):not([data-active="true"]) {
+      color: ${styles.spacesTabActiveColor} !important;
+      opacity: 0.8;
     }
   `;
 }

@@ -25,7 +25,11 @@ const transformTile = (apiTile: any): Tile => {
     openInNewTab: apiTile.openInNewTab !== undefined ? apiTile.openInNewTab : undefined,
     canView: apiTile.canView !== undefined ? apiTile.canView : true, // Default to true if not set
     canEdit: apiTile.canEdit !== undefined ? apiTile.canEdit : false, // Default to false if not set
-    canDelete: apiTile.canDelete !== undefined ? apiTile.canDelete : false // Default to false if not set
+    canDelete: apiTile.canDelete !== undefined ? apiTile.canDelete : false, // Default to false if not set
+    deletedAt: apiTile.deletedAt || undefined, // Include deletedAt if present (for recycle bin)
+    archivedAt: apiTile.archivedAt || undefined, // Include archivedAt if present (for archive)
+    visibleFrom: apiTile.visibleFrom || undefined,
+    expiresAt: apiTile.expiresAt || undefined
   };
 };
 
@@ -162,7 +166,7 @@ export const getTileArrangement = async (): Promise<Array<{ tileId: string; posi
   }
 };
 
-export const saveCategoryArrangement = async (categories: Array<{ categoryName: string; position: number }>): Promise<void> => {
+export const saveCategoryArrangement = async (categories: Array<{ categoryName: string; position: number; visibleFrom?: string | null; expiresAt?: string | null }>): Promise<void> => {
   try {
     const response = await fetch(`${API_BASE}/arrangements/categories`, {
       method: 'POST',
@@ -183,7 +187,7 @@ export const saveCategoryArrangement = async (categories: Array<{ categoryName: 
   }
 };
 
-export const getCategoryArrangement = async (): Promise<Array<{ categoryName: string; position: number }>> => {
+export const getCategoryArrangement = async (): Promise<Array<{ categoryName: string; position: number; visibleFrom?: string | null; expiresAt?: string | null }>> => {
   try {
     const response = await fetch(`${API_BASE}/arrangements/categories`, {
       method: 'GET',
@@ -321,6 +325,217 @@ export const toggleCategoryFavorite = async (categoryName: string): Promise<{
     return await response.json();
   } catch (e) {
     console.error("Failed to toggle category favorite", e);
+    throw e;
+  }
+};
+
+export const archiveCategory = async (categoryName: string): Promise<{
+  success: boolean;
+  archivedCount: number;
+  categoryName: string;
+}> => {
+  try {
+    const encodedCategoryName = encodeURIComponent(categoryName);
+    const response = await fetch(`${API_BASE}/tiles/category/${encodedCategoryName}/archive`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Failed to archive category' }));
+      throw new Error(errorData.error || 'Failed to archive category');
+    }
+
+    return await response.json();
+  } catch (e) {
+    console.error("Failed to archive category", e);
+    throw e;
+  }
+};
+
+export const unarchiveCategory = async (categoryName: string): Promise<{
+  success: boolean;
+  unarchivedCount: number;
+  categoryName: string;
+}> => {
+  try {
+    const encodedCategoryName = encodeURIComponent(categoryName);
+    const response = await fetch(`${API_BASE}/tiles/category/${encodedCategoryName}/unarchive`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Failed to unarchive category' }));
+      throw new Error(errorData.error || 'Failed to unarchive category');
+    }
+
+    return await response.json();
+  } catch (e) {
+    console.error("Failed to unarchive category", e);
+    throw e;
+  }
+};
+
+export const getRecycleBin = async (): Promise<Tile[]> => {
+  try {
+    const response = await fetch(`${API_BASE}/tiles/recycle-bin`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch recycle bin');
+    }
+
+    const apiTiles = await response.json();
+    return apiTiles.map(transformTile);
+  } catch (e) {
+    console.error("Failed to get recycle bin", e);
+    throw e;
+  }
+};
+
+export const restoreTile = async (tileId: string): Promise<void> => {
+  try {
+    const response = await fetch(`${API_BASE}/tiles/${tileId}/restore`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to restore tile');
+    }
+  } catch (e) {
+    console.error("Failed to restore tile", e);
+    throw e;
+  }
+};
+
+export const getArchive = async (): Promise<Tile[]> => {
+  try {
+    const response = await fetch(`${API_BASE}/tiles/archive`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      const errorMsg = errorData.details || errorData.error || 'Failed to fetch archive';
+      console.error("Failed to get archive:", errorData);
+      throw new Error(errorMsg);
+    }
+
+    const apiTiles = await response.json();
+    return apiTiles.map(transformTile);
+  } catch (e) {
+    console.error("Failed to get archive", e);
+    throw e;
+  }
+};
+
+export const archiveTile = async (tileId: string): Promise<void> => {
+  try {
+    const response = await fetch(`${API_BASE}/tiles/${tileId}/archive`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      const errorMsg = errorData.details || errorData.error || 'Failed to archive tile';
+      console.error("Failed to archive tile:", errorData);
+      throw new Error(errorMsg);
+    }
+  } catch (e) {
+    console.error("Failed to archive tile", e);
+    throw e;
+  }
+};
+
+export const unarchiveTile = async (tileId: string): Promise<void> => {
+  try {
+    const response = await fetch(`${API_BASE}/tiles/${tileId}/unarchive`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to unarchive tile');
+    }
+  } catch (e) {
+    console.error("Failed to unarchive tile", e);
+    throw e;
+  }
+};
+
+export const purgeRecycleBin = async (): Promise<{ success: boolean; purgedCount: number }> => {
+  try {
+    const response = await fetch(`${API_BASE}/tiles/purge-recycle-bin`, {
+      method: 'DELETE',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to purge recycle bin');
+    }
+
+    return await response.json();
+  } catch (e) {
+    console.error("Failed to purge recycle bin", e);
+    throw e;
+  }
+};
+
+export const permanentDeleteTile = async (tileId: string): Promise<void> => {
+  try {
+    const response = await fetch(`${API_BASE}/tiles/${tileId}/permanent`, {
+      method: 'DELETE',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to permanently delete tile');
+    }
+  } catch (e) {
+    console.error("Failed to permanently delete tile", e);
+    throw e;
+  }
+};
+
+export const permanentDeleteCategory = async (categoryName: string): Promise<{ success: boolean; purgedCount: number; categoryName: string }> => {
+  try {
+    const encodedCategoryName = encodeURIComponent(categoryName);
+    const response = await fetch(`${API_BASE}/tiles/category/${encodedCategoryName}/permanent`, {
+      method: 'DELETE',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to permanently delete category');
+    }
+
+    return await response.json();
+  } catch (e) {
+    console.error("Failed to permanently delete category", e);
+    throw e;
+  }
+};
+
+export const purgeArchive = async (): Promise<{ success: boolean; purgedCount: number }> => {
+  try {
+    const response = await fetch(`${API_BASE}/tiles/purge-archive`, {
+      method: 'DELETE',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to purge archive');
+    }
+
+    return await response.json();
+  } catch (e) {
+    console.error("Failed to purge archive", e);
     throw e;
   }
 };

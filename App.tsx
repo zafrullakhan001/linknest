@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import { StyleProvider, useStyles } from './contexts/StyleContext';
 import { AuthModal } from './components/AuthModal';
+import { TimezoneDisplay } from './components/TimezoneDisplay';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -386,7 +387,7 @@ const AppContent: React.FC = () => {
           </div>
         </div>
       )}
-      <footer className="py-6 text-center text-slate-400 dark:text-slate-500 text-sm">
+      <footer className="linknest-footer py-6 text-center text-sm">
         <p dangerouslySetInnerHTML={{ __html: settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}></p>
       </footer>
       <AuthModal
@@ -402,6 +403,9 @@ const AppContent: React.FC = () => {
           />
         </Suspense>
       )}
+      <div className="fixed bottom-4 right-4 z-40">
+        <TimezoneDisplay />
+      </div>
     </div>
   );
 };

@@ -215,6 +215,89 @@ function initDatabase() {
             error_log('Tiles hyperlink migration warning: ' . $e->getMessage());
         }
         
+        // Migrate existing tiles table to add deleted_at column for soft delete (recycle bin)
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $hasDeletedAt = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'deleted_at') {
+                    $hasDeletedAt = true;
+                    break;
+                }
+            }
+            if (!$hasDeletedAt) {
+                $db->exec('ALTER TABLE tiles ADD COLUMN deleted_at INTEGER');
+            }
+        } catch (PDOException $e) {
+            error_log('Tiles deleted_at migration warning: ' . $e->getMessage());
+        }
+        
+        // Migrate existing tiles table to add scheduling columns
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $hasVisibleFrom = false;
+            $hasExpiresAt = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'visible_from') {
+                    $hasVisibleFrom = true;
+                }
+                if ($column['name'] === 'expires_at') {
+                    $hasExpiresAt = true;
+                }
+            }
+            if (!$hasVisibleFrom) {
+                $db->exec('ALTER TABLE tiles ADD COLUMN visible_from TEXT');
+            }
+            if (!$hasExpiresAt) {
+                $db->exec('ALTER TABLE tiles ADD COLUMN expires_at TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Tiles scheduling migration warning: ' . $e->getMessage());
+        }
+        
+        // Migrate existing category_arrangements table to add scheduling columns
+        try {
+            $catTableExists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='category_arrangements'")->fetch();
+            if ($catTableExists) {
+                $columns = $db->query("PRAGMA table_info(category_arrangements)")->fetchAll();
+                $hasVisibleFrom = false;
+                $hasExpiresAt = false;
+                foreach ($columns as $column) {
+                    if ($column['name'] === 'visible_from') {
+                        $hasVisibleFrom = true;
+                    }
+                    if ($column['name'] === 'expires_at') {
+                        $hasExpiresAt = true;
+                    }
+                }
+                if (!$hasVisibleFrom) {
+                    $db->exec('ALTER TABLE category_arrangements ADD COLUMN visible_from TEXT');
+                }
+                if (!$hasExpiresAt) {
+                    $db->exec('ALTER TABLE category_arrangements ADD COLUMN expires_at TEXT');
+                }
+            }
+        } catch (PDOException $e) {
+            error_log('Category scheduling migration warning: ' . $e->getMessage());
+        }
+        
+        // Migrate existing tiles table to add archived_at column
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $hasArchivedAt = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'archived_at') {
+                    $hasArchivedAt = true;
+                    break;
+                }
+            }
+            if (!$hasArchivedAt) {
+                $db->exec('ALTER TABLE tiles ADD COLUMN archived_at INTEGER');
+            }
+        } catch (PDOException $e) {
+            error_log('Tiles archived_at migration warning: ' . $e->getMessage());
+        }
+        
         // Create tabs table
         $db->exec('CREATE TABLE IF NOT EXISTS tabs (
             id TEXT PRIMARY KEY,
@@ -226,22 +309,28 @@ function initDatabase() {
             FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
         )');
         
-        // Migrate existing tabs table to add scheduling columns if they don't exist
+        // Migrate existing tabs table to add position column if it doesn't exist
         try {
             $columns = $db->query("PRAGMA table_info(tabs)")->fetchAll();
+            $hasPosition = false;
             $hasScheduling = false;
             foreach ($columns as $column) {
+                if ($column['name'] === 'position') {
+                    $hasPosition = true;
+                }
                 if ($column['name'] === 'visible_from') {
                     $hasScheduling = true;
-                    break;
                 }
+            }
+            if (!$hasPosition) {
+                $db->exec('ALTER TABLE tabs ADD COLUMN position INTEGER DEFAULT 0');
             }
             if (!$hasScheduling) {
                 $db->exec('ALTER TABLE tabs ADD COLUMN visible_from TEXT');
                 $db->exec('ALTER TABLE tabs ADD COLUMN expires_at TEXT');
             }
         } catch (PDOException $e) {
-            error_log('Tabs scheduling migration warning: ' . $e->getMessage());
+            error_log('Tabs migration warning: ' . $e->getMessage());
         }
         
         // Migrate existing sections table to add tab_id column if it doesn't exist
@@ -435,6 +524,8 @@ function initDatabase() {
             user_id INTEGER NOT NULL DEFAULT 0,
             category_name TEXT NOT NULL,
             position INTEGER NOT NULL,
+            visible_from TEXT,
+            expires_at TEXT,
             PRIMARY KEY (user_id, category_name)
         )');
         
@@ -743,6 +834,15 @@ function canUserDeleteTile($userId, $tileId, $db) {
     $user = getAuthenticatedUser();
     if ($user && $user['is_admin']) {
         return true;
+    }
+    
+    // Check if user is the creator of the tile
+    $tileStmt = $db->prepare('SELECT user_id FROM tiles WHERE id = ?');
+    $tileStmt->execute([$tileId]);
+    $tile = $tileStmt->fetch();
+    
+    if ($tile && isset($tile['user_id']) && (int)$tile['user_id'] === (int)$userId) {
+        return true; // User is the creator, allow delete/archive
     }
     
     // Check if user has explicit delete permission

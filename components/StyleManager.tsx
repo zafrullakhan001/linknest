@@ -1384,6 +1384,238 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     </div>
                   </div>
                 </div>
+
+                {/* Footer Typography */}
+                <div className="mb-6">
+                  <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Footer</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-indigo-200 dark:border-indigo-800">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Family</label>
+                      <select
+                        value={styles.footerFontFamily}
+                        onChange={(e) => updateStyle('footerFontFamily', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="inherit">Inherit (Default)</option>
+                        <option value="Arial, sans-serif">Arial</option>
+                        <option value="'Helvetica Neue', Helvetica, sans-serif">Helvetica</option>
+                        <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                        <option value="Georgia, serif">Georgia</option>
+                        <option value="'Courier New', Courier, monospace">Courier New</option>
+                        <option value="Verdana, sans-serif">Verdana</option>
+                        <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                        <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
+                        <option value="Impact, sans-serif">Impact</option>
+                        <option value="'Lucida Console', monospace">Lucida Console</option>
+                        <option value="Tahoma, sans-serif">Tahoma</option>
+                        <option value="'Palatino Linotype', Palatino, serif">Palatino</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Size: {styles.footerFontSize}px</label>
+                      <input
+                        type="range"
+                        min="10"
+                        max="24"
+                        value={styles.footerFontSize}
+                        onChange={(e) => updateStyle('footerFontSize', parseInt(e.target.value))}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Weight</label>
+                      <select
+                        value={styles.footerFontWeight}
+                        onChange={(e) => updateStyle('footerFontWeight', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="bold">Bold</option>
+                        <option value="100">Thin (100)</option>
+                        <option value="200">Extra Light (200)</option>
+                        <option value="300">Light (300)</option>
+                        <option value="400">Regular (400)</option>
+                        <option value="500">Medium (500)</option>
+                        <option value="600">Semi Bold (600)</option>
+                        <option value="700">Bold (700)</option>
+                        <option value="800">Extra Bold (800)</option>
+                        <option value="900">Black (900)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Style</label>
+                      <select
+                        value={styles.footerFontStyle}
+                        onChange={(e) => updateStyle('footerFontStyle', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="italic">Italic</option>
+                        <option value="oblique">Oblique</option>
+                      </select>
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Text Color</label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="color"
+                          value={styles.footerColor}
+                          onChange={(e) => updateStyle('footerColor', e.target.value)}
+                          className="w-16 h-10 rounded border border-slate-300 dark:border-slate-600 cursor-pointer"
+                        />
+                        <input
+                          type="text"
+                          value={styles.footerColor}
+                          onChange={(e) => updateStyle('footerColor', e.target.value)}
+                          className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                          placeholder="#94a3b8"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* Spaces Grid Tab Styling */}
+              <section>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-500">
+                    <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 012.5 2.5v11a2.5 2.5 0 01-2.5 2.5h-11A2.5 2.5 0 012 15.5v-11zM4.5 4a.5.5 0 00-.5.5V6h2V4H4.5zM8 4v2h2V4H8zm4 0v2h4V4h-4z" />
+                  </svg>
+                  Main Page Tabs
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Tab Style</label>
+                    <select
+                      value={styles.spacesTabStyle}
+                      onChange={(e) => updateStyle('spacesTabStyle', e.target.value as 'underline' | 'pill' | 'box' | 'minimal')}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                    >
+                      <option value="underline">Underline</option>
+                      <option value="pill">Pill</option>
+                      <option value="box">Box</option>
+                      <option value="minimal">Minimal</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Active Tab Color</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="color"
+                        value={styles.spacesTabActiveColor}
+                        onChange={(e) => updateStyle('spacesTabActiveColor', e.target.value)}
+                        className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                      />
+                      <input
+                        type="text"
+                        value={styles.spacesTabActiveColor}
+                        onChange={(e) => updateStyle('spacesTabActiveColor', e.target.value)}
+                        className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Inactive Tab Color</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="color"
+                        value={styles.spacesTabInactiveColor}
+                        onChange={(e) => updateStyle('spacesTabInactiveColor', e.target.value)}
+                        className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                      />
+                      <input
+                        type="text"
+                        value={styles.spacesTabInactiveColor}
+                        onChange={(e) => updateStyle('spacesTabInactiveColor', e.target.value)}
+                        className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Border Radius: {styles.spacesTabBorderRadius}px</label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="16"
+                      value={styles.spacesTabBorderRadius}
+                      onChange={(e) => updateStyle('spacesTabBorderRadius', parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                </div>
+
+                {/* Spaces Tab Typography */}
+                <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+                  <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Tab Typography</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-amber-200 dark:border-amber-800">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Family</label>
+                      <select
+                        value={styles.spacesTabFontFamily}
+                        onChange={(e) => updateStyle('spacesTabFontFamily', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="inherit">Inherit (Default)</option>
+                        <option value="Arial, sans-serif">Arial</option>
+                        <option value="'Helvetica Neue', Helvetica, sans-serif">Helvetica</option>
+                        <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                        <option value="Georgia, serif">Georgia</option>
+                        <option value="'Courier New', Courier, monospace">Courier New</option>
+                        <option value="Verdana, sans-serif">Verdana</option>
+                        <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                        <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
+                        <option value="Impact, sans-serif">Impact</option>
+                        <option value="'Lucida Console', monospace">Lucida Console</option>
+                        <option value="Tahoma, sans-serif">Tahoma</option>
+                        <option value="'Palatino Linotype', Palatino, serif">Palatino</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Size: {styles.spacesTabFontSize}px</label>
+                      <input
+                        type="range"
+                        min="10"
+                        max="20"
+                        value={styles.spacesTabFontSize}
+                        onChange={(e) => updateStyle('spacesTabFontSize', parseInt(e.target.value))}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Weight</label>
+                      <select
+                        value={styles.spacesTabFontWeight}
+                        onChange={(e) => updateStyle('spacesTabFontWeight', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="bold">Bold</option>
+                        <option value="100">Thin (100)</option>
+                        <option value="200">Extra Light (200)</option>
+                        <option value="300">Light (300)</option>
+                        <option value="400">Regular (400)</option>
+                        <option value="500">Medium (500)</option>
+                        <option value="600">Semi Bold (600)</option>
+                        <option value="700">Bold (700)</option>
+                        <option value="800">Extra Bold (800)</option>
+                        <option value="900">Black (900)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Style</label>
+                      <select
+                        value={styles.spacesTabFontStyle}
+                        onChange={(e) => updateStyle('spacesTabFontStyle', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="italic">Italic</option>
+                        <option value="oblique">Oblique</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
               </section>
 
               {/* Grid Settings */}
@@ -1878,6 +2110,78 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                       onChange={(e) => updateStyle('contentTabBorderRadius', parseInt(e.target.value))}
                       className="w-full"
                     />
+                  </div>
+                </div>
+
+                {/* Tab Typography */}
+                <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+                  <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Tab Typography</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-amber-200 dark:border-amber-800">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Family</label>
+                      <select
+                        value={styles.contentTabFontFamily}
+                        onChange={(e) => updateStyle('contentTabFontFamily', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="inherit">Inherit (Default)</option>
+                        <option value="Arial, sans-serif">Arial</option>
+                        <option value="'Helvetica Neue', Helvetica, sans-serif">Helvetica</option>
+                        <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                        <option value="Georgia, serif">Georgia</option>
+                        <option value="'Courier New', Courier, monospace">Courier New</option>
+                        <option value="Verdana, sans-serif">Verdana</option>
+                        <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                        <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
+                        <option value="Impact, sans-serif">Impact</option>
+                        <option value="'Lucida Console', monospace">Lucida Console</option>
+                        <option value="Tahoma, sans-serif">Tahoma</option>
+                        <option value="'Palatino Linotype', Palatino, serif">Palatino</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Size: {styles.contentTabFontSize}px</label>
+                      <input
+                        type="range"
+                        min="10"
+                        max="20"
+                        value={styles.contentTabFontSize}
+                        onChange={(e) => updateStyle('contentTabFontSize', parseInt(e.target.value))}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Weight</label>
+                      <select
+                        value={styles.contentTabFontWeight}
+                        onChange={(e) => updateStyle('contentTabFontWeight', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="bold">Bold</option>
+                        <option value="100">Thin (100)</option>
+                        <option value="200">Extra Light (200)</option>
+                        <option value="300">Light (300)</option>
+                        <option value="400">Regular (400)</option>
+                        <option value="500">Medium (500)</option>
+                        <option value="600">Semi Bold (600)</option>
+                        <option value="700">Bold (700)</option>
+                        <option value="800">Extra Bold (800)</option>
+                        <option value="900">Black (900)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Style</label>
+                      <select
+                        value={styles.contentTabFontStyle}
+                        onChange={(e) => updateStyle('contentTabFontStyle', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="italic">Italic</option>
+                        <option value="oblique">Oblique</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
               </section>

@@ -200,14 +200,16 @@ function handleGetCategoryArrangement() {
     $db = getDB();
     
     // Get global category arrangement (user_id = 0 for global)
-    $stmt = $db->prepare('SELECT category_name, position FROM category_arrangements WHERE user_id = 0 ORDER BY position ASC');
+    $stmt = $db->prepare('SELECT category_name, position, visible_from, expires_at FROM category_arrangements WHERE user_id = 0 ORDER BY position ASC');
     $stmt->execute();
     
     $arrangement = [];
     while ($row = $stmt->fetch()) {
         $arrangement[] = [
             'categoryName' => $row['category_name'],
-            'position' => (int)$row['position']
+            'position' => (int)$row['position'],
+            'visibleFrom' => $row['visible_from'] ?: null,
+            'expiresAt' => $row['expires_at'] ?: null
         ];
     }
     
@@ -237,6 +239,8 @@ function handleSaveCategoryArrangement() {
                 user_id INTEGER NOT NULL DEFAULT 0,
                 category_name TEXT NOT NULL,
                 position INTEGER NOT NULL,
+                visible_from TEXT,
+                expires_at TEXT,
                 PRIMARY KEY (user_id, category_name)
             )');
         }
@@ -247,6 +251,8 @@ function handleSaveCategoryArrangement() {
                 user_id INTEGER NOT NULL DEFAULT 0,
                 category_name TEXT NOT NULL,
                 position INTEGER NOT NULL,
+                visible_from TEXT,
+                expires_at TEXT,
                 PRIMARY KEY (user_id, category_name)
             )');
         } catch (PDOException $createError) {
@@ -265,7 +271,7 @@ function handleSaveCategoryArrangement() {
         // Insert new global category arrangement (user_id = 0 for global)
         // Using INSERT OR REPLACE to handle any conflicts
         // Using 0 instead of NULL because SQLite doesn't allow NULL in composite PRIMARY KEY
-        $insertStmt = $db->prepare('INSERT OR REPLACE INTO category_arrangements (user_id, category_name, position) VALUES (?, ?, ?)');
+        $insertStmt = $db->prepare('INSERT OR REPLACE INTO category_arrangements (user_id, category_name, position, visible_from, expires_at) VALUES (?, ?, ?, ?, ?)');
         
         foreach ($data['categories'] as $item) {
             if (!isset($item['categoryName']) || !isset($item['position'])) {
@@ -278,11 +284,17 @@ function handleSaveCategoryArrangement() {
                 continue;
             }
             
+            // Get scheduling fields (optional)
+            $visibleFrom = isset($item['visibleFrom']) && !empty($item['visibleFrom']) ? $item['visibleFrom'] : null;
+            $expiresAt = isset($item['expiresAt']) && !empty($item['expiresAt']) ? $item['expiresAt'] : null;
+            
             try {
                 $insertStmt->execute([
                     0, // 0 for global arrangement (SQLite doesn't allow NULL in PRIMARY KEY)
                     $categoryName,
-                    (int)$item['position']
+                    (int)$item['position'],
+                    $visibleFrom,
+                    $expiresAt
                 ]);
             } catch (PDOException $e) {
                 error_log('Failed to insert category: ' . $categoryName . ' - ' . $e->getMessage());
@@ -312,6 +324,8 @@ function handleSaveCategoryArrangement() {
                     user_id INTEGER NOT NULL DEFAULT 0,
                     category_name TEXT NOT NULL,
                     position INTEGER NOT NULL,
+                    visible_from TEXT,
+                    expires_at TEXT,
                     PRIMARY KEY (user_id, category_name)
                 )');
                 error_log('Recreated category_arrangements table to fix foreign key issue');

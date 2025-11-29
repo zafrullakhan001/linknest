@@ -4,16 +4,26 @@ require_once __DIR__ . '/config.php';
 $method = $_SERVER['REQUEST_METHOD'];
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
 
+// Normalize path - remove trailing slash for consistent matching
+$path = rtrim($path, '/');
+if (empty($path)) {
+    $path = '/';
+}
+
 switch ($method) {
     case 'GET':
         if ($path === '' || $path === '/') {
             handleGetTiles();
+        } elseif ($path === '/favorites') {
+            handleGetFavorites();
+        } elseif ($path === '/recycle-bin') {
+            handleGetRecycleBin();
+        } elseif ($path === '/archive' || $path === '/archive/') {
+            handleGetArchive();
         } elseif (preg_match('#^/([^/]+)$#', $path, $matches)) {
             handleGetTile($matches[1]);
-        } elseif ($path === '/favorites' || $path === '/favorites/') {
-            handleGetFavorites();
         } else {
-            sendJSON(['error' => 'Invalid endpoint'], 404);
+            sendJSON(['error' => 'Invalid endpoint', 'path' => $path], 404);
         }
         break;
         
@@ -24,12 +34,22 @@ switch ($method) {
             handleBulkImport();
         } elseif (preg_match('#^/category/([^/]+)/clone$#', $path, $matches)) {
             handleCloneCategory($matches[1]);
+        } elseif (preg_match('#^/category/([^/]+)/archive$#', $path, $matches)) {
+            handleArchiveCategory(urldecode($matches[1]));
+        } elseif (preg_match('#^/category/([^/]+)/unarchive$#', $path, $matches)) {
+            handleUnarchiveCategory(urldecode($matches[1]));
         } elseif (preg_match('#^/category/([^/]+)/favorite$#', $path, $matches)) {
             handleToggleCategoryFavorite($matches[1]);
         } elseif (preg_match('#^/([^/]+)/favorite$#', $path, $matches)) {
             handleToggleFavorite($matches[1]);
         } elseif (preg_match('#^/([^/]+)/clone$#', $path, $matches)) {
             handleCloneTile($matches[1]);
+        } elseif (preg_match('#^/([^/]+)/restore$#', $path, $matches)) {
+            handleRestoreTile($matches[1]);
+        } elseif (preg_match('#^/([^/]+)/archive$#', $path, $matches)) {
+            handleArchiveTile($matches[1]);
+        } elseif (preg_match('#^/([^/]+)/unarchive$#', $path, $matches)) {
+            handleUnarchiveTile($matches[1]);
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -44,10 +64,18 @@ switch ($method) {
         break;
         
     case 'DELETE':
-        if (preg_match('#^/([^/]+)$#', $path, $matches)) {
+        if ($path === '/purge-recycle-bin') {
+            handlePurgeRecycleBin();
+        } elseif ($path === '/purge-archive') {
+            handlePurgeArchive();
+        } elseif (preg_match('#^/category/([^/]+)/permanent$#', $path, $matches)) {
+            handlePermanentDeleteCategory(urldecode($matches[1]));
+        } elseif (preg_match('#^/([^/]+)/permanent$#', $path, $matches)) {
+            handlePermanentDeleteTile($matches[1]);
+        } elseif (preg_match('#^/([^/]+)$#', $path, $matches)) {
             handleDeleteTile($matches[1]);
         } else {
-            sendJSON(['error' => 'Invalid endpoint'], 404);
+            sendJSON(['error' => 'Invalid endpoint', 'path' => $path], 404);
         }
         break;
         
@@ -72,7 +100,8 @@ function handleGetTiles() {
     
     // All users (authenticated and guests) see all tiles - shared public repository
     // Order ONLY by position - no secondary sorting to preserve exact saved order
-    $stmt = $db->prepare('SELECT * FROM tiles ORDER BY position ASC');
+    // Exclude soft-deleted tiles (deleted_at IS NULL) and archived tiles (archived_at IS NULL)
+    $stmt = $db->prepare('SELECT * FROM tiles WHERE deleted_at IS NULL AND archived_at IS NULL ORDER BY position ASC');
     $stmt->execute();
     
     $tiles = [];
@@ -178,6 +207,8 @@ function handleGetTiles() {
             'canView' => $canView,
             'canEdit' => $canEdit,
             'canDelete' => $canDelete,
+            'visibleFrom' => $row['visible_from'] ?? null,
+            'expiresAt' => $row['expires_at'] ?? null,
             'tabs' => []
         ];
         
@@ -359,8 +390,8 @@ function handleGetTiles() {
             $db->commit();
             error_log('Normalized tile positions: assigned sequential positions to ' . count($tiles) . ' tiles');
             
-            // Reload tiles with updated positions
-            $stmt = $db->prepare('SELECT * FROM tiles ORDER BY position ASC');
+            // Reload tiles with updated positions (exclude deleted tiles)
+            $stmt = $db->prepare('SELECT * FROM tiles WHERE deleted_at IS NULL ORDER BY position ASC');
             $stmt->execute();
             $tiles = [];
             while ($row = $stmt->fetch()) {
@@ -471,7 +502,7 @@ function handleGetTile($tileId) {
         sendJSON(['error' => 'Authentication required. Guest access is disabled.'], 401);
     }
     
-    $stmt = $db->prepare('SELECT * FROM tiles WHERE id = ?');
+    $stmt = $db->prepare('SELECT * FROM tiles WHERE id = ? AND deleted_at IS NULL');
     $stmt->execute([$tileId]);
     $row = $stmt->fetch();
     
@@ -768,7 +799,11 @@ function handleCreateTile() {
     $hyperlinkUrl = $data['hyperlinkUrl'] ?? null;
     $openInNewTab = isset($data['openInNewTab']) && $data['openInNewTab'] ? 1 : 0;
     
-    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    // Handle scheduling fields
+    $visibleFrom = isset($data['visibleFrom']) && $data['visibleFrom'] ? $data['visibleFrom'] : null;
+    $expiresAt = isset($data['expiresAt']) && $data['expiresAt'] ? $data['expiresAt'] : null;
+    
+    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     
     if (!$stmt->execute([
         $tileId,
@@ -784,6 +819,8 @@ function handleCreateTile() {
         $isHyperlink,
         $hyperlinkUrl,
         $openInNewTab,
+        $visibleFrom,
+        $expiresAt,
         $data['createdAt'] ?? time()
     ])) {
         sendJSON(['error' => 'Failed to create tile'], 500);
@@ -927,8 +964,12 @@ function handleUpdateTile($tileId) {
         $hyperlinkUrl = $data['hyperlinkUrl'] ?? null;
         $openInNewTab = isset($data['openInNewTab']) && $data['openInNewTab'] ? 1 : 0;
         
+        // Handle scheduling fields
+        $visibleFrom = isset($data['visibleFrom']) && $data['visibleFrom'] ? $data['visibleFrom'] : null;
+        $expiresAt = isset($data['expiresAt']) && $data['expiresAt'] ? $data['expiresAt'] : null;
+        
         // Update tile
-        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ? WHERE id = ?');
+        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ? WHERE id = ?');
         $stmt->execute([
             $data['title'] ?? '',
             $data['description'] ?? '',
@@ -941,6 +982,8 @@ function handleUpdateTile($tileId) {
             $isHyperlink,
             $hyperlinkUrl,
             $openInNewTab,
+            $visibleFrom,
+            $expiresAt,
             $tileId
         ]);
         
@@ -1091,23 +1134,27 @@ function handleDeleteTile($tileId) {
     $user = requireAuth();
     $db = getDB();
     
-    // Verify tile exists
-    $checkStmt = $db->prepare('SELECT id FROM tiles WHERE id = ?');
+    // Verify tile exists and is not already deleted
+    // Allow deleting from archive (archived_at IS NOT NULL) or regular tiles (archived_at IS NULL)
+    $checkStmt = $db->prepare('SELECT id, archived_at FROM tiles WHERE id = ? AND deleted_at IS NULL');
     $checkStmt->execute([$tileId]);
     $tile = $checkStmt->fetch();
     
     if (!$tile) {
-        sendJSON(['error' => 'Tile not found'], 404);
+        sendJSON(['error' => 'Tile not found or already deleted'], 404);
+        return;
     }
     
     // Check if user has permission to delete this tile
     if (!canUserDeleteTile($user['id'], $tileId, $db)) {
         sendJSON(['error' => 'You do not have permission to delete this tile'], 403);
+        return;
     }
     
-    // Delete tile (cascade will delete sections and links)
-    $stmt = $db->prepare('DELETE FROM tiles WHERE id = ?');
-    $stmt->execute([$tileId]);
+    // Soft delete: set deleted_at timestamp and clear archived_at if it was archived
+    // This moves the tile to recycle bin (whether it was archived or not)
+    $stmt = $db->prepare('UPDATE tiles SET deleted_at = ?, archived_at = NULL WHERE id = ?');
+    $stmt->execute([time(), $tileId]);
     
     sendJSON(['success' => true]);
 }
@@ -1790,6 +1837,140 @@ function handleToggleFavorite($tileId) {
     }
 }
 
+function handleArchiveCategory($categoryName) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Decode URL-encoded category name
+    $categoryName = urldecode($categoryName);
+    
+    // Get all tiles in this category that are not already archived or deleted
+    $stmt = $db->prepare('SELECT id, user_id FROM tiles WHERE "group" = ? AND deleted_at IS NULL AND archived_at IS NULL');
+    $stmt->execute([$categoryName]);
+    $tiles = $stmt->fetchAll();
+    
+    if (empty($tiles)) {
+        sendJSON(['error' => 'Category not found or no tiles to archive'], 404);
+        return;
+    }
+    
+    // Check if user has permission to archive tiles in this category
+    // Only admins or users who created all tiles in the category can archive
+    $canArchive = false;
+    if ($user['is_admin']) {
+        $canArchive = true;
+    } else {
+        // Check if user is the creator of all tiles or has delete permission
+        $allOwned = true;
+        foreach ($tiles as $tile) {
+            if (!isset($tile['user_id']) || (int)$tile['user_id'] !== (int)$user['id']) {
+                // Check for explicit delete permission (required for archive)
+                if (!canUserDeleteTile($user['id'], $tile['id'], $db)) {
+                    $allOwned = false;
+                    break;
+                }
+            }
+        }
+        $canArchive = $allOwned;
+    }
+    
+    if (!$canArchive) {
+        sendJSON(['error' => 'You do not have permission to archive this category'], 403);
+        return;
+    }
+    
+    // Archive all tiles in this category
+    $archivedCount = 0;
+    $currentTime = time();
+    
+    $db->beginTransaction();
+    try {
+        $updateStmt = $db->prepare('UPDATE tiles SET archived_at = ? WHERE id = ? AND deleted_at IS NULL AND archived_at IS NULL');
+        foreach ($tiles as $tile) {
+            $updateStmt->execute([$currentTime, $tile['id']]);
+            $archivedCount++;
+        }
+        
+        $db->commit();
+        
+        sendJSON([
+            'success' => true,
+            'archivedCount' => $archivedCount,
+            'categoryName' => $categoryName
+        ]);
+    } catch (PDOException $e) {
+        $db->rollBack();
+        error_log('Database error in handleArchiveCategory: ' . $e->getMessage());
+        sendJSON(['error' => 'Database error', 'details' => $e->getMessage()], 500);
+    }
+}
+
+function handleUnarchiveCategory($categoryName) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Decode URL-encoded category name
+    $categoryName = urldecode($categoryName);
+    
+    // Get all archived tiles in this category
+    $stmt = $db->prepare('SELECT id, user_id FROM tiles WHERE "group" = ? AND archived_at IS NOT NULL AND deleted_at IS NULL');
+    $stmt->execute([$categoryName]);
+    $tiles = $stmt->fetchAll();
+    
+    if (empty($tiles)) {
+        sendJSON(['error' => 'Category not found in archive or no tiles to unarchive'], 404);
+        return;
+    }
+    
+    // Check if user has permission to unarchive tiles in this category
+    $canUnarchive = false;
+    if ($user['is_admin']) {
+        $canUnarchive = true;
+    } else {
+        // Check if user is the creator of all tiles or has delete permission
+        $allOwned = true;
+        foreach ($tiles as $tile) {
+            if (!isset($tile['user_id']) || (int)$tile['user_id'] !== (int)$user['id']) {
+                // Check for explicit delete permission (required for unarchive)
+                if (!canUserDeleteTile($user['id'], $tile['id'], $db)) {
+                    $allOwned = false;
+                    break;
+                }
+            }
+        }
+        $canUnarchive = $allOwned;
+    }
+    
+    if (!$canUnarchive) {
+        sendJSON(['error' => 'You do not have permission to unarchive this category'], 403);
+        return;
+    }
+    
+    // Unarchive all tiles in this category
+    $unarchivedCount = 0;
+    
+    $db->beginTransaction();
+    try {
+        $updateStmt = $db->prepare('UPDATE tiles SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL AND deleted_at IS NULL');
+        foreach ($tiles as $tile) {
+            $updateStmt->execute([$tile['id']]);
+            $unarchivedCount++;
+        }
+        
+        $db->commit();
+        
+        sendJSON([
+            'success' => true,
+            'unarchivedCount' => $unarchivedCount,
+            'categoryName' => $categoryName
+        ]);
+    } catch (PDOException $e) {
+        $db->rollBack();
+        error_log('Database error in handleUnarchiveCategory: ' . $e->getMessage());
+        sendJSON(['error' => 'Database error', 'details' => $e->getMessage()], 500);
+    }
+}
+
 function handleToggleCategoryFavorite($categoryName) {
     $user = requireAuth();
     $db = getDB();
@@ -1884,4 +2065,699 @@ function handleGetFavorites() {
     }
     
     sendJSON(['favoriteTileIds' => $favoriteTileIds]);
+}
+
+function handleGetRecycleBin() {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Get all soft-deleted tiles (deleted_at IS NOT NULL)
+    // Only show tiles that the user has permission to view
+    $stmt = $db->prepare('SELECT * FROM tiles WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC');
+    $stmt->execute();
+    
+    $tiles = [];
+    $tilesById = [];
+    
+    while ($row = $stmt->fetch()) {
+        // Filter tiles based on visibility
+        $tileVisibility = $row['visibility'] ?? 'public';
+        $tileAllowedUsers = $row['allowed_users'] ? json_decode($row['allowed_users'], true) : [];
+        
+        // Check if tile should be visible to current user
+        // Admin users can see all tiles regardless of visibility
+        $isTileVisible = false;
+        if ($user && $user['is_admin']) {
+            $isTileVisible = true; // Admins see everything
+        } elseif ($tileVisibility === 'public') {
+            $isTileVisible = true; // Public tiles visible to everyone
+        } elseif ($tileVisibility === 'authenticated' && $user) {
+            $isTileVisible = true; // Authenticated tiles visible to logged-in users
+        } elseif ($tileVisibility === 'private' && $user) {
+            // Private tiles visible only to specific users
+            $isTileVisible = in_array($user['id'], $tileAllowedUsers);
+        }
+        
+        if (!$isTileVisible) {
+            continue; // Skip this tile
+        }
+        
+        // Check if user has permission to view this tile
+        $canView = true;
+        if ($user) {
+            if ($user['is_admin']) {
+                $canView = true;
+            } else {
+                $isCreator = isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id'];
+                if ($isCreator) {
+                    $canView = true;
+                } else {
+                    $permStmt = $db->prepare('SELECT can_view FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+                    $permStmt->execute([$user['id'], $row['id']]);
+                    $permission = $permStmt->fetch();
+                    if ($permission) {
+                        $canView = (bool)$permission['can_view'];
+                    }
+                }
+            }
+        }
+        
+        if ($user && !$canView) {
+            continue; // Skip tiles where user doesn't have view permission
+        }
+        
+        // Check if this tile is favorited by the current user
+        $isFavorite = false;
+        if ($user) {
+            $favStmt = $db->prepare('SELECT 1 FROM user_tile_favorites WHERE user_id = ? AND tile_id = ?');
+            $favStmt->execute([$user['id'], $row['id']]);
+            $isFavorite = $favStmt->fetch() !== false;
+        }
+        
+        $tile = [
+            'id' => $row['id'],
+            'title' => $row['title'],
+            'description' => $row['description'],
+            'htmlContent' => $row['html_content'],
+            'emoji' => $row['emoji'],
+            'themeColor' => $row['theme_color'],
+            'group' => $row['group'],
+            'createdAt' => (int)$row['created_at'],
+            'deletedAt' => (int)$row['deleted_at'],
+            'visibility' => $tileVisibility,
+            'allowedUsers' => $tileAllowedUsers,
+            'isFavorite' => $isFavorite,
+            'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
+            'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
+            'openInNewTab' => isset($row['open_in_new_tab']) ? (bool)$row['open_in_new_tab'] : null,
+            'canView' => $canView,
+            'canEdit' => false, // Deleted tiles cannot be edited
+            'canDelete' => true, // Can permanently delete from recycle bin
+            'visibleFrom' => $row['visible_from'] ?? null,
+            'expiresAt' => $row['expires_at'] ?? null,
+            'tabs' => []
+        ];
+        
+        // Get tabs for this tile
+        $tabStmt = $db->prepare('SELECT * FROM tabs WHERE tile_id = ? ORDER BY position ASC');
+        $tabStmt->execute([$row['id']]);
+        $tabs = [];
+        
+        while ($tabRow = $tabStmt->fetch()) {
+            $tab = [
+                'id' => $tabRow['id'],
+                'title' => $tabRow['title'],
+                'position' => (int)($tabRow['position'] ?? 0),
+                'visibleFrom' => $tabRow['visible_from'] ?? null,
+                'expiresAt' => $tabRow['expires_at'] ?? null,
+                'sections' => []
+            ];
+            
+            // Get sections for this tab
+            $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tab_id = ? ORDER BY id');
+            $sectionStmt->execute([$tabRow['id']]);
+            
+            while ($sectionRow = $sectionStmt->fetch()) {
+                $section = [
+                    'id' => $sectionRow['id'],
+                    'title' => $sectionRow['title'],
+                    'visibleFrom' => $sectionRow['visible_from'] ?? null,
+                    'expiresAt' => $sectionRow['expires_at'] ?? null,
+                    'links' => []
+                ];
+                
+                // Get links for this section
+                $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
+                $linkStmt->execute([$sectionRow['id']]);
+                
+                while ($linkRow = $linkStmt->fetch()) {
+                    $link = [
+                        'id' => $linkRow['id'],
+                        'label' => $linkRow['label'],
+                        'url' => $linkRow['url'],
+                        'visibility' => $linkRow['visibility'] ?? 'public',
+                        'allowedUsers' => $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [],
+                        'notes' => $linkRow['notes'] ?? null,
+                        'tooltip' => $linkRow['tooltip'] ?? null,
+                        'visibleFrom' => $linkRow['visible_from'] ?? null,
+                        'expiresAt' => $linkRow['expires_at'] ?? null
+                    ];
+                    
+                    // Include health data if available
+                    if (isset($linkRow['health_status'])) {
+                        $link['health'] = [
+                            'status' => $linkRow['health_status'] ?? 'unknown',
+                            'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,
+                            'error' => $linkRow['health_error'],
+                            'checkedAt' => $linkRow['health_checked_at'] ? (int)$linkRow['health_checked_at'] : null
+                        ];
+                    }
+                    
+                    $section['links'][] = $link;
+                }
+                
+                $tab['sections'][] = $section;
+            }
+            
+            $tabs[] = $tab;
+        }
+        
+        $tile['tabs'] = $tabs;
+        $tile['sections'] = [];
+        foreach ($tabs as $tab) {
+            $tile['sections'] = array_merge($tile['sections'], $tab['sections']);
+        }
+        
+        $tiles[] = $tile;
+        $tilesById[$row['id']] = $tile;
+    }
+    
+    sendJSON($tiles);
+}
+
+function handleRestoreTile($tileId) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Verify tile exists and is deleted
+    $checkStmt = $db->prepare('SELECT id, user_id FROM tiles WHERE id = ? AND deleted_at IS NOT NULL');
+    $checkStmt->execute([$tileId]);
+    $tile = $checkStmt->fetch();
+    
+    if (!$tile) {
+        sendJSON(['error' => 'Tile not found in recycle bin'], 404);
+    }
+    
+    // Check if user has permission to restore this tile
+    // Only admins or the original creator can restore
+    $canRestore = false;
+    if ($user['is_admin']) {
+        $canRestore = true;
+    } else {
+        $isCreator = isset($tile['user_id']) && (int)$tile['user_id'] === (int)$user['id'];
+        if ($isCreator) {
+            $canRestore = true;
+        } else {
+            // Check for explicit delete permission (which implies restore permission)
+            if (canUserDeleteTile($user['id'], $tileId, $db)) {
+                $canRestore = true;
+            }
+        }
+    }
+    
+    if (!$canRestore) {
+        sendJSON(['error' => 'You do not have permission to restore this tile'], 403);
+    }
+    
+    // Restore tile by clearing deleted_at
+    $stmt = $db->prepare('UPDATE tiles SET deleted_at = NULL WHERE id = ?');
+    $stmt->execute([$tileId]);
+    
+    sendJSON(['success' => true]);
+}
+
+function handleGetArchive() {
+    $user = requireAuth();
+    $db = getDB();
+    
+    try {
+        // Ensure tabs table has position column (migration)
+        $hasPosition = false;
+        try {
+            $tabColumns = $db->query("PRAGMA table_info(tabs)")->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($tabColumns as $col) {
+                if (strtolower($col['name']) === 'position') {
+                    $hasPosition = true;
+                    break;
+                }
+            }
+            if (!$hasPosition) {
+                $db->exec('ALTER TABLE tabs ADD COLUMN position INTEGER DEFAULT 0');
+                $hasPosition = true; // Assume it was added successfully
+            }
+        } catch (PDOException $e) {
+            error_log('Error migrating tabs position column: ' . $e->getMessage());
+            $hasPosition = false; // Safe fallback
+        }
+        
+        // Check if archived_at column exists
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll(PDO::FETCH_ASSOC);
+            $hasArchivedAt = false;
+            foreach ($columns as $column) {
+                if (strtolower($column['name']) === 'archived_at') {
+                    $hasArchivedAt = true;
+                    break;
+                }
+            }
+            
+            if (!$hasArchivedAt) {
+                // Column doesn't exist, return empty array
+                sendJSON([]);
+                return;
+            }
+        } catch (Exception $e) {
+            error_log('Error checking for archived_at column: ' . $e->getMessage());
+            // If we can't check, try the query anyway - it will fail gracefully
+        }
+        
+        // Get all archived tiles (archived_at IS NOT NULL and deleted_at IS NULL)
+        $stmt = $db->prepare('SELECT * FROM tiles WHERE archived_at IS NOT NULL AND deleted_at IS NULL ORDER BY archived_at DESC');
+        if (!$stmt) {
+            error_log('Failed to prepare archive query: ' . json_encode($db->errorInfo()));
+            sendJSON(['error' => 'Database query preparation failed'], 500);
+            return;
+        }
+        
+        $result = $stmt->execute();
+        if (!$result) {
+            error_log('Failed to execute archive query: ' . json_encode($stmt->errorInfo()));
+            sendJSON(['error' => 'Database query execution failed'], 500);
+            return;
+        }
+        
+        // $hasPosition is already set above from the migration check
+        $tiles = [];
+        $tilesById = [];
+        
+        while ($row = $stmt->fetch()) {
+            // Filter tiles based on visibility (same logic as recycle bin)
+            $tileVisibility = $row['visibility'] ?? 'public';
+            $tileAllowedUsers = $row['allowed_users'] ? json_decode($row['allowed_users'], true) : [];
+            
+            $isTileVisible = false;
+            if ($user && $user['is_admin']) {
+                $isTileVisible = true;
+            } elseif ($tileVisibility === 'public') {
+                $isTileVisible = true;
+            } elseif ($tileVisibility === 'authenticated' && $user) {
+                $isTileVisible = true;
+            } elseif ($tileVisibility === 'private' && $user) {
+                $isTileVisible = in_array($user['id'], $tileAllowedUsers);
+            }
+            
+            if (!$isTileVisible) {
+                continue;
+            }
+            
+            // Check if user has permission to view this tile
+            $canView = true;
+            if ($user) {
+                if ($user['is_admin']) {
+                    $canView = true;
+                } else {
+                    $isCreator = isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id'];
+                    if ($isCreator) {
+                        $canView = true;
+                    } else {
+                        $permStmt = $db->prepare('SELECT can_view FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+                        $permStmt->execute([$user['id'], $row['id']]);
+                        $permission = $permStmt->fetch();
+                        if ($permission) {
+                            $canView = (bool)$permission['can_view'];
+                        }
+                    }
+                }
+            }
+            
+            if ($user && !$canView) {
+                continue;
+            }
+            
+            // Check if this tile is favorited by the current user
+            $isFavorite = false;
+            if ($user) {
+                $favStmt = $db->prepare('SELECT 1 FROM user_tile_favorites WHERE user_id = ? AND tile_id = ?');
+                $favStmt->execute([$user['id'], $row['id']]);
+                $isFavorite = $favStmt->fetch() !== false;
+            }
+            
+            // Get user tile permissions for delete permission
+            $canDelete = false; // Default: no delete access (unless explicitly granted)
+            if ($user) {
+                // Admins have full access to everything
+                if ($user['is_admin']) {
+                    $canDelete = true;
+                } else {
+                    // Check if user is the creator of the tile
+                    $isCreator = isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id'];
+                    
+                    if ($isCreator) {
+                        // Creators have full access to their own tiles
+                        $canDelete = true;
+                    } else {
+                        // Check for explicit permissions
+                        $permStmt = $db->prepare('SELECT can_delete FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+                        $permStmt->execute([$user['id'], $row['id']]);
+                        $permission = $permStmt->fetch();
+                        
+                        if ($permission) {
+                            $canDelete = (bool)$permission['can_delete'];
+                        }
+                        // If no permission record exists, use default (no delete access)
+                    }
+                }
+            }
+            
+            $tile = [
+                'id' => $row['id'],
+                'title' => $row['title'],
+                'description' => $row['description'],
+                'htmlContent' => $row['html_content'],
+                'emoji' => $row['emoji'],
+                'themeColor' => $row['theme_color'],
+                'group' => $row['group'],
+                'createdAt' => (int)$row['created_at'],
+                'archivedAt' => isset($row['archived_at']) && $row['archived_at'] !== null ? (int)$row['archived_at'] : null,
+                'visibility' => $tileVisibility,
+                'allowedUsers' => $tileAllowedUsers,
+                'isFavorite' => $isFavorite,
+                'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
+                'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
+                'openInNewTab' => isset($row['open_in_new_tab']) ? (bool)$row['open_in_new_tab'] : null,
+                'canView' => $canView,
+                'canEdit' => false, // Archived tiles cannot be edited
+                'canDelete' => $canDelete, // Allow delete from archive (moves to recycle bin)
+                'visibleFrom' => $row['visible_from'] ?? null,
+                'expiresAt' => $row['expires_at'] ?? null,
+                'tabs' => []
+            ];
+            
+            // Load tabs and sections (similar to recycle bin)
+            // Use safe query that doesn't require position column
+            try {
+                if ($hasPosition) {
+                    $tabStmt = $db->prepare("SELECT * FROM tabs WHERE tile_id = ? ORDER BY position ASC");
+                } else {
+                    $tabStmt = $db->prepare("SELECT * FROM tabs WHERE tile_id = ? ORDER BY id ASC");
+                }
+                $tabStmt->execute([$row['id']]);
+            } catch (PDOException $e) {
+                // If position column doesn't exist, fall back to id ordering
+                if (strpos($e->getMessage(), 'no such column: position') !== false || strpos($e->getMessage(), 'position') !== false) {
+                    $hasPosition = false; // Update flag for future iterations
+                    $tabStmt = $db->prepare("SELECT * FROM tabs WHERE tile_id = ? ORDER BY id ASC");
+                    $tabStmt->execute([$row['id']]);
+                } else {
+                    throw $e;
+                }
+            }
+            
+            $tabs = [];
+            while ($tabRow = $tabStmt->fetch()) {
+                $tab = [
+                    'id' => $tabRow['id'],
+                    'title' => $tabRow['title'],
+                    'position' => isset($tabRow['position']) ? (int)$tabRow['position'] : 0,
+                    'sections' => []
+                ];
+                
+                // Note: the sections table does not have a position column in the current schema,
+                // so we safely order by id (consistent with other queries in this file).
+                // If a position column is added in the future, this query can be updated accordingly.
+                $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tab_id = ? ORDER BY id ASC');
+                $sectionStmt->execute([$tabRow['id']]);
+                
+                while ($sectionRow = $sectionStmt->fetch()) {
+                    $section = [
+                        'id' => $sectionRow['id'],
+                        'title' => $sectionRow['title'],
+                        'visibleFrom' => $sectionRow['visible_from'] ?? null,
+                        'expiresAt' => $sectionRow['expires_at'] ?? null,
+                        'links' => []
+                    ];
+                    
+                    $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
+                    $linkStmt->execute([$sectionRow['id']]);
+                    
+                    while ($linkRow = $linkStmt->fetch()) {
+                        $link = [
+                            'id' => $linkRow['id'],
+                            'label' => $linkRow['label'],
+                            'url' => $linkRow['url'],
+                            'visibility' => $linkRow['visibility'] ?? 'public',
+                            'allowedUsers' => $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [],
+                            'notes' => $linkRow['notes'] ?? null,
+                            'tooltip' => $linkRow['tooltip'] ?? null,
+                            'visibleFrom' => $linkRow['visible_from'] ?? null,
+                            'expiresAt' => $linkRow['expires_at'] ?? null
+                        ];
+                        
+                        if (isset($linkRow['health_status'])) {
+                            $link['health'] = [
+                                'status' => $linkRow['health_status'] ?? 'unknown',
+                                'httpCode' => $linkRow['health_http_code'] ? (int)$linkRow['health_http_code'] : null,
+                                'error' => $linkRow['health_error'],
+                                'checkedAt' => $linkRow['health_checked_at'] ? (int)$linkRow['health_checked_at'] : null
+                            ];
+                        }
+                        
+                        $section['links'][] = $link;
+                    }
+                    
+                    $tab['sections'][] = $section;
+                }
+                
+                $tabs[] = $tab;
+            }
+            
+            $tile['tabs'] = $tabs;
+            $tile['sections'] = [];
+            foreach ($tile['tabs'] as $tab) {
+                $tile['sections'] = array_merge($tile['sections'], $tab['sections']);
+            }
+            
+            $tiles[] = $tile;
+            $tilesById[$row['id']] = $tile;
+        }
+        
+        sendJSON($tiles);
+    } catch (PDOException $e) {
+        error_log('Database error in handleGetArchive: ' . $e->getMessage());
+        error_log('SQL State: ' . $e->getCode());
+        error_log('File: ' . $e->getFile() . ' Line: ' . $e->getLine());
+        sendJSON(['error' => 'Database error', 'details' => $e->getMessage(), 'code' => $e->getCode()], 500);
+    } catch (Exception $e) {
+        error_log('Error in handleGetArchive: ' . $e->getMessage());
+        error_log('File: ' . $e->getFile() . ' Line: ' . $e->getLine());
+        sendJSON(['error' => 'An error occurred while fetching archive', 'details' => $e->getMessage()], 500);
+    }
+}
+
+function handleArchiveTile($tileId) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Verify tile exists and is not already archived or deleted
+    $checkStmt = $db->prepare('SELECT id, user_id FROM tiles WHERE id = ? AND deleted_at IS NULL AND archived_at IS NULL');
+    $checkStmt->execute([$tileId]);
+    $tile = $checkStmt->fetch();
+    
+    if (!$tile) {
+        sendJSON(['error' => 'Tile not found or already archived/deleted', 'details' => 'Tile may not exist or may already be archived or deleted'], 404);
+        return;
+    }
+    
+    // Check if user has permission to archive this tile (same as delete permission)
+    if (!canUserDeleteTile($user['id'], $tileId, $db)) {
+        sendJSON(['error' => 'You do not have permission to archive this tile', 'details' => 'User does not have delete permission for this tile'], 403);
+        return;
+    }
+    
+    // Archive tile by setting archived_at timestamp
+    try {
+        $stmt = $db->prepare('UPDATE tiles SET archived_at = ? WHERE id = ?');
+        $result = $stmt->execute([time(), $tileId]);
+        
+        if (!$result) {
+            error_log('Failed to archive tile: ' . json_encode($stmt->errorInfo()));
+            sendJSON(['error' => 'Failed to archive tile', 'details' => 'Database update failed'], 500);
+            return;
+        }
+        
+        sendJSON(['success' => true, 'message' => 'Tile archived successfully']);
+    } catch (PDOException $e) {
+        error_log('Database error in handleArchiveTile: ' . $e->getMessage());
+        sendJSON(['error' => 'Database error', 'details' => $e->getMessage()], 500);
+    }
+}
+
+function handleUnarchiveTile($tileId) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Verify tile exists and is archived
+    $checkStmt = $db->prepare('SELECT id, user_id FROM tiles WHERE id = ? AND archived_at IS NOT NULL AND deleted_at IS NULL');
+    $checkStmt->execute([$tileId]);
+    $tile = $checkStmt->fetch();
+    
+    if (!$tile) {
+        sendJSON(['error' => 'Tile not found in archive'], 404);
+    }
+    
+    // Check if user has permission to unarchive this tile (same as restore permission)
+    $canUnarchive = false;
+    if ($user['is_admin']) {
+        $canUnarchive = true;
+    } else {
+        $isCreator = isset($tile['user_id']) && (int)$tile['user_id'] === (int)$user['id'];
+        if ($isCreator) {
+            $canUnarchive = true;
+        } else {
+            if (canUserDeleteTile($user['id'], $tileId, $db)) {
+                $canUnarchive = true;
+            }
+        }
+    }
+    
+    if (!$canUnarchive) {
+        sendJSON(['error' => 'You do not have permission to unarchive this tile'], 403);
+    }
+    
+    // Unarchive tile by clearing archived_at
+    $stmt = $db->prepare('UPDATE tiles SET archived_at = NULL WHERE id = ?');
+    $stmt->execute([$tileId]);
+    
+    sendJSON(['success' => true]);
+}
+
+function handlePermanentDeleteTile($tileId) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Verify tile exists and is deleted (in recycle bin)
+    $checkStmt = $db->prepare('SELECT id, user_id FROM tiles WHERE id = ? AND deleted_at IS NOT NULL');
+    $checkStmt->execute([$tileId]);
+    $tile = $checkStmt->fetch();
+    
+    if (!$tile) {
+        sendJSON(['error' => 'Tile not found in recycle bin'], 404);
+    }
+    
+    // Check if user has permission to permanently delete this tile
+    // Only admins or the original creator can permanently delete
+    $canDelete = false;
+    if ($user['is_admin']) {
+        $canDelete = true;
+    } else {
+        $isCreator = isset($tile['user_id']) && (int)$tile['user_id'] === (int)$user['id'];
+        if ($isCreator) {
+            $canDelete = true;
+        } else {
+            // Check for explicit delete permission
+            if (canUserDeleteTile($user['id'], $tileId, $db)) {
+                $canDelete = true;
+            }
+        }
+    }
+    
+    if (!$canDelete) {
+        sendJSON(['error' => 'You do not have permission to permanently delete this tile'], 403);
+    }
+    
+    // Permanently delete tile (cascade will delete sections, links, and tabs)
+    $stmt = $db->prepare('DELETE FROM tiles WHERE id = ?');
+    $stmt->execute([$tileId]);
+    
+    sendJSON(['success' => true]);
+}
+
+function handlePermanentDeleteCategory($categoryName) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Decode URL-encoded category name
+    $categoryName = urldecode($categoryName);
+    
+    // Get all soft-deleted tiles in this category
+    $stmt = $db->prepare('SELECT id, user_id FROM tiles WHERE deleted_at IS NOT NULL AND "group" = ?');
+    $stmt->execute([$categoryName]);
+    $deletedTiles = $stmt->fetchAll();
+    
+    if (empty($deletedTiles)) {
+        sendJSON(['error' => 'No tiles found in this category in recycle bin'], 404);
+    }
+    
+    // Check if user has permission to permanently delete tiles in this category
+    // Only admins or users who created all tiles in the category can delete
+    $canDelete = false;
+    if ($user['is_admin']) {
+        $canDelete = true;
+    } else {
+        // Check if user is the creator of all tiles
+        $allOwned = true;
+        foreach ($deletedTiles as $tile) {
+            if (!isset($tile['user_id']) || (int)$tile['user_id'] !== (int)$user['id']) {
+                // Check for explicit delete permission
+                if (!canUserDeleteTile($user['id'], $tile['id'], $db)) {
+                    $allOwned = false;
+                    break;
+                }
+            }
+        }
+        $canDelete = $allOwned;
+    }
+    
+    if (!$canDelete) {
+        sendJSON(['error' => 'You do not have permission to permanently delete this category'], 403);
+    }
+    
+    // Permanently delete all tiles in this category from recycle bin
+    // Cascade will delete sections, links, and tabs
+    $deleteStmt = $db->prepare('DELETE FROM tiles WHERE deleted_at IS NOT NULL AND "group" = ?');
+    $deleteStmt->execute([$categoryName]);
+    $purgedCount = $deleteStmt->rowCount();
+    
+    sendJSON(['success' => true, 'purgedCount' => $purgedCount, 'categoryName' => $categoryName]);
+}
+
+function handlePurgeRecycleBin() {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Only admins can purge the recycle bin
+    if (!$user['is_admin']) {
+        sendJSON(['error' => 'Only administrators can purge the recycle bin'], 403);
+    }
+    
+    // Get all soft-deleted tiles
+    $stmt = $db->prepare('SELECT id FROM tiles WHERE deleted_at IS NOT NULL');
+    $stmt->execute();
+    $deletedTiles = $stmt->fetchAll();
+    
+    $purgedCount = 0;
+    
+    // Permanently delete all soft-deleted tiles
+    // Cascade will delete sections, links, and tabs
+    $deleteStmt = $db->prepare('DELETE FROM tiles WHERE deleted_at IS NOT NULL');
+    $deleteStmt->execute();
+    $purgedCount = $deleteStmt->rowCount();
+    
+    sendJSON(['success' => true, 'purgedCount' => $purgedCount]);
+}
+
+function handlePurgeArchive() {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Only admins can purge the archive
+    if (!$user['is_admin']) {
+        sendJSON(['error' => 'Only administrators can purge the archive'], 403);
+        return;
+    }
+    
+    // Get all archived tiles
+    $stmt = $db->prepare('SELECT id FROM tiles WHERE archived_at IS NOT NULL AND deleted_at IS NULL');
+    $stmt->execute();
+    $archivedTiles = $stmt->fetchAll();
+    
+    $purgedCount = 0;
+    
+    // Move all archived tiles to recycle bin (set deleted_at and clear archived_at)
+    // They can then be permanently deleted from recycle bin
+    $updateStmt = $db->prepare('UPDATE tiles SET deleted_at = ?, archived_at = NULL WHERE archived_at IS NOT NULL AND deleted_at IS NULL');
+    $updateStmt->execute([time()]);
+    $purgedCount = $updateStmt->rowCount();
+    
+    sendJSON(['success' => true, 'purgedCount' => $purgedCount]);
 }

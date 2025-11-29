@@ -64,6 +64,10 @@ export interface Tile {
   canView?: boolean; // Whether the current user can view this tile (based on tile access permissions)
   canEdit?: boolean; // Whether the current user can edit this tile (based on tile access permissions)
   canDelete?: boolean; // Whether the current user can delete this tile (based on tile access permissions)
+  deletedAt?: number; // Timestamp when tile was deleted (for recycle bin)
+  visibleFrom?: string; // ISO date string - tile becomes visible from this date/time
+  expiresAt?: string; // ISO date string - tile expires at this date/time
+  archivedAt?: number; // Timestamp when tile was archived
 }
 
 export const THEME_COLORS = [
