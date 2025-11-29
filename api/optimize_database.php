@@ -19,23 +19,31 @@ header('Content-Type: application/json; charset=utf-8');
 try {
     $db = getDB();
     
+    // Enterprise SQLite Configuration
     // Enable WAL mode for better concurrent access
     $db->exec('PRAGMA journal_mode = WAL');
     
-    // Set page size for better performance (if not already set)
+    // Set page size to 4096 (4 KB) for enterprise standard
     $db->exec('PRAGMA page_size = 4096');
     
-    // Enable foreign keys
-    $db->exec('PRAGMA foreign_keys = ON');
+    // Foreign keys disabled for enterprise (as per requirements)
+    $db->exec('PRAGMA foreign_keys = OFF');
     
-    // Set synchronous mode to NORMAL for better performance (WAL mode makes this safe)
-    $db->exec('PRAGMA synchronous = NORMAL');
+    // Set synchronous mode to FULL (2) for maximum data integrity in enterprise
+    $db->exec('PRAGMA synchronous = FULL');
     
-    // Set cache size to 10MB for better performance
-    $db->exec('PRAGMA cache_size = -10000'); // Negative value = KB, so -10000 = 10MB
+    // Set cache size to 1.95 MB for enterprise (negative value = KB)
+    // 1.95 MB = 1996.8 KB, rounded to 1997 KB for exact 1.95 MB
+    $db->exec('PRAGMA cache_size = -1997');
     
-    // Set temp_store to memory for better performance
-    $db->exec('PRAGMA temp_store = MEMORY');
+    // Set temp_store to DEFAULT (0) for enterprise
+    $db->exec('PRAGMA temp_store = DEFAULT');
+    
+    // Set busy timeout for concurrent access handling
+    $db->exec('PRAGMA busy_timeout = 5000'); // 5000 ms
+    
+    // Set WAL auto checkpoint to 1000 pages for enterprise
+    $db->exec('PRAGMA wal_autocheckpoint = 1000');
     
     // Begin transaction for all index creation
     $db->beginTransaction();

@@ -73,13 +73,14 @@ function initDatabase() {
         $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
         
-        // Set busy timeout immediately to prevent locks
-        $db->exec('PRAGMA busy_timeout = 5000'); // 5 second timeout for extra safety
+        // Enterprise SQLite Configuration
+        // Set busy timeout for concurrent access handling
+        $db->exec('PRAGMA busy_timeout = 5000'); // 5000 ms timeout
         
-        // Enable foreign keys
-        $db->exec('PRAGMA foreign_keys = ON');
+        // Foreign keys disabled for enterprise (as per requirements)
+        $db->exec('PRAGMA foreign_keys = OFF');
         
-        // Use WAL mode for better concurrent access (if supported)
+        // Use WAL mode for better concurrent access (enterprise standard)
         try {
             $db->exec('PRAGMA journal_mode = WAL');
         } catch (PDOException $e) {
@@ -88,21 +89,29 @@ function initDatabase() {
         
         // Optimize SQLite performance settings
         try {
-            // Set page size to 4096 for better performance (if not already set)
+            // Set page size to 4096 (4 KB) for enterprise standard
             // Note: This only works if the database is empty, so we try it but don't fail if it doesn't work
             $db->exec('PRAGMA page_size = 4096');
         } catch (PDOException $e) {
             // Page size can only be set on empty database, ignore if already set
         }
         
-        // Set cache size to 10MB for better performance (negative value = KB)
-        $db->exec('PRAGMA cache_size = -10000');
+        // Set cache size to 1.95 MB for enterprise (negative value = KB)
+        // 1.95 MB = 1996.8 KB, rounded to 1997 KB for exact 1.95 MB
+        $db->exec('PRAGMA cache_size = -1997');
         
-        // Set synchronous mode to NORMAL for better performance (WAL mode makes this safe)
-        $db->exec('PRAGMA synchronous = NORMAL');
+        // Set synchronous mode to FULL (2) for maximum data integrity in enterprise
+        $db->exec('PRAGMA synchronous = FULL');
         
-        // Set temp_store to memory for better performance
-        $db->exec('PRAGMA temp_store = MEMORY');
+        // Set temp_store to DEFAULT (0) for enterprise
+        $db->exec('PRAGMA temp_store = DEFAULT');
+        
+        // Set WAL auto checkpoint to 1000 pages for enterprise
+        try {
+            $db->exec('PRAGMA wal_autocheckpoint = 1000');
+        } catch (PDOException $e) {
+            // WAL checkpoint might not be available if not in WAL mode, ignore
+        }
     
         // Create users table
         $db->exec('CREATE TABLE IF NOT EXISTS users (
