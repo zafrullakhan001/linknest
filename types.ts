@@ -24,6 +24,7 @@ export interface LinkSection {
   id: string;
   title: string;
   links: Link[];
+  textColor?: string; // Optional custom text color for section title (hex color code)
 }
 
 export interface Tab {

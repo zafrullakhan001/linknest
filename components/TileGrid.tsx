@@ -112,8 +112,8 @@ const Category: React.FC<CategoryProps> = ({
               }}
               disabled={!canMoveUp}
               className={`p-1 rounded-md transition-all ${canMoveUp
-                  ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
-                  : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
+                ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
+                : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
                 }`}
               title="Move category up"
             >
@@ -131,8 +131,8 @@ const Category: React.FC<CategoryProps> = ({
               }}
               disabled={!canMoveDown}
               className={`p-1 rounded-md transition-all ${canMoveDown
-                  ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
-                  : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
+                ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
+                : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
                 }`}
               title="Move category down"
             >
@@ -405,8 +405,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
                             setShowCategoryMenu(false);
                           }}
                           className={`w-full text-left px-3 py-2 text-sm transition-colors ${category === currentCategory
-                              ? 'bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400 font-medium'
-                              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                            ? 'bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400 font-medium'
+                            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
                             }`}
                         >
                           <div className="flex items-center justify-between">
@@ -434,8 +434,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
                   onToggleFavorite(tile.id);
                 }}
                 className={`p-1 rounded transition-all ${tile.isFavorite
-                    ? 'text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10'
-                    : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+                  ? 'text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+                  : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10'
                   }`}
                 title={tile.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
               >
@@ -549,8 +549,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
               }}
               disabled={!canMoveLeft}
               className={`p-1 rounded-md transition-all ${canMoveLeft
-                  ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
-                  : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
+                ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
+                : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
                 }`}
               title="Move left"
             >
@@ -568,8 +568,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
               }}
               disabled={!canMoveRight}
               className={`p-1 rounded-md transition-all ${canMoveRight
-                  ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
-                  : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
+                ? 'text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer'
+                : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
                 }`}
               title="Move right"
             >
@@ -1592,8 +1592,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
         <button
           onClick={() => setActiveTab('public')}
           className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'public'
-              ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-              : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+            ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+            : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
         >
           Public
@@ -1603,8 +1603,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
             <button
               onClick={() => setActiveTab('favorites')}
               className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'favorites'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
             >
               Favorites
@@ -1612,8 +1612,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
             <button
               onClick={() => setActiveTab('private')}
               className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'private'
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
             >
               Private

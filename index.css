@@ -28,3 +28,14 @@
   background: #475569;
 }
 
+/* View Layout Transitions */
+.linknest-category {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Side-by-side view specific styles */
+@media (min-width: 768px) {
+  .linknest-category {
+    min-height: 300px;
+  }
+}
