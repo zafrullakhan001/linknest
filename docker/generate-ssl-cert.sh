@@ -24,3 +24,6 @@ echo "✓ Self-signed SSL certificate generated"
 echo "  Certificate: $CERT_FILE"
 echo "  Private Key: $KEY_FILE"
 
+
+
+

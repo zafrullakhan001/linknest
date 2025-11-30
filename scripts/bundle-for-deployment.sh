@@ -172,6 +172,20 @@ else
 fi
 echo ""
 
+# Copy uploads directory (logos, favicons, etc.)
+echo "Copying uploads directory (logos, favicons, etc.)..."
+if [ -d "$PROJECT_ROOT/uploads" ]; then
+    cp -r "$PROJECT_ROOT/uploads/"* "$BUNDLE_DIR/uploads/" 2>/dev/null || true
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Uploads directory copied (logos, favicons, etc.)${NC}"
+    else
+        echo -e "${YELLOW}⚠ Warning: Failed to copy uploads directory${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠ No uploads directory found - will be created on first run${NC}"
+fi
+echo ""
+
 # Create standalone deployment script
 echo "Creating standalone deployment script..."
 cat > "$BUNDLE_DIR/deploy.sh" << 'DEPLOY_SCRIPT'

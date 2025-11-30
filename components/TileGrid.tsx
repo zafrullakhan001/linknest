@@ -2469,7 +2469,6 @@ export const TileGrid: React.FC<TileGridProps> = ({
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
           <div className="flex-1">
             <div className="flex items-center gap-4">
-              <div className="w-1 h-12 bg-gradient-to-b from-brand-500 to-violet-600 rounded-full shadow-lg"></div>
               <h1 className="linknest-spaces-title text-4xl sm:text-5xl font-bold text-slate-900 dark:text-white">
                 {settings.spaces_title || 'My Spaces'}
               </h1>

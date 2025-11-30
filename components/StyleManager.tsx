@@ -2060,6 +2060,38 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                           </div>
                         )}
                       </div>
+
+                      {/* Text Color */}
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Text Color</label>
+                        {styles.heroSectionTitleGradientEnabled && (
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                            Text color applies when title gradient is disabled
+                          </p>
+                        )}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Light Mode Color</label>
+                            <input
+                              type="color"
+                              value={styles.heroSectionTextColor}
+                              onChange={(e) => updateStyle('heroSectionTextColor', e.target.value)}
+                              className="w-full h-10 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+                              disabled={styles.heroSectionTitleGradientEnabled}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Dark Mode Color</label>
+                            <input
+                              type="color"
+                              value={styles.heroSectionDarkTextColor}
+                              onChange={(e) => updateStyle('heroSectionDarkTextColor', e.target.value)}
+                              className="w-full h-10 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+                              disabled={styles.heroSectionTitleGradientEnabled}
+                            />
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>

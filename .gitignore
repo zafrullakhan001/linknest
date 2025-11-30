@@ -1,35 +1,125 @@
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+ldap_debug.log
 
-node_modules
-dist
-dist-ssr
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+dist-ssr/
 *.local
 
-# Editor directories and files
+# Database and data files
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.sql
+*.sql.gz
+
+# Environment variables and config
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+
+# User uploads
+uploads/
+uploads/*
+
+# Deployment bundles and artifacts
+*-deployment-*/
+test-bundle/
+bundle-*/
+
+# Copy/backup directories
+* copy/
+* Copy/
+*.bak
+*.backup
+*.old
+
+# PHP specific
+*.php~
+*.phps
+*.cache
+opcache/
+sessions/
+
+# Docker
+docker/volumes/
+docker/data/
+*.pid
+
+# SSL certificates (if generated locally)
+*.pem
+*.key
+*.crt
+*.cert
+docker/*.pem
+docker/*.key
+docker/*.crt
+
+# IDE and Editor files
 .vscode/*
 !.vscode/extensions.json
-.idea
-.DS_Store
+.idea/
+*.iml
+*.ipr
+*.iws
+*.code-workspace
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
 
-# Database and data
-data/
-*.db
-*.sqlite
-*.sqlite3
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.cache/
 
-# Environment variables
-.env
-.env.local
-.env.*.local
+# OS specific files
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# MacOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+.AppleDouble
+.LSOverride
+.DocumentRevisions-V100
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Linux
+.fuse_hidden*
+.directory
+.Trash-*

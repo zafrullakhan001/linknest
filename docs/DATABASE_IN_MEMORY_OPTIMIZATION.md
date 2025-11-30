@@ -180,3 +180,6 @@ If you encounter issues with older SQLite versions:
 - Use `PRAGMA synchronous = FULL` (more compatible, but slower)
 
 
+
+
+

@@ -262,6 +262,20 @@ if exist "%PROJECT_ROOT%\data\linknest.db" (
 )
 echo.
 
+REM Copy uploads directory (logos, favicons, etc.)
+echo Copying uploads directory (logos, favicons, etc.)...
+if exist "%PROJECT_ROOT%\uploads" (
+    xcopy "%PROJECT_ROOT%\uploads\*" "%BUNDLE_DIR%\uploads\" /E /I /Y >nul 2>&1
+    if !ERRORLEVEL! EQU 0 (
+        echo ✓ Uploads directory copied ^(logos, favicons, etc.^)
+    ) else (
+        echo ⚠ Warning: Failed to copy uploads directory
+    )
+) else (
+    echo ⚠ No uploads directory found - will be created on first run
+)
+echo.
+
 REM Verify OPcache and LDAP
 echo Verifying OPcache and LDAP configuration...
 findstr /C:"opcache" /C:"ldap" "%BUNDLE_DIR%\docker\Dockerfile" >nul 2>&1

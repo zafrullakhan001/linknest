@@ -123,6 +123,8 @@ export interface SpaceStyles {
   heroSectionTitleGradientStart: string;
   heroSectionTitleGradientMid: string;
   heroSectionTitleGradientEnd: string;
+  heroSectionTextColor: string;
+  heroSectionDarkTextColor: string;
 
   // Footer font styling
   footerFontFamily: string;
@@ -318,6 +320,8 @@ export const DEFAULT_STYLES: SpaceStyles = {
   heroSectionTitleGradientStart: '#3b82f6',
   heroSectionTitleGradientMid: '#8b5cf6',
   heroSectionTitleGradientEnd: '#3b82f6',
+  heroSectionTextColor: '#1e293b',
+  heroSectionDarkTextColor: '#ffffff',
   footerFontFamily: 'inherit',
   footerFontSize: 14,
   footerFontWeight: 'normal',
@@ -1505,11 +1509,11 @@ function generateHeroSectionCSS(styles: SpaceStyles, isDark: boolean): string {
     ` : `
       /* Title text color when gradient is disabled */
       .linknest-hero-section .linknest-spaces-title {
-        color: rgb(30, 41, 55) !important;
+        color: ${styles.heroSectionTextColor} !important;
       }
       
       .dark .linknest-hero-section .linknest-spaces-title {
-        color: rgb(255, 255, 255) !important;
+        color: ${styles.heroSectionDarkTextColor} !important;
       }
     `}
   `;
