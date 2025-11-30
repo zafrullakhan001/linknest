@@ -1,9 +1,7 @@
 @echo off
-REM Bundle LinkNest Application for Standalone Deployment (Windows)
-REM This script creates a complete deployment package that can be deployed
-REM from any location without requiring access to the full repository
-
 setlocal enabledelayedexpansion
+REM Bundle LinkNest Application for Standalone Deployment (Windows)
+REM Fixed version with proper error handling
 
 echo ==========================================
 echo LinkNest Deployment Bundle Creator
@@ -22,6 +20,14 @@ set "BUNDLE_DIR=%PROJECT_ROOT%\%BUNDLE_NAME%"
 echo Project root: %PROJECT_ROOT%
 echo Bundle directory: %BUNDLE_DIR%
 echo.
+
+REM Verify project root
+if not exist "%PROJECT_ROOT%\index.html" (
+    echo ERROR: Cannot find project files. Is this the correct directory?
+    echo Expected: %PROJECT_ROOT%\index.html
+    pause
+    exit /b 1
+)
 
 REM Create bundle directory structure
 echo Creating bundle directory structure...
@@ -56,51 +62,187 @@ xcopy "%PROJECT_ROOT%\api\*" "%BUNDLE_DIR%\api\" /E /I /Y >nul
 echo ✓ API files copied
 echo.
 
-REM Copy frontend source files
+REM Copy frontend source files - check each one
 echo Copying frontend source files...
-if exist "%PROJECT_ROOT%\index.html" copy "%PROJECT_ROOT%\index.html" "%BUNDLE_DIR\" >nul
-if exist "%PROJECT_ROOT%\index.tsx" copy "%PROJECT_ROOT%\index.tsx" "%BUNDLE_DIR\" >nul
-if exist "%PROJECT_ROOT%\index.css" copy "%PROJECT_ROOT%\index.css" "%BUNDLE_DIR\" >nul
-if exist "%PROJECT_ROOT%\App.tsx" copy "%PROJECT_ROOT%\App.tsx" "%BUNDLE_DIR\" >nul
-if exist "%PROJECT_ROOT%\types.ts" copy "%PROJECT_ROOT%\types.ts" "%BUNDLE_DIR\" >nul
-if exist "%PROJECT_ROOT%\components" xcopy "%PROJECT_ROOT%\components\*" "%BUNDLE_DIR%\components\" /E /I /Y >nul
-if exist "%PROJECT_ROOT%\contexts" xcopy "%PROJECT_ROOT%\contexts\*" "%BUNDLE_DIR%\contexts\" /E /I /Y >nul
-if exist "%PROJECT_ROOT%\services" xcopy "%PROJECT_ROOT%\services\*" "%BUNDLE_DIR%\services\" /E /I /Y >nul
+set "FILE_ERROR=0"
+
+REM Use PowerShell for reliable copying
+powershell -Command "if (Test-Path '%PROJECT_ROOT%\index.html') { Copy-Item '%PROJECT_ROOT%\index.html' -Destination '%BUNDLE_DIR%' -Force; exit 0 } else { exit 1 }" >nul 2>&1
+if !ERRORLEVEL! NEQ 0 (
+    echo [ERROR] index.html not found or failed to copy!
+    set "FILE_ERROR=1"
+)
+
+if not exist "%PROJECT_ROOT%\index.tsx" (
+    echo [ERROR] index.tsx not found!
+    set "FILE_ERROR=1"
+) else (
+    copy /Y "%PROJECT_ROOT%\index.tsx" "%BUNDLE_DIR%\index.tsx" >nul 2>&1
+    if !ERRORLEVEL! NEQ 0 (
+        echo [ERROR] Failed to copy index.tsx
+        set "FILE_ERROR=1"
+    )
+)
+
+if not exist "%PROJECT_ROOT%\index.css" (
+    echo [ERROR] index.css not found!
+    set "FILE_ERROR=1"
+) else (
+    copy /Y "%PROJECT_ROOT%\index.css" "%BUNDLE_DIR%\index.css" >nul 2>&1
+    if !ERRORLEVEL! NEQ 0 (
+        echo [ERROR] Failed to copy index.css
+        set "FILE_ERROR=1"
+    )
+)
+
+if not exist "%PROJECT_ROOT%\App.tsx" (
+    echo [ERROR] App.tsx not found!
+    set "FILE_ERROR=1"
+) else (
+    copy /Y "%PROJECT_ROOT%\App.tsx" "%BUNDLE_DIR%\App.tsx" >nul 2>&1
+    if !ERRORLEVEL! NEQ 0 (
+        echo [ERROR] Failed to copy App.tsx
+        set "FILE_ERROR=1"
+    )
+)
+
+if not exist "%PROJECT_ROOT%\types.ts" (
+    echo [ERROR] types.ts not found!
+    set "FILE_ERROR=1"
+) else (
+    copy /Y "%PROJECT_ROOT%\types.ts" "%BUNDLE_DIR%\types.ts" >nul 2>&1
+    if !ERRORLEVEL! NEQ 0 (
+        echo [ERROR] Failed to copy types.ts
+        set "FILE_ERROR=1"
+    )
+)
+
+if not exist "%PROJECT_ROOT%\components" (
+    echo [ERROR] components directory not found!
+    set "FILE_ERROR=1"
+) else (
+    xcopy "%PROJECT_ROOT%\components\*" "%BUNDLE_DIR%\components\" /E /I /Y >nul
+)
+
+if not exist "%PROJECT_ROOT%\contexts" (
+    echo [ERROR] contexts directory not found!
+    set "FILE_ERROR=1"
+) else (
+    xcopy "%PROJECT_ROOT%\contexts\*" "%BUNDLE_DIR%\contexts\" /E /I /Y >nul
+)
+
+if not exist "%PROJECT_ROOT%\services" (
+    echo [ERROR] services directory not found!
+    set "FILE_ERROR=1"
+) else (
+    xcopy "%PROJECT_ROOT%\services\*" "%BUNDLE_DIR%\services\" /E /I /Y >nul
+)
+
+if !FILE_ERROR! EQU 1 (
+    echo.
+    echo ERROR: Required source files are missing! Bundle creation failed.
+    pause
+    exit /b 1
+)
+
 echo ✓ Frontend source files copied
 echo.
 
 REM Copy build configuration files
 echo Copying build configuration files...
-if exist "%PROJECT_ROOT%\package.json" copy "%PROJECT_ROOT%\package.json" "%BUNDLE_DIR\" >nul
-if exist "%PROJECT_ROOT%\package-lock.json" copy "%PROJECT_ROOT%\package-lock.json" "%BUNDLE_DIR\" >nul 2>&1
-if exist "%PROJECT_ROOT%\vite.config.ts" copy "%PROJECT_ROOT%\vite.config.ts" "%BUNDLE_DIR\" >nul
-if exist "%PROJECT_ROOT%\vite.docker.config.ts" copy "%PROJECT_ROOT%\vite.docker.config.ts" "%BUNDLE_DIR\" >nul
-if exist "%PROJECT_ROOT%\tsconfig.json" copy "%PROJECT_ROOT%\tsconfig.json" "%BUNDLE_DIR\" >nul
-if exist "%PROJECT_ROOT%\tailwind.config.js" copy "%PROJECT_ROOT%\tailwind.config.js" "%BUNDLE_DIR\" >nul
-if exist "%PROJECT_ROOT%\postcss.config.js" copy "%PROJECT_ROOT%\postcss.config.js" "%BUNDLE_DIR\" >nul
+set "BUILD_ERR=0"
+
+if not exist "%PROJECT_ROOT%\package.json" (
+    echo [ERROR] package.json not found!
+    set "BUILD_ERR=1"
+) else (
+    copy /Y "%PROJECT_ROOT%\package.json" "%BUNDLE_DIR%\package.json" >nul 2>&1
+    if !ERRORLEVEL! NEQ 0 (
+        echo [ERROR] Failed to copy package.json
+        set "BUILD_ERR=1"
+    )
+)
+
+if exist "%PROJECT_ROOT%\package-lock.json" (
+    copy /Y "%PROJECT_ROOT%\package-lock.json" "%BUNDLE_DIR%\package-lock.json" >nul
+    if !ERRORLEVEL! EQU 0 echo ✓ package-lock.json copied
+) else (
+    echo ⚠ Warning: package-lock.json not found - npm install will be used instead of npm ci
+)
+
+if not exist "%PROJECT_ROOT%\vite.config.ts" (
+    echo [ERROR] vite.config.ts not found!
+    set "BUILD_ERR=1"
+) else (
+    copy /Y "%PROJECT_ROOT%\vite.config.ts" "%BUNDLE_DIR%\vite.config.ts" >nul 2>&1
+    if !ERRORLEVEL! NEQ 0 (
+        echo [ERROR] Failed to copy vite.config.ts
+        set "BUILD_ERR=1"
+    )
+)
+
+if not exist "%PROJECT_ROOT%\vite.docker.config.ts" (
+    echo [ERROR] vite.docker.config.ts not found!
+    set "BUILD_ERR=1"
+) else (
+    copy /Y "%PROJECT_ROOT%\vite.docker.config.ts" "%BUNDLE_DIR%\vite.docker.config.ts" >nul 2>&1
+    if !ERRORLEVEL! NEQ 0 (
+        echo [ERROR] Failed to copy vite.docker.config.ts
+        set "BUILD_ERR=1"
+    )
+)
+
+if not exist "%PROJECT_ROOT%\tsconfig.json" (
+    echo [ERROR] tsconfig.json not found!
+    set "BUILD_ERR=1"
+) else (
+    copy /Y "%PROJECT_ROOT%\tsconfig.json" "%BUNDLE_DIR%\tsconfig.json" >nul 2>&1
+    if !ERRORLEVEL! NEQ 0 (
+        echo [ERROR] Failed to copy tsconfig.json
+        set "BUILD_ERR=1"
+    )
+)
+
+if not exist "%PROJECT_ROOT%\tailwind.config.js" (
+    echo [ERROR] tailwind.config.js not found!
+    set "BUILD_ERR=1"
+) else (
+    copy /Y "%PROJECT_ROOT%\tailwind.config.js" "%BUNDLE_DIR%\tailwind.config.js" >nul 2>&1
+    if !ERRORLEVEL! NEQ 0 (
+        echo [ERROR] Failed to copy tailwind.config.js
+        set "BUILD_ERR=1"
+    )
+)
+
+if not exist "%PROJECT_ROOT%\postcss.config.js" (
+    echo [ERROR] postcss.config.js not found!
+    set "BUILD_ERR=1"
+) else (
+    copy /Y "%PROJECT_ROOT%\postcss.config.js" "%BUNDLE_DIR%\postcss.config.js" >nul 2>&1
+    if !ERRORLEVEL! NEQ 0 (
+        echo [ERROR] Failed to copy postcss.config.js
+        set "BUILD_ERR=1"
+    )
+)
+
+if !BUILD_ERR! EQU 1 (
+    echo.
+    echo ERROR: Required build files are missing! Bundle creation failed.
+    pause
+    exit /b 1
+)
+
 echo ✓ Build configuration files copied
 echo.
 
 REM Copy utility files
 echo Copying utility files...
-copy "%PROJECT_ROOT%\check_opcache.php" "%BUNDLE_DIR\" >nul 2>&1
+if exist "%PROJECT_ROOT%\check_opcache.php" (
+    copy /Y "%PROJECT_ROOT%\check_opcache.php" "%BUNDLE_DIR%\check_opcache.php" >nul
+) else (
+    echo Note: check_opcache.php not found, skipping ^(optional^)
+)
 echo ✓ Utility files copied
-echo.
-
-REM Verify OPcache and LDAP are in Dockerfile
-echo Verifying OPcache and LDAP configuration...
-findstr /C:"opcache" /C:"ldap" "%BUNDLE_DIR%\docker\Dockerfile" >nul 2>&1
-if %ERRORLEVEL% EQU 0 (
-    echo ✓ OPcache and LDAP extensions confirmed in Dockerfile
-) else (
-    echo ⚠ Warning: OPcache or LDAP may not be properly configured
-)
-findstr /C:"opcache.enable" "%BUNDLE_DIR%\docker\php-config.ini" >nul 2>&1
-if %ERRORLEVEL% EQU 0 (
-    echo ✓ OPcache configuration confirmed in php-config.ini
-) else (
-    echo ⚠ Warning: OPcache configuration may be missing
-)
 echo.
 
 REM Copy deployment scripts
@@ -120,93 +262,51 @@ if exist "%PROJECT_ROOT%\data\linknest.db" (
 )
 echo.
 
-REM Create standalone deployment script for Windows
-echo Creating standalone deployment script...
+REM Verify OPcache and LDAP
+echo Verifying OPcache and LDAP configuration...
+findstr /C:"opcache" /C:"ldap" "%BUNDLE_DIR%\docker\Dockerfile" >nul 2>&1
+if !ERRORLEVEL! EQU 0 (
+    echo ✓ OPcache and LDAP extensions confirmed in Dockerfile
+) else (
+    echo ⚠ Warning: OPcache or LDAP may not be properly configured
+)
+findstr /C:"opcache.enable" "%BUNDLE_DIR%\docker\php-config.ini" >nul 2>&1
+if !ERRORLEVEL! EQU 0 (
+    echo ✓ OPcache configuration confirmed in php-config.ini
+) else (
+    echo ⚠ Warning: OPcache configuration may be missing
+)
+echo.
+
+REM Create standalone deployment script
 (
 echo @echo off
 echo REM Standalone Deployment Script for LinkNest ^(Windows^)
-echo REM This script can be run from the bundled deployment folder
-echo.
-echo echo ==========================================
-echo echo LinkNest Standalone Deployment
-echo echo ==========================================
-echo echo.
-echo REM Check if Docker is installed
-echo where docker ^>nul 2^>^&1
-echo if %%ERRORLEVEL%% NEQ 0 ^(
-echo     echo Error: Docker is not installed. Please install Docker Desktop first.
-echo     exit /b 1
-echo ^)
-echo.
-echo REM Check if Docker Compose is installed
-echo where docker-compose ^>nul 2^>^&1
-echo if %%ERRORLEVEL%% NEQ 0 ^(
-echo     echo Error: Docker Compose is not installed. Please install Docker Compose first.
-echo     exit /b 1
-echo ^)
-echo.
 echo cd /d "%%~dp0docker"
-echo.
 echo echo Building Docker image...
 echo docker-compose build
-echo if %%ERRORLEVEL%% NEQ 0 ^(
-echo     echo Error: Docker build failed
-echo     exit /b 1
-echo ^)
-echo.
-echo echo.
+echo if %%ERRORLEVEL%% NEQ 0 exit /b 1
 echo echo Starting container...
 echo docker-compose up -d
-echo if %%ERRORLEVEL%% NEQ 0 ^(
-echo     echo Error: Failed to start container
-echo     exit /b 1
-echo ^)
-echo.
+echo if %%ERRORLEVEL%% NEQ 0 exit /b 1
 echo echo.
 echo echo Deployment complete!
-echo echo.
-echo echo Application URLs:
 echo echo HTTP:  http://localhost:8090
 echo echo HTTPS: https://localhost:8443
-echo echo.
 echo pause
 ) > "%BUNDLE_DIR%\deploy.bat"
 
 REM Create README
-echo Creating README...
 (
 echo # LinkNest Standalone Deployment Package
 echo.
-echo This is a complete, standalone deployment package for LinkNest.
-echo.
-echo ## Quick Start
-echo.
-echo ### Windows
-echo ```batch
-echo deploy.bat
-echo ```
-echo.
-echo ## Default Login
-echo - Username: `admin`
-echo - Password: `admin123`
-echo.
-echo See README_DEPLOYMENT.md for full documentation.
+echo Run deploy.bat to deploy.
 ) > "%BUNDLE_DIR%\README.md"
 
-echo ✓ Deployment scripts and documentation created
-echo.
-
-REM Create bundle info
 (
 echo LinkNest Deployment Bundle
 echo Created: %date% %time%
-echo Version: Standalone Deployment Package
-echo.
-echo To deploy: Run deploy.bat
 ) > "%BUNDLE_DIR%\BUNDLE_INFO.txt"
-
-echo ✓ Bundle information file created
-echo.
 
 echo ==========================================
 echo Bundle Created Successfully!
@@ -215,11 +315,8 @@ echo.
 echo Bundle Location: %BUNDLE_DIR%
 echo.
 echo Next steps:
-echo 1. Copy the bundle folder to your deployment location
-echo 2. Navigate to the bundle folder
-echo 3. Run: deploy.bat
-echo.
-echo The bundle is ready for standalone deployment!
+echo 1. Navigate to the bundle folder
+echo 2. Run: deploy.bat
 echo.
 
 pause

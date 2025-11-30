@@ -1,0 +1,58 @@
+# Single container deployment - everything (PHP, Apache, SQLite) in one container
+services:
+  linknest:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: linknest
+    ports:
+      - "8090:80"   # HTTP
+      - "8443:443"  # HTTPS
+    volumes:
+      - ../data:/var/www/html/data
+      - ../uploads:/var/www/html/uploads
+    environment:
+      - APACHE_DOCUMENT_ROOT=/var/www/html
+      - PHP_MEMORY_LIMIT=256M
+      - PHP_MAX_EXECUTION_TIME=300
+      - PHP_UPLOAD_MAX_FILESIZE=10M
+      - PHP_POST_MAX_SIZE=10M
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-k", "https://localhost/api/settings"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

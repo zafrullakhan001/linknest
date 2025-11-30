@@ -64,26 +64,72 @@ echo ""
 
 # Copy frontend source files
 echo "Copying frontend source files..."
-cp "$PROJECT_ROOT/index.html" "$BUNDLE_DIR/"
-cp "$PROJECT_ROOT/index.tsx" "$BUNDLE_DIR/"
-cp "$PROJECT_ROOT/index.css" "$BUNDLE_DIR/"
-cp "$PROJECT_ROOT/App.tsx" "$BUNDLE_DIR/"
-cp "$PROJECT_ROOT/types.ts" "$BUNDLE_DIR/"
-cp -r "$PROJECT_ROOT/components/"* "$BUNDLE_DIR/components/"
-cp -r "$PROJECT_ROOT/contexts/"* "$BUNDLE_DIR/contexts/"
-cp -r "$PROJECT_ROOT/services/"* "$BUNDLE_DIR/services/"
+REQUIRED_SOURCE_FILES=("index.html" "index.tsx" "index.css" "App.tsx" "types.ts")
+MISSING_SOURCE=()
+
+for file in "${REQUIRED_SOURCE_FILES[@]}"; do
+    if [ -f "$PROJECT_ROOT/$file" ]; then
+        cp "$PROJECT_ROOT/$file" "$BUNDLE_DIR/" || {
+            echo -e "${RED}✗ ERROR: Failed to copy $file${NC}"
+            MISSING_SOURCE+=("$file")
+        }
+    else
+        echo -e "${RED}✗ ERROR: $file not found!${NC}"
+        MISSING_SOURCE+=("$file")
+    fi
+done
+
+# Copy directories
+[ -d "$PROJECT_ROOT/components" ] && cp -r "$PROJECT_ROOT/components/"* "$BUNDLE_DIR/components/" 2>/dev/null || {
+    echo -e "${RED}✗ ERROR: components directory not found!${NC}"
+    MISSING_SOURCE+=("components/")
+}
+[ -d "$PROJECT_ROOT/contexts" ] && cp -r "$PROJECT_ROOT/contexts/"* "$BUNDLE_DIR/contexts/" 2>/dev/null || {
+    echo -e "${RED}✗ ERROR: contexts directory not found!${NC}"
+    MISSING_SOURCE+=("contexts/")
+}
+[ -d "$PROJECT_ROOT/services" ] && cp -r "$PROJECT_ROOT/services/"* "$BUNDLE_DIR/services/" 2>/dev/null || {
+    echo -e "${RED}✗ ERROR: services directory not found!${NC}"
+    MISSING_SOURCE+=("services/")
+}
+
+if [ ${#MISSING_SOURCE[@]} -gt 0 ]; then
+    echo -e "${RED}✗ ERROR: Missing required source files! Bundle creation failed.${NC}"
+    exit 1
+fi
+
 echo -e "${GREEN}✓ Frontend source files copied${NC}"
 echo ""
 
 # Copy build configuration files
 echo "Copying build configuration files..."
-cp "$PROJECT_ROOT/package.json" "$BUNDLE_DIR/"
-cp "$PROJECT_ROOT/package-lock.json" "$BUNDLE_DIR/" 2>/dev/null || true
-cp "$PROJECT_ROOT/vite.config.ts" "$BUNDLE_DIR/"
-cp "$PROJECT_ROOT/vite.docker.config.ts" "$BUNDLE_DIR/"
-cp "$PROJECT_ROOT/tsconfig.json" "$BUNDLE_DIR/"
-cp "$PROJECT_ROOT/tailwind.config.js" "$BUNDLE_DIR/"
-cp "$PROJECT_ROOT/postcss.config.js" "$BUNDLE_DIR/"
+REQUIRED_BUILD_FILES=("package.json" "vite.config.ts" "vite.docker.config.ts" "tsconfig.json" "tailwind.config.js" "postcss.config.js")
+MISSING_BUILD=()
+
+for file in "${REQUIRED_BUILD_FILES[@]}"; do
+    if [ -f "$PROJECT_ROOT/$file" ]; then
+        cp "$PROJECT_ROOT/$file" "$BUNDLE_DIR/" || {
+            echo -e "${RED}✗ ERROR: Failed to copy $file${NC}"
+            MISSING_BUILD+=("$file")
+        }
+    else
+        echo -e "${RED}✗ ERROR: $file not found!${NC}"
+        MISSING_BUILD+=("$file")
+    fi
+done
+
+# Copy optional files
+if [ -f "$PROJECT_ROOT/package-lock.json" ]; then
+    cp "$PROJECT_ROOT/package-lock.json" "$BUNDLE_DIR/" && echo "✓ package-lock.json copied"
+else
+    echo -e "${YELLOW}⚠ Warning: package-lock.json not found - npm install will be used instead of npm ci${NC}"
+fi
+
+if [ ${#MISSING_BUILD[@]} -gt 0 ]; then
+    echo -e "${RED}✗ ERROR: Missing required build files! Bundle creation failed.${NC}"
+    exit 1
+fi
+
 echo -e "${GREEN}✓ Build configuration files copied${NC}"
 echo ""
 

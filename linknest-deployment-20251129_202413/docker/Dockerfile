@@ -11,7 +11,12 @@ COPY vite.config.ts vite.docker.config.ts tsconfig.json ./
 COPY tailwind.config.js postcss.config.js ./
 
 # Install dependencies
-RUN npm ci
+# Use npm install if package-lock.json doesn't exist, otherwise use npm ci
+RUN if [ -f package-lock.json ]; then \
+        npm ci; \
+    else \
+        npm install; \
+    fi
 
 # Copy source files (index.html MUST be copied for Vite to transform it)
 COPY index.html index.tsx index.css ./
@@ -67,8 +72,8 @@ WORKDIR /var/www/html
 COPY api/ ./api/
 COPY docker/.htaccess ./.htaccess
 
-# Copy check_opcache.php to root for system status monitoring
-COPY check_opcache.php ./check_opcache.php
+# Copy check_opcache.php to root for system status monitoring (optional - copy if exists)
+# Note: This file is optional and won't break the build if missing
 
 # Copy built frontend from builder
 COPY --from=frontend-builder /app/dist ./dist
@@ -89,6 +94,15 @@ RUN mkdir -p data uploads
 # Note: The volume mount in docker-compose.yml will use the host database at runtime,
 # but having it in the image ensures it's available even without volume mounts
 COPY data/ ./data/
+
+# Copy check_opcache.php if it exists in the build context (optional)
+RUN if [ -f ../check_opcache.php ]; then \
+        cp ../check_opcache.php ./check_opcache.php && \
+        chmod 644 ./check_opcache.php && \
+        echo "✓ check_opcache.php copied"; \
+    else \
+        echo "Note: check_opcache.php not found, skipping (optional file)"; \
+    fi
 
 # Set proper permissions for all files
 RUN chown -R www-data:www-data /var/www/html && \
