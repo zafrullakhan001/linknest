@@ -372,7 +372,7 @@ const AppContent: React.FC = () => {
         onLoginClick={() => setAuthModalOpen(true)}
         onHelpClick={() => setHelpAboutOpen(true)}
       />
-      <main className={`flex-grow container mx-auto px-4 py-8 max-w-6xl-plus ${styles?.backgroundRaised ? 'linknest-page-background' : ''} ${!guestAccessEnabled && !isAuthenticated ? 'flex items-center justify-center' : ''}`}>
+      <main className={`flex-grow container mx-auto px-4 py-8 max-w-6xl-plus linknest-page-content ${styles?.backgroundRaised ? 'linknest-page-background' : ''} ${!guestAccessEnabled && !isAuthenticated ? 'flex items-center justify-center' : ''}`}>
         {content}
       </main>
       {!isAuthenticated && guestAccessEnabled && (
@@ -390,8 +390,17 @@ const AppContent: React.FC = () => {
           </div>
         </div>
       )}
-      <footer className="linknest-footer py-6 text-center text-sm">
-        <p dangerouslySetInnerHTML={{ __html: settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}></p>
+      <footer className="linknest-footer py-6 text-sm">
+        <div className="container mx-auto max-w-6xl-plus px-4">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex-1 min-w-0 text-center">
+              <p dangerouslySetInnerHTML={{ __html: settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}></p>
+            </div>
+            <div className="flex-shrink-0">
+              <TimezoneDisplay />
+            </div>
+          </div>
+        </div>
       </footer>
       <AuthModal
         isOpen={authModalOpen}
@@ -406,9 +415,6 @@ const AppContent: React.FC = () => {
           />
         </Suspense>
       )}
-      <div className="fixed bottom-4 right-4 z-40">
-        <TimezoneDisplay />
-      </div>
       <HelpAboutDialog
         isOpen={helpAboutOpen}
         onClose={() => setHelpAboutOpen(false)}

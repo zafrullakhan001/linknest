@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { SpaceStyles, DEFAULT_STYLES, styleService } from '../services/styleService';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -448,11 +449,11 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-[200] p-4 pointer-events-none">
-      {/* Backdrop - less opaque, no blur, clickable to close */}
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] p-4 pointer-events-none">
+      {/* Backdrop - completely transparent, clickable to close */}
       <div
-        className="absolute inset-0 bg-slate-900/20 dark:bg-slate-900/30 pointer-events-auto"
+        className="absolute inset-0 bg-transparent pointer-events-auto"
         onClick={onClose}
       ></div>
 
@@ -1663,6 +1664,302 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                       </select>
                     </div>
                   </div>
+                </div>
+
+                {/* Hero Section Styling */}
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Hero Section</h4>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={styles.heroSectionEnabled}
+                        onChange={(e) => updateStyle('heroSectionEnabled', e.target.checked)}
+                        className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500"
+                      />
+                      <span className="text-xs text-slate-600 dark:text-slate-400">Enable</span>
+                    </label>
+                  </div>
+                  
+                  {styles.heroSectionEnabled && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-purple-200 dark:border-purple-800">
+                      {/* Style Type */}
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Style</label>
+                        <select
+                          value={styles.heroSectionStyle}
+                          onChange={(e) => updateStyle('heroSectionStyle', e.target.value as 'gradient' | 'solid' | 'glassmorphism' | 'minimal')}
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                        >
+                          <option value="gradient">Gradient</option>
+                          <option value="solid">Solid</option>
+                          <option value="glassmorphism">Glassmorphism</option>
+                          <option value="minimal">Minimal</option>
+                        </select>
+                      </div>
+
+                      {/* Background Color (for solid) */}
+                      {styles.heroSectionStyle === 'solid' && (
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Background Color</label>
+                          <input
+                            type="color"
+                            value={styles.heroSectionBackgroundColor}
+                            onChange={(e) => updateStyle('heroSectionBackgroundColor', e.target.value)}
+                            className="w-full h-10 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+                          />
+                        </div>
+                      )}
+
+                      {/* Gradient Type */}
+                      {styles.heroSectionStyle === 'gradient' && (
+                        <>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Gradient Type</label>
+                            <select
+                              value={styles.heroSectionGradientType}
+                              onChange={(e) => updateStyle('heroSectionGradientType', e.target.value as 'linear' | 'radial' | 'conic')}
+                              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                            >
+                              <option value="linear">Linear</option>
+                              <option value="radial">Radial</option>
+                              <option value="conic">Conic</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Direction: {styles.heroSectionGradientDirection}°</label>
+                            <input
+                              type="range"
+                              min="0"
+                              max="360"
+                              value={styles.heroSectionGradientDirection}
+                              onChange={(e) => updateStyle('heroSectionGradientDirection', parseInt(e.target.value))}
+                              className="w-full"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Start Color</label>
+                            <input
+                              type="color"
+                              value={styles.heroSectionGradientStart}
+                              onChange={(e) => updateStyle('heroSectionGradientStart', e.target.value)}
+                              className="w-full h-10 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">End Color</label>
+                            <input
+                              type="color"
+                              value={styles.heroSectionGradientEnd}
+                              onChange={(e) => updateStyle('heroSectionGradientEnd', e.target.value)}
+                              className="w-full h-10 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+                            />
+                          </div>
+                        </>
+                      )}
+
+                      {/* Glassmorphism Settings */}
+                      {styles.heroSectionStyle === 'glassmorphism' && (
+                        <>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Blur: {styles.heroSectionBlur}px</label>
+                            <input
+                              type="range"
+                              min="0"
+                              max="20"
+                              value={styles.heroSectionBlur}
+                              onChange={(e) => updateStyle('heroSectionBlur', parseInt(e.target.value))}
+                              className="w-full"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Opacity: {styles.heroSectionOpacity}%</label>
+                            <input
+                              type="range"
+                              min="0"
+                              max="100"
+                              value={styles.heroSectionOpacity}
+                              onChange={(e) => updateStyle('heroSectionOpacity', parseInt(e.target.value))}
+                              className="w-full"
+                            />
+                          </div>
+                        </>
+                      )}
+
+                      {/* Border Radius */}
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Border Radius: {styles.heroSectionBorderRadius}px</label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="32"
+                          value={styles.heroSectionBorderRadius}
+                          onChange={(e) => updateStyle('heroSectionBorderRadius', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                      </div>
+
+                      {/* Padding */}
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Padding: {styles.heroSectionPadding}px</label>
+                        <input
+                          type="range"
+                          min="8"
+                          max="64"
+                          value={styles.heroSectionPadding}
+                          onChange={(e) => updateStyle('heroSectionPadding', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                      </div>
+
+                      {/* Margin Bottom */}
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Bottom Margin: {styles.heroSectionMarginBottom}px</label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="64"
+                          value={styles.heroSectionMarginBottom}
+                          onChange={(e) => updateStyle('heroSectionMarginBottom', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                      </div>
+
+                      {/* Elevation */}
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Shadow: {styles.heroSectionElevation}</label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="5"
+                          value={styles.heroSectionElevation}
+                          onChange={(e) => updateStyle('heroSectionElevation', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                      </div>
+
+                      {/* Border */}
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Border Width: {styles.heroSectionBorderWidth}px</label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="4"
+                          value={styles.heroSectionBorderWidth}
+                          onChange={(e) => updateStyle('heroSectionBorderWidth', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Border Color</label>
+                        <input
+                          type="color"
+                          value={styles.heroSectionBorderColor}
+                          onChange={(e) => updateStyle('heroSectionBorderColor', e.target.value)}
+                          className="w-full h-10 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+                        />
+                      </div>
+
+                      {/* Animated Orbs */}
+                      <div className="md:col-span-2">
+                        <label className="flex items-center gap-2 cursor-pointer mb-3">
+                          <input
+                            type="checkbox"
+                            checked={styles.heroSectionShowAnimatedOrbs}
+                            onChange={(e) => updateStyle('heroSectionShowAnimatedOrbs', e.target.checked)}
+                            className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500"
+                          />
+                          <span className="text-sm text-slate-700 dark:text-slate-300">Show Animated Orbs</span>
+                        </label>
+                        {styles.heroSectionShowAnimatedOrbs && (
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div>
+                              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Orb 1 Color</label>
+                              <input
+                                type="color"
+                                value={styles.heroSectionOrbColor1}
+                                onChange={(e) => updateStyle('heroSectionOrbColor1', e.target.value)}
+                                className="w-full h-8 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Orb 2 Color</label>
+                              <input
+                                type="color"
+                                value={styles.heroSectionOrbColor2}
+                                onChange={(e) => updateStyle('heroSectionOrbColor2', e.target.value)}
+                                className="w-full h-8 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Orb 3 Color</label>
+                              <input
+                                type="color"
+                                value={styles.heroSectionOrbColor3}
+                                onChange={(e) => updateStyle('heroSectionOrbColor3', e.target.value)}
+                                className="w-full h-8 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Orb Opacity: {styles.heroSectionOrbOpacity}%</label>
+                              <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                value={styles.heroSectionOrbOpacity}
+                                onChange={(e) => updateStyle('heroSectionOrbOpacity', parseInt(e.target.value))}
+                                className="w-full"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Title Gradient */}
+                      <div className="md:col-span-2">
+                        <label className="flex items-center gap-2 cursor-pointer mb-3">
+                          <input
+                            type="checkbox"
+                            checked={styles.heroSectionTitleGradientEnabled}
+                            onChange={(e) => updateStyle('heroSectionTitleGradientEnabled', e.target.checked)}
+                            className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500"
+                          />
+                          <span className="text-sm text-slate-700 dark:text-slate-300">Enable Title Gradient</span>
+                        </label>
+                        {styles.heroSectionTitleGradientEnabled && (
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Start Color</label>
+                              <input
+                                type="color"
+                                value={styles.heroSectionTitleGradientStart}
+                                onChange={(e) => updateStyle('heroSectionTitleGradientStart', e.target.value)}
+                                className="w-full h-8 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Mid Color</label>
+                              <input
+                                type="color"
+                                value={styles.heroSectionTitleGradientMid}
+                                onChange={(e) => updateStyle('heroSectionTitleGradientMid', e.target.value)}
+                                className="w-full h-8 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">End Color</label>
+                              <input
+                                type="color"
+                                value={styles.heroSectionTitleGradientEnd}
+                                onChange={(e) => updateStyle('heroSectionTitleGradientEnd', e.target.value)}
+                                className="w-full h-8 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Footer Typography */}
@@ -2924,7 +3221,8 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
           className="absolute top-0 right-0 bottom-4 w-2 cursor-ew-resize z-10 hover:bg-slate-200/30 dark:hover:bg-slate-600/30"
         />
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

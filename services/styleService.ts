@@ -89,6 +89,32 @@ export interface SpaceStyles {
   spacesTitleFontWeight: string;
   spacesTitleFontStyle: string;
 
+  // Hero Section Styling
+  heroSectionEnabled: boolean;
+  heroSectionStyle: 'gradient' | 'solid' | 'glassmorphism' | 'minimal';
+  heroSectionBackgroundColor: string;
+  heroSectionGradientStart: string;
+  heroSectionGradientEnd: string;
+  heroSectionGradientDirection: number; // 0-360 degrees
+  heroSectionGradientType: 'linear' | 'radial' | 'conic';
+  heroSectionBlur: number; // For glassmorphism (0-20)
+  heroSectionOpacity: number; // 0-100
+  heroSectionBorderRadius: number;
+  heroSectionPadding: number;
+  heroSectionMarginBottom: number;
+  heroSectionElevation: number; // Shadow (0-5)
+  heroSectionBorderWidth: number;
+  heroSectionBorderColor: string;
+  heroSectionShowAnimatedOrbs: boolean;
+  heroSectionOrbColor1: string;
+  heroSectionOrbColor2: string;
+  heroSectionOrbColor3: string;
+  heroSectionOrbOpacity: number; // 0-100
+  heroSectionTitleGradientEnabled: boolean;
+  heroSectionTitleGradientStart: string;
+  heroSectionTitleGradientMid: string;
+  heroSectionTitleGradientEnd: string;
+
   // Footer font styling
   footerFontFamily: string;
   footerFontSize: number;
@@ -252,6 +278,30 @@ export const DEFAULT_STYLES: SpaceStyles = {
   spacesTitleFontSize: 24,
   spacesTitleFontWeight: 'bold',
   spacesTitleFontStyle: 'normal',
+  heroSectionEnabled: true,
+  heroSectionStyle: 'gradient',
+  heroSectionBackgroundColor: '#ffffff',
+  heroSectionGradientStart: '#eef2ff',
+  heroSectionGradientEnd: '#ddd6fe',
+  heroSectionGradientDirection: 135,
+  heroSectionGradientType: 'linear',
+  heroSectionBlur: 12,
+  heroSectionOpacity: 100,
+  heroSectionBorderRadius: 16,
+  heroSectionPadding: 32,
+  heroSectionMarginBottom: 32,
+  heroSectionElevation: 2,
+  heroSectionBorderWidth: 1,
+  heroSectionBorderColor: 'rgba(99, 102, 241, 0.2)',
+  heroSectionShowAnimatedOrbs: true,
+  heroSectionOrbColor1: '#3b82f6',
+  heroSectionOrbColor2: '#8b5cf6',
+  heroSectionOrbColor3: '#60a5fa',
+  heroSectionOrbOpacity: 20,
+  heroSectionTitleGradientEnabled: true,
+  heroSectionTitleGradientStart: '#3b82f6',
+  heroSectionTitleGradientMid: '#8b5cf6',
+  heroSectionTitleGradientEnd: '#3b82f6',
   footerFontFamily: 'inherit',
   footerFontSize: 14,
   footerFontWeight: 'normal',
@@ -999,6 +1049,9 @@ export const styleService = {
       }
       ` : ''}
       
+      /* Hero Section Styles */
+      ${generateHeroSectionCSS(styles, isDark)}
+      
       /* Content Page UX Styles */
       ${generateContentPageCSS(styles, isDark)}
     `;
@@ -1165,6 +1218,115 @@ function getTableOverlay(styles: SpaceStyles): string {
     )`;
   }
   return 'transparent';
+}
+
+// Helper function to convert hex to rgba
+function hexToRgba(hex: string, alpha: number): string {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (result) {
+    const r = parseInt(result[1], 16);
+    const g = parseInt(result[2], 16);
+    const b = parseInt(result[3], 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  return hex; // Return original if not a valid hex
+}
+
+// Generate Hero Section CSS
+function generateHeroSectionCSS(styles: SpaceStyles, isDark: boolean): string {
+  if (!styles.heroSectionEnabled) {
+    return `
+      .linknest-hero-section {
+        display: none !important;
+      }
+    `;
+  }
+
+  // Build hero section background
+  let heroBackground = '';
+  switch (styles.heroSectionStyle) {
+    case 'gradient':
+      if (styles.heroSectionGradientType === 'linear') {
+        heroBackground = `linear-gradient(${styles.heroSectionGradientDirection}deg, ${styles.heroSectionGradientStart}, ${styles.heroSectionGradientEnd})`;
+      } else if (styles.heroSectionGradientType === 'radial') {
+        heroBackground = `radial-gradient(circle, ${styles.heroSectionGradientStart}, ${styles.heroSectionGradientEnd})`;
+      } else if (styles.heroSectionGradientType === 'conic') {
+        heroBackground = `conic-gradient(from ${styles.heroSectionGradientDirection}deg, ${styles.heroSectionGradientStart}, ${styles.heroSectionGradientEnd})`;
+      }
+      break;
+    case 'solid':
+      heroBackground = styles.heroSectionBackgroundColor;
+      break;
+    case 'glassmorphism':
+      heroBackground = isDark
+        ? `rgba(30, 41, 59, ${styles.heroSectionOpacity / 100})`
+        : `rgba(255, 255, 255, ${styles.heroSectionOpacity / 100})`;
+      break;
+    case 'minimal':
+      heroBackground = 'transparent';
+      break;
+  }
+
+  // Shadow generation
+  const shadows = [
+    'none',
+    '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+    '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1)',
+    '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
+    '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
+    '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)'
+  ];
+  const heroShadow = shadows[Math.min(styles.heroSectionElevation, 5)];
+
+  // Title gradient
+  const titleGradient = styles.heroSectionTitleGradientEnabled
+    ? `linear-gradient(to right, ${styles.heroSectionTitleGradientStart}, ${styles.heroSectionTitleGradientMid}, ${styles.heroSectionTitleGradientEnd})`
+    : 'none';
+
+  return `
+    /* Hero Section Container */
+    .linknest-hero-section {
+      background: ${heroBackground} !important;
+      border-radius: ${styles.heroSectionBorderRadius}px !important;
+      padding: ${styles.heroSectionPadding}px !important;
+      margin-bottom: ${styles.heroSectionMarginBottom}px !important;
+      box-shadow: ${heroShadow} !important;
+      border: ${styles.heroSectionBorderWidth}px solid ${styles.heroSectionBorderColor} !important;
+      ${styles.heroSectionStyle === 'glassmorphism' ? `
+        backdrop-filter: blur(${styles.heroSectionBlur}px) !important;
+        -webkit-backdrop-filter: blur(${styles.heroSectionBlur}px) !important;
+      ` : ''}
+    }
+
+    /* Animated Orbs */
+    ${styles.heroSectionShowAnimatedOrbs ? `
+      .linknest-hero-section .linknest-hero-orb-1 {
+        background: ${hexToRgba(styles.heroSectionOrbColor1, styles.heroSectionOrbOpacity / 100)} !important;
+      }
+      .linknest-hero-section .linknest-hero-orb-2 {
+        background: ${hexToRgba(styles.heroSectionOrbColor2, styles.heroSectionOrbOpacity / 100)} !important;
+      }
+      .linknest-hero-section .linknest-hero-orb-3 {
+        background: ${hexToRgba(styles.heroSectionOrbColor3, styles.heroSectionOrbOpacity / 100)} !important;
+      }
+    ` : `
+      .linknest-hero-section .linknest-hero-orb-1,
+      .linknest-hero-section .linknest-hero-orb-2,
+      .linknest-hero-section .linknest-hero-orb-3 {
+        display: none !important;
+      }
+    `}
+
+    /* Hero Title Gradient */
+    ${styles.heroSectionTitleGradientEnabled ? `
+      .linknest-hero-section .linknest-spaces-title {
+        background: ${titleGradient} !important;
+        -webkit-background-clip: text !important;
+        background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
+      }
+    ` : ''}
+  `;
 }
 
 // Generate Content Page UX CSS
