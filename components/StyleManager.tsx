@@ -423,7 +423,21 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
           let importedCount = 0;
           for (const profile of result.profiles) {
             try {
-              await styleService.saveStyles(profile.styles, profile.name);
+              // Merge profile styles with defaults to ensure all new properties are included
+              const mergedProfileStyles: SpaceStyles = {
+                ...DEFAULT_STYLES,
+                ...profile.styles,
+                // Ensure nested objects are fully merged
+                gridColumns: {
+                  ...DEFAULT_STYLES.gridColumns,
+                  ...(profile.styles?.gridColumns || {})
+                },
+                contentGridColumns: {
+                  ...DEFAULT_STYLES.contentGridColumns,
+                  ...(profile.styles?.contentGridColumns || {})
+                }
+              };
+              await styleService.saveStyles(mergedProfileStyles, profile.name);
               importedCount++;
             } catch (error) {
               console.error(`Failed to import profile "${profile.name}":`, error);
@@ -1438,6 +1452,94 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                       <select
                         value={styles.tileFontStyle}
                         onChange={(e) => updateStyle('tileFontStyle', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="italic">Italic</option>
+                        <option value="oblique">Oblique</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tile Description Text Styling */}
+                <div className="mb-6">
+                  <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Tile Description Text</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-purple-200 dark:border-purple-800">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Text Color</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="color"
+                          value={styles.tileDescriptionTextColor}
+                          onChange={(e) => updateStyle('tileDescriptionTextColor', e.target.value)}
+                          className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                        />
+                        <input
+                          type="text"
+                          value={styles.tileDescriptionTextColor}
+                          onChange={(e) => updateStyle('tileDescriptionTextColor', e.target.value)}
+                          className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                          placeholder="#475569"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Dark Mode Text Color</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="color"
+                          value={styles.tileDescriptionDarkTextColor}
+                          onChange={(e) => updateStyle('tileDescriptionDarkTextColor', e.target.value)}
+                          className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                        />
+                        <input
+                          type="text"
+                          value={styles.tileDescriptionDarkTextColor}
+                          onChange={(e) => updateStyle('tileDescriptionDarkTextColor', e.target.value)}
+                          className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                          placeholder="rgb(148, 163, 184)"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Family</label>
+                      <select
+                        value={styles.tileDescriptionFontFamily}
+                        onChange={(e) => updateStyle('tileDescriptionFontFamily', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="inherit">Inherit (Default)</option>
+                        <option value="Arial, sans-serif">Arial</option>
+                        <option value="'Helvetica Neue', Helvetica, sans-serif">Helvetica</option>
+                        <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                        <option value="Georgia, serif">Georgia</option>
+                        <option value="'Courier New', Courier, monospace">Courier New</option>
+                        <option value="Verdana, sans-serif">Verdana</option>
+                        <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                        <option value="Impact, sans-serif">Impact</option>
+                        <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
+                        <option value="'Lucida Console', monospace">Lucida Console</option>
+                        <option value="Tahoma, sans-serif">Tahoma</option>
+                        <option value="'Palatino Linotype', 'Book Antiqua', Palatino, serif">Palatino</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Size: {styles.tileDescriptionFontSize}px</label>
+                      <input
+                        type="range"
+                        min="8"
+                        max="20"
+                        value={styles.tileDescriptionFontSize}
+                        onChange={(e) => updateStyle('tileDescriptionFontSize', parseInt(e.target.value))}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Style</label>
+                      <select
+                        value={styles.tileDescriptionFontStyle}
+                        onChange={(e) => updateStyle('tileDescriptionFontStyle', e.target.value)}
                         className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
                       >
                         <option value="normal">Normal</option>

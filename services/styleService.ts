@@ -31,7 +31,9 @@ export interface SpaceStyles {
 
   // Tile/Space styling
   tileBackgroundColor: string;
+  tileDarkBackgroundColor: string; // Dark mode background color
   tileBorderColor: string;
+  tileDarkBorderColor: string; // Dark mode border color
   tileBorderWidth: number;
   tileBorderRadius: number;
   tilePadding: number;
@@ -75,6 +77,13 @@ export interface SpaceStyles {
   tileFontSize: number;
   tileFontWeight: string;
   tileFontStyle: string;
+  
+  // Tile description text styling
+  tileDescriptionTextColor: string;
+  tileDescriptionDarkTextColor: string; // Dark mode text color
+  tileDescriptionFontFamily: string;
+  tileDescriptionFontSize: number;
+  tileDescriptionFontStyle: string; // 'normal' | 'italic'
 
   // Page title font styling
   pageTitleFontFamily: string;
@@ -237,7 +246,9 @@ export interface SpaceStyles {
 export const DEFAULT_STYLES: SpaceStyles = {
   pageZoom: 100,
   tileBackgroundColor: '#ffffff',
+  tileDarkBackgroundColor: '#1e293b',
   tileBorderColor: '#e2e8f0',
+  tileDarkBorderColor: 'rgba(148, 163, 184, 0.3)',
   tileBorderWidth: 1,
   tileBorderRadius: 12,
   tilePadding: 16,
@@ -269,6 +280,11 @@ export const DEFAULT_STYLES: SpaceStyles = {
   tileFontSize: 14,
   tileFontWeight: 'bold',
   tileFontStyle: 'normal',
+  tileDescriptionTextColor: '#475569',
+  tileDescriptionDarkTextColor: 'rgb(148, 163, 184)',
+  tileDescriptionFontFamily: 'inherit',
+  tileDescriptionFontSize: 12,
+  tileDescriptionFontStyle: 'normal',
   pageTitleFontFamily: 'inherit',
   pageTitleFontSize: 20,
   pageTitleFontWeight: 'bold',
@@ -609,7 +625,7 @@ export const styleService = {
     };
     
     const exportData: any = {
-      version: '1.0',
+      version: '1.1', // Updated version to include new tile dark mode and description styling properties
       exportedAt: new Date().toISOString(),
       styles: completeStyles
     };
@@ -622,10 +638,24 @@ export const styleService = {
         const profilesWithStyles = await Promise.all(
           profiles.map(async (profile) => {
             const fullProfile = await this.getProfile(profile.id);
+            // Merge with defaults to ensure all properties are included in export
+            const completeProfileStyles: SpaceStyles = {
+              ...DEFAULT_STYLES,
+              ...fullProfile.styles,
+              // Ensure nested objects are fully merged
+              gridColumns: {
+                ...DEFAULT_STYLES.gridColumns,
+                ...(fullProfile.styles?.gridColumns || {})
+              },
+              contentGridColumns: {
+                ...DEFAULT_STYLES.contentGridColumns,
+                ...(fullProfile.styles?.contentGridColumns || {})
+              }
+            };
             return {
               id: profile.id,
               name: profile.name,
-              styles: fullProfile.styles,
+              styles: completeProfileStyles,
               is_active: profile.is_active,
               created_at: profile.created_at,
               updated_at: profile.updated_at
@@ -700,6 +730,31 @@ export const styleService = {
             };
           }
 
+          // Ensure profile styles are also merged with defaults for backward compatibility
+          if (profilesData && Array.isArray(profilesData)) {
+            profilesData = profilesData.map((profile: any) => {
+              if (profile.styles) {
+                return {
+                  ...profile,
+                  styles: {
+                    ...DEFAULT_STYLES,
+                    ...profile.styles,
+                    // Ensure nested objects are fully merged
+                    gridColumns: {
+                      ...DEFAULT_STYLES.gridColumns,
+                      ...(profile.styles.gridColumns || {})
+                    },
+                    contentGridColumns: {
+                      ...DEFAULT_STYLES.contentGridColumns,
+                      ...(profile.styles.contentGridColumns || {})
+                    }
+                  }
+                };
+              }
+              return profile;
+            });
+          }
+          
           resolve({ styles, profiles: profilesData });
         } catch (error) {
           reject(new Error('Invalid style file format'));
@@ -743,8 +798,10 @@ export const styleService = {
       }
     }
 
-    // Build background with effects
-    let bgColor = styles.useGradient ? gradientCSS : styles.tileBackgroundColor;
+    // Build background with effects - adapt for dark mode
+    let bgColor = styles.useGradient 
+      ? gradientCSS 
+      : (isDark ? (styles.tileDarkBackgroundColor || '#1e293b') : styles.tileBackgroundColor);
 
     // Metallic effect
     let metallicCSS = '';
@@ -821,13 +878,94 @@ export const styleService = {
       
       .linknest-tile {
         background: ${bgColor} !important;
-        border-color: ${styles.tileBorderColor} !important;
+        border-color: ${isDark ? (styles.tileDarkBorderColor || 'rgba(148, 163, 184, 0.3)') : styles.tileBorderColor} !important;
         border-width: ${styles.tileBorderWidth}px !important;
         border-radius: ${styles.tileBorderRadius}px !important;
         padding: ${styles.tilePadding}px !important;
         box-shadow: ${finalShadow} !important;
         ${styles.raisedEffect ? 'transform: translateY(-1px);' : ''}
         ${styles.metallicEffect ? 'position: relative; overflow: hidden;' : ''}
+      }
+      
+      /* Dark Mode Tile Styles - Comprehensive override */
+      /* Always override with solid dark background in dark mode, including gradients and metallic effects */
+      .dark .linknest-tile {
+        background: ${styles.tileDarkBackgroundColor || '#1e293b'} !important;
+        border-color: ${styles.tileDarkBorderColor || 'rgba(148, 163, 184, 0.3)'} !important;
+      }
+      
+      /* Override any inline or conflicting styles in dark mode */
+      .dark .linknest-tile[style*="background"] {
+        background: ${styles.tileDarkBackgroundColor || '#1e293b'} !important;
+      }
+      
+      /* Tile Text Colors - ensure readability in dark mode */
+      .dark .linknest-tile h3,
+      .dark .linknest-tile h3 * {
+        color: rgb(255, 255, 255) !important;
+      }
+      
+      .dark .linknest-tile p {
+        color: ${styles.tileDescriptionDarkTextColor || 'rgb(148, 163, 184)'} !important;
+        font-family: ${styles.tileDescriptionFontFamily} !important;
+        font-size: ${styles.tileDescriptionFontSize}px !important;
+        font-style: ${styles.tileDescriptionFontStyle} !important;
+      }
+      
+      .dark .linknest-tile p * {
+        color: ${styles.tileDescriptionDarkTextColor || 'rgb(148, 163, 184)'} !important;
+      }
+      
+      /* Dark mode link count and icon text */
+      .dark .linknest-tile span,
+      .dark .linknest-tile .text-slate-600,
+      .dark .linknest-tile .text-slate-700 {
+        color: rgb(148, 163, 184) !important;
+      }
+      
+      /* Dark mode borders and dividers */
+      .dark .linknest-tile .border-slate-100,
+      .dark .linknest-tile .border-t,
+      .dark .linknest-tile .border-slate-200,
+      .dark .linknest-tile .border-slate-700 {
+        border-color: rgba(148, 163, 184, 0.2) !important;
+      }
+      
+      /* Dark mode SVG icons - ensure they're visible */
+      .dark .linknest-tile svg {
+        color: rgb(148, 163, 184) !important;
+        fill: rgb(148, 163, 184) !important;
+      }
+      
+      /* Dark mode metallic effect adjustment - hide or reduce metallic overlay */
+      ${styles.metallicEffect ? `
+      .dark .linknest-tile::before {
+        display: none !important;
+      }
+      ` : ''}
+      
+      /* Hide metallic gradients in dark mode */
+      .dark .linknest-tile {
+        ${styles.metallicEffect ? `
+          background-image: none !important;
+        ` : ''}
+      }
+      
+      /* Ensure all text elements in tiles are visible in dark mode */
+      .dark .linknest-tile * {
+        color: inherit;
+      }
+      
+      /* Dark mode hover states */
+      .dark .linknest-tile:hover {
+        border-color: rgba(148, 163, 184, 0.4) !important;
+      }
+      
+      /* Dark mode hover shadow enhancement */
+      .dark .linknest-tile:hover {
+        box-shadow: ${styles.raisedEffect && raisedShadow
+        ? `0 ${8 + hoverShadowIntensity * 2}px ${16 + hoverShadowIntensity * 4}px rgba(0, 0, 0, 0.4), 0 ${4 + hoverShadowIntensity}px ${8 + hoverShadowIntensity * 2}px rgba(0, 0, 0, 0.3), inset 0 2px 0 rgba(255, 255, 255, 0.1)`
+        : `0 ${4 + hoverShadowIntensity}px ${8 + hoverShadowIntensity * 2}px rgba(0, 0, 0, 0.3) !important`};
       }
       
       ${styles.metallicEffect ? `
@@ -937,6 +1075,14 @@ export const styleService = {
         font-size: ${styles.tileFontSize}px !important;
         font-weight: ${styles.tileFontWeight} !important;
         font-style: ${styles.tileFontStyle} !important;
+      }
+      
+      /* Tile Description Text Styling */
+      .linknest-tile p {
+        color: ${styles.tileDescriptionTextColor} !important;
+        font-family: ${styles.tileDescriptionFontFamily} !important;
+        font-size: ${styles.tileDescriptionFontSize}px !important;
+        font-style: ${styles.tileDescriptionFontStyle} !important;
       }
       
       .linknest-page-title {
@@ -1283,6 +1429,20 @@ function generateHeroSectionCSS(styles: SpaceStyles, isDark: boolean): string {
     ? `linear-gradient(to right, ${styles.heroSectionTitleGradientStart}, ${styles.heroSectionTitleGradientMid}, ${styles.heroSectionTitleGradientEnd})`
     : 'none';
 
+  // Dark mode background fallback
+  let darkModeBackground = '';
+  if (styles.heroSectionStyle === 'gradient') {
+    // For gradient, use darker variants in dark mode
+    darkModeBackground = heroBackground;
+  } else if (styles.heroSectionStyle === 'solid') {
+    // Keep solid color as is (user chooses)
+    darkModeBackground = heroBackground;
+  } else if (styles.heroSectionStyle === 'minimal') {
+    darkModeBackground = 'transparent';
+  } else {
+    darkModeBackground = heroBackground;
+  }
+
   return `
     /* Hero Section Container */
     .linknest-hero-section {
@@ -1295,6 +1455,15 @@ function generateHeroSectionCSS(styles: SpaceStyles, isDark: boolean): string {
       ${styles.heroSectionStyle === 'glassmorphism' ? `
         backdrop-filter: blur(${styles.heroSectionBlur}px) !important;
         -webkit-backdrop-filter: blur(${styles.heroSectionBlur}px) !important;
+      ` : ''}
+    }
+
+    /* Dark Mode Hero Section */
+    .dark .linknest-hero-section {
+      ${styles.heroSectionStyle === 'gradient' ? `
+        background: linear-gradient(${styles.heroSectionGradientDirection}deg, rgba(30, 41, 59, 0.8), rgba(51, 65, 85, 0.8)) !important;
+      ` : styles.heroSectionStyle === 'solid' ? `
+        background: ${isDark ? '#1e293b' : heroBackground} !important;
       ` : ''}
     }
 
@@ -1325,7 +1494,24 @@ function generateHeroSectionCSS(styles: SpaceStyles, isDark: boolean): string {
         background-clip: text !important;
         -webkit-text-fill-color: transparent !important;
       }
-    ` : ''}
+      
+      /* Dark mode title gradient - use lighter colors */
+      .dark .linknest-hero-section .linknest-spaces-title {
+        background: linear-gradient(to right, #60a5fa, #a78bfa, #60a5fa) !important;
+        -webkit-background-clip: text !important;
+        background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
+      }
+    ` : `
+      /* Title text color when gradient is disabled */
+      .linknest-hero-section .linknest-spaces-title {
+        color: rgb(30, 41, 55) !important;
+      }
+      
+      .dark .linknest-hero-section .linknest-spaces-title {
+        color: rgb(255, 255, 255) !important;
+      }
+    `}
   `;
 }
 

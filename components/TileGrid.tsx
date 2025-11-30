@@ -479,7 +479,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
         }
       }}
       className={`
-        linknest-tile linknest-tile-animated group relative rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/50
+        linknest-tile linknest-tile-animated group relative rounded-xl border border-slate-200 dark:border-slate-700/50
         hover:border-brand-300 dark:hover:border-brand-500/50
         transition-all duration-200 
         flex flex-col h-full min-h-[140px] cursor-pointer
@@ -2457,7 +2457,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   return (
     <div className="w-full space-y-6">
       {/* Enhanced Hero Header Section */}
-      <div className="linknest-hero-section relative overflow-hidden">
+      <div className="linknest-hero-section relative overflow-hidden bg-gradient-to-br from-brand-50 via-violet-50 to-blue-50 dark:from-slate-800 dark:via-slate-800 dark:to-slate-900 border border-brand-200/50 dark:border-slate-700/50">
         {/* Animated background decoration */}
         <div className="absolute inset-0 overflow-hidden">
           <div className="linknest-hero-orb-1 absolute -top-40 -right-40 w-80 h-80 rounded-full blur-3xl animate-pulse-slow"></div>
@@ -2470,7 +2470,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
           <div className="flex-1">
             <div className="flex items-center gap-4">
               <div className="w-1 h-12 bg-gradient-to-b from-brand-500 to-violet-600 rounded-full shadow-lg"></div>
-              <h1 className="linknest-spaces-title text-4xl sm:text-5xl font-bold">
+              <h1 className="linknest-spaces-title text-4xl sm:text-5xl font-bold text-slate-900 dark:text-white">
                 {settings.spaces_title || 'My Spaces'}
               </h1>
             </div>

@@ -51,8 +51,9 @@ RUN apt-get update && apt-get install -y \
     sqlite3 \
     curl \
     openssl \
-    && docker-php-ext-install pdo pdo_sqlite \
-    && docker-php-ext-enable pdo_sqlite \
+    libldap2-dev \
+    && docker-php-ext-install pdo pdo_sqlite opcache ldap \
+    && docker-php-ext-enable pdo_sqlite opcache ldap \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -65,6 +66,9 @@ WORKDIR /var/www/html
 # Copy PHP files
 COPY api/ ./api/
 COPY docker/.htaccess ./.htaccess
+
+# Copy check_opcache.php to root for system status monitoring
+COPY check_opcache.php ./check_opcache.php
 
 # Copy built frontend from builder
 COPY --from=frontend-builder /app/dist ./dist
