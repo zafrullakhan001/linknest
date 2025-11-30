@@ -47,6 +47,8 @@ switch ($method) {
             handleResetStyles();
         } else if (preg_match('/^profiles\/(\d+)$/', $path, $matches)) {
             handleDeleteProfile((int)$matches[1]);
+        } else if ($path === 'profiles/inactive') {
+            handleDeleteInactiveProfiles();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -566,6 +568,44 @@ function handleDeleteProfile($profileId) {
     } catch (Exception $e) {
         error_log('Error deleting profile: ' . $e->getMessage());
         sendJSON(['error' => 'Failed to delete profile: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleDeleteInactiveProfiles() {
+    requireAdmin(); // Only admins can delete profiles
+    
+    $db = getDB();
+    ensureStyleProfilesTable($db);
+    
+    $db->beginTransaction();
+    
+    try {
+        // Get count of inactive profiles before deletion
+        $stmt = $db->query('SELECT COUNT(*) as count FROM style_profiles WHERE is_active = 0');
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        $inactiveCount = (int)$result['count'];
+        
+        if ($inactiveCount === 0) {
+            $db->rollBack();
+            sendJSON(['success' => true, 'message' => 'No inactive profiles to delete', 'deletedCount' => 0]);
+            return;
+        }
+        
+        // Delete all inactive profiles
+        $stmt = $db->prepare('DELETE FROM style_profiles WHERE is_active = 0');
+        $stmt->execute();
+        
+        $db->commit();
+        
+        sendJSON([
+            'success' => true,
+            'message' => "Successfully deleted {$inactiveCount} inactive profile(s)",
+            'deletedCount' => $inactiveCount
+        ]);
+    } catch (Exception $e) {
+        $db->rollBack();
+        error_log('Error deleting inactive profiles: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to delete inactive profiles: ' . $e->getMessage()], 500);
     }
 }
 

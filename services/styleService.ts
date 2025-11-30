@@ -612,6 +612,23 @@ export const styleService = {
     }
   },
 
+  async deleteInactiveProfiles(): Promise<{ deletedCount: number }> {
+    const response = await fetch(`${API_BASE}/styles/profiles/inactive`, {
+      method: 'DELETE',
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to delete inactive profiles');
+    }
+
+    return {
+      deletedCount: data.deletedCount || 0
+    };
+  },
+
   async exportStyles(styles: SpaceStyles, includeProfiles: boolean = true): Promise<void> {
     // Merge with defaults to ensure all properties are included in export
     const completeStyles: SpaceStyles = {

@@ -357,6 +357,31 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
     }
   };
 
+  const handleDeleteInactiveProfiles = async () => {
+    if (!user?.is_admin) return;
+    
+    const inactiveCount = profiles.filter(p => !p.is_active).length;
+    
+    if (inactiveCount === 0) {
+      alert('No inactive profiles to delete.');
+      return;
+    }
+    
+    if (!confirm(`Are you sure you want to delete all ${inactiveCount} inactive profile(s)? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const result = await styleService.deleteInactiveProfiles();
+      await loadProfiles();
+      
+      alert(`Successfully deleted ${result.deletedCount} inactive profile(s)!`);
+    } catch (error) {
+      console.error('Failed to delete inactive profiles:', error);
+      alert('Failed to delete inactive profiles: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  };
+
   const handleReset = async () => {
     if (!confirm('Are you sure you want to reset all styles to default? This cannot be undone.')) {
       return;
@@ -594,6 +619,22 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     </div>
                   ) : (
                     <span className="text-xs text-slate-500 dark:text-slate-400 italic">No profiles yet</span>
+                  )}
+                  {profiles.length > 0 && profiles.filter(p => !p.is_active).length > 0 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteInactiveProfiles();
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className="ml-2 px-2 py-1 text-xs text-red-600 hover:text-red-700 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors border border-red-200 dark:border-red-500/30 hover:border-red-300 dark:hover:border-red-500/50"
+                      title={`Delete all ${profiles.filter(p => !p.is_active).length} inactive profile(s)`}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 inline mr-1">
+                        <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                      </svg>
+                      Delete Inactive
+                    </button>
                   )}
                   </div>
                 )}

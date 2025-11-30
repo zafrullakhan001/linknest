@@ -1,0 +1,8 @@
+LinkNest Runtime Bundle
+Created: Sun 11/30/2025 10:44:37.72
+Version: Runtime Build Package
+
+This bundle contains all source files needed to build the application.
+Run build.bat (Windows) or build.sh (Linux/Mac) to build the application.
+
+After building, deploy the 'dist' folder and 'api' folder to your web server.
