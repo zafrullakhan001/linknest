@@ -3,18 +3,36 @@
 $requestUri = $_SERVER['REQUEST_URI'];
 $path = parse_url($requestUri, PHP_URL_PATH);
 
+// Dynamically detect base path (e.g., /linknest, /myspaces, etc.)
+// Extract base path from REQUEST_URI if present
+$basePath = '';
+if (preg_match('#^/([^/]+)/#', $path, $matches)) {
+    $firstSegment = $matches[1];
+    // Only treat as base path if it's not a known system path
+    if (!in_array($firstSegment, ['api', 'uploads', 'dist', 'assets', 'node_modules'])) {
+        $basePath = '/' . $firstSegment;
+    }
+}
+
 // Route API requests to api/index.php
-if (strpos($path, '/api') === 0) {
-    // Preserve the original REQUEST_URI for the API router
-    chdir(__DIR__ . '/api');
-    $_SERVER['SCRIPT_NAME'] = '/api/index.php';
-    require __DIR__ . '/api/index.php';
-    return true;
+// Handle both /api and /basepath/api
+if (strpos($path, '/api') !== false) {
+    // Remove base path if present
+    $apiPath = $basePath ? str_replace($basePath, '', $path) : $path;
+    if (strpos($apiPath, '/api') === 0) {
+        chdir(__DIR__ . '/api');
+        $_SERVER['SCRIPT_NAME'] = '/api/index.php';
+        require __DIR__ . '/api/index.php';
+        return true;
+    }
 }
 
 // Route uploads requests
-if (strpos($path, '/uploads') === 0) {
-    $file = __DIR__ . $path;
+// Handle both /uploads and /basepath/uploads
+if (strpos($path, '/uploads') !== false) {
+    // Remove base path if present to get actual file path
+    $uploadPath = $basePath ? str_replace($basePath, '', $path) : $path;
+    $file = __DIR__ . $uploadPath;
     if (file_exists($file) && is_file($file)) {
         // Set correct MIME type for image files
         $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
@@ -60,13 +78,16 @@ if (!$isProduction && ($path === '/' || $path === '')) {
 
 if ($isProduction) {
     // Production mode: serve from dist folder
+    // Remove base path from request path if present
+    $requestPath = $basePath ? str_replace($basePath, '', $path) : $path;
+    
     // Handle assets requests - Vite builds assets in dist/assets/
-    // Can be referenced as /assets/, ./assets/, or assets/ (relative paths)
-    if (strpos($path, '/assets/') === 0 || strpos($path, '/dist/assets/') === 0) {
+    // Handle both /basepath/assets/ and /assets/
+    if (strpos($requestPath, '/assets/') === 0 || strpos($requestPath, '/dist/assets/') === 0) {
         // Handle /assets/ or /dist/assets/ requests
-        $file = strpos($path, '/dist/assets/') === 0 
-            ? __DIR__ . $path 
-            : __DIR__ . '/dist' . $path;
+        $file = strpos($requestPath, '/dist/assets/') === 0 
+            ? __DIR__ . $requestPath 
+            : __DIR__ . '/dist' . $requestPath;
         if (file_exists($file) && is_file($file)) {
             // Set correct MIME type based on file extension
             $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
@@ -84,11 +105,12 @@ if ($isProduction) {
         }
     }
     
-    // Also handle relative asset paths (assets/js/... without leading slash)
-    // This handles cases where base path is relative (./)
+    // Also handle basepath/assets/ pattern (e.g., /myspaces/assets/js/...)
     if (preg_match('#^/([^/]+/)?assets/#', $path)) {
-        // Extract the asset path (remove any subdirectory prefix)
+        // Extract the asset path (remove base path and convert to dist/assets/)
         $assetPath = preg_replace('#^/([^/]+/)?assets/#', '/dist/assets/', $path);
+        // Remove base path if present
+        $assetPath = $basePath ? str_replace($basePath, '', $assetPath) : $assetPath;
         $file = __DIR__ . $assetPath;
         if (file_exists($file) && is_file($file)) {
             $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
@@ -104,9 +126,9 @@ if ($isProduction) {
         }
     }
     
-    // Handle direct dist/ requests
-    if (strpos($path, '/dist/') === 0) {
-        $file = __DIR__ . $path;
+    // Handle direct dist/ requests (with or without base path)
+    if (strpos($requestPath, '/dist/') === 0) {
+        $file = __DIR__ . $requestPath;
         if (file_exists($file) && is_file($file)) {
             // Set correct MIME type based on file extension
             $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
@@ -124,8 +146,8 @@ if ($isProduction) {
         }
     }
     
-    // For root path, serve dist/index.html
-    if ($path === '/' || $path === '') {
+    // For root path (with or without base path), serve dist/index.html
+    if ($requestPath === '/' || $requestPath === '' || $path === $basePath || $path === $basePath . '/') {
         header('Content-Type: text/html; charset=utf-8');
         readfile($distIndex);
         return true;
@@ -133,14 +155,14 @@ if ($isProduction) {
     
     // Check if requested file exists in root (for other files like router.php itself, but NOT index.html)
     // We want to serve dist/index.html for all routes, not the root index.html
-    if ($path === '/index.html' || $path === '/index.tsx' || $path === '/index.ts') {
+    if ($requestPath === '/index.html' || $requestPath === '/index.tsx' || $requestPath === '/index.ts') {
         // Explicitly serve dist/index.html even if root index.html exists
         header('Content-Type: text/html; charset=utf-8');
         readfile($distIndex);
         return true;
     }
     
-    $file = __DIR__ . $path;
+    $file = __DIR__ . $requestPath;
     if (file_exists($file) && is_file($file)) {
         // Don't serve root index.html in production mode - always use dist
         if (basename($file) === 'index.html' && strpos($file, '/dist/') === false) {

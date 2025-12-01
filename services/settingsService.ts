@@ -1,5 +1,4 @@
-// Resolve API base so it works both in dev (/api via Vite proxy)
-// and in XAMPP/production where the app is served from /linknest.
+// Resolve API base dynamically based on current location
 // Protocol-agnostic: uses relative URLs that work with both HTTP and HTTPS
 function resolveApiBase(): string {
   // Prefer Vite-injected env when available
@@ -8,17 +7,26 @@ function resolveApiBase(): string {
     return envBase;
   }
 
-  // Fallback based on current location (runtime)
+  // Fallback: dynamically detect base path from current location
   // This automatically uses the same protocol (HTTP/HTTPS) as the page
   if (typeof window !== 'undefined') {
     const path = window.location.pathname || '';
-    // If app is served from /linknest, use /linknest/api
-    if (path.startsWith('/linknest')) {
-      return '/linknest/api';
+    
+    // Extract base path (everything before the last segment or root)
+    // Examples:
+    // /myapp/ -> /myapp/api
+    // /myapp/index.html -> /myapp/api
+    // / -> /api
+    if (path !== '/' && path.length > 1) {
+      // Remove trailing slash and any filename
+      const cleanPath = path.replace(/\/[^/]*$/, '').replace(/\/$/, '');
+      if (cleanPath && cleanPath !== '/') {
+        return `${cleanPath}/api`;
+      }
     }
   }
 
-  // Default dev / generic fallback
+  // Default fallback (root deployment)
   // Using relative URL ensures it works with both HTTP and HTTPS
   return '/api';
 }

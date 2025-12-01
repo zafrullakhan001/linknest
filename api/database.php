@@ -12,6 +12,8 @@ switch ($method) {
     case 'GET':
         if ($path === '/export' || $path === '/export/') {
             handleExportDatabase();
+        } elseif ($path === '/info' || $path === '/info/') {
+            handleGetDatabaseInfo();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -27,6 +29,79 @@ switch ($method) {
         
     default:
         sendJSON(['error' => 'Method not allowed'], 405);
+}
+
+function handleGetDatabaseInfo() {
+    requireAdmin(); // Only admins can view database info
+    
+    try {
+        $dbPath = DB_PATH;
+        $dbDir = DB_DIR;
+        $exists = file_exists($dbPath);
+        $size = $exists ? filesize($dbPath) : 0;
+        $readable = $exists ? is_readable($dbPath) : false;
+        $writable = $exists ? is_writable($dbPath) : false;
+        $modified = $exists ? filemtime($dbPath) : null;
+        
+        // Get absolute path
+        $absolutePath = realpath($dbPath) ?: $dbPath;
+        
+        // Get database stats if it exists
+        $stats = null;
+        if ($exists) {
+            try {
+                $db = getDB();
+                $stats = [
+                    'page_count' => $db->query('PRAGMA page_count')->fetchColumn(),
+                    'page_size' => $db->query('PRAGMA page_size')->fetchColumn(),
+                    'journal_mode' => $db->query('PRAGMA journal_mode')->fetchColumn(),
+                    'user_version' => $db->query('PRAGMA user_version')->fetchColumn(),
+                ];
+                
+                // Get table counts
+                $tables = ['users', 'tiles', 'sections', 'links', 'settings', 'tabs', 'tile_arrangements', 'category_arrangements'];
+                $tableCounts = [];
+                foreach ($tables as $table) {
+                    try {
+                        $count = $db->query("SELECT COUNT(*) FROM $table")->fetchColumn();
+                        $tableCounts[$table] = (int)$count;
+                    } catch (PDOException $e) {
+                        $tableCounts[$table] = null; // Table doesn't exist
+                    }
+                }
+                $stats['table_counts'] = $tableCounts;
+            } catch (PDOException $e) {
+                $stats = ['error' => 'Could not read database: ' . $e->getMessage()];
+            }
+        }
+        
+        sendJSON([
+            'database' => [
+                'path' => $dbPath,
+                'absolute_path' => $absolutePath,
+                'directory' => $dbDir,
+                'exists' => $exists,
+                'size' => $size,
+                'size_formatted' => $exists ? formatBytes($size) : 'N/A',
+                'readable' => $readable,
+                'writable' => $writable,
+                'modified' => $modified,
+                'modified_formatted' => $modified ? date('Y-m-d H:i:s', $modified) : null,
+                'stats' => $stats
+            ]
+        ]);
+    } catch (Exception $e) {
+        sendJSON(['error' => 'Failed to get database info: ' . $e->getMessage()], 500);
+    }
+}
+
+function formatBytes($bytes, $precision = 2) {
+    $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    $bytes = max($bytes, 0);
+    $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
+    $pow = min($pow, count($units) - 1);
+    $bytes /= pow(1024, $pow);
+    return round($bytes, $precision) . ' ' . $units[$pow];
 }
 
 function handleExportDatabase() {

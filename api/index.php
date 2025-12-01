@@ -22,14 +22,13 @@ if (!empty($path)) {
     // Parse from REQUEST_URI (direct access or other routing)
     $parsedPath = parse_url($requestUri, PHP_URL_PATH);
     
-    // Remove base path if needed (handle both /api and /linknest/api)
-    $basePath = '/api';
-    if (strpos($parsedPath, '/linknest/api') === 0) {
-        $path = substr($parsedPath, strlen('/linknest/api'));
-    } elseif (strpos($parsedPath, $basePath) === 0) {
-        $path = substr($parsedPath, strlen($basePath));
+    // Dynamically detect base path instead of hardcoding /linknest/api
+    // Find /api in the path and extract everything after it
+    $apiPos = strpos($parsedPath, '/api');
+    if ($apiPos !== false) {
+        $path = substr($parsedPath, $apiPos + 4); // +4 for '/api'
     } else {
-        // If path doesn't start with /api, it might be a direct request
+        // If path doesn't contain /api, it might be a direct request
         // Check if it's just the endpoint name (e.g., /styles, /settings)
         $path = $parsedPath;
     }

@@ -44,25 +44,38 @@ switch ($method) {
 }
 
 /**
- * Detect if we're running in XAMPP (with /linknest/ prefix) or Docker/production (without prefix)
- * Returns true if we need the /linknest/ prefix, false otherwise
+ * Detect the base path dynamically from REQUEST_URI
+ * Returns the base path (e.g., '/myapp' or '') or empty string if at root
  */
-function needsLinknestPrefix() {
-    // Check REQUEST_URI for /linknest/ path
+function getBasePath() {
     $requestUri = $_SERVER['REQUEST_URI'] ?? '';
-    if (strpos($requestUri, '/linknest/') !== false) {
-        return true;
-    }
-    
-    // Check SCRIPT_NAME
     $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
-    if (strpos($scriptName, '/linknest/') !== false) {
-        return true;
+    $httpHost = $_SERVER['HTTP_HOST'] ?? '';
+    $httpReferer = $_SERVER['HTTP_REFERER'] ?? '';
+    
+    // Extract base path from REQUEST_URI
+    // Look for pattern: /basepath/api/...
+    if (preg_match('#^/([^/]+)/api/#', $requestUri, $matches)) {
+        return '/' . $matches[1];
     }
     
-    // Check if we're in a subdirectory (XAMPP typically uses /linknest/)
-    // Docker typically serves from root
-    return false;
+    // Check SCRIPT_NAME for base path
+    if (preg_match('#^/([^/]+)/api/#', $scriptName, $matches)) {
+        return '/' . $matches[1];
+    }
+    
+    // In dev mode, check HTTP_REFERER for base path (Vite proxy might strip it from REQUEST_URI)
+    // Look for pattern like http://localhost:3000/basepath/...
+    if (!empty($httpReferer) && preg_match('#://[^/]+/([^/]+)/#', $httpReferer, $matches)) {
+        $refererBasePath = '/' . $matches[1];
+        // Only use if it's not a common path like 'api', 'uploads', 'dist', 'assets'
+        if (!in_array($matches[1], ['api', 'uploads', 'dist', 'assets', 'node_modules'])) {
+            return $refererBasePath;
+        }
+    }
+    
+    // No base path detected (running from root)
+    return '';
 }
 
 /**
@@ -74,12 +87,15 @@ function normalizeLogoUrl($url) {
         return $url;
     }
     
-    // Remove any existing /linknest/ prefix to get the base path
-    $normalized = preg_replace('#^/linknest/uploads/#', '/uploads/', $url);
+    // Remove any existing base path prefix to get the normalized path
+    $normalized = preg_replace('#^/[^/]+/uploads/#', '/uploads/', $url);
     
-    // If we need the /linknest/ prefix for this environment, add it
-    if (needsLinknestPrefix() && strpos($normalized, '/uploads/') === 0) {
-        $normalized = '/linknest' . $normalized;
+    // Get current base path
+    $basePath = getBasePath();
+    
+    // If we have a base path and the URL is /uploads/..., add the base path
+    if ($basePath && strpos($normalized, '/uploads/') === 0) {
+        $normalized = $basePath . $normalized;
     }
     
     return $normalized;
@@ -316,14 +332,14 @@ function handleUpdateSettings() {
                 continue; // Skip invalid keys
             }
             
-            // Normalize logo_image URL before storing (remove environment prefix)
+            // Normalize logo_image URL before storing (remove any base path prefix)
             if ($key === 'logo_image' && !empty($value)) {
-                $value = preg_replace('#^/linknest/uploads/#', '/uploads/', $value);
+                $value = preg_replace('#^/[^/]+/uploads/#', '/uploads/', $value);
             }
             
-            // Normalize favicon URL before storing (remove environment prefix)
+            // Normalize favicon URL before storing (remove any base path prefix)
             if ($key === 'favicon' && !empty($value)) {
-                $value = preg_replace('#^/linknest/uploads/#', '/uploads/', $value);
+                $value = preg_replace('#^/[^/]+/uploads/#', '/uploads/', $value);
             }
             
             $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');

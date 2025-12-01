@@ -5,8 +5,12 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     const isProduction = mode === 'production';
-    const base = isProduction ? '/linknest/' : '/';
-    const apiBase = isProduction ? '/linknest/api' : '/api';
+    
+    // Make base path configurable via environment variable
+    // Default to empty string (root) if not set, or use VITE_BASE_PATH
+    const basePath = env.VITE_BASE_PATH || '';
+    const base = basePath ? (basePath.endsWith('/') ? basePath : basePath + '/') : '/';
+    const apiBase = basePath ? `${basePath}/api` : '/api';
     
     /**
      * HTTPS Support Configuration
@@ -32,7 +36,7 @@ export default defineConfig(({ mode }) => {
     const portSuffix = (port === '80' && protocol === 'http') || (port === '443' && protocol === 'https') 
       ? '' 
       : `:${port}`;
-    const proxyTarget = `${protocol}://${host}${portSuffix}/linknest`;
+    const proxyTarget = `${protocol}://${host}${portSuffix}${basePath}`;
     
     return {
       base: base,
@@ -140,6 +144,7 @@ export default defineConfig(({ mode }) => {
           interval: 100
         },
         proxy: {
+          // Proxy /api requests (for root deployment or when basePath is empty)
           '/api': {
             target: proxyTarget,
             changeOrigin: true,
@@ -148,19 +153,48 @@ export default defineConfig(({ mode }) => {
               // Extract the API path (e.g., /tiles, /auth/me)
               const apiPath = path.replace(/^\/api/, '');
               // Route to index.php with path as query parameter
+              // In dev mode, proxyTarget already includes basePath, so we use relative path
               return `/api/index.php?path=${encodeURIComponent(apiPath)}`;
             }
           },
+          // Proxy basePath/api requests (when basePath is set, e.g., /linknest/api)
+          ...(basePath ? {
+            [`${basePath}/api`]: {
+              target: proxyTarget,
+              changeOrigin: true,
+              secure: protocol === 'https',
+              rewrite: (path) => {
+                // Remove basePath prefix to get the API path (e.g., /linknest/api/settings -> /settings)
+                const apiPath = path.replace(new RegExp(`^${basePath}/api`), '');
+                // Ensure it starts with / for the query parameter
+                const normalizedPath = apiPath.startsWith('/') ? apiPath : '/' + apiPath;
+                return `/api/index.php?path=${encodeURIComponent(normalizedPath)}`;
+              }
+            }
+          } : {}),
           '/uploads': {
             target: proxyTarget,
             changeOrigin: true,
-            secure: protocol === 'https'
+            secure: protocol === 'https',
+            rewrite: (path) => {
+              // Remove /uploads prefix and return just the path for the backend
+              // Backend expects /uploads/filename
+              return path;
+            }
           },
-          '/linknest/uploads': {
-            target: `${protocol}://${host}${portSuffix}`,
-            changeOrigin: true,
-            secure: protocol === 'https'
-          }
+          // Proxy basePath/uploads requests (when basePath is set)
+          ...(basePath ? {
+            [`${basePath}/uploads`]: {
+              target: proxyTarget,
+              changeOrigin: true,
+              secure: protocol === 'https',
+              rewrite: (path) => {
+                // Remove basePath prefix to get /uploads/filename
+                // e.g., /linknest/uploads/logo.jpg -> /uploads/logo.jpg
+                return path.replace(new RegExp(`^${basePath}`), '');
+              }
+            }
+          } : {})
         }
       },
       // Optimize dependencies
