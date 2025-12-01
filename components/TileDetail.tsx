@@ -13,6 +13,138 @@ interface TileDetailProps {
     onAuthRequired?: () => void;
 }
 
+// Enhanced emoji categories with more emojis
+const EMOJI_CATEGORIES = {
+    servers: ['🖥️', '💾', '🖨️', '📡', '🔄', '⚙️', '🔧', '🛠️', '📦', '🗄️', '🗃️', '📊', '📈', '📉', '🔌', '🔋', '⚡', '🌐', '🌍', '🌎', '🖱️', '⌨️', '🖲️', '💿', '💽', '📀', '📼', '📷', '📸', '📹', '🎥'],
+    cloud: ['☁️', '🌥️', '⛅', '🌤️', '☀️', '🌦️', '🌧️', '⛈️', '🌩️', '🌨️', '❄️', '☂️', '☔', '🌈', '🌊', '💧', '💨', '🌪️', '🌀', '🌫️'],
+    onprem: ['🏢', '🏭', '🏗️', '🏛️', '🏘️', '🏠', '🏡', '🏚️', '🏙️', '🌆', '🌇', '🌃', '🌉', '🌁', '🗼', '🗽', '⛪', '🕌', '🕍', '🛕'],
+    hospital: ['🏥', '⚕️', '🩺', '💊', '💉', '🩹', '🩼', '🦽', '🦼', '🚑', '🚨', '🏨', '👨‍⚕️', '👩‍⚕️', '🧑‍⚕️', '👨‍🔬', '👩‍🔬', '🧑‍🔬', '🔬', '🧪', '🫀', '🫁', '🧠', '🦷', '🦴'],
+    technology: ['💻', '⌨️', '🖱️', '🖲️', '🖨️', '🖥️', '📱', '📲', '💾', '💿', '📀', '📼', '📷', '📸', '📹', '🎥', '📽️', '🎞️', '📺', '📻', '📟', '☎️', '📞', '📠', '📧'],
+    network: ['🌐', '📡', '📶', '📞', '☎️', '📠', '📧', '📨', '📩', '📤', '📥', '📦', '📪', '📫', '📬', '📭', '📮', '🗳️', '📯', '📜', '🔗', '⛓️', '🔌', '💡', '⚡'],
+    security: ['🔐', '🔒', '🔓', '🔑', '🗝️', '🛡️', '⚔️', '🗡️', '🔪', '🛠️', '🔧', '🔩', '⚙️', '⛓️', '🔗', '🔫', '💣', '🧨', '🎯', '🚨', '🚔', '🚓', '👮', '🕵️', '🦹'],
+    data: ['📊', '📈', '📉', '📋', '📌', '📍', '🗂️', '📁', '📂', '🗂️', '🗄️', '🗃️', '📑', '📃', '📄', '📜', '📰', '📓', '📔', '📒', '📕', '📗', '📘', '📙', '📚'],
+    communication: ['💬', '💭', '🗨️', '🗯️', '💢', '👤', '👥', '🗣️', '👂', '👃', '👀', '👁️', '👄', '💋', '💌', '💍', '💎', '🎁', '🎉', '🎊'],
+    popular: ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃', '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😙', '😋', '😛', '😜', '🤪', '😝'],
+    objects: ['📱', '⌚', '📷', '📹', '🎥', '📺', '📻', '🔊', '🔉', '🔈', '🔇', '📢', '📣', '📯', '🔔', '🔕', '📻', '📡', '💻', '🖥️', '🖨️', '⌨️', '🖱️', '🖲️', '🖱️'],
+    symbols: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '☮️', '✝️', '☪️', '🕉️', '☸️', '✡️']
+};
+
+// Emoji Picker Tabs Component
+const EmojiPickerTabs: React.FC<{
+    linkId: string;
+    editLinkState: any;
+    updateEditLinkState: (linkId: string, field: string, value: any) => void;
+    setShowLinkEmojiPicker: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+}> = ({ linkId, editLinkState, updateEditLinkState, setShowLinkEmojiPicker }) => {
+    const [activeTab, setActiveTab] = useState<string>('popular');
+    const [searchTerm, setSearchTerm] = useState('');
+
+    const categories = [
+        { id: 'popular', name: 'Popular', emojis: EMOJI_CATEGORIES.popular },
+        { id: 'servers', name: 'Servers', emojis: EMOJI_CATEGORIES.servers },
+        { id: 'cloud', name: 'Cloud', emojis: EMOJI_CATEGORIES.cloud },
+        { id: 'technology', name: 'Tech', emojis: EMOJI_CATEGORIES.technology },
+        { id: 'network', name: 'Network', emojis: EMOJI_CATEGORIES.network },
+        { id: 'security', name: 'Security', emojis: EMOJI_CATEGORIES.security },
+        { id: 'data', name: 'Data', emojis: EMOJI_CATEGORIES.data },
+        { id: 'hospital', name: 'Medical', emojis: EMOJI_CATEGORIES.hospital },
+        { id: 'onprem', name: 'On-Prem', emojis: EMOJI_CATEGORIES.onprem },
+        { id: 'communication', name: 'Chat', emojis: EMOJI_CATEGORIES.communication },
+        { id: 'objects', name: 'Objects', emojis: EMOJI_CATEGORIES.objects },
+        { id: 'symbols', name: 'Symbols', emojis: EMOJI_CATEGORIES.symbols }
+    ];
+
+    // Get all emojis for search
+    const allEmojis = categories.flatMap(cat => cat.emojis);
+    const uniqueEmojis = Array.from(new Set(allEmojis));
+    
+    const filteredEmojis = searchTerm
+        ? uniqueEmojis.filter(emoji => emoji.includes(searchTerm))
+        : categories.find(cat => cat.id === activeTab)?.emojis || [];
+
+    return (
+        <div className="flex flex-col h-full max-h-[400px]">
+            {/* Search - Update search term when typing in parent input */}
+            <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900/50 dark:to-slate-800">
+                <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => {
+                        setSearchTerm(e.target.value);
+                        if (e.target.value) {
+                            setActiveTab('');
+                        }
+                    }}
+                    placeholder="Search emojis..."
+                    className="w-full text-sm px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 text-slate-900 dark:text-white"
+                />
+            </div>
+
+            {/* Tabs */}
+            {!searchTerm && (
+                <div className="flex border-b border-slate-200 dark:border-slate-700 overflow-x-auto">
+                    {categories.map(category => (
+                        <button
+                            key={category.id}
+                            onClick={() => {
+                                setActiveTab(category.id);
+                                setSearchTerm('');
+                            }}
+                            className={`px-3 py-2 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
+                                activeTab === category.id
+                                    ? 'border-brand-500 text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/20'
+                                    : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'
+                            }`}
+                        >
+                            {category.name}
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {/* Emoji Grid */}
+            <div className="flex-1 overflow-y-auto p-3">
+                {filteredEmojis.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                        {filteredEmojis.map((emoji, idx) => (
+                            <button
+                                key={idx}
+                                type="button"
+                                onClick={() => {
+                                    updateEditLinkState(linkId, 'icon', emoji);
+                                    setShowLinkEmojiPicker(prev => ({ ...prev, [linkId]: false }));
+                                }}
+                                className="text-2xl hover:bg-brand-100 dark:hover:bg-brand-900/30 p-2 rounded-lg transition-all hover:scale-110"
+                            >
+                                {emoji}
+                            </button>
+                        ))}
+                    </div>
+                ) : searchTerm ? (
+                    <div className="text-center py-8 text-sm text-slate-500 dark:text-slate-400">
+                        No emojis found. Try a different search term.
+                    </div>
+                ) : null}
+            </div>
+
+            {/* Footer with link to more emojis */}
+            <div className="p-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex items-center justify-center">
+                <a
+                    href="https://emojipedia.org"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 flex items-center gap-1.5"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                    </svg>
+                    Get more emojis from Emojipedia
+                </a>
+            </div>
+        </div>
+    );
+};
+
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
 export const TileDetail: React.FC<TileDetailProps> = ({
@@ -1768,42 +1900,54 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     if (isEditing && tile.canEdit) {
         return (
             <div className="animate-in fade-in zoom-in duration-300 w-full">
-                <div className="flex items-center justify-between mb-6">
-                    <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Edit Page: {editTitle}</h1>
-                    <div className="flex gap-3">
-                        <button
-                            onClick={() => {
-                                const confirmed = window.confirm('Are you sure you want to cancel? All unsaved changes will be lost.');
-                                if (confirmed) {
-                                    console.log('Cancel clicked - exiting edit mode');
-                                    setIsEditing(false);
-                                } else {
-                                    console.log('Cancel cancelled - staying in edit mode');
-                                }
-                            }}
-                            className="px-4 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            onClick={() => {
-                                console.log('=== SAVE BUTTON CLICKED ===');
-                                console.log('Current editTabs count:', editTabs.length);
-                                console.log('Button disabled?', editVisibility === 'private' && editAllowedUsers.length === 0);
-                                console.log('editVisibility:', editVisibility);
-                                console.log('editAllowedUsers.length:', editAllowedUsers.length);
-                                if (editVisibility === 'private' && editAllowedUsers.length === 0) {
-                                    alert('Please select at least one user for private visibility before saving.');
-                                    return;
-                                }
-                                handleSaveChanges();
-                            }}
-                            disabled={editVisibility === 'private' && editAllowedUsers.length === 0}
-                            className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg font-bold transition-all shadow-lg shadow-brand-500/20"
-                            title={editVisibility === 'private' && editAllowedUsers.length === 0 ? 'Please select users for private visibility' : 'Save all changes'}
-                        >
-                            Save Changes {editTabs.length !== (tile.tabs?.length || 0) ? '⚠️' : ''}
-                        </button>
+                {/* Enhanced Header */}
+                <div className="bg-gradient-to-r from-slate-50 to-white dark:from-slate-900 dark:to-slate-800 border-b border-slate-200 dark:border-slate-700 -mx-6 px-6 py-5 mb-8 rounded-b-xl shadow-sm">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div>
+                            <h1 className="text-2xl font-bold text-slate-800 dark:text-white mb-1">Edit Page</h1>
+                            <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                                <span className="text-lg">{editEmoji || '✨'}</span>
+                                <span className="font-medium">{editTitle || 'Untitled Page'}</span>
+                            </p>
+                        </div>
+                        <div className="flex gap-3 w-full sm:w-auto">
+                            <button
+                                onClick={() => {
+                                    const confirmed = window.confirm('Are you sure you want to cancel? All unsaved changes will be lost.');
+                                    if (confirmed) {
+                                        console.log('Cancel clicked - exiting edit mode');
+                                        setIsEditing(false);
+                                    } else {
+                                        console.log('Cancel cancelled - staying in edit mode');
+                                    }
+                                }}
+                                className="px-5 py-2.5 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700 transition-all font-medium rounded-lg border border-slate-200 dark:border-slate-600 flex-1 sm:flex-none"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    console.log('=== SAVE BUTTON CLICKED ===');
+                                    console.log('Current editTabs count:', editTabs.length);
+                                    console.log('Button disabled?', editVisibility === 'private' && editAllowedUsers.length === 0);
+                                    console.log('editVisibility:', editVisibility);
+                                    console.log('editAllowedUsers.length:', editAllowedUsers.length);
+                                    if (editVisibility === 'private' && editAllowedUsers.length === 0) {
+                                        alert('Please select at least one user for private visibility before saving.');
+                                        return;
+                                    }
+                                    handleSaveChanges();
+                                }}
+                                disabled={editVisibility === 'private' && editAllowedUsers.length === 0}
+                                className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-lg font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center gap-2 flex-1 sm:flex-none"
+                                title={editVisibility === 'private' && editAllowedUsers.length === 0 ? 'Please select users for private visibility' : 'Save all changes'}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                Save Changes {editTabs.length !== (tile.tabs?.length || 0) ? '⚠️' : ''}
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -1812,102 +1956,131 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     {/* LEFT COLUMN: General Settings & HTML Editor */}
                     <div className="lg:col-span-1 space-y-6">
                         {/* Basic Info Card */}
-                        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 space-y-4 sticky top-6 shadow-sm">
-                            <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4 border-b border-slate-200 dark:border-slate-700 pb-2">General Settings</h3>
-                            <div className="flex gap-4">
-                                <div className="w-24 relative">
-                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Emoji</label>
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                                        className="w-full h-[42px] bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500"
-                                    >
-                                        {editEmoji || '✨'}
-                                    </button>
-                                    {showEmojiPicker && (
-                                        <>
-                                            <div className="fixed inset-0 z-10" onClick={() => setShowEmojiPicker(false)}></div>
-                                            <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-20 flex flex-col overflow-hidden">
-                                                <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
-                                                    <input
-                                                        type="text"
-                                                        value={editEmoji}
-                                                        onChange={(e) => setEditEmoji(e.target.value)}
-                                                        placeholder="Type emoji..."
-                                                        className="w-full text-sm px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded focus:outline-none focus:ring-1 focus:ring-brand-500 text-slate-900 dark:text-white"
-                                                        autoFocus
-                                                    />
-                                                </div>
-                                                <div className="flex-1 overflow-y-auto p-2 grid grid-cols-6 gap-1">
-                                                    {POPULAR_EMOJIS.map((emoji) => (
-                                                        <button
-                                                            key={emoji}
-                                                            onClick={() => { setEditEmoji(emoji); setShowEmojiPicker(false); }}
-                                                            className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
-                                                        >
-                                                            {emoji}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        </>
-                                    )}
+                        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 space-y-6 sticky top-6 shadow-lg shadow-slate-200/50 dark:shadow-black/20">
+                            <div className="flex items-center gap-3 pb-4 border-b border-slate-200 dark:border-slate-700">
+                                <div className="w-10 h-10 rounded-lg bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.128.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.128c-.355-.196-.75-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    </svg>
                                 </div>
-                                <div className="flex-1">
-                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Page Title</label>
-                                    <input
-                                        type="text"
-                                        value={editTitle}
-                                        onChange={(e) => setEditTitle(e.target.value)}
-                                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none font-bold text-lg"
-                                    />
+                                <h3 className="text-lg font-bold text-slate-800 dark:text-white">General Settings</h3>
+                            </div>
+                            
+                            {/* Emoji & Title */}
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2.5">Emoji & Page Title</label>
+                                    <div className="flex gap-3">
+                                        <div className="relative">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                                                className="w-16 h-14 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl text-2xl flex items-center justify-center hover:border-brand-400 dark:hover:border-brand-500 hover:shadow-md transition-all focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
+                                            >
+                                                {editEmoji || '✨'}
+                                            </button>
+                                            {showEmojiPicker && (
+                                                <>
+                                                    <div className="fixed inset-0 z-10" onClick={() => setShowEmojiPicker(false)}></div>
+                                                    <div className="absolute top-full left-0 mt-2 w-72 h-72 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-20 flex flex-col overflow-hidden">
+                                                        <div className="p-3 border-b border-slate-100 dark:border-slate-700 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900/50 dark:to-slate-800">
+                                                            <input
+                                                                type="text"
+                                                                value={editEmoji}
+                                                                onChange={(e) => setEditEmoji(e.target.value)}
+                                                                placeholder="Type emoji..."
+                                                                className="w-full text-sm px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 text-slate-900 dark:text-white"
+                                                                autoFocus
+                                                            />
+                                                        </div>
+                                                        <div className="flex-1 overflow-y-auto p-3 grid grid-cols-8 gap-1.5">
+                                                            {POPULAR_EMOJIS.map((emoji) => (
+                                                                <button
+                                                                    key={emoji}
+                                                                    onClick={() => { setEditEmoji(emoji); setShowEmojiPicker(false); }}
+                                                                    className="w-9 h-9 flex items-center justify-center text-xl hover:bg-brand-100 dark:hover:bg-brand-900/30 rounded-lg transition-all hover:scale-110"
+                                                                >
+                                                                    {emoji}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                        <div className="flex-1">
+                                            <input
+                                                type="text"
+                                                value={editTitle}
+                                                onChange={(e) => setEditTitle(e.target.value)}
+                                                className="w-full h-14 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none font-semibold text-base transition-all"
+                                                placeholder="Enter page title..."
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
+                            {/* Theme Color */}
                             <div>
-                                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Theme Color</label>
-                                <div className="flex gap-2 flex-wrap">
+                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-3">Theme Color</label>
+                                <div className="flex gap-2.5 flex-wrap p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700">
                                     {THEME_COLORS.map(color => (
                                         <button
                                             key={color}
                                             onClick={() => setEditColor(color)}
                                             className={`
-                                w-8 h-8 rounded-full border-2 transition-all relative overflow-hidden
-                                ${editColor === color ? 'border-brand-500 scale-110' : 'border-transparent hover:scale-105'} 
-                            `}
+                                                w-10 h-10 rounded-full border-3 transition-all relative overflow-hidden shadow-sm hover:shadow-md
+                                                ${editColor === color ? 'border-brand-500 dark:border-brand-400 scale-110 ring-2 ring-brand-200 dark:ring-brand-900/50' : 'border-slate-300 dark:border-slate-600 hover:scale-105'} 
+                                            `}
+                                            title={color.charAt(0).toUpperCase() + color.slice(1)}
                                         >
                                             <div className={`absolute inset-0 ${COLOR_STYLES[color].base}`}></div>
+                                            {editColor === color && (
+                                                <div className="absolute inset-0 flex items-center justify-center">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-white drop-shadow-lg">
+                                                        <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                                                    </svg>
+                                                </div>
+                                            )}
                                         </button>
                                     ))}
                                 </div>
                             </div>
 
+                            {/* Card Description */}
                             <div>
-                                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Card Description</label>
+                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2.5">Card Description</label>
                                 <textarea
                                     value={editDesc}
                                     onChange={(e) => setEditDesc(e.target.value)}
-                                    rows={2}
-                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-slate-600 dark:text-slate-300 text-sm focus:ring-2 focus:ring-brand-500 outline-none resize-none"
-                                    placeholder="Brief summary..."
+                                    rows={3}
+                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-700 dark:text-slate-300 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none transition-all"
+                                    placeholder="Brief summary of this page..."
                                 />
                             </div>
 
+                            {/* Intro Content */}
                             <div>
-                                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Intro Content (HTML)</label>
+                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2.5">Intro Content (HTML)</label>
                                 <textarea
                                     value={editHtml}
                                     onChange={(e) => setEditHtml(e.target.value)}
-                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-4 text-slate-600 dark:text-slate-300 font-mono text-sm focus:ring-2 focus:ring-brand-500 outline-none resize-none leading-relaxed h-40"
+                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-600 dark:text-slate-300 font-mono text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none resize-none leading-relaxed h-40 transition-all"
                                     placeholder="<p>Welcome to my page!</p>"
                                 />
                             </div>
 
                             {/* Visibility Settings */}
                             <div>
-                                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Visibility</label>
-                                <div className="space-y-2">
-                                    <label className="flex items-center gap-2 cursor-pointer">
+                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-3">Visibility</label>
+                                <div className="space-y-2.5">
+                                    <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border-2 transition-all ${
+                                        editVisibility === 'public' 
+                                            ? 'border-brand-500 dark:border-brand-400 bg-brand-50 dark:bg-brand-900/20' 
+                                            : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-900/50'
+                                    }`}>
                                         <input
                                             type="radio"
                                             name="tileVisibility"
@@ -1917,11 +2090,23 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 setEditVisibility(e.target.value as TileVisibility);
                                                 setShowTileUserSelector(false);
                                             }}
-                                            className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                                            className="mt-0.5 w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
                                         />
-                                        <span className="text-sm text-slate-700 dark:text-slate-300">Public - Available for everyone (guests and logged in users)</span>
+                                        <div className="flex-1">
+                                            <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-0.5">Public</div>
+                                            <div className="text-xs text-slate-600 dark:text-slate-400">Available for everyone (guests and logged in users)</div>
+                                        </div>
+                                        {editVisibility === 'public' && (
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                                            </svg>
+                                        )}
                                     </label>
-                                    <label className="flex items-center gap-2 cursor-pointer">
+                                    <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border-2 transition-all ${
+                                        editVisibility === 'authenticated' 
+                                            ? 'border-brand-500 dark:border-brand-400 bg-brand-50 dark:bg-brand-900/20' 
+                                            : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-900/50'
+                                    }`}>
                                         <input
                                             type="radio"
                                             name="tileVisibility"
@@ -1931,11 +2116,23 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 setEditVisibility(e.target.value as TileVisibility);
                                                 setShowTileUserSelector(false);
                                             }}
-                                            className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                                            className="mt-0.5 w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
                                         />
-                                        <span className="text-sm text-slate-700 dark:text-slate-300">Authenticated - Available for logged in users only</span>
+                                        <div className="flex-1">
+                                            <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-0.5">Authenticated</div>
+                                            <div className="text-xs text-slate-600 dark:text-slate-400">Available for logged in users only</div>
+                                        </div>
+                                        {editVisibility === 'authenticated' && (
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                                            </svg>
+                                        )}
                                     </label>
-                                    <label className="flex items-center gap-2 cursor-pointer">
+                                    <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border-2 transition-all ${
+                                        editVisibility === 'private' 
+                                            ? 'border-brand-500 dark:border-brand-400 bg-brand-50 dark:bg-brand-900/20' 
+                                            : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-900/50'
+                                    }`}>
                                         <input
                                             type="radio"
                                             name="tileVisibility"
@@ -1945,41 +2142,66 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 setEditVisibility(e.target.value as TileVisibility);
                                                 setShowTileUserSelector(true);
                                             }}
-                                            className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                                            className="mt-0.5 w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
                                         />
-                                        <span className="text-sm text-slate-700 dark:text-slate-300">Private - Available for specific users only</span>
+                                        <div className="flex-1">
+                                            <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-0.5">Private</div>
+                                            <div className="text-xs text-slate-600 dark:text-slate-400">Available for specific users only</div>
+                                        </div>
+                                        {editVisibility === 'private' && (
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                                            </svg>
+                                        )}
                                     </label>
                                 </div>
 
                                 {/* User Selector for Private Visibility */}
                                 {editVisibility === 'private' && isAuthenticated && (
-                                    <div className="mt-3">
-                                        <div className="flex items-center justify-between mb-1.5">
-                                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Select Users</label>
+                                    <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Select Users</label>
                                             <button
                                                 type="button"
                                                 onClick={() => setShowTileUserSelector(!showTileUserSelector)}
-                                                className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                                                className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium flex items-center gap-1"
                                             >
-                                                {showTileUserSelector ? 'Hide' : 'Show'} Users
+                                                {showTileUserSelector ? (
+                                                    <>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                            <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                                        </svg>
+                                                        Hide
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                            <path fillRule="evenodd" d="M14.77 12.79a.75.75 0 01-1.06-.02L10 8.832l-3.71 3.938a.75.75 0 11-1.08-1.04l4.25-4.5a.75.75 0 011.08 0l4.25 4.5a.75.75 0 01-.02 1.06z" clipRule="evenodd" />
+                                                        </svg>
+                                                        Show
+                                                    </>
+                                                )}
                                             </button>
                                         </div>
                                         {editAllowedUsers.length > 0 && (
-                                            <div className="flex flex-wrap gap-1.5 mb-2">
+                                            <div className="flex flex-wrap gap-2 mb-3">
                                                 {editAllowedUsers.map(userId => {
                                                     const user = usersList.find(u => u.id === userId);
                                                     return (
                                                         <span
                                                             key={userId}
-                                                            className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 rounded text-xs"
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 rounded-lg text-xs font-medium border border-brand-200 dark:border-brand-800"
                                                         >
                                                             {user?.username || `User ${userId}`}
                                                             <button
                                                                 type="button"
                                                                 onClick={() => setEditAllowedUsers(editAllowedUsers.filter(id => id !== userId))}
-                                                                className="hover:text-red-600 dark:hover:text-red-400"
+                                                                className="hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                                                                title="Remove user"
                                                             >
-                                                                ×
+                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                                    <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                                                </svg>
                                                             </button>
                                                         </span>
                                                     );
@@ -1987,16 +2209,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             </div>
                                         )}
                                         {showTileUserSelector && (
-                                            <div className="max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
+                                            <div className="max-h-56 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-3 space-y-1.5">
                                                 {loadingUsers ? (
-                                                    <div className="text-xs text-slate-500 text-center py-2">Loading users...</div>
+                                                    <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-4 flex items-center justify-center gap-2">
+                                                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                        </svg>
+                                                        Loading users...
+                                                    </div>
                                                 ) : usersList.length === 0 ? (
-                                                    <div className="text-xs text-slate-500 text-center py-2">No users available</div>
+                                                    <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-4">No users available</div>
                                                 ) : (
                                                     usersList.map(user => (
                                                         <label
                                                             key={user.id}
-                                                            className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700 rounded cursor-pointer"
+                                                            className="flex items-center gap-3 p-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg cursor-pointer transition-colors"
                                                         >
                                                             <input
                                                                 type="checkbox"
@@ -2008,11 +2236,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         setEditAllowedUsers(editAllowedUsers.filter(id => id !== user.id));
                                                                     }
                                                                 }}
-                                                                className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                                                                className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 w-4 h-4"
                                                             />
-                                                            <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
+                                                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300 flex-1">{user.username}</span>
                                                             {user.auth_source && user.auth_source !== 'local' && (
-                                                                <span className="px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[10px] font-semibold">
+                                                                <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[10px] font-semibold">
                                                                     {user.auth_source.toUpperCase()}
                                                                 </span>
                                                             )}
@@ -2022,7 +2250,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             </div>
                                         )}
                                         {editVisibility === 'private' && editAllowedUsers.length === 0 && (
-                                            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Please select at least one user for private spaces</p>
+                                            <p className="mt-3 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                    <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                                                </svg>
+                                                Please select at least one user for private spaces
+                                            </p>
                                         )}
                                     </div>
                                 )}
@@ -2032,19 +2265,24 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                     {/* RIGHT COLUMN: Tab and Section Manager */}
                     <div className="lg:col-span-2 space-y-6">
-                        <div className="flex items-center justify-between">
-                            <h3 className="text-lg font-bold text-slate-800 dark:text-white">Manage Tabs & Sections</h3>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={handleAddTab}
-                                    className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg text-sm font-medium border border-slate-200 dark:border-slate-700 transition-colors flex items-center gap-2 shadow-sm"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-700">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-lg bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
                                     </svg>
-                                    Add Tab
-                                </button>
+                                </div>
+                                <h3 className="text-lg font-bold text-slate-800 dark:text-white">Manage Tabs & Sections</h3>
                             </div>
+                            <button
+                                onClick={handleAddTab}
+                                className="bg-brand-600 hover:bg-brand-500 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center gap-2"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                </svg>
+                                Add Tab
+                            </button>
                         </div>
 
                         {/* Tab Navigation Bar - Sticky */}
@@ -2079,9 +2317,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             {/* Render tabs if available, otherwise fall back to sections (backward compatibility) */}
                             {editTabs.length > 0 ? (
                                 editTabs.map((tab, tabIndex) => (
-                                    <div id={`tab-${tab.id}`} key={tab.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm dark:shadow-black/20 scroll-mt-24">
+                                    <div id={`tab-${tab.id}`} key={tab.id} className="bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-lg shadow-slate-200/50 dark:shadow-black/20 scroll-mt-24 hover:shadow-xl transition-shadow">
                                         {/* Tab Header */}
-                                        <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900/50 dark:to-slate-800/50 flex gap-2 items-center">
+                                        <div className="p-5 border-b-2 border-slate-200 dark:border-slate-700 bg-gradient-to-r from-slate-50 via-white to-slate-50 dark:from-slate-900/50 dark:via-slate-800/50 dark:to-slate-900/50 flex gap-3 items-center">
                                             {/* Tab Reorder Buttons */}
                                             <div className="flex flex-col gap-0.5">
                                                 <button
@@ -2172,13 +2410,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                                         {/* Tab Sections */}
                                         <div className="p-4 space-y-4">
-                                            <div className="flex items-center justify-between">
-                                                <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Sections in this tab</h4>
+                                            <div className="flex items-center justify-between mb-2">
+                                                <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wide">Sections in this tab</h4>
                                                 <button
                                                     onClick={() => handleAddSection(tab.id)}
-                                                    className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-300 dark:border-slate-700 transition-colors flex items-center gap-2"
+                                                    className="bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center gap-2"
                                                 >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5">
                                                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                                                     </svg>
                                                     Add Section
@@ -2186,9 +2424,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             </div>
 
                                             {tab.sections.map((section, sectionIndex) => (
-                                                <div key={section.id} className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                                                <div key={section.id} className="bg-slate-50 dark:bg-slate-900/50 border-2 border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm">
                                                     {/* Section Header */}
-                                                    <div className="p-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex gap-2 items-center">
+                                                    <div className="p-4 border-b-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex gap-3 items-center">
                                                         {/* Reorder Buttons */}
                                                         <div className="flex flex-col gap-0.5">
                                                             <button
@@ -2400,250 +2638,159 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             {section.links.map((link, linkIndex) => (
                                                                 editingLinkId === link.id ? (
                                                                     // Edit Mode
-                                                                    <div key={link.id} className="flex flex-col gap-2 bg-slate-50 dark:bg-slate-900 p-3 rounded-lg border border-brand-500 dark:border-brand-500/50">
-                                                                        <div className="flex gap-2 items-center">
-                                                                            <input
-                                                                                type="text"
-                                                                                value={editLinkState[link.id]?.label || ''}
-                                                                                onChange={(e) => updateEditLinkState(link.id, 'label', e.target.value)}
-                                                                                placeholder="Link Label"
-                                                                                className="flex-1 min-w-0 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors"
-                                                                            />
-                                                                            <input
-                                                                                type="text"
-                                                                                value={editLinkState[link.id]?.url || ''}
-                                                                                onChange={(e) => updateEditLinkState(link.id, 'url', e.target.value)}
-                                                                                placeholder="https://..."
-                                                                                className="flex-1 min-w-0 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors font-mono"
-                                                                            />
-                                                                        </div>
-                                                                        <div className="flex gap-2 items-center">
-                                                                            <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Emoji:</label>
-                                                                            <div className="flex-1 relative">
-                                                                                <div className="flex gap-2 items-center">
-                                                                                    <button
-                                                                                        type="button"
-                                                                                        onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: !prev[link.id] }))}
-                                                                                        className="flex items-center justify-center w-10 h-10 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-                                                                                        title="Select emoji"
-                                                                                    >
-                                                                                        <span className="text-xl">
-                                                                                            {editLinkState[link.id]?.icon || '😀'}
-                                                                                        </span>
-                                                                                    </button>
-                                                                                    <input
-                                                                                        type="text"
-                                                                                        value={editLinkState[link.id]?.icon || ''}
-                                                                                        onChange={(e) => updateEditLinkState(link.id, 'icon', e.target.value)}
-                                                                                        placeholder="Or type emoji"
-                                                                                        className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors"
-                                                                                    />
-                                                                                </div>
-                                                                                {showLinkEmojiPicker[link.id] && (
-                                                                                    <div className="absolute z-50 mt-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-lg p-3 max-h-64 overflow-y-auto w-80">
-                                                                                        <div className="space-y-2">
-                                                                                            <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">Servers & Infrastructure</div>
-                                                                                            <div className="flex flex-wrap gap-1">
-                                                                                                {LINK_EMOJIS.servers.map((emoji, idx) => (
-                                                                                                    <button
-                                                                                                        key={idx}
-                                                                                                        type="button"
-                                                                                                        onClick={() => {
-                                                                                                            updateEditLinkState(link.id, 'icon', emoji);
-                                                                                                            setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }));
-                                                                                                        }}
-                                                                                                        className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
-                                                                                                    >
-                                                                                                        {emoji}
-                                                                                                    </button>
-                                                                                                ))}
-                                                                                            </div>
-                                                                                            <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">Cloud</div>
-                                                                                            <div className="flex flex-wrap gap-1">
-                                                                                                {LINK_EMOJIS.cloud.filter((e, i, a) => a.indexOf(e) === i).slice(0, 10).map((emoji, idx) => (
-                                                                                                    <button
-                                                                                                        key={idx}
-                                                                                                        type="button"
-                                                                                                        onClick={() => {
-                                                                                                            updateEditLinkState(link.id, 'icon', emoji);
-                                                                                                            setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }));
-                                                                                                        }}
-                                                                                                        className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
-                                                                                                    >
-                                                                                                        {emoji}
-                                                                                                    </button>
-                                                                                                ))}
-                                                                                            </div>
-                                                                                            <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">On-Premise</div>
-                                                                                            <div className="flex flex-wrap gap-1">
-                                                                                                {LINK_EMOJIS.onprem.map((emoji, idx) => (
-                                                                                                    <button
-                                                                                                        key={idx}
-                                                                                                        type="button"
-                                                                                                        onClick={() => {
-                                                                                                            updateEditLinkState(link.id, 'icon', emoji);
-                                                                                                            setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }));
-                                                                                                        }}
-                                                                                                        className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
-                                                                                                    >
-                                                                                                        {emoji}
-                                                                                                    </button>
-                                                                                                ))}
-                                                                                            </div>
-                                                                                            <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">Hospital & Medical</div>
-                                                                                            <div className="flex flex-wrap gap-1">
-                                                                                                {LINK_EMOJIS.hospital.map((emoji, idx) => (
-                                                                                                    <button
-                                                                                                        key={idx}
-                                                                                                        type="button"
-                                                                                                        onClick={() => {
-                                                                                                            updateEditLinkState(link.id, 'icon', emoji);
-                                                                                                            setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }));
-                                                                                                        }}
-                                                                                                        className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
-                                                                                                    >
-                                                                                                        {emoji}
-                                                                                                    </button>
-                                                                                                ))}
-                                                                                            </div>
-                                                                                            <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">Medical Modalities</div>
-                                                                                            <div className="flex flex-wrap gap-1">
-                                                                                                {LINK_EMOJIS.modalities.map((emoji, idx) => (
-                                                                                                    <button
-                                                                                                        key={idx}
-                                                                                                        type="button"
-                                                                                                        onClick={() => {
-                                                                                                            updateEditLinkState(link.id, 'icon', emoji);
-                                                                                                            setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }));
-                                                                                                        }}
-                                                                                                        className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
-                                                                                                    >
-                                                                                                        {emoji}
-                                                                                                    </button>
-                                                                                                ))}
-                                                                                            </div>
-                                                                                            <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">Technology</div>
-                                                                                            <div className="flex flex-wrap gap-1">
-                                                                                                {LINK_EMOJIS.technology.map((emoji, idx) => (
-                                                                                                    <button
-                                                                                                        key={idx}
-                                                                                                        type="button"
-                                                                                                        onClick={() => {
-                                                                                                            updateEditLinkState(link.id, 'icon', emoji);
-                                                                                                            setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }));
-                                                                                                        }}
-                                                                                                        className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
-                                                                                                    >
-                                                                                                        {emoji}
-                                                                                                    </button>
-                                                                                                ))}
-                                                                                            </div>
-                                                                                            <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">Network & Communication</div>
-                                                                                            <div className="flex flex-wrap gap-1">
-                                                                                                {LINK_EMOJIS.network.map((emoji, idx) => (
-                                                                                                    <button
-                                                                                                        key={idx}
-                                                                                                        type="button"
-                                                                                                        onClick={() => {
-                                                                                                            updateEditLinkState(link.id, 'icon', emoji);
-                                                                                                            setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }));
-                                                                                                        }}
-                                                                                                        className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
-                                                                                                    >
-                                                                                                        {emoji}
-                                                                                                    </button>
-                                                                                                ))}
-                                                                                            </div>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-                                                                        </div>
-                                                                        <div className="flex gap-2 items-center">
-                                                                            <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Text Color:</label>
-                                                                            <div className="flex gap-2 items-center flex-1">
-                                                                                <input
-                                                                                    type="color"
-                                                                                    value={editLinkState[link.id]?.textColor && editLinkState[link.id]!.textColor.trim() ? editLinkState[link.id]!.textColor : '#000000'}
-                                                                                    onChange={(e) => updateEditLinkState(link.id, 'textColor', e.target.value)}
-                                                                                    className="w-12 h-10 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg cursor-pointer"
-                                                                                    title="Select text color"
-                                                                                />
+                                                                    <div key={link.id} className="bg-white dark:bg-slate-800 border-2 border-brand-500 dark:border-brand-500/50 rounded-xl p-4 shadow-lg space-y-3">
+                                                                        {/* Link Label & URL */}
+                                                                        <div className="grid grid-cols-2 gap-3">
+                                                                            <div>
+                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Link Label</label>
                                                                                 <input
                                                                                     type="text"
-                                                                                    value={editLinkState[link.id]?.textColor || ''}
-                                                                                    onChange={(e) => updateEditLinkState(link.id, 'textColor', e.target.value)}
-                                                                                    placeholder="#000000"
-                                                                                    className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors font-mono"
+                                                                                    value={editLinkState[link.id]?.label || ''}
+                                                                                    onChange={(e) => updateEditLinkState(link.id, 'label', e.target.value)}
+                                                                                    placeholder="Enter link name..."
+                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-medium text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
                                                                                 />
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => updateEditLinkState(link.id, 'textColor', '')}
-                                                                                    className="px-2 py-1 text-xs bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded transition-colors"
-                                                                                    title="Clear color"
-                                                                                >
-                                                                                    Clear
-                                                                                </button>
+                                                                            </div>
+                                                                            <div>
+                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">URL</label>
+                                                                                <input
+                                                                                    type="text"
+                                                                                    value={editLinkState[link.id]?.url || ''}
+                                                                                    onChange={(e) => updateEditLinkState(link.id, 'url', e.target.value)}
+                                                                                    placeholder="https://example.com"
+                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
+                                                                                />
                                                                             </div>
                                                                         </div>
-                                                                        <div className="flex gap-2 items-center">
-                                                                            <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Visibility:</label>
-                                                                            <select
-                                                                                value={editLinkState[link.id]?.visibility || 'public'}
-                                                                                onChange={(e) => updateEditLinkState(link.id, 'visibility', e.target.value as LinkVisibility)}
-                                                                                className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors"
-                                                                            >
-                                                                                <option value="public">Public (visible to everyone)</option>
-                                                                                <option value="authenticated">Authenticated (logged-in users only)</option>
-                                                                                <option value="private">Private (specific users only)</option>
-                                                                            </select>
+
+                                                                        {/* Emoji Selection */}
+                                                                        <div className="relative">
+                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Emoji</label>
+                                                                            <div className="flex gap-2 items-center">
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: !prev[link.id] }))}
+                                                                                    className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg hover:border-brand-400 dark:hover:border-brand-500 hover:shadow-md transition-all focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
+                                                                                    title="Select emoji"
+                                                                                >
+                                                                                    <span className="text-xl">
+                                                                                        {editLinkState[link.id]?.icon || '😀'}
+                                                                                    </span>
+                                                                                </button>
+                                                                                <input
+                                                                                    type="text"
+                                                                                    value={editLinkState[link.id]?.icon || ''}
+                                                                                    onChange={(e) => updateEditLinkState(link.id, 'icon', e.target.value)}
+                                                                                    placeholder="Or type emoji..."
+                                                                                    className="flex-1 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                                                                />
+                                                                            </div>
+                                                                            {showLinkEmojiPicker[link.id] && (
+                                                                                <>
+                                                                                    <div className="fixed inset-0 z-[9998]" onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }))}></div>
+                                                                                    <div className="fixed z-[9999] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl w-96 max-h-[500px] flex flex-col overflow-hidden" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                                                                                        <EmojiPickerTabs linkId={link.id} editLinkState={editLinkState[link.id]} updateEditLinkState={updateEditLinkState} setShowLinkEmojiPicker={setShowLinkEmojiPicker} />
+                                                                                    </div>
+                                                                                </>
+                                                                            )}
                                                                         </div>
-                                                                        <div className="flex gap-2 items-start">
-                                                                            <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap pt-2">Notes:</label>
-                                                                            <textarea
-                                                                                value={editLinkState[link.id]?.notes || ''}
-                                                                                onChange={(e) => updateEditLinkState(link.id, 'notes', e.target.value)}
-                                                                                placeholder="Add notes or description for this link..."
-                                                                                rows={2}
-                                                                                className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors resize-none"
-                                                                            />
+
+                                                                        {/* Text Color & Visibility - Side by Side */}
+                                                                        <div className="grid grid-cols-2 gap-3">
+                                                                            <div>
+                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Text Color</label>
+                                                                                <div className="flex gap-2 items-center">
+                                                                                    <input
+                                                                                        type="color"
+                                                                                        value={editLinkState[link.id]?.textColor && editLinkState[link.id]!.textColor.trim() ? editLinkState[link.id]!.textColor : '#000000'}
+                                                                                        onChange={(e) => updateEditLinkState(link.id, 'textColor', e.target.value)}
+                                                                                        className="w-12 h-12 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:border-brand-400 dark:hover:border-brand-500 transition-all"
+                                                                                        title="Select text color"
+                                                                                    />
+                                                                                    <div className="flex-1 flex gap-1.5">
+                                                                                        <input
+                                                                                            type="text"
+                                                                                            value={editLinkState[link.id]?.textColor || ''}
+                                                                                            onChange={(e) => updateEditLinkState(link.id, 'textColor', e.target.value)}
+                                                                                            placeholder="#000000"
+                                                                                            className="flex-1 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-xs text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
+                                                                                        />
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => updateEditLinkState(link.id, 'textColor', '')}
+                                                                                            className="px-2.5 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg transition-colors text-xs font-medium"
+                                                                                            title="Clear color"
+                                                                                        >
+                                                                                            Clear
+                                                                                        </button>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                            <div>
+                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Visibility</label>
+                                                                                <select
+                                                                                    value={editLinkState[link.id]?.visibility || 'public'}
+                                                                                    onChange={(e) => updateEditLinkState(link.id, 'visibility', e.target.value as LinkVisibility)}
+                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-medium"
+                                                                                >
+                                                                                    <option value="public">Public (visible to everyone)</option>
+                                                                                    <option value="authenticated">Authenticated (logged-in users only)</option>
+                                                                                    <option value="private">Private (specific users only)</option>
+                                                                                </select>
+                                                                            </div>
                                                                         </div>
-                                                                        <div className="flex gap-2 items-center">
-                                                                            <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Hover Tooltip:</label>
-                                                                            <input
-                                                                                type="text"
-                                                                                value={editLinkState[link.id]?.tooltip || ''}
-                                                                                onChange={(e) => updateEditLinkState(link.id, 'tooltip', e.target.value)}
-                                                                                placeholder="Text shown on hover..."
-                                                                                className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors"
-                                                                            />
+
+                                                                        {/* Notes & Tooltip - Side by Side */}
+                                                                        <div className="grid grid-cols-2 gap-3">
+                                                                            <div>
+                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Notes</label>
+                                                                                <textarea
+                                                                                    value={editLinkState[link.id]?.notes || ''}
+                                                                                    onChange={(e) => updateEditLinkState(link.id, 'notes', e.target.value)}
+                                                                                    placeholder="Add notes..."
+                                                                                    rows={2}
+                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all resize-none"
+                                                                                />
+                                                                            </div>
+                                                                            <div>
+                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Hover Tooltip</label>
+                                                                                <input
+                                                                                    type="text"
+                                                                                    value={editLinkState[link.id]?.tooltip || ''}
+                                                                                    onChange={(e) => updateEditLinkState(link.id, 'tooltip', e.target.value)}
+                                                                                    placeholder="Text shown on hover..."
+                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                                                                />
+                                                                            </div>
                                                                         </div>
+                                                                        {/* User Selector for Private Visibility */}
                                                                         {editLinkState[link.id]?.visibility === 'private' && (
-                                                                            <div className="space-y-2">
-                                                                                <div className="flex items-center justify-between">
-                                                                                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Select Users:</label>
+                                                                            <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border-2 border-slate-200 dark:border-slate-700">
+                                                                                <div className="flex items-center justify-between mb-2">
+                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Select Users</label>
                                                                                     <button
                                                                                         type="button"
                                                                                         onClick={() => setShowUserPicker(prev => ({ ...prev, [link.id]: !prev[link.id] }))}
-                                                                                        className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                                                                                        className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium flex items-center gap-1"
                                                                                     >
-                                                                                        {showUserPicker[link.id] ? 'Hide' : 'Show'} Users
+                                                                                        {showUserPicker[link.id] ? 'Hide' : 'Show'}
                                                                                     </button>
                                                                                 </div>
                                                                                 {editLinkState[link.id]?.allowedUsers && editLinkState[link.id]!.allowedUsers.length > 0 && (
-                                                                                    <div className="flex flex-wrap gap-1.5">
+                                                                                    <div className="flex flex-wrap gap-1.5 mb-2">
                                                                                         {editLinkState[link.id]!.allowedUsers.map(userId => {
                                                                                             const user = usersList.find(u => u.id === userId);
                                                                                             return (
                                                                                                 <span
                                                                                                     key={userId}
-                                                                                                    className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 rounded text-xs"
+                                                                                                    className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 rounded text-xs font-medium"
                                                                                                 >
                                                                                                     {user?.username || `User ${userId}`}
                                                                                                     <button
                                                                                                         type="button"
                                                                                                         onClick={() => toggleEditUserSelection(link.id, userId)}
-                                                                                                        className="hover:text-red-600 dark:hover:text-red-400"
+                                                                                                        className="hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                                                                                                        title="Remove user"
                                                                                                     >
                                                                                                         ×
                                                                                                     </button>
@@ -2653,31 +2800,33 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     </div>
                                                                                 )}
                                                                                 {showUserPicker[link.id] && (
-                                                                                    <div className="max-h-48 overflow-y-auto border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
+                                                                                    <div className="max-h-40 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
                                                                                         {loadingUsers ? (
-                                                                                            <div className="text-xs text-slate-500 text-center py-2">Loading users...</div>
+                                                                                            <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2 flex items-center justify-center gap-2">
+                                                                                                <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                                                                </svg>
+                                                                                                Loading...
+                                                                                            </div>
                                                                                         ) : usersList.length === 0 ? (
-                                                                                            <div className="text-xs text-slate-500 text-center py-2">No users available</div>
+                                                                                            <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">No users available</div>
                                                                                         ) : (
                                                                                             usersList.map(user => (
                                                                                                 <label
                                                                                                     key={user.id}
-                                                                                                    className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700 rounded cursor-pointer"
+                                                                                                    className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer transition-colors"
                                                                                                 >
                                                                                                     <input
                                                                                                         type="checkbox"
                                                                                                         checked={editLinkState[link.id]?.allowedUsers?.includes(user.id) || false}
                                                                                                         onChange={() => toggleEditUserSelection(link.id, user.id)}
-                                                                                                        className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                                                                                                        className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 w-3.5 h-3.5"
                                                                                                     />
-                                                                                                    <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
-                                                                                                    {user.auth_source === 'ldap' ? (
-                                                                                                        <span className="px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[10px] font-semibold">
+                                                                                                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300 flex-1">{user.username}</span>
+                                                                                                    {user.auth_source === 'ldap' && (
+                                                                                                        <span className="px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[9px] font-semibold">
                                                                                                             LDAP
-                                                                                                        </span>
-                                                                                                    ) : (
-                                                                                                        <span className="px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-semibold">
-                                                                                                            Local
                                                                                                         </span>
                                                                                                     )}
                                                                                                 </label>
@@ -2687,18 +2836,23 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 )}
                                                                             </div>
                                                                         )}
-                                                                        <div className="flex gap-2 justify-end">
+
+                                                                        {/* Action Buttons */}
+                                                                        <div className="flex gap-2 justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
                                                                             <button
                                                                                 onClick={handleCancelEditLink}
-                                                                                className="px-3 py-1.5 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+                                                                                className="px-4 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 transition-all"
                                                                             >
                                                                                 Cancel
                                                                             </button>
                                                                             <button
                                                                                 onClick={() => handleUpdateLink(tab.id, section.id, link.id)}
                                                                                 disabled={!editLinkState[link.id]?.label?.trim() || !editLinkState[link.id]?.url?.trim()}
-                                                                                className="px-3 py-1.5 text-sm bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded transition-colors"
+                                                                                className="px-4 py-2 text-xs font-semibold bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-md hover:shadow-lg shadow-brand-500/30 flex items-center gap-1.5"
                                                                             >
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                                </svg>
                                                                                 Save
                                                                             </button>
                                                                         </div>
@@ -2793,260 +2947,161 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             ))}
                                                         </div>
 
-                                                        {/* Inline Add Form */}
-                                                        <div className="space-y-2 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700/50">
-                                                            <div className="flex gap-2 items-center">
-                                                                <input
-                                                                    type="text"
-                                                                    value={newLinkState[section.id]?.label || ''}
-                                                                    onChange={(e) => updateNewLinkState(section.id, 'label', e.target.value)}
-                                                                    placeholder="Link Label"
-                                                                    className="flex-1 min-w-0 bg-transparent border-b border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white px-2 py-1 focus:border-brand-500 focus:outline-none transition-colors"
-                                                                />
-                                                                <input
-                                                                    type="text"
-                                                                    value={newLinkState[section.id]?.url || ''}
-                                                                    onChange={(e) => updateNewLinkState(section.id, 'url', e.target.value)}
-                                                                    placeholder="https://..."
-                                                                    className="flex-1 min-w-0 bg-transparent border-b border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white px-2 py-1 focus:border-brand-500 focus:outline-none transition-colors font-mono"
-                                                                />
-                                                                <button
-                                                                    onClick={() => handleAddLinkToSection(tab.id, section.id)}
-                                                                    disabled={!newLinkState[section.id]?.label || !newLinkState[section.id]?.url}
-                                                                    className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white p-2 rounded-md transition-colors"
-                                                                >
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                                        <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-                                                                    </svg>
-                                                                </button>
-                                                            </div>
-                                                            <div className="flex gap-2 items-center">
-                                                                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Emoji:</label>
-                                                                <div className="flex-1 relative">
-                                                                    <div className="flex gap-2 items-center">
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: !prev[section.id] }))}
-                                                                            className="flex items-center justify-center w-10 h-10 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-                                                                            title="Select emoji"
-                                                                        >
-                                                                            <span className="text-xl">
-                                                                                {newLinkState[section.id]?.icon || '😀'}
-                                                                            </span>
-                                                                        </button>
-                                                                        <input
-                                                                            type="text"
-                                                                            value={newLinkState[section.id]?.icon || ''}
-                                                                            onChange={(e) => updateNewLinkState(section.id, 'icon', e.target.value)}
-                                                                            placeholder="Or type emoji"
-                                                                            className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors"
-                                                                        />
-                                                                    </div>
-                                                                    {showLinkEmojiPicker[section.id] && (
-                                                                        <div className="absolute z-50 mt-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-lg p-3 max-h-64 overflow-y-auto w-80">
-                                                                            <div className="space-y-2">
-                                                                                <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">Servers & Infrastructure</div>
-                                                                                <div className="flex flex-wrap gap-1">
-                                                                                    {LINK_EMOJIS.servers.map((emoji, idx) => (
-                                                                                        <button
-                                                                                            key={idx}
-                                                                                            type="button"
-                                                                                            onClick={() => {
-                                                                                                updateNewLinkState(section.id, 'icon', emoji);
-                                                                                                setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: false }));
-                                                                                            }}
-                                                                                            className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
-                                                                                        >
-                                                                                            {emoji}
-                                                                                        </button>
-                                                                                    ))}
-                                                                                </div>
-                                                                                <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">Cloud</div>
-                                                                                <div className="flex flex-wrap gap-1">
-                                                                                    {LINK_EMOJIS.cloud.filter((e, i, a) => a.indexOf(e) === i).slice(0, 10).map((emoji, idx) => (
-                                                                                        <button
-                                                                                            key={idx}
-                                                                                            type="button"
-                                                                                            onClick={() => {
-                                                                                                updateNewLinkState(section.id, 'icon', emoji);
-                                                                                                setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: false }));
-                                                                                            }}
-                                                                                            className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
-                                                                                        >
-                                                                                            {emoji}
-                                                                                        </button>
-                                                                                    ))}
-                                                                                </div>
-                                                                                <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">On-Premise</div>
-                                                                                <div className="flex flex-wrap gap-1">
-                                                                                    {LINK_EMOJIS.onprem.map((emoji, idx) => (
-                                                                                        <button
-                                                                                            key={idx}
-                                                                                            type="button"
-                                                                                            onClick={() => {
-                                                                                                updateNewLinkState(section.id, 'icon', emoji);
-                                                                                                setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: false }));
-                                                                                            }}
-                                                                                            className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
-                                                                                        >
-                                                                                            {emoji}
-                                                                                        </button>
-                                                                                    ))}
-                                                                                </div>
-                                                                                <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">Hospital & Medical</div>
-                                                                                <div className="flex flex-wrap gap-1">
-                                                                                    {LINK_EMOJIS.hospital.map((emoji, idx) => (
-                                                                                        <button
-                                                                                            key={idx}
-                                                                                            type="button"
-                                                                                            onClick={() => {
-                                                                                                updateNewLinkState(section.id, 'icon', emoji);
-                                                                                                setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: false }));
-                                                                                            }}
-                                                                                            className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
-                                                                                        >
-                                                                                            {emoji}
-                                                                                        </button>
-                                                                                    ))}
-                                                                                </div>
-                                                                                <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">Medical Modalities</div>
-                                                                                <div className="flex flex-wrap gap-1">
-                                                                                    {LINK_EMOJIS.modalities.map((emoji, idx) => (
-                                                                                        <button
-                                                                                            key={idx}
-                                                                                            type="button"
-                                                                                            onClick={() => {
-                                                                                                updateNewLinkState(section.id, 'icon', emoji);
-                                                                                                setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: false }));
-                                                                                            }}
-                                                                                            className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
-                                                                                        >
-                                                                                            {emoji}
-                                                                                        </button>
-                                                                                    ))}
-                                                                                </div>
-                                                                                <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">Technology</div>
-                                                                                <div className="flex flex-wrap gap-1">
-                                                                                    {LINK_EMOJIS.technology.map((emoji, idx) => (
-                                                                                        <button
-                                                                                            key={idx}
-                                                                                            type="button"
-                                                                                            onClick={() => {
-                                                                                                updateNewLinkState(section.id, 'icon', emoji);
-                                                                                                setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: false }));
-                                                                                            }}
-                                                                                            className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
-                                                                                        >
-                                                                                            {emoji}
-                                                                                        </button>
-                                                                                    ))}
-                                                                                </div>
-                                                                                <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">Network & Communication</div>
-                                                                                <div className="flex flex-wrap gap-1">
-                                                                                    {LINK_EMOJIS.network.map((emoji, idx) => (
-                                                                                        <button
-                                                                                            key={idx}
-                                                                                            type="button"
-                                                                                            onClick={() => {
-                                                                                                updateNewLinkState(section.id, 'icon', emoji);
-                                                                                                setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: false }));
-                                                                                            }}
-                                                                                            className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
-                                                                                        >
-                                                                                            {emoji}
-                                                                                        </button>
-                                                                                    ))}
-                                                                                </div>
-                                                                            </div>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex gap-2 items-center">
-                                                                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Text Color:</label>
-                                                                <div className="flex gap-2 items-center flex-1">
-                                                                    <input
-                                                                        type="color"
-                                                                        value={newLinkState[section.id]?.textColor && newLinkState[section.id]!.textColor.trim() ? newLinkState[section.id]!.textColor : '#000000'}
-                                                                        onChange={(e) => updateNewLinkState(section.id, 'textColor', e.target.value)}
-                                                                        className="w-12 h-10 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg cursor-pointer"
-                                                                        title="Select text color"
-                                                                    />
+                                                        {/* Inline Add Form - Compact Design */}
+                                                        <div className="bg-white dark:bg-slate-800 border-2 border-brand-500 dark:border-brand-500/50 rounded-xl p-4 shadow-lg space-y-3">
+                                                            {/* Link Label & URL */}
+                                                            <div className="grid grid-cols-2 gap-3">
+                                                                <div>
+                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Link Label</label>
                                                                     <input
                                                                         type="text"
-                                                                        value={newLinkState[section.id]?.textColor || ''}
-                                                                        onChange={(e) => updateNewLinkState(section.id, 'textColor', e.target.value)}
-                                                                        placeholder="#000000"
-                                                                        className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors font-mono"
+                                                                        value={newLinkState[section.id]?.label || ''}
+                                                                        onChange={(e) => updateNewLinkState(section.id, 'label', e.target.value)}
+                                                                        placeholder="Enter link name..."
+                                                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-medium text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
                                                                     />
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => updateNewLinkState(section.id, 'textColor', '')}
-                                                                        className="px-2 py-1 text-xs bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded transition-colors"
-                                                                        title="Clear color"
-                                                                    >
-                                                                        Clear
-                                                                    </button>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">URL</label>
+                                                                    <input
+                                                                        type="text"
+                                                                        value={newLinkState[section.id]?.url || ''}
+                                                                        onChange={(e) => updateNewLinkState(section.id, 'url', e.target.value)}
+                                                                        placeholder="https://example.com"
+                                                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
+                                                                    />
                                                                 </div>
                                                             </div>
-                                                            <div className="flex gap-2 items-start">
-                                                                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap pt-1.5">Notes:</label>
-                                                                <textarea
-                                                                    value={newLinkState[section.id]?.notes || ''}
-                                                                    onChange={(e) => updateNewLinkState(section.id, 'notes', e.target.value)}
-                                                                    placeholder="Add notes or description for this link..."
-                                                                    rows={2}
-                                                                    className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors resize-none"
-                                                                />
+
+                                                            {/* Emoji Selection */}
+                                                            <div className="relative">
+                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Emoji</label>
+                                                                <div className="flex gap-2 items-center">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: !prev[section.id] }))}
+                                                                        className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg hover:border-brand-400 dark:hover:border-brand-500 hover:shadow-md transition-all focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
+                                                                        title="Select emoji"
+                                                                    >
+                                                                        <span className="text-xl">
+                                                                            {newLinkState[section.id]?.icon || '😀'}
+                                                                        </span>
+                                                                    </button>
+                                                                    <input
+                                                                        type="text"
+                                                                        value={newLinkState[section.id]?.icon || ''}
+                                                                        onChange={(e) => updateNewLinkState(section.id, 'icon', e.target.value)}
+                                                                        placeholder="Or type emoji..."
+                                                                        className="flex-1 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                                                    />
+                                                                </div>
+                                                                {showLinkEmojiPicker[section.id] && (
+                                                                    <>
+                                                                        <div className="fixed inset-0 z-[9998]" onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: false }))}></div>
+                                                                        <div className="fixed z-[9999] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl w-96 max-h-[500px] flex flex-col overflow-hidden" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                                                                            <EmojiPickerTabs linkId={section.id} editLinkState={newLinkState[section.id]} updateEditLinkState={(id, field, value) => updateNewLinkState(id, field, value)} setShowLinkEmojiPicker={setShowLinkEmojiPicker} />
+                                                                        </div>
+                                                                    </>
+                                                                )}
                                                             </div>
-                                                            <div className="flex gap-2 items-center">
-                                                                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Hover Tooltip:</label>
-                                                                <input
-                                                                    type="text"
-                                                                    value={newLinkState[section.id]?.tooltip || ''}
-                                                                    onChange={(e) => updateNewLinkState(section.id, 'tooltip', e.target.value)}
-                                                                    placeholder="Text shown on hover..."
-                                                                    className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors"
-                                                                />
+
+                                                            {/* Text Color & Visibility - Side by Side */}
+                                                            <div className="grid grid-cols-2 gap-3">
+                                                                <div>
+                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Text Color</label>
+                                                                    <div className="flex gap-2 items-center">
+                                                                        <input
+                                                                            type="color"
+                                                                            value={newLinkState[section.id]?.textColor && newLinkState[section.id]!.textColor.trim() ? newLinkState[section.id]!.textColor : '#000000'}
+                                                                            onChange={(e) => updateNewLinkState(section.id, 'textColor', e.target.value)}
+                                                                            className="w-12 h-12 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:border-brand-400 dark:hover:border-brand-500 transition-all"
+                                                                            title="Select text color"
+                                                                        />
+                                                                        <div className="flex-1 flex gap-1.5">
+                                                                            <input
+                                                                                type="text"
+                                                                                value={newLinkState[section.id]?.textColor || ''}
+                                                                                onChange={(e) => updateNewLinkState(section.id, 'textColor', e.target.value)}
+                                                                                placeholder="#000000"
+                                                                                className="flex-1 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-xs text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
+                                                                            />
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => updateNewLinkState(section.id, 'textColor', '')}
+                                                                                className="px-2.5 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg transition-colors text-xs font-medium"
+                                                                                title="Clear color"
+                                                                            >
+                                                                                Clear
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Visibility</label>
+                                                                    <select
+                                                                        value={newLinkState[section.id]?.visibility || 'public'}
+                                                                        onChange={(e) => updateNewLinkState(section.id, 'visibility', e.target.value as LinkVisibility)}
+                                                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-medium"
+                                                                    >
+                                                                        <option value="public">Public (visible to everyone)</option>
+                                                                        <option value="authenticated">Authenticated (logged-in users only)</option>
+                                                                        <option value="private">Private (specific users only)</option>
+                                                                    </select>
+                                                                </div>
                                                             </div>
-                                                            <div className="flex gap-2 items-center">
-                                                                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Visibility:</label>
-                                                                <select
-                                                                    value={newLinkState[section.id]?.visibility || 'public'}
-                                                                    onChange={(e) => updateNewLinkState(section.id, 'visibility', e.target.value as LinkVisibility)}
-                                                                    className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors"
-                                                                >
-                                                                    <option value="public">Public (visible to everyone)</option>
-                                                                    <option value="authenticated">Authenticated (logged-in users only)</option>
-                                                                    <option value="private">Private (specific users only)</option>
-                                                                </select>
+
+                                                            {/* Notes & Tooltip - Side by Side */}
+                                                            <div className="grid grid-cols-2 gap-3">
+                                                                <div>
+                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Notes</label>
+                                                                    <textarea
+                                                                        value={newLinkState[section.id]?.notes || ''}
+                                                                        onChange={(e) => updateNewLinkState(section.id, 'notes', e.target.value)}
+                                                                        placeholder="Add notes..."
+                                                                        rows={2}
+                                                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all resize-none"
+                                                                    />
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Hover Tooltip</label>
+                                                                    <input
+                                                                        type="text"
+                                                                        value={newLinkState[section.id]?.tooltip || ''}
+                                                                        onChange={(e) => updateNewLinkState(section.id, 'tooltip', e.target.value)}
+                                                                        placeholder="Text shown on hover..."
+                                                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                                                    />
+                                                                </div>
                                                             </div>
+
+                                                            {/* User Selector for Private Visibility */}
                                                             {(newLinkState[section.id]?.visibility || 'public') === 'private' && (
-                                                                <div className="space-y-2">
-                                                                    <div className="flex items-center justify-between">
-                                                                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Select Users:</label>
+                                                                <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border-2 border-slate-200 dark:border-slate-700">
+                                                                    <div className="flex items-center justify-between mb-2">
+                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Select Users</label>
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => setShowUserPicker(prev => ({ ...prev, [section.id]: !prev[section.id] }))}
-                                                                            className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                                                                            className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium flex items-center gap-1"
                                                                         >
-                                                                            {showUserPicker[section.id] ? 'Hide' : 'Show'} Users
+                                                                            {showUserPicker[section.id] ? 'Hide' : 'Show'}
                                                                         </button>
                                                                     </div>
                                                                     {newLinkState[section.id]?.allowedUsers && newLinkState[section.id]!.allowedUsers.length > 0 && (
-                                                                        <div className="flex flex-wrap gap-1.5">
+                                                                        <div className="flex flex-wrap gap-1.5 mb-2">
                                                                             {newLinkState[section.id]!.allowedUsers.map(userId => {
                                                                                 const user = usersList.find(u => u.id === userId);
                                                                                 return (
                                                                                     <span
                                                                                         key={userId}
-                                                                                        className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 rounded text-xs"
+                                                                                        className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 rounded text-xs font-medium"
                                                                                     >
                                                                                         {user?.username || `User ${userId}`}
                                                                                         <button
                                                                                             type="button"
                                                                                             onClick={() => toggleUserSelection(section.id, userId)}
-                                                                                            className="hover:text-red-600 dark:hover:text-red-400"
+                                                                                            className="hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                                                                                            title="Remove user"
                                                                                         >
                                                                                             ×
                                                                                         </button>
@@ -3056,31 +3111,33 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         </div>
                                                                     )}
                                                                     {showUserPicker[section.id] && (
-                                                                        <div className="max-h-48 overflow-y-auto border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
+                                                                        <div className="max-h-40 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
                                                                             {loadingUsers ? (
-                                                                                <div className="text-xs text-slate-500 text-center py-2">Loading users...</div>
+                                                                                <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2 flex items-center justify-center gap-2">
+                                                                                    <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                                                    </svg>
+                                                                                    Loading...
+                                                                                </div>
                                                                             ) : usersList.length === 0 ? (
-                                                                                <div className="text-xs text-slate-500 text-center py-2">No users available</div>
+                                                                                <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">No users available</div>
                                                                             ) : (
                                                                                 usersList.map(user => (
                                                                                     <label
                                                                                         key={user.id}
-                                                                                        className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700 rounded cursor-pointer"
+                                                                                        className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer transition-colors"
                                                                                     >
                                                                                         <input
                                                                                             type="checkbox"
                                                                                             checked={newLinkState[section.id]?.allowedUsers?.includes(user.id) || false}
                                                                                             onChange={() => toggleUserSelection(section.id, user.id)}
-                                                                                            className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                                                                                            className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 w-3.5 h-3.5"
                                                                                         />
-                                                                                        <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
-                                                                                        {user.auth_source === 'ldap' ? (
-                                                                                            <span className="px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[10px] font-semibold">
+                                                                                        <span className="text-xs font-medium text-slate-700 dark:text-slate-300 flex-1">{user.username}</span>
+                                                                                        {user.auth_source === 'ldap' && (
+                                                                                            <span className="px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[9px] font-semibold">
                                                                                                 LDAP
-                                                                                            </span>
-                                                                                        ) : (
-                                                                                            <span className="px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-semibold">
-                                                                                                Local
                                                                                             </span>
                                                                                         )}
                                                                                     </label>
@@ -3090,6 +3147,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     )}
                                                                 </div>
                                                             )}
+
+                                                            {/* Action Button */}
+                                                            <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
+                                                                <button
+                                                                    onClick={() => handleAddLinkToSection(tab.id, section.id)}
+                                                                    disabled={!newLinkState[section.id]?.label || !newLinkState[section.id]?.url}
+                                                                    className="px-4 py-2 text-xs font-semibold bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-md hover:shadow-lg shadow-brand-500/30 flex items-center gap-1.5"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                                                    </svg>
+                                                                    Add Link
+                                                                </button>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
