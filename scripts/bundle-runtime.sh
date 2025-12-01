@@ -39,7 +39,23 @@ mkdir -p "$BUNDLE_DIR/contexts"
 mkdir -p "$BUNDLE_DIR/services"
 mkdir -p "$BUNDLE_DIR/data"
 mkdir -p "$BUNDLE_DIR/uploads"
+mkdir -p "$BUNDLE_DIR/dist"
 echo "✓ Directory structure created"
+echo ""
+
+# Create .htaccess for dist folder to allow access
+cat > "$BUNDLE_DIR/dist/.htaccess" << 'EOF'
+# Allow access to dist directory
+Options -Indexes +FollowSymLinks
+
+# Set MIME types for JavaScript files
+<IfModule mod_mime.c>
+    AddType application/javascript .js
+    AddType application/javascript .mjs
+    AddType text/css .css
+</IfModule>
+EOF
+echo "✓ Created .htaccess for dist folder"
 echo ""
 
 # Copy API files
@@ -50,7 +66,14 @@ echo ""
 
 # Copy frontend source files
 echo "Copying frontend source files..."
-cp index.html index.tsx index.css App.tsx types.ts "$BUNDLE_DIR/" 2>/dev/null || true
+if [ -f "index.html" ]; then
+    # Fix the index.tsx path to be relative instead of absolute
+    sed 's|src="/index.tsx"|src="./index.tsx"|g' index.html > "$BUNDLE_DIR/index.html"
+    echo "✓ index.html copied and fixed (relative path)"
+else
+    echo "⚠ Warning: index.html not found"
+fi
+cp index.tsx index.css App.tsx types.ts "$BUNDLE_DIR/" 2>/dev/null || true
 cp -r components/* "$BUNDLE_DIR/components/" 2>/dev/null || true
 cp -r contexts/* "$BUNDLE_DIR/contexts/" 2>/dev/null || true
 cp -r services/* "$BUNDLE_DIR/services/" 2>/dev/null || true
@@ -62,6 +85,7 @@ echo "Copying build configuration files..."
 cp package.json "$BUNDLE_DIR/" 2>/dev/null || true
 [ -f package-lock.json ] && cp package-lock.json "$BUNDLE_DIR/" 2>/dev/null || true
 cp vite.config.ts vite.docker.config.ts "$BUNDLE_DIR/" 2>/dev/null || true
+[ -f vite.runtime.config.ts ] && cp vite.runtime.config.ts "$BUNDLE_DIR/" 2>/dev/null || true
 cp tsconfig.json "$BUNDLE_DIR/" 2>/dev/null || true
 cp tailwind.config.js postcss.config.js "$BUNDLE_DIR/" 2>/dev/null || true
 echo "✓ Build configuration files copied"
@@ -73,10 +97,119 @@ if [ -f router.php ]; then
     echo "✓ Router file copied"
 fi
 
+# Copy .htaccess file (for Apache web server)
+# Prefer docker/.htaccess as it's more generic (no base path requirement)
+if [ -f "docker/.htaccess" ]; then
+    cp "docker/.htaccess" "$BUNDLE_DIR/.htaccess"
+    echo "✓ .htaccess file copied from docker folder"
+elif [ -f ".htaccess" ]; then
+    cp ".htaccess" "$BUNDLE_DIR/.htaccess"
+    echo "✓ .htaccess file copied"
+else
+    echo "⚠ Warning: No .htaccess file found. Apache configuration may be needed."
+fi
+
+# Create a generic .htaccess for runtime deployment if none exists
+if [ ! -f "$BUNDLE_DIR/.htaccess" ]; then
+    cat > "$BUNDLE_DIR/.htaccess" << 'EOF'
+# Enable directory access and file serving
+Options -Indexes +FollowSymLinks
+
+# Set proper MIME types for JavaScript modules
+<IfModule mod_mime.c>
+    AddType application/javascript .js
+    AddType application/javascript .mjs
+    AddType application/javascript .ts
+    AddType application/javascript .tsx
+    AddType application/json .json
+    AddType text/css .css
+    AddType text/html .html .htm
+</IfModule>
+
+# Force MIME type for all JavaScript files
+<FilesMatch "\.(js|mjs|ts|tsx)$">
+    ForceType application/javascript
+    Header set Content-Type "application/javascript; charset=utf-8"
+</FilesMatch>
+
+# Enable PHP for API routes
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    
+    # Allow direct access to dist/ directory
+    RewriteCond %{REQUEST_URI} ^/dist/
+    RewriteRule . - [L]
+    
+    # Allow direct access to uploads/ directory
+    RewriteCond %{REQUEST_URI} ^/uploads/
+    RewriteRule . - [L]
+    
+    # Serve static assets from dist/assets/
+    RewriteCond %{REQUEST_URI} ^/assets/
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^assets/(.*)$ dist/assets/$1 [L]
+    
+    # Route API requests to api/index.php
+    RewriteCond %{REQUEST_URI} ^/api/
+    RewriteCond %{REQUEST_URI} !^/api/index\.php
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^api/(.*)$ api/index.php?path=$1 [L,QSA]
+    
+    # PRODUCTION MODE: If dist/index.html exists, serve from dist/
+    RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
+    RewriteCond %{REQUEST_URI} ^/?$
+    RewriteRule ^(.*)$ dist/index.html [L]
+    
+    # Block direct access to source files in production
+    RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
+    RewriteCond %{REQUEST_URI} ^/index\.(html|tsx)$
+    RewriteCond %{REQUEST_URI} !^/dist/
+    RewriteRule ^index\.(html|tsx)$ dist/index.html [L,R=301]
+    
+    # Production: Force serve dist/index.html for SPA routes
+    RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
+    RewriteCond %{REQUEST_URI} !^/api
+    RewriteCond %{REQUEST_URI} !^/dist
+    RewriteCond %{REQUEST_URI} !^/?$
+    RewriteCond %{REQUEST_URI} !\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule . dist/index.html [L]
+    
+    # DEVELOPMENT MODE: Serve root index.html if dist doesn't exist
+    RewriteCond %{DOCUMENT_ROOT}/dist/index.html !-f
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} !^/api
+    RewriteRule . index.html [L]
+</IfModule>
+
+# DirectoryIndex: Prefer dist/index.html in production
+<IfModule mod_dir.c>
+    DirectoryIndex dist/index.html index.html
+</IfModule>
+EOF
+    echo "✓ .htaccess file created"
+fi
+
 # Copy utility files
 if [ -f check_opcache.php ]; then
     cp check_opcache.php "$BUNDLE_DIR/"
 fi
+
+# Copy database files
+echo "Copying database files..."
+if [ -d "data" ]; then
+    if ls data/*.db 1> /dev/null 2>&1; then
+        cp data/*.db "$BUNDLE_DIR/data/" 2>/dev/null || true
+        echo "✓ Database files copied"
+    else
+        echo "⚠ No database files found in data directory"
+    fi
+else
+    echo "⚠ Warning: data directory not found"
+fi
+echo ""
 
 # Copy uploads directory (logos, favicons, etc.)
 echo "Copying uploads directory..."
@@ -201,7 +334,28 @@ npm install
 
 echo ""
 echo "Building application..."
-npm run build
+echo "Using vite.runtime.config.ts for relative path deployment..."
+npm run build -- --config vite.runtime.config.ts
+
+if [ $? -ne 0 ]; then
+    echo "ERROR: Build failed"
+    exit 1
+fi
+
+echo ""
+echo "Verifying build output..."
+if [ ! -f "dist/index.html" ]; then
+    echo "ERROR: Build completed but dist/index.html was not created!"
+    echo "Please check the build output for errors."
+    exit 1
+fi
+echo "✓ dist/index.html found"
+
+if [ ! -d "dist/assets" ]; then
+    echo "WARNING: dist/assets folder not found. Build may be incomplete."
+else
+    echo "✓ dist/assets folder found"
+fi
 
 echo ""
 echo "=========================================="
@@ -209,10 +363,12 @@ echo "Build completed successfully!"
 echo "=========================================="
 echo ""
 echo "The application has been built in the 'dist' folder."
-echo "You can now deploy the application using your web server."
+echo "Production mode is now enabled."
 echo ""
 echo "For PHP built-in server, run:"
 echo "    php -S localhost:8000 router.php"
+echo ""
+echo "The router will automatically serve from the 'dist' folder."
 echo ""
 EOF
 

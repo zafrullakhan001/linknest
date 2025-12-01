@@ -425,6 +425,23 @@ function initDatabase() {
             error_log('Sections scheduling migration warning: ' . $e->getMessage());
         }
         
+        // Migrate existing sections table to add text_color column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(sections)")->fetchAll();
+            $hasTextColor = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'text_color') {
+                    $hasTextColor = true;
+                    break;
+                }
+            }
+            if (!$hasTextColor) {
+                $db->exec('ALTER TABLE sections ADD COLUMN text_color TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Sections text_color migration warning: ' . $e->getMessage());
+        }
+        
         // Create links table
         $db->exec('CREATE TABLE IF NOT EXISTS links (
             id TEXT PRIMARY KEY,
@@ -528,6 +545,29 @@ function initDatabase() {
             }
         } catch (PDOException $e) {
             error_log('Links scheduling migration warning: ' . $e->getMessage());
+        }
+        
+        // Migrate existing links table to add icon and textColor columns if they don't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(links)")->fetchAll();
+            $hasIcon = false;
+            $hasTextColor = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'icon') {
+                    $hasIcon = true;
+                }
+                if ($column['name'] === 'text_color') {
+                    $hasTextColor = true;
+                }
+            }
+            if (!$hasIcon) {
+                $db->exec('ALTER TABLE links ADD COLUMN icon TEXT');
+            }
+            if (!$hasTextColor) {
+                $db->exec('ALTER TABLE links ADD COLUMN text_color TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Links icon/textColor migration warning: ' . $e->getMessage());
         }
         
         // Create settings table

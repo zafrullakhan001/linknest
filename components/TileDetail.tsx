@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, POPULAR_EMOJIS } from '../types';
+import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, POPULAR_EMOJIS, LINK_EMOJIS, ALL_LINK_EMOJIS } from '../types';
 import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
 import { authService, UserListItem } from '../services/authService';
 import { exportTileToFile } from '../services/spaceTransferService';
@@ -42,11 +42,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editSections, setEditSections] = useState<LinkSection[]>(tile.sections || []);
 
     // Temporary State for Adding Links (keyed by section ID)
-    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, visibility: LinkVisibility, allowedUsers: number[], notes: string, tooltip: string }>>({});
+    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], notes: string, tooltip: string }>>({});
 
     // State for Editing Links (keyed by link ID)
     const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
-    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, visibility: LinkVisibility, allowedUsers: number[], notes: string, tooltip: string }>>({});
+    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], notes: string, tooltip: string }>>({});
+    
+    // State for link emoji picker visibility (keyed by section ID or link ID)
+    const [showLinkEmojiPicker, setShowLinkEmojiPicker] = useState<Record<string, boolean>>({});
 
     // Users list for private link selection
     const [usersList, setUsersList] = useState<UserListItem[]>([]);
@@ -735,11 +738,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     // Link Management
-    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'visibility' | 'allowedUsers' | 'notes' | 'tooltip', value: string | LinkVisibility | number[]) => {
+    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'notes' | 'tooltip', value: string | LinkVisibility | number[]) => {
         setNewLinkState(prev => ({
             ...prev,
             [sectionId]: {
-                ...(prev[sectionId] || { label: '', url: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '' }),
+                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '' }),
                 [field]: value
             }
         }));
@@ -761,6 +764,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             id: generateId(),
             label: state.label,
             url: state.url.startsWith('http') ? state.url : `https://${state.url}`,
+            icon: state.icon?.trim() || undefined,
+            textColor: state.textColor?.trim() || undefined,
             visibility: state.visibility || 'public',
             allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
             notes: state.notes?.trim() || undefined,
@@ -794,8 +799,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
 
         // Clear form
-        setNewLinkState(prev => ({ ...prev, [sectionId]: { label: '', url: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '' } }));
+        setNewLinkState(prev => ({ ...prev, [sectionId]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '' } }));
         setShowUserPicker(prev => ({ ...prev, [sectionId]: false }));
+        setShowLinkEmojiPicker(prev => ({ ...prev, [sectionId]: false }));
     };
 
     const handleRemoveLinkFromSection = (tabId: string, sectionId: string, linkId: string) => {
@@ -978,6 +984,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             [link.id]: {
                 label: link.label,
                 url: link.url,
+                icon: link.icon || '',
+                textColor: link.textColor || '',
                 visibility: link.visibility || 'public',
                 allowedUsers: link.allowedUsers || [],
                 notes: link.notes || '',
@@ -1014,6 +1022,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         ...l,
                                         label: state.label,
                                         url: state.url.startsWith('http') ? state.url : `https://${state.url}`,
+                                        icon: state.icon?.trim() || undefined,
+                                        textColor: state.textColor?.trim() || undefined,
                                         visibility: state.visibility || 'public',
                                         allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
                                         notes: state.notes?.trim() || undefined,
@@ -1054,7 +1064,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setShowUserPicker(prev => ({ ...prev, [linkId]: false }));
     };
 
-    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'visibility' | 'allowedUsers' | 'notes' | 'tooltip', value: string | LinkVisibility | number[]) => {
+    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'notes' | 'tooltip', value: string | LinkVisibility | number[]) => {
         setEditLinkState(prev => ({
             ...prev,
             [linkId]: { ...prev[linkId], [field]: value }
@@ -1128,6 +1138,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         label: `${linkToClone.label} (Copy)`,
                         url: linkToClone.url,
                         icon: linkToClone.icon,
+                        textColor: linkToClone.textColor,
                         visibility: linkToClone.visibility,
                         allowedUsers: linkToClone.allowedUsers ? [...linkToClone.allowedUsers] : undefined,
                         notes: linkToClone.notes,
@@ -1659,7 +1670,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     </div>
 
                                                     <div className={`linknest-content-link-icon w-11 h-11 rounded-xl ${styles.iconBg} flex items-center justify-center shrink-0 text-lg select-none shadow-sm border border-white/20`}>
-                                                        🔗
+                                                        {link.icon || '🔗'}
                                                     </div>
 
                                                     <a
@@ -1668,7 +1679,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         rel="noopener noreferrer"
                                                         className="flex-1 min-w-0 block focus:outline-none"
                                                     >
-                                                        <h4 className={`linknest-content-link-title text-sm font-semibold ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}>
+                                                        <h4 
+                                                            className={`linknest-content-link-title text-sm font-semibold ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}
+                                                            style={link.textColor ? { color: link.textColor } : undefined}
+                                                        >
                                                             {link.label}
                                                         </h4>
                                                         <div className="linknest-content-link-domain flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors mt-0.5">
@@ -2404,6 +2418,175 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             />
                                                                         </div>
                                                                         <div className="flex gap-2 items-center">
+                                                                            <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Emoji:</label>
+                                                                            <div className="flex-1 relative">
+                                                                                <div className="flex gap-2 items-center">
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: !prev[link.id] }))}
+                                                                                        className="flex items-center justify-center w-10 h-10 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                                                                                        title="Select emoji"
+                                                                                    >
+                                                                                        <span className="text-xl">
+                                                                                            {editLinkState[link.id]?.icon || '😀'}
+                                                                                        </span>
+                                                                                    </button>
+                                                                                    <input
+                                                                                        type="text"
+                                                                                        value={editLinkState[link.id]?.icon || ''}
+                                                                                        onChange={(e) => updateEditLinkState(link.id, 'icon', e.target.value)}
+                                                                                        placeholder="Or type emoji"
+                                                                                        className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors"
+                                                                                    />
+                                                                                </div>
+                                                                                {showLinkEmojiPicker[link.id] && (
+                                                                                    <div className="absolute z-50 mt-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-lg p-3 max-h-64 overflow-y-auto w-80">
+                                                                                        <div className="space-y-2">
+                                                                                            <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">Servers & Infrastructure</div>
+                                                                                            <div className="flex flex-wrap gap-1">
+                                                                                                {LINK_EMOJIS.servers.map((emoji, idx) => (
+                                                                                                    <button
+                                                                                                        key={idx}
+                                                                                                        type="button"
+                                                                                                        onClick={() => {
+                                                                                                            updateEditLinkState(link.id, 'icon', emoji);
+                                                                                                            setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }));
+                                                                                                        }}
+                                                                                                        className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
+                                                                                                    >
+                                                                                                        {emoji}
+                                                                                                    </button>
+                                                                                                ))}
+                                                                                            </div>
+                                                                                            <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">Cloud</div>
+                                                                                            <div className="flex flex-wrap gap-1">
+                                                                                                {LINK_EMOJIS.cloud.filter((e, i, a) => a.indexOf(e) === i).slice(0, 10).map((emoji, idx) => (
+                                                                                                    <button
+                                                                                                        key={idx}
+                                                                                                        type="button"
+                                                                                                        onClick={() => {
+                                                                                                            updateEditLinkState(link.id, 'icon', emoji);
+                                                                                                            setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }));
+                                                                                                        }}
+                                                                                                        className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
+                                                                                                    >
+                                                                                                        {emoji}
+                                                                                                    </button>
+                                                                                                ))}
+                                                                                            </div>
+                                                                                            <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">On-Premise</div>
+                                                                                            <div className="flex flex-wrap gap-1">
+                                                                                                {LINK_EMOJIS.onprem.map((emoji, idx) => (
+                                                                                                    <button
+                                                                                                        key={idx}
+                                                                                                        type="button"
+                                                                                                        onClick={() => {
+                                                                                                            updateEditLinkState(link.id, 'icon', emoji);
+                                                                                                            setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }));
+                                                                                                        }}
+                                                                                                        className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
+                                                                                                    >
+                                                                                                        {emoji}
+                                                                                                    </button>
+                                                                                                ))}
+                                                                                            </div>
+                                                                                            <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">Hospital & Medical</div>
+                                                                                            <div className="flex flex-wrap gap-1">
+                                                                                                {LINK_EMOJIS.hospital.map((emoji, idx) => (
+                                                                                                    <button
+                                                                                                        key={idx}
+                                                                                                        type="button"
+                                                                                                        onClick={() => {
+                                                                                                            updateEditLinkState(link.id, 'icon', emoji);
+                                                                                                            setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }));
+                                                                                                        }}
+                                                                                                        className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
+                                                                                                    >
+                                                                                                        {emoji}
+                                                                                                    </button>
+                                                                                                ))}
+                                                                                            </div>
+                                                                                            <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">Medical Modalities</div>
+                                                                                            <div className="flex flex-wrap gap-1">
+                                                                                                {LINK_EMOJIS.modalities.map((emoji, idx) => (
+                                                                                                    <button
+                                                                                                        key={idx}
+                                                                                                        type="button"
+                                                                                                        onClick={() => {
+                                                                                                            updateEditLinkState(link.id, 'icon', emoji);
+                                                                                                            setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }));
+                                                                                                        }}
+                                                                                                        className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
+                                                                                                    >
+                                                                                                        {emoji}
+                                                                                                    </button>
+                                                                                                ))}
+                                                                                            </div>
+                                                                                            <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">Technology</div>
+                                                                                            <div className="flex flex-wrap gap-1">
+                                                                                                {LINK_EMOJIS.technology.map((emoji, idx) => (
+                                                                                                    <button
+                                                                                                        key={idx}
+                                                                                                        type="button"
+                                                                                                        onClick={() => {
+                                                                                                            updateEditLinkState(link.id, 'icon', emoji);
+                                                                                                            setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }));
+                                                                                                        }}
+                                                                                                        className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
+                                                                                                    >
+                                                                                                        {emoji}
+                                                                                                    </button>
+                                                                                                ))}
+                                                                                            </div>
+                                                                                            <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">Network & Communication</div>
+                                                                                            <div className="flex flex-wrap gap-1">
+                                                                                                {LINK_EMOJIS.network.map((emoji, idx) => (
+                                                                                                    <button
+                                                                                                        key={idx}
+                                                                                                        type="button"
+                                                                                                        onClick={() => {
+                                                                                                            updateEditLinkState(link.id, 'icon', emoji);
+                                                                                                            setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }));
+                                                                                                        }}
+                                                                                                        className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
+                                                                                                    >
+                                                                                                        {emoji}
+                                                                                                    </button>
+                                                                                                ))}
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="flex gap-2 items-center">
+                                                                            <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Text Color:</label>
+                                                                            <div className="flex gap-2 items-center flex-1">
+                                                                                <input
+                                                                                    type="color"
+                                                                                    value={editLinkState[link.id]?.textColor && editLinkState[link.id]!.textColor.trim() ? editLinkState[link.id]!.textColor : '#000000'}
+                                                                                    onChange={(e) => updateEditLinkState(link.id, 'textColor', e.target.value)}
+                                                                                    className="w-12 h-10 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg cursor-pointer"
+                                                                                    title="Select text color"
+                                                                                />
+                                                                                <input
+                                                                                    type="text"
+                                                                                    value={editLinkState[link.id]?.textColor || ''}
+                                                                                    onChange={(e) => updateEditLinkState(link.id, 'textColor', e.target.value)}
+                                                                                    placeholder="#000000"
+                                                                                    className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors font-mono"
+                                                                                />
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => updateEditLinkState(link.id, 'textColor', '')}
+                                                                                    className="px-2 py-1 text-xs bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded transition-colors"
+                                                                                    title="Clear color"
+                                                                                >
+                                                                                    Clear
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="flex gap-2 items-center">
                                                                             <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Visibility:</label>
                                                                             <select
                                                                                 value={editLinkState[link.id]?.visibility || 'public'}
@@ -2636,6 +2819,175 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
                                                                     </svg>
                                                                 </button>
+                                                            </div>
+                                                            <div className="flex gap-2 items-center">
+                                                                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Emoji:</label>
+                                                                <div className="flex-1 relative">
+                                                                    <div className="flex gap-2 items-center">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: !prev[section.id] }))}
+                                                                            className="flex items-center justify-center w-10 h-10 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                                                                            title="Select emoji"
+                                                                        >
+                                                                            <span className="text-xl">
+                                                                                {newLinkState[section.id]?.icon || '😀'}
+                                                                            </span>
+                                                                        </button>
+                                                                        <input
+                                                                            type="text"
+                                                                            value={newLinkState[section.id]?.icon || ''}
+                                                                            onChange={(e) => updateNewLinkState(section.id, 'icon', e.target.value)}
+                                                                            placeholder="Or type emoji"
+                                                                            className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors"
+                                                                        />
+                                                                    </div>
+                                                                    {showLinkEmojiPicker[section.id] && (
+                                                                        <div className="absolute z-50 mt-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-lg p-3 max-h-64 overflow-y-auto w-80">
+                                                                            <div className="space-y-2">
+                                                                                <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">Servers & Infrastructure</div>
+                                                                                <div className="flex flex-wrap gap-1">
+                                                                                    {LINK_EMOJIS.servers.map((emoji, idx) => (
+                                                                                        <button
+                                                                                            key={idx}
+                                                                                            type="button"
+                                                                                            onClick={() => {
+                                                                                                updateNewLinkState(section.id, 'icon', emoji);
+                                                                                                setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: false }));
+                                                                                            }}
+                                                                                            className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
+                                                                                        >
+                                                                                            {emoji}
+                                                                                        </button>
+                                                                                    ))}
+                                                                                </div>
+                                                                                <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">Cloud</div>
+                                                                                <div className="flex flex-wrap gap-1">
+                                                                                    {LINK_EMOJIS.cloud.filter((e, i, a) => a.indexOf(e) === i).slice(0, 10).map((emoji, idx) => (
+                                                                                        <button
+                                                                                            key={idx}
+                                                                                            type="button"
+                                                                                            onClick={() => {
+                                                                                                updateNewLinkState(section.id, 'icon', emoji);
+                                                                                                setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: false }));
+                                                                                            }}
+                                                                                            className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
+                                                                                        >
+                                                                                            {emoji}
+                                                                                        </button>
+                                                                                    ))}
+                                                                                </div>
+                                                                                <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">On-Premise</div>
+                                                                                <div className="flex flex-wrap gap-1">
+                                                                                    {LINK_EMOJIS.onprem.map((emoji, idx) => (
+                                                                                        <button
+                                                                                            key={idx}
+                                                                                            type="button"
+                                                                                            onClick={() => {
+                                                                                                updateNewLinkState(section.id, 'icon', emoji);
+                                                                                                setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: false }));
+                                                                                            }}
+                                                                                            className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
+                                                                                        >
+                                                                                            {emoji}
+                                                                                        </button>
+                                                                                    ))}
+                                                                                </div>
+                                                                                <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">Hospital & Medical</div>
+                                                                                <div className="flex flex-wrap gap-1">
+                                                                                    {LINK_EMOJIS.hospital.map((emoji, idx) => (
+                                                                                        <button
+                                                                                            key={idx}
+                                                                                            type="button"
+                                                                                            onClick={() => {
+                                                                                                updateNewLinkState(section.id, 'icon', emoji);
+                                                                                                setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: false }));
+                                                                                            }}
+                                                                                            className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
+                                                                                        >
+                                                                                            {emoji}
+                                                                                        </button>
+                                                                                    ))}
+                                                                                </div>
+                                                                                <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">Medical Modalities</div>
+                                                                                <div className="flex flex-wrap gap-1">
+                                                                                    {LINK_EMOJIS.modalities.map((emoji, idx) => (
+                                                                                        <button
+                                                                                            key={idx}
+                                                                                            type="button"
+                                                                                            onClick={() => {
+                                                                                                updateNewLinkState(section.id, 'icon', emoji);
+                                                                                                setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: false }));
+                                                                                            }}
+                                                                                            className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
+                                                                                        >
+                                                                                            {emoji}
+                                                                                        </button>
+                                                                                    ))}
+                                                                                </div>
+                                                                                <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">Technology</div>
+                                                                                <div className="flex flex-wrap gap-1">
+                                                                                    {LINK_EMOJIS.technology.map((emoji, idx) => (
+                                                                                        <button
+                                                                                            key={idx}
+                                                                                            type="button"
+                                                                                            onClick={() => {
+                                                                                                updateNewLinkState(section.id, 'icon', emoji);
+                                                                                                setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: false }));
+                                                                                            }}
+                                                                                            className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
+                                                                                        >
+                                                                                            {emoji}
+                                                                                        </button>
+                                                                                    ))}
+                                                                                </div>
+                                                                                <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-3">Network & Communication</div>
+                                                                                <div className="flex flex-wrap gap-1">
+                                                                                    {LINK_EMOJIS.network.map((emoji, idx) => (
+                                                                                        <button
+                                                                                            key={idx}
+                                                                                            type="button"
+                                                                                            onClick={() => {
+                                                                                                updateNewLinkState(section.id, 'icon', emoji);
+                                                                                                setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: false }));
+                                                                                            }}
+                                                                                            className="text-2xl hover:bg-slate-100 dark:hover:bg-slate-700 p-1 rounded transition-colors"
+                                                                                        >
+                                                                                            {emoji}
+                                                                                        </button>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex gap-2 items-center">
+                                                                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">Text Color:</label>
+                                                                <div className="flex gap-2 items-center flex-1">
+                                                                    <input
+                                                                        type="color"
+                                                                        value={newLinkState[section.id]?.textColor && newLinkState[section.id]!.textColor.trim() ? newLinkState[section.id]!.textColor : '#000000'}
+                                                                        onChange={(e) => updateNewLinkState(section.id, 'textColor', e.target.value)}
+                                                                        className="w-12 h-10 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg cursor-pointer"
+                                                                        title="Select text color"
+                                                                    />
+                                                                    <input
+                                                                        type="text"
+                                                                        value={newLinkState[section.id]?.textColor || ''}
+                                                                        onChange={(e) => updateNewLinkState(section.id, 'textColor', e.target.value)}
+                                                                        placeholder="#000000"
+                                                                        className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-colors font-mono"
+                                                                    />
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => updateNewLinkState(section.id, 'textColor', '')}
+                                                                        className="px-2 py-1 text-xs bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded transition-colors"
+                                                                        title="Clear color"
+                                                                    >
+                                                                        Clear
+                                                                    </button>
+                                                                </div>
                                                             </div>
                                                             <div className="flex gap-2 items-start">
                                                                 <label className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap pt-1.5">Notes:</label>

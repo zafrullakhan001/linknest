@@ -4,38 +4,9 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
-    const isProduction = mode === 'production';
-    const base = isProduction ? '/linknest/' : '/';
-    const apiBase = isProduction ? '/linknest/api' : '/api';
-    
-    /**
-     * HTTPS Support Configuration
-     * 
-     * To enable HTTPS in production, create a .env file with:
-     * VITE_PROTOCOL=https
-     * VITE_HOST=your-domain.com
-     * VITE_PORT=443 (optional, defaults to 443 for HTTPS)
-     * 
-     * For development with HTTPS:
-     * VITE_PROTOCOL=https
-     * VITE_HOST=localhost
-     * VITE_PORT=8443 (or your HTTPS port)
-     * 
-     * The application uses relative URLs for API calls, so it automatically
-     * works with both HTTP and HTTPS without code changes.
-     */
-    const protocol = env.VITE_PROTOCOL || (isProduction ? 'https' : 'http');
-    const host = env.VITE_HOST || 'localhost';
-    const port = env.VITE_PORT || (protocol === 'https' ? '443' : '80');
-    
-    // Build proxy target URL - supports both HTTP and HTTPS
-    const portSuffix = (port === '80' && protocol === 'http') || (port === '443' && protocol === 'https') 
-      ? '' 
-      : `:${port}`;
-    const proxyTarget = `${protocol}://${host}${portSuffix}/linknest`;
     
     return {
-      base: base,
+      base: './', // Use relative paths for runtime deployment (works from any path)
       build: {
         outDir: 'dist',
         assetsDir: 'assets',
@@ -123,55 +94,6 @@ export default defineConfig(({ mode }) => {
         // Optimize build performance
         reportCompressedSize: false // Faster builds
       },
-      server: {
-        port: 3000,
-        host: '0.0.0.0',
-        // Optimize HMR for Fast Refresh
-        hmr: {
-          overlay: true,
-          // When server host is 0.0.0.0, ensure HMR connects to localhost
-          // This is critical for Fast Refresh to work in dev mode
-          host: mode === 'development' ? 'localhost' : undefined,
-          port: 3000
-        },
-        // Ensure proper WebSocket connection for HMR
-        watch: {
-          usePolling: false,
-          interval: 100
-        },
-        proxy: {
-          '/api': {
-            target: proxyTarget,
-            changeOrigin: true,
-            secure: protocol === 'https', // Enable SSL verification for HTTPS
-            rewrite: (path) => {
-              // Extract the API path (e.g., /tiles, /auth/me)
-              const apiPath = path.replace(/^\/api/, '');
-              // Route to index.php with path as query parameter
-              return `/api/index.php?path=${encodeURIComponent(apiPath)}`;
-            }
-          },
-          '/uploads': {
-            target: proxyTarget,
-            changeOrigin: true,
-            secure: protocol === 'https'
-          },
-          '/linknest/uploads': {
-            target: `${protocol}://${host}${portSuffix}`,
-            changeOrigin: true,
-            secure: protocol === 'https'
-          }
-        }
-      },
-      // Optimize dependencies
-      optimizeDeps: {
-        include: [
-          'react',
-          'react-dom',
-          'react/jsx-runtime'
-        ],
-        exclude: ['@google/genai'] // Exclude large library, load on demand
-      },
       plugins: [
         react({
           // Optimize JSX runtime
@@ -182,8 +104,8 @@ export default defineConfig(({ mode }) => {
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.NODE_ENV': JSON.stringify(mode),
-        'import.meta.env.VITE_API_BASE': JSON.stringify(apiBase)
+        'process.env.NODE_ENV': JSON.stringify('production'),
+        'import.meta.env.VITE_API_BASE': JSON.stringify('/api')
       },
       resolve: {
         alias: {
@@ -192,3 +114,7 @@ export default defineConfig(({ mode }) => {
       }
     };
 });
+
+
+
+

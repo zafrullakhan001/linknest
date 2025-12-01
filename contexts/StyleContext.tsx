@@ -130,55 +130,15 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   useEffect(() => {
     loadStyles();
 
-    // Debounce timer to prevent excessive API calls
-    let reloadTimer: NodeJS.Timeout | null = null;
-    const debouncedLoadStyles = () => {
-      if (reloadTimer) {
-        clearTimeout(reloadTimer);
-      }
-      reloadTimer = setTimeout(() => {
-        loadStyles();
-      }, 200);
-    };
-
     // Listen for refresh events (explicit refresh trigger)
     const handleRefresh = () => {
       loadStyles();
     };
 
-    // Reload styles when page becomes visible again (handles page refresh and tab switching)
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        debouncedLoadStyles();
-      }
-    };
-
-    // Reload styles when window gains focus (handles tab switching back)
-    const handleFocus = () => {
-      debouncedLoadStyles();
-    };
-
-    // Reload styles on page show (handles page refresh and back/forward navigation)
-    const handlePageShow = (e: PageTransitionEvent) => {
-      // Reload styles after page load, including from back/forward cache
-      if (e.persisted || document.visibilityState === 'visible') {
-        debouncedLoadStyles();
-      }
-    };
-
     window.addEventListener('refreshStyles', handleRefresh);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener('pageshow', handlePageShow);
 
     return () => {
-      if (reloadTimer) {
-        clearTimeout(reloadTimer);
-      }
       window.removeEventListener('refreshStyles', handleRefresh);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('pageshow', handlePageShow);
     };
   }, [loadStyles]);
 

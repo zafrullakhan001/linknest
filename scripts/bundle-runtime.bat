@@ -42,7 +42,23 @@ mkdir "%BUNDLE_DIR%\contexts"
 mkdir "%BUNDLE_DIR%\services"
 mkdir "%BUNDLE_DIR%\data"
 mkdir "%BUNDLE_DIR%\uploads"
+mkdir "%BUNDLE_DIR%\dist"
 echo ✓ Directory structure created
+echo.
+
+REM Create .htaccess for dist folder to allow access
+(
+    echo # Allow access to dist directory
+    echo Options -Indexes +FollowSymLinks
+    echo.
+    echo # Set MIME types for JavaScript files
+    echo ^<IfModule mod_mime.c^>
+    echo     AddType application/javascript .js
+    echo     AddType application/javascript .mjs
+    echo     AddType text/css .css
+    echo ^</IfModule^>
+) > "%BUNDLE_DIR%\dist\.htaccess"
+echo ✓ Created .htaccess for dist folder
 echo.
 
 REM Copy API files
@@ -55,7 +71,13 @@ echo.
 
 REM Copy frontend source files
 echo Copying frontend source files...
-if exist "index.html" copy /Y "index.html" "%BUNDLE_DIR%\index.html" >nul 2>&1
+if exist "index.html" (
+    REM Fix the index.tsx path to be relative instead of absolute
+    powershell -Command "(Get-Content 'index.html') -replace 'src=\"/index.tsx\"', 'src=\"./index.tsx\"' | Set-Content '%BUNDLE_DIR%\index.html'"
+    echo ✓ index.html copied and fixed ^(relative path^)
+) else (
+    echo ⚠ Warning: index.html not found
+)
 if exist "index.tsx" copy /Y "index.tsx" "%BUNDLE_DIR%\index.tsx" >nul 2>&1
 if exist "index.css" copy /Y "index.css" "%BUNDLE_DIR%\index.css" >nul 2>&1
 if exist "App.tsx" copy /Y "App.tsx" "%BUNDLE_DIR%\App.tsx" >nul 2>&1
@@ -74,6 +96,7 @@ if exist "package-lock.json" (
 )
 if exist "vite.config.ts" copy /Y "vite.config.ts" "%BUNDLE_DIR%\vite.config.ts" >nul 2>&1
 if exist "vite.docker.config.ts" copy /Y "vite.docker.config.ts" "%BUNDLE_DIR%\vite.docker.config.ts" >nul 2>&1
+if exist "vite.runtime.config.ts" copy /Y "vite.runtime.config.ts" "%BUNDLE_DIR%\vite.runtime.config.ts" >nul 2>&1
 if exist "tsconfig.json" copy /Y "tsconfig.json" "%BUNDLE_DIR%\tsconfig.json" >nul 2>&1
 if exist "tailwind.config.js" copy /Y "tailwind.config.js" "%BUNDLE_DIR%\tailwind.config.js" >nul 2>&1
 if exist "postcss.config.js" copy /Y "postcss.config.js" "%BUNDLE_DIR%\postcss.config.js" >nul 2>&1
@@ -86,10 +109,36 @@ if exist "router.php" (
     echo ✓ Router file copied
 )
 
+REM Copy .htaccess file (for Apache web server)
+REM Prefer docker/.htaccess as it's more generic (no base path requirement)
+if exist "docker\.htaccess" (
+    copy /Y "docker\.htaccess" "%BUNDLE_DIR%\.htaccess" >nul 2>&1
+    echo ✓ .htaccess file copied from docker folder
+) else if exist ".htaccess" (
+    copy /Y ".htaccess" "%BUNDLE_DIR%\.htaccess" >nul 2>&1
+    echo ✓ .htaccess file copied
+) else (
+    echo ⚠ Warning: No .htaccess file found. Apache configuration may be needed.
+)
+
 REM Copy utility files
 if exist "check_opcache.php" (
     copy /Y "check_opcache.php" "%BUNDLE_DIR%\check_opcache.php" >nul 2>&1
 )
+
+REM Copy database files
+echo Copying database files...
+if exist "data" (
+    xcopy /Y "data\*.db" "%BUNDLE_DIR%\data\" >nul 2>&1
+    if exist "%BUNDLE_DIR%\data\*.db" (
+        echo ✓ Database files copied
+    ) else (
+        echo ⚠ No database files found in data directory
+    )
+) else (
+    echo ⚠ Warning: data directory not found
+)
+echo.
 
 REM Copy uploads directory (logos, favicons, etc.)
 echo Copying uploads directory...
@@ -162,23 +211,39 @@ echo ^)
 echo.
 echo echo.
 echo echo Building application...
-echo call npm run build
-echo if %%ERRORLEVEL%% NEQ 0 ^(
+echo echo Using vite.runtime.config.ts for relative path deployment...
+echo call npm run build -- --config vite.runtime.config.ts
+echo if %%ERRORLEVEL%% NEQ 0 (
 echo     echo ERROR: Build failed
 echo     pause
 echo     exit /b 1
 echo ^)
 echo.
-echo echo.
+echo echo Verifying build output...
+echo if not exist "dist\index.html" (
+echo     echo ERROR: Build completed but dist\index.html was not created!
+echo     echo Please check the build output for errors.
+echo     pause
+echo     exit /b 1
+echo ^)
+echo echo ✓ dist\index.html found
+echo if not exist "dist\assets" (
+echo     echo WARNING: dist\assets folder not found. Build may be incomplete.
+echo ^) else (
+echo     echo ✓ dist\assets folder found
+echo ^)
+echo.
 echo echo ==========================================
 echo echo Build completed successfully!
 echo ==========================================
 echo echo.
 echo echo The application has been built in the 'dist' folder.
-echo echo You can now deploy the application using your web server.
+echo echo Production mode is now enabled.
 echo echo.
 echo echo For PHP built-in server, run:
 echo echo     php -S localhost:8000 router.php
+echo echo.
+echo echo The router will automatically serve from the 'dist' folder.
 echo echo.
 echo pause
 ) > "%BUNDLE_DIR%\build.bat"

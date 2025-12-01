@@ -3019,20 +3019,21 @@ export const TileGrid: React.FC<TileGridProps> = ({
                     </div>
                   </div>
 
-                  {/* Grouping - Also shown for hyperlinks */}
+                  {/* Category - Also shown for hyperlinks */}
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Group / Category</label>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Category</label>
                     <input
                       type="text"
                       value={newGroup}
                       onChange={(e) => setNewGroup(e.target.value)}
-                      placeholder="e.g. Work, Personal"
-                      list="group-suggestions"
+                      placeholder="Select or create a category (e.g., Work, Personal)"
+                      list="category-suggestions-hyperlink"
                       className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
                     />
-                    <datalist id="group-suggestions">
-                      {existingGroups.map(g => <option key={g} value={g} />)}
+                    <datalist id="category-suggestions-hyperlink">
+                      {allCategories.map(cat => <option key={cat} value={cat} />)}
                     </datalist>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Select an existing category or type a new name to create one</p>
                   </div>
                 </>
               )}
@@ -3113,6 +3114,25 @@ export const TileGrid: React.FC<TileGridProps> = ({
                       ))}
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* Category - Only shown when type is space */}
+              {tileType === 'space' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Category</label>
+                  <input
+                    type="text"
+                    value={newGroup}
+                    onChange={(e) => setNewGroup(e.target.value)}
+                    placeholder="Select or create a category (e.g., Work, Personal)"
+                    list="category-suggestions-space"
+                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                  />
+                  <datalist id="category-suggestions-space">
+                    {allCategories.map(cat => <option key={cat} value={cat} />)}
+                  </datalist>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Select an existing category or type a new name to create one</p>
                 </div>
               )}
 
@@ -3518,20 +3538,21 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 </div>
               </div>
 
-              {/* Grouping */}
+              {/* Category */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Group / Category</label>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Category</label>
                 <input
                   type="text"
                   value={newGroup}
                   onChange={(e) => setNewGroup(e.target.value)}
-                  placeholder="e.g. Work, Personal"
-                  list="group-suggestions-edit"
+                  placeholder="Select or create a category (e.g., Work, Personal)"
+                  list="category-suggestions-edit"
                   className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
                 />
-                <datalist id="group-suggestions-edit">
-                  {existingGroups.map(g => <option key={g} value={g} />)}
+                <datalist id="category-suggestions-edit">
+                  {allCategories.map(cat => <option key={cat} value={cat} />)}
                 </datalist>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Select an existing category or type a new name to create one</p>
               </div>
 
               {/* Scheduling - Only shown when type is space */}
