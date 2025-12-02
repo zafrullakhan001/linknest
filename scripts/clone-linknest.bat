@@ -1,24 +1,25 @@
 @echo off
 REM Clone LinkNest to a new folder with all necessary files
-REM Usage: clone-linknest.bat <new-folder-name> [--assets] [--database]
-REM Example: clone-linknest.bat myspaces --assets --database
+REM Usage: clone-linknest.bat <new-folder-name> [--target <path>] [--assets] [--database]
+REM Example: clone-linknest.bat myspaces --target C:\projects --assets --database
 
 setlocal enabledelayedexpansion
 
 if "%~1"=="" (
     echo.
-    echo Usage: clone-linknest.bat ^<new-folder-name^> [--assets] [--database]
+    echo Usage: clone-linknest.bat ^<new-folder-name^> [--target ^<path^>] [--assets] [--database]
     echo.
     echo Parameters:
     echo   new-folder-name  Name of the new folder to create
+    echo   --target ^<path^>   Target directory where folder will be created ^(optional^)
     echo   --assets         Copy logos and favicon from uploads folder
     echo   --database       Copy database file from data folder
     echo.
     echo Examples:
     echo   clone-linknest.bat myspaces
-    echo   clone-linknest.bat myspaces --assets
-    echo   clone-linknest.bat myspaces --database
+    echo   clone-linknest.bat myspaces --target C:\projects
     echo   clone-linknest.bat myspaces --assets --database
+    echo   clone-linknest.bat myspaces --target C:\projects --assets --database
     echo.
     exit /b 1
 )
@@ -26,19 +27,31 @@ if "%~1"=="" (
 set "NEW_FOLDER=%~1"
 set "COPY_ASSETS=0"
 set "COPY_DATABASE=0"
+set "TARGET_PATH="
 
 REM Parse optional parameters
 shift
 :parse_params
 if "%~1"=="" goto params_done
+if /i "%~1"=="--target" (
+    set "TARGET_PATH=%~2"
+    shift
+    shift
+    goto parse_params
+)
 if /i "%~1"=="--assets" set "COPY_ASSETS=1"
 if /i "%~1"=="--database" set "COPY_DATABASE=1"
 shift
 goto parse_params
 :params_done
 set "CURRENT_DIR=%~dp0.."
-set "PARENT_DIR=%~dp0..\.."
-set "TARGET_DIR=%PARENT_DIR%\%NEW_FOLDER%"
+set "SCRIPT_DIR=%~dp0"
+if defined TARGET_PATH (
+    set "TARGET_DIR=%TARGET_PATH%\%NEW_FOLDER%"
+) else (
+    set "PARENT_DIR=%~dp0..\.."
+    set "TARGET_DIR=%PARENT_DIR%\%NEW_FOLDER%"
+)
 
 echo.
 echo ========================================
@@ -111,6 +124,14 @@ mkdir "%TARGET_DIR%\data" 2>nul
 echo   - Creating uploads directory...
 mkdir "%TARGET_DIR%\uploads" 2>nul
 
+echo   - Creating scripts directory...
+mkdir "%TARGET_DIR%\scripts" 2>nul
+
+echo   - Copying clone scripts...
+copy "%SCRIPT_DIR%\clone-linknest.bat" "%TARGET_DIR%\scripts\" >nul 2>&1
+copy "%SCRIPT_DIR%\clone-linknest.sh" "%TARGET_DIR%\scripts\" >nul 2>&1
+echo     Copied clone scripts to target folder
+
 REM Copy assets if requested
 if "%COPY_ASSETS%"=="1" (
     echo   - Copying logos and favicon...
@@ -143,7 +164,7 @@ if "%COPY_DATABASE%"=="1" (
 )
 
 REM Create .env file with new base path
-echo [3/6] Creating .env file...
+echo [3/7] Creating .env file...
 (
 echo # LinkNest Environment Variables
 echo # Base path for the application
@@ -161,7 +182,7 @@ echo # GEMINI_API_KEY=your-api-key-here
 echo   Created .env with VITE_BASE_PATH=/%NEW_FOLDER%
 
 REM Install dependencies
-echo [4/6] Installing npm dependencies...
+echo [4/7] Installing npm dependencies...
 echo   This may take a few minutes...
 cd /d "%TARGET_DIR%"
 call npm install
@@ -173,7 +194,7 @@ if errorlevel 1 (
 )
 
 REM Build the application
-echo [5/6] Building the application...
+echo [5/7] Building the application...
 echo   This may take a few minutes...
 call npm run build
 if errorlevel 1 (
@@ -193,7 +214,7 @@ if exist "%TARGET_DIR%\node_modules" (
 )
 
 REM Create a README for the cloned instance
-echo [6/6] Creating deployment README...
+echo [6/7] Creating deployment README...
 (
 echo # %NEW_FOLDER% - LinkNest Instance
 echo.
@@ -223,7 +244,15 @@ echo To rebuild after making changes:
 echo   cd %NEW_FOLDER%
 echo   npm run build
 echo.
+echo ## Cloning This Instance
+echo.
+echo You can clone this instance using the scripts in the scripts folder:
+echo   scripts\clone-linknest.bat new-instance-name
+echo.
 ) > "%TARGET_DIR%\DEPLOYMENT.md"
+
+echo [7/7] Finalizing...
+echo   Clone scripts are available in: %TARGET_DIR%\scripts
 
 echo.
 echo ========================================

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Clone LinkNest to a new folder with all necessary files
-# Usage: ./clone-linknest.sh <new-folder-name> [--assets] [--database]
-# Example: ./clone-linknest.sh myspaces --assets --database
+# Usage: ./clone-linknest.sh <new-folder-name> [--target <path>] [--assets] [--database]
+# Example: ./clone-linknest.sh myspaces --target /home/user/projects --assets --database
 
 set -e
 
@@ -13,18 +13,19 @@ NC='\033[0m' # No Color
 
 if [ -z "$1" ]; then
     echo ""
-    echo "Usage: ./clone-linknest.sh <new-folder-name> [--assets] [--database]"
+    echo "Usage: ./clone-linknest.sh <new-folder-name> [--target <path>] [--assets] [--database]"
     echo ""
     echo "Parameters:"
     echo "  new-folder-name  Name of the new folder to create"
+    echo "  --target <path>  Target directory where folder will be created (optional)"
     echo "  --assets         Copy logos and favicon from uploads folder"
     echo "  --database       Copy database file from data folder"
     echo ""
     echo "Examples:"
     echo "  ./clone-linknest.sh myspaces"
-    echo "  ./clone-linknest.sh myspaces --assets"
-    echo "  ./clone-linknest.sh myspaces --database"
+    echo "  ./clone-linknest.sh myspaces --target /home/user/projects"
     echo "  ./clone-linknest.sh myspaces --assets --database"
+    echo "  ./clone-linknest.sh myspaces --target /home/user/projects --assets --database"
     echo ""
     exit 1
 fi
@@ -32,11 +33,16 @@ fi
 NEW_FOLDER="$1"
 COPY_ASSETS=0
 COPY_DATABASE=0
+TARGET_PATH=""
 
 # Parse optional parameters
 shift
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --target)
+            TARGET_PATH="$2"
+            shift 2
+            ;;
         --assets)
             COPY_ASSETS=1
             shift
@@ -53,8 +59,12 @@ while [[ $# -gt 0 ]]; do
 done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CURRENT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-PARENT_DIR="$(cd "$CURRENT_DIR/.." && pwd)"
-TARGET_DIR="$PARENT_DIR/$NEW_FOLDER"
+if [ -n "$TARGET_PATH" ]; then
+    TARGET_DIR="$TARGET_PATH/$NEW_FOLDER"
+else
+    PARENT_DIR="$(cd "$CURRENT_DIR/.." && pwd)"
+    TARGET_DIR="$PARENT_DIR/$NEW_FOLDER"
+fi
 
 echo ""
 echo "========================================"
@@ -127,6 +137,15 @@ mkdir -p "$TARGET_DIR/data"
 echo "  - Creating uploads directory..."
 mkdir -p "$TARGET_DIR/uploads"
 
+echo "  - Creating scripts directory..."
+mkdir -p "$TARGET_DIR/scripts"
+
+echo "  - Copying clone scripts..."
+cp "$SCRIPT_DIR/clone-linknest.bat" "$TARGET_DIR/scripts/" 2>/dev/null || true
+cp "$SCRIPT_DIR/clone-linknest.sh" "$TARGET_DIR/scripts/" 2>/dev/null || true
+chmod +x "$TARGET_DIR/scripts/clone-linknest.sh" 2>/dev/null || true
+echo "    Copied clone scripts to target folder"
+
 # Copy assets if requested
 if [ "$COPY_ASSETS" -eq 1 ]; then
     echo "  - Copying logos and favicon..."
@@ -169,7 +188,7 @@ if [ "$COPY_DATABASE" -eq 1 ]; then
 fi
 
 # Create .env file with new base path
-echo "[3/6] Creating .env file..."
+echo "[3/7] Creating .env file..."
 cat > "$TARGET_DIR/.env" << EOF
 # LinkNest Environment Variables
 # Base path for the application
@@ -187,7 +206,7 @@ EOF
 echo "  Created .env with VITE_BASE_PATH=/$NEW_FOLDER"
 
 # Install dependencies
-echo "[4/6] Installing npm dependencies..."
+echo "[4/7] Installing npm dependencies..."
 echo "  This may take a few minutes..."
 cd "$TARGET_DIR"
 npm install
@@ -199,7 +218,7 @@ if [ $? -ne 0 ]; then
 fi
 
 # Build the application
-echo "[5/6] Building the application..."
+echo "[5/7] Building the application..."
 echo "  This may take a few minutes..."
 npm run build
 if [ $? -ne 0 ]; then
@@ -219,7 +238,7 @@ else
 fi
 
 # Create a README for the cloned instance
-echo "[6/6] Creating deployment README..."
+echo "[6/7] Creating deployment README..."
 cat > "$TARGET_DIR/DEPLOYMENT.md" << EOF
 # $NEW_FOLDER - LinkNest Instance
 
@@ -248,7 +267,15 @@ Edit .env to change settings:
 To rebuild after making changes:
   cd $NEW_FOLDER
   npm run build
+
+## Cloning This Instance
+
+You can clone this instance using the scripts in the scripts folder:
+  scripts/clone-linknest.sh new-instance-name
 EOF
+
+echo "[7/7] Finalizing..."
+echo "  Clone scripts are available in: $TARGET_DIR/scripts"
 
 echo ""
 echo "========================================"
