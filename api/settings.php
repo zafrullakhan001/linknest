@@ -113,6 +113,36 @@ function handleGetSettings() {
         $settings[$row['key']] = $row['value'];
     }
     
+    // Handle LDAP bind password: decrypt if encrypted, or auto-encrypt if plain text
+    if (isset($settings['ldap_bind_password']) && !empty($settings['ldap_bind_password'])) {
+        $password = $settings['ldap_bind_password'];
+        
+        // Check if password is encrypted (contains dots in the format: base64.base64.base64)
+        $isEncrypted = (strpos($password, '.') !== false && substr_count($password, '.') === 2);
+        
+        if ($isEncrypted) {
+            // Password is encrypted, decrypt it for display
+            try {
+                $settings['ldap_bind_password'] = decryptPassword($password);
+            } catch (Exception $e) {
+                // If decryption fails, assume it's plain text (backward compatibility)
+                // Keep the original value
+            }
+        } else {
+            // Password is plain text - encrypt it automatically and update the database
+            try {
+                $encryptedPassword = encryptPassword($password);
+                $updateStmt = $db->prepare('UPDATE settings SET value = ?, updated_at = ? WHERE key = ?');
+                $updateStmt->execute([$encryptedPassword, time(), 'ldap_bind_password']);
+                // Return the decrypted version for display (frontend will encrypt when saving)
+                $settings['ldap_bind_password'] = $password;
+            } catch (Exception $e) {
+                // If encryption fails, log error but continue
+                error_log('Failed to auto-encrypt LDAP bind password: ' . $e->getMessage());
+            }
+        }
+    }
+    
     // Normalize logo_image URL for current environment
     if (isset($settings['logo_image']) && !empty($settings['logo_image'])) {
         $settings['logo_image'] = normalizeLogoUrl($settings['logo_image']);
@@ -340,6 +370,22 @@ function handleUpdateSettings() {
             // Normalize favicon URL before storing (remove any base path prefix)
             if ($key === 'favicon' && !empty($value)) {
                 $value = preg_replace('#^/[^/]+/uploads/#', '/uploads/', $value);
+            }
+            
+            // Encrypt LDAP bind password if it's plain text (not already encrypted)
+            if ($key === 'ldap_bind_password' && !empty($value)) {
+                // Check if password is already encrypted (encrypted passwords contain dots)
+                // Plain text passwords won't have the encrypted format: base64(iv).base64(tag).base64(encrypted)
+                if (strpos($value, '.') === false || substr_count($value, '.') !== 2) {
+                    // Password is plain text, encrypt it
+                    try {
+                        $value = encryptPassword($value);
+                    } catch (Exception $e) {
+                        // If encryption fails, log error but continue (don't break the save)
+                        error_log('Failed to encrypt LDAP bind password: ' . $e->getMessage());
+                    }
+                }
+                // If password already contains dots in the right format, assume it's already encrypted
             }
             
             $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');

@@ -325,6 +325,16 @@ function handleLogin() {
             $bindDn = trim($settings['ldap_bind_dn'] ?? '');
             $bindPass = $settings['ldap_bind_password'] ?? '';
             
+            // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
+            if (!empty($bindPass)) {
+                try {
+                    $bindPass = decryptPassword($bindPass);
+                } catch (Exception $e) {
+                    debug_log("LDAP: Failed to decrypt bind password: " . $e->getMessage());
+                    // If decryption fails, assume it's plain text (backward compatibility)
+                }
+            }
+            
             $bound = false;
             if (!empty($bindDn) && !empty($bindPass)) {
                 debug_log("LDAP: Binding with DN: $bindDn");
@@ -1306,6 +1316,15 @@ function handleSearchLdapUsers() {
         $bindDn = trim($settings['ldap_bind_dn'] ?? '');
         $bindPass = $settings['ldap_bind_password'] ?? '';
         
+        // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
+        if (!empty($bindPass)) {
+            try {
+                $bindPass = decryptPassword($bindPass);
+            } catch (Exception $e) {
+                // If decryption fails, assume it's plain text (backward compatibility)
+            }
+        }
+        
         $bound = false;
         if (!empty($bindDn) && !empty($bindPass)) {
             $bound = @ldap_bind($ldap, $bindDn, $bindPass);
@@ -1611,6 +1630,15 @@ function handleAddLdapUser() {
         // Bind with service account
         $bindDn = trim($settings['ldap_bind_dn'] ?? '');
         $bindPass = $settings['ldap_bind_password'] ?? '';
+        
+        // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
+        if (!empty($bindPass)) {
+            try {
+                $bindPass = decryptPassword($bindPass);
+            } catch (Exception $e) {
+                // If decryption fails, assume it's plain text (backward compatibility)
+            }
+        }
         
         $bound = false;
         if (!empty($bindDn) && !empty($bindPass)) {
@@ -1918,6 +1946,15 @@ function handleBulkImportLdapUsers() {
         // Bind with service account
         $bindDn = trim($settings['ldap_bind_dn'] ?? '');
         $bindPass = $settings['ldap_bind_password'] ?? '';
+        
+        // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
+        if (!empty($bindPass)) {
+            try {
+                $bindPass = decryptPassword($bindPass);
+            } catch (Exception $e) {
+                // If decryption fails, assume it's plain text (backward compatibility)
+            }
+        }
         
         $bound = false;
         if (!empty($bindDn) && !empty($bindPass)) {

@@ -93,6 +93,16 @@ try {
     // First, bind with service account (if configured) or anonymously
     $serviceBindDn = $data['ldap_bind_dn'] ?? '';
     $serviceBindPass = $data['ldap_bind_password'] ?? '';
+    
+    // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
+    if (!empty($serviceBindPass)) {
+        try {
+            $serviceBindPass = decryptPassword($serviceBindPass);
+        } catch (Exception $e) {
+            // If decryption fails, assume it's plain text (backward compatibility)
+        }
+    }
+    
     $bound = false;
     
     if (!empty($serviceBindDn) && !empty($serviceBindPass)) {
