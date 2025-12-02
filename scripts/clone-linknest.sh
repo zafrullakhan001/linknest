@@ -143,6 +143,7 @@ mkdir -p "$TARGET_DIR/scripts"
 echo "  - Copying clone scripts..."
 cp "$SCRIPT_DIR/clone-linknest.bat" "$TARGET_DIR/scripts/" 2>/dev/null || true
 cp "$SCRIPT_DIR/clone-linknest.sh" "$TARGET_DIR/scripts/" 2>/dev/null || true
+cp "$SCRIPT_DIR/encrypt_ldap_passwords.php" "$TARGET_DIR/scripts/" 2>/dev/null || true
 chmod +x "$TARGET_DIR/scripts/clone-linknest.sh" 2>/dev/null || true
 echo "    Copied clone scripts to target folder"
 
@@ -179,6 +180,14 @@ if [ "$COPY_DATABASE" -eq 1 ]; then
         if [ $? -eq 0 ]; then
             DB_SIZE=$(du -h "$TARGET_DIR/data/linknest.db" | cut -f1)
             echo "    Copied database: data/linknest.db ($DB_SIZE)"
+            echo "  - Encrypting LDAP passwords in copied database..."
+            (cd "$TARGET_DIR" && php scripts/encrypt_ldap_passwords.php >/dev/null 2>&1)
+            if [ $? -eq 0 ]; then
+                echo "    Successfully encrypted LDAP passwords (if any were found)"
+            else
+                echo -e "    ${YELLOW}WARNING: Failed to encrypt LDAP passwords in copied database${NC}"
+                echo "    Please run: php scripts/encrypt_ldap_passwords.php manually"
+            fi
         else
             echo -e "    ${RED}ERROR: Failed to copy database file${NC}"
         fi

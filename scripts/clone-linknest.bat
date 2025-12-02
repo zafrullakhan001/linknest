@@ -130,6 +130,7 @@ mkdir "%TARGET_DIR%\scripts" 2>nul
 echo   - Copying clone scripts...
 copy "%SCRIPT_DIR%\clone-linknest.bat" "%TARGET_DIR%\scripts\" >nul 2>&1
 copy "%SCRIPT_DIR%\clone-linknest.sh" "%TARGET_DIR%\scripts\" >nul 2>&1
+copy "%SCRIPT_DIR%\encrypt_ldap_passwords.php" "%TARGET_DIR%\scripts\" >nul 2>&1
 echo     Copied clone scripts to target folder
 
 REM Copy assets if requested
@@ -157,6 +158,16 @@ if "%COPY_DATABASE%"=="1" (
             echo     ERROR: Failed to copy database file
         ) else (
             echo     Copied database: data/linknest.db
+            echo   - Encrypting LDAP passwords in copied database...
+            cd /d "%TARGET_DIR%"
+            php scripts\encrypt_ldap_passwords.php 2>nul
+            if errorlevel 1 (
+                echo     WARNING: Failed to encrypt LDAP passwords in copied database
+                echo     Please run: php scripts\encrypt_ldap_passwords.php manually
+            ) else (
+                echo     Successfully encrypted LDAP passwords (if any were found)
+            )
+            cd /d "%CURRENT_DIR%"
         )
     ) else (
         echo     No database file found to copy
