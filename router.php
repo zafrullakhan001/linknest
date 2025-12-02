@@ -20,10 +20,10 @@ if (strpos($path, '/api') !== false) {
     // Remove base path if present
     $apiPath = $basePath ? str_replace($basePath, '', $path) : $path;
     if (strpos($apiPath, '/api') === 0) {
-        chdir(__DIR__ . '/api');
-        $_SERVER['SCRIPT_NAME'] = '/api/index.php';
-        require __DIR__ . '/api/index.php';
-        return true;
+    chdir(__DIR__ . '/api');
+    $_SERVER['SCRIPT_NAME'] = '/api/index.php';
+    require __DIR__ . '/api/index.php';
+    return true;
     }
 }
 

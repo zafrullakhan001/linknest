@@ -186,14 +186,14 @@ export default defineConfig(({ mode }) => {
           ...(basePath ? {
             [`${basePath}/uploads`]: {
               target: proxyTarget,
-              changeOrigin: true,
+            changeOrigin: true,
               secure: protocol === 'https',
               rewrite: (path) => {
                 // Remove basePath prefix to get /uploads/filename
                 // e.g., /linknest/uploads/logo.jpg -> /uploads/logo.jpg
                 return path.replace(new RegExp(`^${basePath}`), '');
               }
-            }
+          }
           } : {})
         }
       },
