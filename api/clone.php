@@ -5,11 +5,22 @@ require_once __DIR__ . '/clone_service.php';
 $method = $_SERVER['REQUEST_METHOD'];
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
 
+// Log the incoming request
+error_log("clone.php: Received $method request, PATH_INFO: " . var_export($path, true));
+error_log("clone.php: REQUEST_URI: " . ($_SERVER['REQUEST_URI'] ?? 'not set'));
+
+// Remove query string if present in path
+if (($pos = strpos($path, '?')) !== false) {
+    $path = substr($path, 0, $pos);
+}
+
 // Normalize path
 $path = rtrim($path, '/');
 if (empty($path)) {
     $path = '/';
 }
+
+error_log("clone.php: Normalized path: $path");
 
 switch ($method) {
     case 'POST':
@@ -236,46 +247,111 @@ function handleGetCloneStatus($cloneId) {
 }
 
 function handleGetCloneList() {
-    requireAdmin();
-    
-    $clones = CloneService::getAllClones();
-    
-    // Format the response
-    $formatted = [];
-    foreach ($clones as $clone) {
-        $formatted[] = [
-            'id' => (int)$clone['id'],
-            'folderName' => $clone['folder_name'],
-            'url' => $clone['url'],
-            'status' => $clone['status'],
-            'progress' => (int)$clone['progress'],
-            'createdAt' => (int)$clone['created_at'],
-            'completedAt' => $clone['completed_at'] ? (int)$clone['completed_at'] : null,
-            'errorMessage' => $clone['error_message'],
-            'copyAssets' => (bool)$clone['copy_assets'],
-            'copyDatabase' => (bool)$clone['copy_database'],
-            'sourcePath' => $clone['source_path'],
-            'targetPath' => $clone['target_path']
-        ];
+    try {
+        // Check authentication first (this may exit)
+        $user = getAuthenticatedUser();
+        if (!$user) {
+            error_log("handleGetCloneList: No authenticated user");
+            http_response_code(401);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Authentication required']);
+            exit;
+        }
+        if (!$user['is_admin']) {
+            error_log("handleGetCloneList: User is not admin");
+            http_response_code(403);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Admin access required']);
+            exit;
+        }
+        
+        error_log("handleGetCloneList: Getting clones list");
+        $clones = CloneService::getAllClones();
+        error_log("handleGetCloneList: Got " . count($clones) . " clones");
+        
+        // Format the response
+        $formatted = [];
+        if (is_array($clones)) {
+            foreach ($clones as $clone) {
+                $formatted[] = [
+                    'id' => (int)$clone['id'],
+                    'folderName' => $clone['folder_name'],
+                    'url' => $clone['url'],
+                    'status' => $clone['status'],
+                    'progress' => (int)$clone['progress'],
+                    'createdAt' => (int)$clone['created_at'],
+                    'completedAt' => $clone['completed_at'] ? (int)$clone['completed_at'] : null,
+                    'errorMessage' => $clone['error_message'],
+                    'copyAssets' => (bool)$clone['copy_assets'],
+                    'copyDatabase' => (bool)$clone['copy_database'],
+                    'sourcePath' => $clone['source_path'],
+                    'targetPath' => $clone['target_path']
+                ];
+            }
+        }
+        
+        error_log("handleGetCloneList: Sending response");
+        sendJSON(['clones' => $formatted]);
+    } catch (Exception $e) {
+        error_log("Exception in handleGetCloneList: " . $e->getMessage());
+        error_log("Stack trace: " . $e->getTraceAsString());
+        sendJSON(['error' => 'Failed to load clones: ' . $e->getMessage()], 500);
+    } catch (Error $e) {
+        error_log("Fatal error in handleGetCloneList: " . $e->getMessage());
+        error_log("Stack trace: " . $e->getTraceAsString());
+        sendJSON(['error' => 'Fatal error loading clones: ' . $e->getMessage()], 500);
     }
-    
-    sendJSON(['clones' => $formatted]);
 }
 
 function handleGetCurrentPath() {
-    requireAdmin();
-    
-    // Get the current application directory (parent of api directory)
-    $currentPath = realpath(__DIR__ . '/..');
-    if (!$currentPath) {
-        $currentPath = dirname(__DIR__);
+    try {
+        // Check authentication first (this may exit)
+        $user = getAuthenticatedUser();
+        if (!$user) {
+            error_log("handleGetCurrentPath: No authenticated user");
+            http_response_code(401);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Authentication required']);
+            exit;
+        }
+        if (!$user['is_admin']) {
+            error_log("handleGetCurrentPath: User is not admin");
+            http_response_code(403);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Admin access required']);
+            exit;
+        }
+        
+        error_log("handleGetCurrentPath: Getting current path");
+        
+        // Get the current application directory (parent of api directory)
+        $currentPath = realpath(__DIR__ . '/..');
+        if (!$currentPath) {
+            $currentPath = dirname(__DIR__);
+        }
+        
+        $targetPath = dirname($currentPath);
+        if (!$targetPath || $targetPath === $currentPath) {
+            // Fallback to common XAMPP structure
+            $targetPath = 'C:\\xampp\\htdocs';
+        }
+        
+        error_log("handleGetCurrentPath: currentPath=$currentPath, targetPath=$targetPath");
+        
+        sendJSON([
+            'currentPath' => $currentPath,
+            'sourcePath' => $currentPath,
+            'targetPath' => $targetPath
+        ]);
+    } catch (Exception $e) {
+        error_log("Error in handleGetCurrentPath: " . $e->getMessage());
+        error_log("Stack trace: " . $e->getTraceAsString());
+        sendJSON(['error' => 'Failed to get current path: ' . $e->getMessage()], 500);
+    } catch (Error $e) {
+        error_log("Fatal error in handleGetCurrentPath: " . $e->getMessage());
+        error_log("Stack trace: " . $e->getTraceAsString());
+        sendJSON(['error' => 'Fatal error getting current path: ' . $e->getMessage()], 500);
     }
-    
-    sendJSON([
-        'currentPath' => $currentPath,
-        'sourcePath' => $currentPath,
-        'targetPath' => dirname($currentPath)
-    ]);
 }
 
 function handleGetClone($cloneId) {
@@ -375,40 +451,134 @@ function handleUpdateClone($cloneId) {
     sendJSON(['success' => true, 'message' => 'Clone updated successfully']);
 }
 
+function cloneLog($message) {
+    try {
+        $logFile = __DIR__ . '/../clone_delete.log';
+        $timestamp = date('Y-m-d H:i:s');
+        @file_put_contents($logFile, "[$timestamp] $message\n", FILE_APPEND);
+        error_log($message); // Also log to PHP error log
+    } catch (Exception $e) {
+        // Silently fail if logging fails
+    }
+}
+
 function handleDeleteClone($cloneId) {
     requireAdmin();
     
-    $cloneId = (int)$cloneId;
-    $db = getDB();
-    
-    // Get clone info
-    $stmt = $db->prepare('SELECT * FROM clones WHERE id = ?');
-    $stmt->execute([$cloneId]);
-    $clone = $stmt->fetch();
-    
-    if (!$clone) {
-        sendJSON(['error' => 'Clone not found'], 404);
+    try {
+        $cloneId = (int)$cloneId;
+        $db = getDB();
+        
+        // Get clone info
+        $stmt = $db->prepare('SELECT * FROM clones WHERE id = ?');
+        $stmt->execute([$cloneId]);
+        $clone = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$clone) {
+            sendJSON(['error' => 'Clone not found'], 404);
+            return;
+        }
+        
+        // Optionally delete the folder (if it exists)
+        // Check $_GET first, then parse from REQUEST_URI if needed
+        $deleteFolder = false;
+        if (isset($_GET['deleteFolder'])) {
+            $deleteFolder = ($_GET['deleteFolder'] === '1' || $_GET['deleteFolder'] === 'true');
+        } else {
+            // Try parsing from REQUEST_URI if not in $_GET
+            $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+            if (preg_match('/[?&]deleteFolder=([01]|true|false)/i', $requestUri, $matches)) {
+                $deleteFolder = ($matches[1] === '1' || strtolower($matches[1]) === 'true');
+            }
+        }
+        
+        // Get the folder path directly from the database
+        $fullPath = $clone['full_path'] ?? null;
+        
+        // If full_path is not stored, construct it from target_path and folder_name
+        if (!$fullPath) {
+            $targetPath = $clone['target_path'] ?? '';
+            $folderName = $clone['folder_name'] ?? '';
+            if ($targetPath && $folderName) {
+                $fullPath = rtrim($targetPath, '/\\') . DIRECTORY_SEPARATOR . $folderName;
+            }
+        }
+        
+        $folderDeleted = false;
+        
+        // Delete the folder if requested and path exists
+        if ($deleteFolder && $fullPath && is_dir($fullPath)) {
+            // Use Windows rmdir command for fast deletion on Windows
+            if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+                // Use cmd /c to ensure proper command execution
+                $escapedPath = str_replace('"', '""', $fullPath);
+                $command = 'cmd /c "rmdir /s /q "' . $escapedPath . '""';
+                exec($command . ' 2>&1', $output, $returnVar);
+                
+                // Wait a moment for the command to complete
+                usleep(1000000); // 1 second
+                
+                // Check if folder was deleted
+                $folderDeleted = (!is_dir($fullPath));
+                
+                // If rmdir failed, try PowerShell
+                if (!$folderDeleted) {
+                    $escapedPsPath = str_replace("'", "''", $fullPath);
+                    $psCommand = 'powershell -Command "Remove-Item -Path \'' . $escapedPsPath . '\' -Recurse -Force -ErrorAction SilentlyContinue"';
+                    exec($psCommand . ' 2>&1', $psOutput, $psReturnVar);
+                    
+                    // Wait a moment
+                    usleep(1000000);
+                    
+                    $folderDeleted = (!is_dir($fullPath));
+                }
+            } else {
+                // Linux/Unix - use rm -rf
+                $command = 'rm -rf ' . escapeshellarg($fullPath);
+                exec($command . ' 2>&1', $output, $returnVar);
+                $folderDeleted = ($returnVar === 0 && !is_dir($fullPath));
+            }
+        }
+        
+        // Delete clone record
+        $stmt = $db->prepare('DELETE FROM clones WHERE id = ?');
+        $result = $stmt->execute([$cloneId]);
+        
+        if (!$result) {
+            $errorInfo = $stmt->errorInfo();
+            sendJSON(['error' => 'Failed to delete clone: ' . ($errorInfo[2] ?? 'Unknown error')], 500);
+            return;
+        }
+        
+        // Delete status file if exists
+        $statusFile = __DIR__ . '/../clone_status_' . $cloneId . '.json';
+        if (file_exists($statusFile)) {
+            @unlink($statusFile);
+        }
+        
+        // Build response message
+        $message = 'Clone deleted successfully';
+        if ($deleteFolder) {
+            if (!$fullPath) {
+                $message .= '. However, the folder path could not be determined.';
+            } elseif ($folderDeleted) {
+                $message .= '. Folder has been deleted.';
+            } else {
+                $message .= '. However, the folder could not be deleted.';
+            }
+        }
+        
+        sendJSON([
+            'success' => true, 
+            'message' => $message,
+            'folderDeleted' => $folderDeleted,
+            'folderPath' => $fullPath ?: null
+        ]);
+    } catch (Exception $e) {
+        sendJSON(['error' => 'An error occurred: ' . $e->getMessage()], 500);
+    } catch (Error $e) {
+        sendJSON(['error' => 'A fatal error occurred: ' . $e->getMessage()], 500);
     }
-    
-    // Optionally delete the folder (if it exists)
-    $deleteFolder = isset($_GET['deleteFolder']) && $_GET['deleteFolder'] === '1';
-    
-    if ($deleteFolder && !empty($clone['full_path']) && is_dir($clone['full_path'])) {
-        // Delete the cloned folder
-        deleteDirectory($clone['full_path']);
-    }
-    
-    // Delete clone record
-    $stmt = $db->prepare('DELETE FROM clones WHERE id = ?');
-    $stmt->execute([$cloneId]);
-    
-    // Delete status file if exists
-    $statusFile = __DIR__ . '/../clone_status_' . $cloneId . '.json';
-    if (file_exists($statusFile)) {
-        @unlink($statusFile);
-    }
-    
-    sendJSON(['success' => true, 'message' => 'Clone deleted successfully']);
 }
 
 function handleRerunClone($cloneId) {
@@ -458,17 +628,94 @@ function handleRerunClone($cloneId) {
 
 function deleteDirectory($dir) {
     if (!is_dir($dir)) {
-        return;
+        cloneLog("deleteDirectory: Not a directory: $dir");
+        return false;
     }
     
-    $files = array_diff(scandir($dir), ['.', '..']);
-    foreach ($files as $file) {
-        $path = $dir . DIRECTORY_SEPARATOR . $file;
-        if (is_dir($path)) {
-            deleteDirectory($path);
-        } else {
-            @unlink($path);
+    cloneLog("deleteDirectory: Starting deletion of: $dir");
+    
+    try {
+        // Use RecursiveIteratorIterator for better directory deletion
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::CHILD_FIRST
+        );
+        
+        $deletedCount = 0;
+        $failedCount = 0;
+        
+        foreach ($iterator as $file) {
+            $path = $file->getPathname();
+            try {
+                if ($file->isDir()) {
+                    if (@rmdir($path)) {
+                        $deletedCount++;
+                    } else {
+                        $failedCount++;
+                        $error = error_get_last();
+                        cloneLog("Failed to delete directory: $path - " . ($error['message'] ?? 'Unknown error'));
+                    }
+                } else {
+                    if (@unlink($path)) {
+                        $deletedCount++;
+                    } else {
+                        $failedCount++;
+                        $error = error_get_last();
+                        cloneLog("Failed to delete file: $path - " . ($error['message'] ?? 'Unknown error'));
+                    }
+                }
+            } catch (Exception $e) {
+                $failedCount++;
+                cloneLog("Exception deleting $path: " . $e->getMessage());
+            }
         }
+        
+        cloneLog("deleteDirectory: Deleted $deletedCount items, failed $failedCount items");
+        
+        // Finally remove the main directory
+        if (@rmdir($dir)) {
+            cloneLog("deleteDirectory: Successfully removed main directory: $dir");
+            return true;
+        } else {
+            $error = error_get_last();
+            cloneLog("deleteDirectory: Failed to remove main directory: $dir - " . ($error['message'] ?? 'Unknown error'));
+            // Fallback to simple method
+            return deleteDirectorySimple($dir);
+        }
+    } catch (Exception $e) {
+        cloneLog("deleteDirectory: Exception in RecursiveIteratorIterator: " . $e->getMessage());
+        cloneLog("deleteDirectory: Stack trace: " . $e->getTraceAsString());
+        // Fallback to simple method
+        return deleteDirectorySimple($dir);
     }
-    @rmdir($dir);
+}
+
+function deleteDirectorySimple($dir) {
+    cloneLog("deleteDirectorySimple: Using fallback method for: $dir");
+    
+    try {
+        $files = array_diff(scandir($dir), ['.', '..']);
+        foreach ($files as $file) {
+            $path = $dir . DIRECTORY_SEPARATOR . $file;
+            if (is_dir($path)) {
+                deleteDirectorySimple($path);
+            } else {
+                if (!@unlink($path)) {
+                    $error = error_get_last();
+                    cloneLog("deleteDirectorySimple: Failed to delete file: $path - " . ($error['message'] ?? 'Unknown error'));
+                }
+            }
+        }
+        if (@rmdir($dir)) {
+            cloneLog("deleteDirectorySimple: Successfully removed directory: $dir");
+            return true;
+        } else {
+            $error = error_get_last();
+            cloneLog("deleteDirectorySimple: Failed to remove directory: $dir - " . ($error['message'] ?? 'Unknown error'));
+            return false;
+        }
+    } catch (Exception $e) {
+        cloneLog("deleteDirectorySimple: Exception: " . $e->getMessage());
+        return false;
+    }
 }

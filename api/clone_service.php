@@ -440,10 +440,24 @@ class CloneService {
      * Get all clones
      */
     public static function getAllClones() {
-        $db = getDB();
-        $stmt = $db->prepare('SELECT * FROM clones ORDER BY created_at DESC');
-        $stmt->execute();
-        return $stmt->fetchAll();
+        try {
+            $db = getDB();
+            $stmt = $db->prepare('SELECT * FROM clones ORDER BY created_at DESC');
+            if (!$stmt) {
+                error_log("Failed to prepare statement in getAllClones");
+                return [];
+            }
+            $stmt->execute();
+            $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            return is_array($result) ? $result : [];
+        } catch (Exception $e) {
+            error_log("Error in getAllClones: " . $e->getMessage());
+            error_log("Stack trace: " . $e->getTraceAsString());
+            return [];
+        } catch (Error $e) {
+            error_log("Fatal error in getAllClones: " . $e->getMessage());
+            return [];
+        }
     }
 }
 

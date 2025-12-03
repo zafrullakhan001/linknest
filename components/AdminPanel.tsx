@@ -17,7 +17,12 @@ interface AdminPanelProps {
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const { refreshSettings } = useSettings();
-  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'access' | 'clone'>('pending');
+  // Initialize activeTab from localStorage or default to 'pending'
+  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'access' | 'clone'>(() => {
+    const savedTab = localStorage.getItem('adminPanelActiveTab');
+    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'access' | 'clone'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'footer', 'access', 'clone'];
+    return (savedTab && validTabs.includes(savedTab as any)) ? savedTab as any : 'pending';
+  });
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
   const [allUsers, setAllUsers] = useState<AllUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -222,6 +227,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   }, [activeTab]);
 
+  // Persist activeTab to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('adminPanelActiveTab', activeTab);
+  }, [activeTab]);
+
   const loadCurrentPath = async () => {
     try {
       const response = await fetch('/api/clone/current-path');
@@ -233,27 +243,57 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         if (!cloneTargetPath) {
           setCloneTargetPath(data.targetPath || '');
         }
+      } else {
+        // If API fails, set default paths based on common XAMPP structure
+        if (!cloneSourcePath) {
+          // Default to current app directory (typically C:\xampp\htdocs\linknest)
+          setCloneSourcePath('C:\\xampp\\htdocs\\linknest');
+        }
+        if (!cloneTargetPath) {
+          // Default to parent of source (typically C:\xampp\htdocs)
+          setCloneTargetPath('C:\\xampp\\htdocs');
+        }
       }
     } catch (err) {
       console.error('Failed to load current path:', err);
+      // Set default paths on error
+      if (!cloneSourcePath) {
+        setCloneSourcePath('C:\\xampp\\htdocs\\linknest');
+      }
+      if (!cloneTargetPath) {
+        setCloneTargetPath('C:\\xampp\\htdocs');
+      }
     }
   };
 
   // Poll for clone progress when a clone is running
   useEffect(() => {
-    if (currentCloneId && (cloneStatus === 'running' || cloneStatus === 'pending')) {
+    if (currentCloneId) {
       const interval = setInterval(async () => {
         try {
           const response = await fetch(`/api/clone/status/${currentCloneId}`);
           if (response.ok) {
             const data = await response.json();
-            setCloneProgress(data.progress || 0);
-            setCloneStatus(data.step || 'running');
+            const step = data.step || 'running';
+            const progress = data.progress || 0;
+            
+            setCloneProgress(progress);
+            setCloneStatus(step);
             if (data.logs && Array.isArray(data.logs)) {
               setCloneLogs(data.logs);
             }
-            if (data.step === 'complete' || data.step === 'error') {
+            
+            // Check if clone is complete or failed
+            if (step === 'complete' || step === 'error') {
+              // Clear the current clone tracking
               setCurrentCloneId(null);
+              setCloneStatus(null);
+              setCloneProgress(0);
+              // Keep logs for a moment to show completion
+              setTimeout(() => {
+                setCloneLogs([]);
+              }, 3000);
+              // Reload list to get updated status
               loadClonesList();
             }
           }
@@ -263,8 +303,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       }, 1000); // Poll every second
 
       return () => clearInterval(interval);
+    } else {
+      // If no current clone, clear progress state
+      if (cloneStatus && cloneStatus !== null) {
+        setCloneStatus(null);
+        setCloneProgress(0);
+        setCloneLogs([]);
+      }
     }
-  }, [currentCloneId, cloneStatus]);
+  }, [currentCloneId]);
+  
+  // Also check clones list to see if current clone is completed
+  useEffect(() => {
+    if (currentCloneId && clonesList.length > 0) {
+      const currentClone = clonesList.find(c => c.id === currentCloneId);
+      if (currentClone && (currentClone.status === 'completed' || currentClone.status === 'failed')) {
+        // Clone is completed, clear tracking
+        setCurrentCloneId(null);
+        setCloneStatus(null);
+        setCloneProgress(0);
+        setCloneLogs([]);
+      }
+    }
+  }, [clonesList, currentCloneId]);
 
   const loadClonesList = async () => {
     try {
@@ -2625,10 +2686,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
 
                   {/* Progress Bar */}
-                  {currentCloneId && (cloneStatus === 'running' || cloneStatus === 'pending' || cloneStatus === 'validating' || cloneStatus === 'copying' || cloneStatus === 'installing' || cloneStatus === 'building' || cloneStatus === 'configuring' || cloneStatus === 'finalizing') && (
+                  {currentCloneId && cloneStatus && cloneStatus !== 'complete' && cloneStatus !== 'error' && (
                     <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
                       <div className="mb-2 flex justify-between items-center">
-                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{cloneStatus || 'Processing...'}</span>
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                          {cloneStatus === 'validating' ? 'Validating...' :
+                           cloneStatus === 'creating' ? 'Creating directory...' :
+                           cloneStatus === 'copying' ? 'Copying files...' :
+                           cloneStatus === 'configuring' ? 'Configuring...' :
+                           cloneStatus === 'installing' ? 'Installing dependencies...' :
+                           cloneStatus === 'building' ? 'Building application...' :
+                           cloneStatus === 'finalizing' ? 'Finalizing...' :
+                           cloneStatus === 'running' ? 'Running...' :
+                           cloneStatus === 'pending' ? 'Starting...' :
+                           cloneStatus || 'Processing...'}
+                        </span>
                         <span className="text-sm text-slate-600 dark:text-slate-400">{cloneProgress}%</span>
                       </div>
                       <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5">
@@ -2636,6 +2708,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           className="bg-brand-600 h-2.5 rounded-full transition-all duration-300"
                           style={{ width: `${cloneProgress}%` }}
                         ></div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Completion Message */}
+                  {currentCloneId && (cloneStatus === 'complete' || cloneStatus === 'error') && (
+                    <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                      <div className={`p-3 rounded-lg ${
+                        cloneStatus === 'complete' 
+                          ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' 
+                          : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                      }`}>
+                        <div className="flex items-center gap-2">
+                          {cloneStatus === 'complete' ? (
+                            <>
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-green-600 dark:text-green-400">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                              </svg>
+                              <span className="text-sm font-medium text-green-700 dark:text-green-400">Clone completed successfully!</span>
+                            </>
+                          ) : (
+                            <>
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-red-600 dark:text-red-400">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                              </svg>
+                              <span className="text-sm font-medium text-red-700 dark:text-red-400">Clone failed</span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -2878,14 +2979,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     
                                     try {
                                       setDeleteCloneLoading(clone.id);
-                                      const response = await fetch(`/api/clone/${clone.id}?deleteFolder=${deleteFolder ? '1' : '0'}`, {
+                                      setError('');
+                                      
+                                      const url = `/api/clone/${clone.id}?deleteFolder=${deleteFolder ? '1' : '0'}`;
+                                      console.log('Delete request URL:', url);
+                                      console.log('Delete folder option:', deleteFolder);
+                                      
+                                      const response = await fetch(url, {
                                         method: 'DELETE',
+                                        headers: {
+                                          'Content-Type': 'application/json',
+                                        },
                                       });
                                       
                                       const data = await response.json();
+                                      console.log('Delete response:', data);
                                       
                                       if (!response.ok) {
-                                        throw new Error(data.error || 'Failed to delete clone');
+                                        throw new Error(data.error || `Failed to delete clone (${response.status})`);
+                                      }
+                                      
+                                      // Show success message with folder deletion status
+                                      if (deleteFolder) {
+                                        if (data.folderDeleted) {
+                                          alert(`Clone "${clone.folderName}" and its folder have been deleted successfully.`);
+                                        } else {
+                                          alert(`Clone "${clone.folderName}" record has been deleted, but the folder could not be removed.\n\nPath: ${data.folderPath || 'Unknown'}\n\nPlease check PHP error logs for details.`);
+                                        }
+                                      } else {
+                                        alert(`Clone "${clone.folderName}" record has been deleted. The folder remains on disk.`);
                                       }
                                       
                                       // If this was the current clone being tracked, clear it
@@ -2897,9 +3019,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       }
                                       
                                       // Reload list
-                                      loadClonesList();
+                                      await loadClonesList();
                                     } catch (err: any) {
-                                      setError(err.message || 'Failed to delete clone');
+                                      console.error('Delete clone error:', err);
+                                      setError(err.message || 'Failed to delete clone. Please check the console for details.');
                                     } finally {
                                       setDeleteCloneLoading(null);
                                     }
