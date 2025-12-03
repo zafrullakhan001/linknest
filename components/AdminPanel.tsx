@@ -38,7 +38,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     logo_icon: '🔗',
     logo_image: '',
     favicon: '',
-    footer_text: '© 2025 Adventhealth - Designed and developed by AIT Architecture team'
+    footer_text: '© 2025 Adventhealth - Designed and developed by AIT Architecture team',
+    show_database_path_in_footer: '1'
   });
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -2942,6 +2943,55 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             </button>
                           </div>
                         </label>
+                      </div>
+
+                      {/* Footer Settings */}
+                      <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                              Show Database Path in Footer
+                            </p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              Display the database file path in the footer for verification
+                            </p>
+                          </div>
+                          <button
+                            onClick={async () => {
+                              const newValue = settings.show_database_path_in_footer === '1' ? '0' : '1';
+                              try {
+                                setSettingsSaving(true);
+                                setError('');
+                                await settingsService.updateSettings({
+                                  ...settings,
+                                  show_database_path_in_footer: newValue
+                                });
+                                setSettings({ ...settings, show_database_path_in_footer: newValue });
+                                await refreshSettings();
+                              } catch (err: any) {
+                                setError(err.message || 'Failed to update setting');
+                              } finally {
+                                setSettingsSaving(false);
+                              }
+                            }}
+                            disabled={settingsSaving}
+                            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 ${
+                              settings.show_database_path_in_footer === '1' 
+                                ? 'bg-brand-600' 
+                                : 'bg-slate-200 dark:bg-slate-700'
+                            }`}
+                            role="switch"
+                            aria-checked={settings.show_database_path_in_footer === '1'}
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                settings.show_database_path_in_footer === '1' 
+                                  ? 'translate-x-5' 
+                                  : 'translate-x-0'
+                              }`}
+                            />
+                          </button>
+                        </div>
                       </div>
 
                       <button

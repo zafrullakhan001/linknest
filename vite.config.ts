@@ -46,9 +46,13 @@ export default defineConfig(({ mode }) => {
         emptyOutDir: true,
         sourcemap: false,
         minify: 'esbuild',
-        cssCodeSplit: true,
+        cssCodeSplit: false, // Disable CSS code splitting to avoid HTML proxy plugin issues with base paths
         chunkSizeWarningLimit: 1000,
         target: 'esnext',
+        // Workaround for Vite 6.x HTML proxy plugin issue with base paths
+        cssMinify: 'esbuild',
+        // Disable asset inlining to avoid HTML proxy plugin issues with base paths
+        assetsInlineLimit: 0,
         modulePreload: {
           polyfill: true,
           resolveDependencies: (filename, deps) => {

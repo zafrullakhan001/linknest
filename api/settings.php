@@ -12,6 +12,8 @@ switch ($method) {
     case 'GET':
         if ($path === '' || $path === '/') {
             handleGetSettings();
+        } else if ($path === '/database-path') {
+            handleGetDatabasePath();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -346,6 +348,7 @@ function handleUpdateSettings() {
                 'app_name', 'page_title', 'spaces_title', 'logo_type', 'logo_icon', 'logo_image', 'favicon',
                 'footer_text',
                 'guest_access_enabled',
+                'show_database_path_in_footer',
                 'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
                 'ldap_login_domain',
                 'ldap_bind_dn', 'ldap_bind_password',
@@ -432,5 +435,49 @@ function handleDecryptPassword() {
     } catch (Exception $e) {
         sendJSON(['error' => 'Decryption failed: ' . $e->getMessage()], 500);
     }
+}
+
+function handleGetDatabasePath() {
+    // Database path is public information (for verification purposes)
+    // Get the absolute path of the database file
+    $dbPath = defined('DB_PATH') ? DB_PATH : __DIR__ . '/../data/linknest.db';
+    $absolutePath = realpath($dbPath);
+    
+    // If realpath fails (file doesn't exist), use the defined path
+    if ($absolutePath === false) {
+        $absolutePath = $dbPath;
+    }
+    
+    // Normalize path separators for consistent handling
+    $normalizedPath = str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $absolutePath);
+    
+    // Remove the base path (C:\xampp\htdocs\) and keep only from linknest folder onwards
+    $linknestPos = stripos($normalizedPath, 'linknest');
+    
+    if ($linknestPos !== false) {
+        // Extract path from 'linknest' onwards
+        $relativePath = substr($normalizedPath, $linknestPos);
+        // Convert back to forward slashes for display (works on both Windows and Unix)
+        $displayPath = str_replace('\\', '/', $relativePath);
+    } else {
+        // If 'linknest' not found, try to get relative path from project root
+        $projectRoot = realpath(__DIR__ . '/..');
+        if ($projectRoot !== false && strpos($normalizedPath, $projectRoot) === 0) {
+            $relativePath = substr($normalizedPath, strlen($projectRoot) + 1);
+            $displayPath = str_replace('\\', '/', $relativePath);
+        } else {
+            // Fallback: just show the filename
+            $displayPath = basename($absolutePath);
+        }
+    }
+    
+    // Return both absolute and relative paths
+    // Convert absolute path to forward slashes for consistency
+    $absoluteDisplayPath = str_replace('\\', '/', $absolutePath);
+    
+    sendJSON([
+        'database_path' => $displayPath,
+        'database_path_absolute' => $absoluteDisplayPath
+    ]);
 }
 

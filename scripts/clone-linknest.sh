@@ -1,7 +1,7 @@
 #!/bin/bash
 # Clone LinkNest to a new folder with all necessary files
-# Usage: ./clone-linknest.sh <new-folder-name> [--target <path>] [--assets] [--database]
-# Example: ./clone-linknest.sh myspaces --target /home/user/projects --assets --database
+# Usage: ./clone-linknest.sh <new-folder-name> [--source <path>] [--target <path>] [--assets] [--database]
+# Example: ./clone-linknest.sh myspaces --source /var/www/linknest --target /home/user/projects --assets --database
 
 set -e
 
@@ -13,10 +13,11 @@ NC='\033[0m' # No Color
 
 if [ -z "$1" ]; then
     echo ""
-    echo "Usage: ./clone-linknest.sh <new-folder-name> [--target <path>] [--assets] [--database]"
+    echo "Usage: ./clone-linknest.sh <new-folder-name> [--source <path>] [--target <path>] [--assets] [--database]"
     echo ""
     echo "Parameters:"
     echo "  new-folder-name  Name of the new folder to create"
+    echo "  --source <path>  Source directory to clone from (optional, default: current directory)"
     echo "  --target <path>  Target directory where folder will be created (optional)"
     echo "  --assets         Copy logos and favicon from uploads folder"
     echo "  --database       Copy database file from data folder"
@@ -24,8 +25,9 @@ if [ -z "$1" ]; then
     echo "Examples:"
     echo "  ./clone-linknest.sh myspaces"
     echo "  ./clone-linknest.sh myspaces --target /home/user/projects"
+    echo "  ./clone-linknest.sh myspaces --source /var/www/linknest"
     echo "  ./clone-linknest.sh myspaces --assets --database"
-    echo "  ./clone-linknest.sh myspaces --target /home/user/projects --assets --database"
+    echo "  ./clone-linknest.sh myspaces --source /var/www/linknest --target /home/user/projects --assets"
     echo ""
     exit 1
 fi
@@ -34,11 +36,16 @@ NEW_FOLDER="$1"
 COPY_ASSETS=0
 COPY_DATABASE=0
 TARGET_PATH=""
+SOURCE_PATH=""
 
 # Parse optional parameters
 shift
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --source)
+            SOURCE_PATH="$2"
+            shift 2
+            ;;
         --target)
             TARGET_PATH="$2"
             shift 2
@@ -51,6 +58,10 @@ while [[ $# -gt 0 ]]; do
             COPY_DATABASE=1
             shift
             ;;
+        --databases)
+            COPY_DATABASE=1
+            shift
+            ;;
         *)
             echo -e "${YELLOW}Warning: Unknown parameter '$1'${NC}"
             shift
@@ -58,7 +69,18 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CURRENT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Determine source directory
+if [ -n "$SOURCE_PATH" ]; then
+    # User specified a custom source path
+    if [ ! -d "$SOURCE_PATH" ]; then
+        echo -e "${RED}ERROR: Source directory does not exist: $SOURCE_PATH${NC}"
+        exit 1
+    fi
+    CURRENT_DIR="$(cd "$SOURCE_PATH" && pwd)"
+else
+    # Default: use parent directory of script location
+    CURRENT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+fi
 if [ -n "$TARGET_PATH" ]; then
     TARGET_DIR="$TARGET_PATH/$NEW_FOLDER"
 else
@@ -77,9 +99,22 @@ echo ""
 
 # Check if target folder already exists
 if [ -d "$TARGET_DIR" ]; then
-    echo -e "${RED}ERROR: Folder '$TARGET_DIR' already exists!${NC}"
-    echo "Please choose a different name or delete the existing folder."
-    exit 1
+    echo -e "${YELLOW}WARNING: Folder '$TARGET_DIR' already exists!${NC}"
+    echo ""
+    read -p "Do you want to replace it? (y/N): " REPLACE
+    if [[ "$REPLACE" =~ ^[Yy]$ ]]; then
+        echo "Removing existing folder..."
+        rm -rf "$TARGET_DIR"
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}ERROR: Failed to remove existing folder!${NC}"
+            echo "Please delete it manually and try again."
+            exit 1
+        fi
+        echo "Existing folder removed successfully."
+    else
+        echo "Operation cancelled by user."
+        exit 0
+    fi
 fi
 
 # Create target directory
@@ -90,30 +125,42 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# Verify source directory exists
+if [ ! -f "$CURRENT_DIR/package.json" ]; then
+    echo -e "${RED}ERROR: Source directory not found or invalid!${NC}"
+    echo "Expected: $CURRENT_DIR"
+    echo "Please run this script from the scripts folder."
+    exit 1
+fi
+
 # Copy necessary files and directories
 echo "[2/6] Copying files..."
 echo ""
 
 # Copy root files
 echo "  - Copying root files..."
-cp "$CURRENT_DIR/package.json" "$TARGET_DIR/" 2>/dev/null || true
-cp "$CURRENT_DIR/package-lock.json" "$TARGET_DIR/" 2>/dev/null || true
-cp "$CURRENT_DIR/tsconfig.json" "$TARGET_DIR/" 2>/dev/null || true
-cp "$CURRENT_DIR/vite.config.ts" "$TARGET_DIR/" 2>/dev/null || true
-cp "$CURRENT_DIR/vite.docker.config.ts" "$TARGET_DIR/" 2>/dev/null || true
-cp "$CURRENT_DIR/vite.runtime.config.ts" "$TARGET_DIR/" 2>/dev/null || true
-cp "$CURRENT_DIR/tailwind.config.js" "$TARGET_DIR/" 2>/dev/null || true
-cp "$CURRENT_DIR/postcss.config.js" "$TARGET_DIR/" 2>/dev/null || true
-cp "$CURRENT_DIR/index.html" "$TARGET_DIR/" 2>/dev/null || true
-cp "$CURRENT_DIR/index.tsx" "$TARGET_DIR/" 2>/dev/null || true
-cp "$CURRENT_DIR/index.css" "$TARGET_DIR/" 2>/dev/null || true
-cp "$CURRENT_DIR/App.tsx" "$TARGET_DIR/" 2>/dev/null || true
-cp "$CURRENT_DIR/types.ts" "$TARGET_DIR/" 2>/dev/null || true
-cp "$CURRENT_DIR/router.php" "$TARGET_DIR/" 2>/dev/null || true
-cp "$CURRENT_DIR/.htaccess" "$TARGET_DIR/" 2>/dev/null || true
-cp "$CURRENT_DIR/README.md" "$TARGET_DIR/" 2>/dev/null || true
-cp "$CURRENT_DIR/bulk-import-template.csv" "$TARGET_DIR/" 2>/dev/null || true
-cp "$CURRENT_DIR/section-links-import-template.csv" "$TARGET_DIR/" 2>/dev/null || true
+COPY_ERROR=0
+cp "$CURRENT_DIR/package.json" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
+cp "$CURRENT_DIR/package-lock.json" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
+cp "$CURRENT_DIR/tsconfig.json" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
+cp "$CURRENT_DIR/vite.config.ts" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
+cp "$CURRENT_DIR/vite.docker.config.ts" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
+cp "$CURRENT_DIR/vite.runtime.config.ts" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
+cp "$CURRENT_DIR/tailwind.config.js" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
+cp "$CURRENT_DIR/postcss.config.js" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
+cp "$CURRENT_DIR/index.html" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
+cp "$CURRENT_DIR/index.tsx" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
+cp "$CURRENT_DIR/index.css" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
+cp "$CURRENT_DIR/App.tsx" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
+cp "$CURRENT_DIR/types.ts" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
+cp "$CURRENT_DIR/router.php" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
+[ -f "$CURRENT_DIR/.htaccess" ] && cp "$CURRENT_DIR/.htaccess" "$TARGET_DIR/" 2>/dev/null || true
+cp "$CURRENT_DIR/README.md" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
+[ -f "$CURRENT_DIR/bulk-import-template.csv" ] && cp "$CURRENT_DIR/bulk-import-template.csv" "$TARGET_DIR/" 2>/dev/null || true
+[ -f "$CURRENT_DIR/section-links-import-template.csv" ] && cp "$CURRENT_DIR/section-links-import-template.csv" "$TARGET_DIR/" 2>/dev/null || true
+if [ "$COPY_ERROR" -eq 1 ]; then
+    echo "    ${YELLOW}WARNING: Some files may not have been copied successfully${NC}"
+fi
 
 # Copy directories
 echo "  - Copying api directory..."
@@ -218,6 +265,13 @@ echo "  Created .env with VITE_BASE_PATH=/$NEW_FOLDER"
 echo "[4/7] Installing npm dependencies..."
 echo "  This may take a few minutes..."
 cd "$TARGET_DIR"
+if [ ! -f "package.json" ]; then
+    echo ""
+    echo -e "${RED}ERROR: package.json not found in target directory!${NC}"
+    echo "The file copy operation may have failed."
+    echo "Please check that the source directory is correct and try again."
+    exit 1
+fi
 npm install
 if [ $? -ne 0 ]; then
     echo ""

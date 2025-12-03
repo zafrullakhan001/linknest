@@ -1,6 +1,7 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { Tile, Link } from './types';
 import { getTiles, saveTiles, createTile, deleteTile, cloneTile } from './services/storageService';
+import { settingsService } from './services/settingsService';
 import { Navigation } from './components/Navigation';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
@@ -53,6 +54,8 @@ const AppContent: React.FC = () => {
   const [styleManagerOpen, setStyleManagerOpen] = useState(false);
   const [helpAboutOpen, setHelpAboutOpen] = useState(false);
   const [authRequired, setAuthRequired] = useState(false); // Track if we got 401 error
+  const [databasePath, setDatabasePath] = useState<string>('');
+  const [databasePathAbsolute, setDatabasePathAbsolute] = useState<string>('');
   const { user, isAuthenticated, loading: authLoading } = useAuth();
   const { updateStyles, styles, isLoading: stylesLoading } = useStyles();
   const { settings, loading: settingsLoading } = useSettings();
@@ -134,6 +137,23 @@ const AppContent: React.FC = () => {
       loadData();
     }
   }, [isAuthenticated, guestAccessEnabled, settingsLoading]); // Reload when auth state or guest access changes
+
+  // Load database path on mount
+  useEffect(() => {
+    const loadDatabasePath = async () => {
+      try {
+        const paths = await settingsService.getDatabasePath();
+        setDatabasePath(paths.relative);
+        setDatabasePathAbsolute(paths.absolute);
+      } catch (error) {
+        console.error('Failed to load database path:', error);
+        setDatabasePath('');
+        setDatabasePathAbsolute('');
+      }
+    };
+
+    loadDatabasePath();
+  }, []);
 
   const handleUpdateTiles = async (newTiles: Tile[], skipReload: boolean = false) => {
     if (!isAuthenticated) {
@@ -393,8 +413,17 @@ const AppContent: React.FC = () => {
       <footer className="linknest-footer py-6 text-sm">
         <div className="container mx-auto max-w-6xl-plus px-4">
           <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div className="flex-1 min-w-0 text-center">
-              <p dangerouslySetInnerHTML={{ __html: settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}></p>
+            <div className="flex-1 min-w-0 flex flex-col gap-2">
+              <div className="text-center">
+                <p dangerouslySetInnerHTML={{ __html: settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}></p>
+              </div>
+              {((user?.is_admin && databasePathAbsolute) || (databasePath && settings.show_database_path_in_footer !== '0')) && (
+                <div className="text-center text-xs text-slate-500 dark:text-slate-400">
+                  <span className="font-medium">Database:</span> <span className="font-mono">
+                    {user?.is_admin && databasePathAbsolute ? databasePathAbsolute : databasePath}
+                  </span>
+                </div>
+              )}
             </div>
             <div className="flex-shrink-0">
               <TimezoneDisplay />

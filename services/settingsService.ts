@@ -43,6 +43,7 @@ export interface AppSettings {
   favicon: string;
   footer_text?: string; // Footer text displayed at the bottom of pages
   guest_access_enabled?: string; // '0' or '1' - controls whether guests can view spaces
+  show_database_path_in_footer?: string; // '0' or '1' - controls whether database path is shown in footer
 
   // LDAP Settings
   ldap_enabled?: string;
@@ -105,6 +106,7 @@ export const settingsService = {
       favicon: data.settings?.favicon || '',
       footer_text: data.settings?.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team',
       guest_access_enabled: data.settings?.guest_access_enabled || '1', // Default to enabled
+      show_database_path_in_footer: data.settings?.show_database_path_in_footer || '1', // Default to enabled
 
       // LDAP defaults
       ldap_enabled: data.settings?.ldap_enabled || '0',
@@ -261,6 +263,24 @@ export const settingsService = {
     }
 
     return data.password;
+  },
+
+  async getDatabasePath(): Promise<{ relative: string; absolute: string }> {
+    const response = await fetch(`${API_BASE}/settings/database-path`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to fetch database path');
+    }
+
+    return {
+      relative: data.database_path || '',
+      absolute: data.database_path_absolute || data.database_path || ''
+    };
   }
 };
 
