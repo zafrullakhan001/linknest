@@ -76,7 +76,12 @@ if (empty($path) || $path === '/') {
     $_SERVER['PATH_INFO'] = substr($path, 7); // Remove '/access'
     require __DIR__ . '/access.php';
 } elseif (strpos($path, '/clone') === 0) {
-    $_SERVER['PATH_INFO'] = substr($path, 6); // Remove '/clone'
+    $remainingPath = substr($path, 6); // Remove '/clone'
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = $remainingPath;
+    }
     require __DIR__ . '/clone.php';
 } elseif (strpos($path, '/ldap_test.php') === 0) {
     require __DIR__ . '/ldap_test.php';

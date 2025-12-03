@@ -1,0 +1,136 @@
+{
+    "step": "complete",
+    "progress": 100,
+    "message": "Clone completed successfully!",
+    "logs": [
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Starting clone operation for: zafar1"
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Source: C:\\xampp\\htdocs\\linknest"
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Target: C:\\xampp\\htdocs\\zafar1"
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Target directory created"
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Copying root files..."
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Copied 19 root files"
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Copying api directory..."
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Copying components directory..."
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Copying contexts directory..."
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Copying services directory..."
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Copying src directory..."
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Created data directory"
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Created uploads directory"
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Created scripts directory"
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Copying scripts..."
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Copied 27 script files"
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Copying assets..."
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Copied 4 asset files"
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Copying database..."
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Database copied successfully"
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Encrypting LDAP passwords..."
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "LDAP passwords encrypted"
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Creating .env file..."
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Created .env with VITE_BASE_PATH=\/zafar1"
+        },
+        {
+            "time": "2025-12-03 20:34:29",
+            "message": "Installing npm dependencies (this may take a few minutes)..."
+        },
+        {
+            "time": "2025-12-03 20:34:33",
+            "message": "npm install completed successfully"
+        },
+        {
+            "time": "2025-12-03 20:34:33",
+            "message": "Building application (this may take a few minutes)..."
+        },
+        {
+            "time": "2025-12-03 20:34:40",
+            "message": "Build completed successfully"
+        },
+        {
+            "time": "2025-12-03 20:34:43",
+            "message": "Cleaned up node_modules"
+        },
+        {
+            "time": "2025-12-03 20:34:43",
+            "message": "Creating deployment README..."
+        },
+        {
+            "time": "2025-12-03 20:34:43",
+            "message": "Clone completed successfully!"
+        },
+        {
+            "time": "2025-12-03 20:34:43",
+            "message": "URL: http:\/\/localhost\/zafar1\/"
+        }
+    ],
+    "timestamp": 1764790483
+}

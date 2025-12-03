@@ -625,6 +625,25 @@ function initDatabase() {
             FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
         )');
         
+        // Create clones table for tracking cloned instances
+        $db->exec('CREATE TABLE IF NOT EXISTS clones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            folder_name TEXT NOT NULL UNIQUE,
+            source_path TEXT NOT NULL,
+            target_path TEXT NOT NULL,
+            full_path TEXT NOT NULL,
+            url TEXT NOT NULL,
+            status TEXT DEFAULT "pending",
+            progress INTEGER DEFAULT 0,
+            copy_assets INTEGER DEFAULT 0,
+            copy_database INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            completed_at INTEGER,
+            error_message TEXT,
+            created_by INTEGER,
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        )');
+        
         // Migrate existing tables if they exist with NULL user_id
         // SQLite doesn't allow NULL in composite PRIMARY KEY, so we need to migrate to use 0 instead
         // Only migrate once by checking if migration flag exists in settings

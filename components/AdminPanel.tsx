@@ -124,6 +124,41 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [cloneCopyAssets, setCloneCopyAssets] = useState(false);
   const [cloneCopyDatabase, setCloneCopyDatabase] = useState(false);
   const [cloneLoading, setCloneLoading] = useState(false);
+  const [cloneProgress, setCloneProgress] = useState(0);
+  const [cloneStatus, setCloneStatus] = useState<string | null>(null);
+  const [cloneLogs, setCloneLogs] = useState<Array<{time: string; message: string}>>([]);
+  const [currentCloneId, setCurrentCloneId] = useState<number | null>(null);
+  const [clonesList, setClonesList] = useState<Array<{
+    id: number;
+    folderName: string;
+    url: string;
+    status: string;
+    progress: number;
+    createdAt: number;
+    completedAt: number | null;
+    errorMessage: string | null;
+    sourcePath: string;
+    targetPath: string;
+    copyAssets: boolean;
+    copyDatabase: boolean;
+  }>>([]);
+  const [clonesLoading, setClonesLoading] = useState(false);
+  
+  // Clone edit modal state
+  const [editCloneModal, setEditCloneModal] = useState<{
+    open: boolean;
+    clone: {
+      id: number;
+      folderName: string;
+      sourcePath: string;
+      targetPath: string;
+      copyAssets: boolean;
+      copyDatabase: boolean;
+    } | null;
+  }>({ open: false, clone: null });
+  const [editCloneLoading, setEditCloneLoading] = useState(false);
+  const [deleteCloneLoading, setDeleteCloneLoading] = useState<number | null>(null);
+  const [rerunCloneLoading, setRerunCloneLoading] = useState<number | null>(null);
 
   const loadPendingUsers = async () => {
     try {
@@ -181,7 +216,70 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     if (activeTab === 'access') {
       loadPermissions();
     }
+    if (activeTab === 'clone') {
+      loadClonesList();
+      loadCurrentPath();
+    }
   }, [activeTab]);
+
+  const loadCurrentPath = async () => {
+    try {
+      const response = await fetch('/api/clone/current-path');
+      if (response.ok) {
+        const data = await response.json();
+        if (!cloneSourcePath) {
+          setCloneSourcePath(data.sourcePath || '');
+        }
+        if (!cloneTargetPath) {
+          setCloneTargetPath(data.targetPath || '');
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load current path:', err);
+    }
+  };
+
+  // Poll for clone progress when a clone is running
+  useEffect(() => {
+    if (currentCloneId && (cloneStatus === 'running' || cloneStatus === 'pending')) {
+      const interval = setInterval(async () => {
+        try {
+          const response = await fetch(`/api/clone/status/${currentCloneId}`);
+          if (response.ok) {
+            const data = await response.json();
+            setCloneProgress(data.progress || 0);
+            setCloneStatus(data.step || 'running');
+            if (data.logs && Array.isArray(data.logs)) {
+              setCloneLogs(data.logs);
+            }
+            if (data.step === 'complete' || data.step === 'error') {
+              setCurrentCloneId(null);
+              loadClonesList();
+            }
+          }
+        } catch (err) {
+          console.error('Failed to fetch clone status:', err);
+        }
+      }, 1000); // Poll every second
+
+      return () => clearInterval(interval);
+    }
+  }, [currentCloneId, cloneStatus]);
+
+  const loadClonesList = async () => {
+    try {
+      setClonesLoading(true);
+      const response = await fetch('/api/clone/list');
+      if (response.ok) {
+        const data = await response.json();
+        setClonesList(data.clones || []);
+      }
+    } catch (err: any) {
+      console.error('Failed to load clones list:', err);
+    } finally {
+      setClonesLoading(false);
+    }
+  };
 
   // Clean up selection when pending users change (e.g., after approval/rejection)
   useEffect(() => {
@@ -2364,6 +2462,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           {/* Clone Tab */}
           {activeTab === 'clone' && (
             <div className="space-y-6">
+              {/* Clone Form */}
               <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Clone Instance</h3>
                 <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
@@ -2389,33 +2488,107 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Source Path (Optional)
+                      Source Folder
                     </label>
-                    <input
-                      type="text"
-                      value={cloneSourcePath}
-                      onChange={(e) => setCloneSourcePath(e.target.value)}
-                      placeholder="e.g., C:\xampp\htdocs\linknest"
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={cloneSourcePath}
+                        onChange={(e) => setCloneSourcePath(e.target.value)}
+                        placeholder="e.g., C:\xampp\htdocs\linknest"
+                        className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                      />
+                      <input
+                        type="file"
+                        id="sourceFolderPicker"
+                        webkitdirectory=""
+                        directory=""
+                        multiple={false}
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const files = e.target.files;
+                          if (files && files.length > 0) {
+                            // Browsers don't provide full file paths for security reasons
+                            // We can only get the folder name, not the full path
+                            // So we'll show a helpful message and let user confirm
+                            const firstFile = files[0] as any;
+                            const relativePath = firstFile.webkitRelativePath || firstFile.name;
+                            const folderName = relativePath.split('/')[0] || relativePath.split('\\')[0];
+                            
+                            alert(`Browser security prevents accessing the full file path.\n\nSelected folder name: ${folderName}\n\nPlease manually enter or verify the full path in the input field above.`);
+                          }
+                          // Reset input
+                          e.target.value = '';
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Try to use folder picker (works in Chrome/Edge)
+                          const picker = document.getElementById('sourceFolderPicker') as HTMLInputElement;
+                          if (picker) {
+                            picker.click();
+                          }
+                        }}
+                        className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+                        title="Browse for source folder (Chrome/Edge - limited by browser security)"
+                      >
+                        Browse
+                      </button>
+                    </div>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      Source directory to clone from (leave empty to use current directory)
+                      Source directory to clone from (defaults to current app directory)
                     </p>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Target Path (Optional)
+                      Target Folder
                     </label>
-                    <input
-                      type="text"
-                      value={cloneTargetPath}
-                      onChange={(e) => setCloneTargetPath(e.target.value)}
-                      placeholder="e.g., C:\projects"
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={cloneTargetPath}
+                        onChange={(e) => setCloneTargetPath(e.target.value)}
+                        placeholder="e.g., C:\projects"
+                        className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                      />
+                      <input
+                        type="file"
+                        id="targetFolderPicker"
+                        webkitdirectory=""
+                        directory=""
+                        multiple={false}
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const files = e.target.files;
+                          if (files && files.length > 0) {
+                            // Browsers don't provide full file paths for security reasons
+                            const firstFile = files[0] as any;
+                            const relativePath = firstFile.webkitRelativePath || firstFile.name;
+                            const folderName = relativePath.split('/')[0] || relativePath.split('\\')[0];
+                            
+                            alert(`Browser security prevents accessing the full file path.\n\nSelected folder name: ${folderName}\n\nPlease manually enter or verify the full path in the input field above.`);
+                          }
+                          e.target.value = '';
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const picker = document.getElementById('targetFolderPicker') as HTMLInputElement;
+                          if (picker) {
+                            picker.click();
+                          }
+                        }}
+                        className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+                        title="Browse for target folder (Chrome/Edge - limited by browser security)"
+                      >
+                        Browse
+                      </button>
+                    </div>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      Target directory where the new folder will be created (leave empty to use default)
+                      Target directory where the new folder will be created (defaults to parent of source)
                     </p>
                   </div>
 
@@ -2451,6 +2624,36 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </label>
                   </div>
 
+                  {/* Progress Bar */}
+                  {currentCloneId && (cloneStatus === 'running' || cloneStatus === 'pending' || cloneStatus === 'validating' || cloneStatus === 'copying' || cloneStatus === 'installing' || cloneStatus === 'building' || cloneStatus === 'configuring' || cloneStatus === 'finalizing') && (
+                    <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                      <div className="mb-2 flex justify-between items-center">
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{cloneStatus || 'Processing...'}</span>
+                        <span className="text-sm text-slate-600 dark:text-slate-400">{cloneProgress}%</span>
+                      </div>
+                      <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5">
+                        <div
+                          className="bg-brand-600 h-2.5 rounded-full transition-all duration-300"
+                          style={{ width: `${cloneProgress}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Logs Display */}
+                  {cloneLogs.length > 0 && (
+                    <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                      <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Logs</h4>
+                      <div className="bg-slate-900 text-green-400 font-mono text-xs p-3 rounded-lg max-h-60 overflow-y-auto">
+                        {cloneLogs.map((log, idx) => (
+                          <div key={idx} className="mb-1">
+                            <span className="text-slate-500">[{log.time}]</span> {log.message}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
                     <button
                       onClick={async () => {
@@ -2462,6 +2665,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         try {
                           setCloneLoading(true);
                           setError('');
+                          setCloneProgress(0);
+                          setCloneStatus('pending');
+                          setCloneLogs([]);
 
                           const response = await fetch('/api/clone', {
                             method: 'POST',
@@ -2480,13 +2686,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           const data = await response.json();
 
                           if (!response.ok) {
-                            const errorMsg = data.error || 'Failed to start clone process';
-                            const logInfo = data.logFile ? `\n\nCheck log file: ${data.logFile}` : '';
-                            throw new Error(errorMsg + logInfo);
+                            throw new Error(data.error || 'Failed to start clone process');
                           }
 
-                          const logInfo = data.logFile ? `\n\nLog files:\n- ${data.logFile} (debug log)\n- ${data.outputLog || 'clone_output.log'} (process output)` : '';
-                          alert(`Clone process started successfully!\n\nNew instance will be created at: ${data.folderName}\n\nThe process is running in the background. Please check the target directory after a few minutes.${logInfo}`);
+                          // Set current clone ID and start polling
+                          setCurrentCloneId(data.cloneId);
+                          setCloneStatus('running');
                           
                           // Reset form
                           setCloneFolderName('');
@@ -2494,35 +2699,371 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           setCloneTargetPath('');
                           setCloneCopyAssets(false);
                           setCloneCopyDatabase(false);
+                          
+                          // Reload clones list
+                          loadClonesList();
                         } catch (err: any) {
-                          const errorMsg = err.message || 'Failed to start clone process';
-                          setError(errorMsg + '\n\nCheck clone_debug.log in the project root for details.');
+                          setError(err.message || 'Failed to start clone process');
+                          setCloneStatus('error');
                         } finally {
                           setCloneLoading(false);
                         }
                       }}
-                      disabled={cloneLoading || !cloneFolderName.trim()}
+                      disabled={cloneLoading || !cloneFolderName.trim() || (currentCloneId !== null)}
                       className="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
                     >
-                      {cloneLoading ? 'Starting Clone Process...' : 'Start Clone'}
+                      {cloneLoading ? 'Starting Clone Process...' : (currentCloneId ? 'Clone in Progress...' : 'Start Clone')}
                     </button>
-                  </div>
-
-                  <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg">
-                    <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Important Notes:</h4>
-                    <ul className="text-xs text-slate-600 dark:text-slate-400 space-y-1 list-disc list-inside">
-                      <li>The clone process runs in the background and may take several minutes to complete</li>
-                      <li>The process includes: copying files, installing dependencies, and building the application</li>
-                      <li>If the target folder already exists, you will be prompted to replace it (via the script)</li>
-                      <li>After cloning, access the new instance at: http://localhost/{'{'}folderName{'}'}/</li>
-                      <li>Default admin credentials: admin / admin123</li>
-                      <li>Check <code className="px-1 py-0.5 bg-slate-200 dark:bg-slate-700 rounded">clone_debug.log</code> and <code className="px-1 py-0.5 bg-slate-200 dark:bg-slate-700 rounded">clone_output.log</code> in the project root for detailed logs</li>
-                    </ul>
                   </div>
                 </div>
               </div>
+
+              {/* Clones List */}
+              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Cloned Instances</h3>
+                  <button
+                    onClick={loadClonesList}
+                    disabled={clonesLoading}
+                    className="px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                  >
+                    {clonesLoading ? 'Loading...' : 'Refresh'}
+                  </button>
+                </div>
+
+                {clonesList.length === 0 ? (
+                  <div className="text-center py-8 text-slate-500 dark:text-slate-400">
+                    <p>No clones created yet.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-slate-200 dark:border-slate-700">
+                          <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Folder Name</th>
+                          <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Source Folder</th>
+                          <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Target Folder</th>
+                          <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Status</th>
+                          <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Progress</th>
+                          <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">URL</th>
+                          <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Created</th>
+                          <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {clonesList.map((clone) => (
+                          <tr key={clone.id} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                            <td className="py-3 px-4 text-sm text-slate-900 dark:text-white font-medium">{clone.folderName}</td>
+                            <td className="py-3 px-4 text-sm text-slate-600 dark:text-slate-400 font-mono text-xs">
+                              {clone.sourcePath || '-'}
+                            </td>
+                            <td className="py-3 px-4 text-sm text-slate-600 dark:text-slate-400 font-mono text-xs">
+                              {clone.targetPath || '-'}
+                            </td>
+                            <td className="py-3 px-4 text-sm">
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                clone.status === 'completed' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
+                                clone.status === 'failed' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' :
+                                'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                              }`}>
+                                {clone.status}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-sm">
+                              <div className="flex items-center gap-2">
+                                <div className="w-24 bg-slate-200 dark:bg-slate-700 rounded-full h-2">
+                                  <div
+                                    className={`h-2 rounded-full transition-all ${
+                                      clone.status === 'completed' ? 'bg-green-600' :
+                                      clone.status === 'failed' ? 'bg-red-600' :
+                                      'bg-brand-600'
+                                    }`}
+                                    style={{ width: `${clone.progress}%` }}
+                                  ></div>
+                                </div>
+                                <span className="text-xs text-slate-600 dark:text-slate-400">{clone.progress}%</span>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-sm">
+                              {clone.status === 'completed' && clone.url ? (
+                                <a
+                                  href={clone.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-brand-600 dark:text-brand-400 hover:underline flex items-center gap-1"
+                                >
+                                  {clone.url}
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                    <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clipRule="evenodd" />
+                                    <path fillRule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clipRule="evenodd" />
+                                  </svg>
+                                </a>
+                              ) : (
+                                <span className="text-slate-400 dark:text-slate-500">-</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-sm text-slate-600 dark:text-slate-400">
+                              {new Date(clone.createdAt * 1000).toLocaleString()}
+                            </td>
+                            <td className="py-3 px-4 text-sm">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    setEditCloneModal({
+                                      open: true,
+                                      clone: {
+                                        id: clone.id,
+                                        folderName: clone.folderName,
+                                        sourcePath: clone.sourcePath,
+                                        targetPath: clone.targetPath,
+                                        copyAssets: clone.copyAssets,
+                                        copyDatabase: clone.copyDatabase
+                                      }
+                                    });
+                                  }}
+                                  className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+                                  title="Edit clone"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                    <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    if (!confirm(`Are you sure you want to rerun the clone for "${clone.folderName}"? This will restart the clone process.`)) {
+                                      return;
+                                    }
+                                    
+                                    try {
+                                      setRerunCloneLoading(clone.id);
+                                      const response = await fetch(`/api/clone/rerun/${clone.id}`, {
+                                        method: 'POST',
+                                      });
+                                      
+                                      const data = await response.json();
+                                      
+                                      if (!response.ok) {
+                                        throw new Error(data.error || 'Failed to rerun clone');
+                                      }
+                                      
+                                      // Set as current clone to track progress
+                                      setCurrentCloneId(clone.id);
+                                      setCloneStatus('running');
+                                      setCloneProgress(0);
+                                      setCloneLogs([]);
+                                      
+                                      // Reload list
+                                      loadClonesList();
+                                    } catch (err: any) {
+                                      setError(err.message || 'Failed to rerun clone');
+                                    } finally {
+                                      setRerunCloneLoading(null);
+                                    }
+                                  }}
+                                  disabled={rerunCloneLoading === clone.id || clone.status === 'running' || clone.status === 'pending'}
+                                  className="p-1.5 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                  title="Rerun clone"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                    <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    if (!confirm(`Are you sure you want to delete clone "${clone.folderName}"?`)) {
+                                      return;
+                                    }
+                                    
+                                    const deleteFolder = confirm(`Do you also want to delete the folder?\n\nClick OK to delete both the record and the folder.\nClick Cancel to only remove the record from the database.`);
+                                    
+                                    try {
+                                      setDeleteCloneLoading(clone.id);
+                                      const response = await fetch(`/api/clone/${clone.id}?deleteFolder=${deleteFolder ? '1' : '0'}`, {
+                                        method: 'DELETE',
+                                      });
+                                      
+                                      const data = await response.json();
+                                      
+                                      if (!response.ok) {
+                                        throw new Error(data.error || 'Failed to delete clone');
+                                      }
+                                      
+                                      // If this was the current clone being tracked, clear it
+                                      if (currentCloneId === clone.id) {
+                                        setCurrentCloneId(null);
+                                        setCloneStatus(null);
+                                        setCloneProgress(0);
+                                        setCloneLogs([]);
+                                      }
+                                      
+                                      // Reload list
+                                      loadClonesList();
+                                    } catch (err: any) {
+                                      setError(err.message || 'Failed to delete clone');
+                                    } finally {
+                                      setDeleteCloneLoading(null);
+                                    }
+                                  }}
+                                  disabled={deleteCloneLoading === clone.id}
+                                  className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                  title="Delete clone"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                    <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                                  </svg>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
           )}
+
+      {/* Edit Clone Modal */}
+      {editCloneModal.open && editCloneModal.clone && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/20 dark:bg-slate-900/40" onClick={() => setEditCloneModal({ open: false, clone: null })}></div>
+          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-2xl p-6 relative shadow-2xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Edit Clone</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Folder Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editCloneModal.clone.folderName}
+                  onChange={(e) => setEditCloneModal({
+                    ...editCloneModal,
+                    clone: { ...editCloneModal.clone!, folderName: e.target.value }
+                  })}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Source Path
+                </label>
+                <input
+                  type="text"
+                  value={editCloneModal.clone.sourcePath}
+                  onChange={(e) => setEditCloneModal({
+                    ...editCloneModal,
+                    clone: { ...editCloneModal.clone!, sourcePath: e.target.value }
+                  })}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Target Path
+                </label>
+                <input
+                  type="text"
+                  value={editCloneModal.clone.targetPath}
+                  onChange={(e) => setEditCloneModal({
+                    ...editCloneModal,
+                    clone: { ...editCloneModal.clone!, targetPath: e.target.value }
+                  })}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                />
+              </div>
+
+              <div className="space-y-3">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editCloneModal.clone.copyAssets}
+                    onChange={(e) => setEditCloneModal({
+                      ...editCloneModal,
+                      clone: { ...editCloneModal.clone!, copyAssets: e.target.checked }
+                    })}
+                    className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                  />
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Copy Assets</span>
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editCloneModal.clone.copyDatabase}
+                    onChange={(e) => setEditCloneModal({
+                      ...editCloneModal,
+                      clone: { ...editCloneModal.clone!, copyDatabase: e.target.checked }
+                    })}
+                    className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                  />
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Copy Database</span>
+                </label>
+              </div>
+
+              {error && (
+                <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
+                  {error}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => setEditCloneModal({ open: false, clone: null })}
+                  className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!editCloneModal.clone) return;
+                    
+                    try {
+                      setEditCloneLoading(true);
+                      setError('');
+                      
+                      const response = await fetch(`/api/clone/${editCloneModal.clone.id}`, {
+                        method: 'PUT',
+                        headers: {
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                          folderName: editCloneModal.clone.folderName,
+                          sourcePath: editCloneModal.clone.sourcePath,
+                          targetPath: editCloneModal.clone.targetPath,
+                          copyAssets: editCloneModal.clone.copyAssets,
+                          copyDatabase: editCloneModal.clone.copyDatabase,
+                        }),
+                      });
+                      
+                      const data = await response.json();
+                      
+                      if (!response.ok) {
+                        throw new Error(data.error || 'Failed to update clone');
+                      }
+                      
+                      setEditCloneModal({ open: false, clone: null });
+                      loadClonesList();
+                    } catch (err: any) {
+                      setError(err.message || 'Failed to update clone');
+                    } finally {
+                      setEditCloneLoading(false);
+                    }
+                  }}
+                  disabled={editCloneLoading || !editCloneModal.clone.folderName.trim()}
+                  className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
+                >
+                  {editCloneLoading ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
           {/* Access Manager Tab */}
           {activeTab === 'access' && (
