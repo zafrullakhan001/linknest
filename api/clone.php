@@ -480,17 +480,37 @@ function handleDeleteClone($cloneId) {
         }
         
         // Optionally delete the folder (if it exists)
-        // Check $_GET first, then parse from REQUEST_URI if needed
+        // Check $_GET first, then parse from REQUEST_URI and path parameter
         $deleteFolder = false;
+        
+        // Method 1: Check direct GET parameter
         if (isset($_GET['deleteFolder'])) {
             $deleteFolder = ($_GET['deleteFolder'] === '1' || $_GET['deleteFolder'] === 'true');
-        } else {
-            // Try parsing from REQUEST_URI if not in $_GET
-            $requestUri = $_SERVER['REQUEST_URI'] ?? '';
-            if (preg_match('/[?&]deleteFolder=([01]|true|false)/i', $requestUri, $matches)) {
+            cloneLog("deleteFolder from GET: " . ($deleteFolder ? 'true' : 'false'));
+        }
+        
+        // Method 2: Parse from the 'path' parameter (from .htaccess rewrite)
+        if (!$deleteFolder && isset($_GET['path'])) {
+            $pathParam = $_GET['path'];
+            // The path might be like: /clone/4?deleteFolder=1
+            if (preg_match('/[?&]deleteFolder=([01]|true|false)/i', $pathParam, $matches)) {
                 $deleteFolder = ($matches[1] === '1' || strtolower($matches[1]) === 'true');
+                cloneLog("deleteFolder from path parameter: " . ($deleteFolder ? 'true' : 'false'));
             }
         }
+        
+        // Method 3: Parse from REQUEST_URI as fallback
+        if (!$deleteFolder) {
+            $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+            // Decode URL encoding first
+            $decodedUri = urldecode($requestUri);
+            if (preg_match('/[?&]deleteFolder=([01]|true|false)/i', $decodedUri, $matches)) {
+                $deleteFolder = ($matches[1] === '1' || strtolower($matches[1]) === 'true');
+                cloneLog("deleteFolder from REQUEST_URI: " . ($deleteFolder ? 'true' : 'false'));
+            }
+        }
+        
+        cloneLog("Final deleteFolder value: " . ($deleteFolder ? 'true' : 'false'));
         
         // Get the folder path directly from the database
         $fullPath = $clone['full_path'] ?? null;
@@ -508,35 +528,65 @@ function handleDeleteClone($cloneId) {
         
         // Delete the folder if requested and path exists
         if ($deleteFolder && $fullPath && is_dir($fullPath)) {
+            cloneLog("Attempting to delete folder: $fullPath");
+            
             // Use Windows rmdir command for fast deletion on Windows
             if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
-                // Use cmd /c to ensure proper command execution
-                $escapedPath = str_replace('"', '""', $fullPath);
-                $command = 'cmd /c "rmdir /s /q "' . $escapedPath . '""';
+                // Method 1: Try cmd rmdir command with proper escaping
+                $command = 'cmd /c rmdir /s /q ' . escapeshellarg($fullPath);
+                cloneLog("Executing command: $command");
                 exec($command . ' 2>&1', $output, $returnVar);
+                cloneLog("Command exit code: $returnVar, output: " . implode("\n", $output));
                 
                 // Wait a moment for the command to complete
-                usleep(1000000); // 1 second
+                usleep(500000); // 0.5 seconds
+                
+                // Clear stat cache to get accurate file system status
+                clearstatcache(true, $fullPath);
                 
                 // Check if folder was deleted
-                $folderDeleted = (!is_dir($fullPath));
+                $folderDeleted = (!file_exists($fullPath) && !is_dir($fullPath));
+                cloneLog("Folder deleted after rmdir: " . ($folderDeleted ? 'yes' : 'no'));
                 
-                // If rmdir failed, try PowerShell
-                if (!$folderDeleted) {
-                    $escapedPsPath = str_replace("'", "''", $fullPath);
-                    $psCommand = 'powershell -Command "Remove-Item -Path \'' . $escapedPsPath . '\' -Recurse -Force -ErrorAction SilentlyContinue"';
+                // Method 2: If rmdir failed, try PowerShell
+                if (!$folderDeleted && file_exists($fullPath)) {
+                    cloneLog("Trying PowerShell method...");
+                    $psCommand = 'powershell -Command "Remove-Item -Path ' . escapeshellarg($fullPath) . ' -Recurse -Force -ErrorAction SilentlyContinue"';
+                    cloneLog("Executing PowerShell: $psCommand");
                     exec($psCommand . ' 2>&1', $psOutput, $psReturnVar);
+                    cloneLog("PowerShell exit code: $psReturnVar");
                     
                     // Wait a moment
-                    usleep(1000000);
+                    usleep(500000);
                     
-                    $folderDeleted = (!is_dir($fullPath));
+                    // Clear stat cache again
+                    clearstatcache(true, $fullPath);
+                    
+                    $folderDeleted = (!file_exists($fullPath) && !is_dir($fullPath));
+                    cloneLog("Folder deleted after PowerShell: " . ($folderDeleted ? 'yes' : 'no'));
+                }
+                
+                // Method 3: If PowerShell failed, try PHP recursive delete
+                if (!$folderDeleted && file_exists($fullPath)) {
+                    cloneLog("Trying PHP recursive delete...");
+                    try {
+                        $folderDeleted = deleteDirectory($fullPath);
+                        cloneLog("PHP delete result: " . ($folderDeleted ? 'success' : 'failed'));
+                    } catch (Exception $e) {
+                        cloneLog("PHP delete error: " . $e->getMessage());
+                    }
                 }
             } else {
                 // Linux/Unix - use rm -rf
                 $command = 'rm -rf ' . escapeshellarg($fullPath);
+                cloneLog("Executing Linux command: $command");
                 exec($command . ' 2>&1', $output, $returnVar);
-                $folderDeleted = ($returnVar === 0 && !is_dir($fullPath));
+                
+                // Clear stat cache
+                clearstatcache(true, $fullPath);
+                
+                $folderDeleted = ($returnVar === 0 && !file_exists($fullPath) && !is_dir($fullPath));
+                cloneLog("Linux delete result: " . ($folderDeleted ? 'success' : 'failed'));
             }
         }
         
