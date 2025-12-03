@@ -225,16 +225,60 @@ mkdir "%TARGET_DIR%\uploads" 2>nul
 echo   - Creating scripts directory...
 mkdir "%TARGET_DIR%\scripts" 2>nul
 
-echo   - Copying clone scripts...
-copy "%SCRIPT_DIR%\clone-linknest.bat" "%TARGET_DIR%\scripts\" >nul 2>&1
-if errorlevel 1 set "COPY_ERROR=1"
-copy "%SCRIPT_DIR%\clone-linknest.sh" "%TARGET_DIR%\scripts\" >nul 2>&1
-if errorlevel 1 set "COPY_ERROR=1"
-if exist "%SCRIPT_DIR%\encrypt_ldap_passwords.php" (
-    copy "%SCRIPT_DIR%\encrypt_ldap_passwords.php" "%TARGET_DIR%\scripts\" >nul 2>&1
-    if errorlevel 1 set "COPY_ERROR=1"
+echo   - Copying scripts...
+REM Copy all script files by iterating through source directory
+set "SCRIPT_COUNT=0"
+pushd "%SCRIPT_DIR%"
+REM Copy .bat files
+for %%f in (*.bat) do (
+    if exist "%%f" (
+        copy "%%f" "%TARGET_DIR%\scripts\" >nul 2>&1
+        if not errorlevel 1 (
+            set /a SCRIPT_COUNT+=1
+            echo     Copied: %%f
+        ) else (
+            set "COPY_ERROR=1"
+        )
+    )
 )
-echo     Copied clone scripts to target folder
+REM Copy .sh files
+for %%f in (*.sh) do (
+    if exist "%%f" (
+        copy "%%f" "%TARGET_DIR%\scripts\" >nul 2>&1
+        if not errorlevel 1 (
+            set /a SCRIPT_COUNT+=1
+            echo     Copied: %%f
+        ) else (
+            set "COPY_ERROR=1"
+        )
+    )
+)
+REM Copy .php files
+for %%f in (*.php) do (
+    if exist "%%f" (
+        copy "%%f" "%TARGET_DIR%\scripts\" >nul 2>&1
+        if not errorlevel 1 (
+            set /a SCRIPT_COUNT+=1
+            echo     Copied: %%f
+        ) else (
+            set "COPY_ERROR=1"
+        )
+    )
+)
+REM Copy .md files
+for %%f in (*.md) do (
+    if exist "%%f" (
+        copy "%%f" "%TARGET_DIR%\scripts\" >nul 2>&1
+        if not errorlevel 1 (
+            set /a SCRIPT_COUNT+=1
+            echo     Copied: %%f
+        ) else (
+            set "COPY_ERROR=1"
+        )
+    )
+)
+popd
+echo     Total: !SCRIPT_COUNT! script files copied to target folder
 
 REM Copy assets if requested
 if not "%COPY_ASSETS%"=="1" goto skip_assets
