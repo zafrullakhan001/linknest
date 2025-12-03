@@ -403,6 +403,15 @@ if errorlevel 1 (
 ) else (
     echo.
     echo npm run build completed successfully.
+    
+    echo.
+    echo Cleaning up node_modules to save space...
+    rd /s /q "node_modules" 2>nul
+    if not exist "node_modules" (
+        echo   - node_modules deleted successfully
+    ) else (
+        echo   - WARNING: Failed to delete node_modules
+    )
 )
 
 REM Create a README for the cloned instance
