@@ -18,14 +18,7 @@
     <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"></noscript>
     
-    <!-- Inline critical CSS for faster initial render -->
-    <style>
-      /* Critical CSS - prevents FOUC */
-      body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
-      #root { min-height: 100vh; }
-      /* Loading state */
-      .loading { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-    </style>
+    <!-- Inline critical CSS moved to index.css to prevent Vite proxy issues -->
     <!-- Initialize style tag and apply cached styles early to prevent style flash on refresh -->
     <script>
       (function() {

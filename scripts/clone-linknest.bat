@@ -5,6 +5,9 @@ REM Example: clone-linknest.bat myspaces --source C:\xampp\htdocs\linknest --tar
 
 setlocal enabledelayedexpansion
 
+REM Get absolute path of the script immediately
+set "SCRIPT_DIR=%~dp0"
+
 :main
 
 if "%~1"=="" (
@@ -57,8 +60,7 @@ shift
 goto parse_params
 :params_done
 REM Get absolute paths
-REM %~dp0 gives us the drive and path of the script (e.g., C:\xampp\htdocs\linknest\scripts\)
-set "SCRIPT_DIR=%~dp0"
+REM SCRIPT_DIR is already set at the start
 REM Determine source directory
 if defined SOURCE_PATH (
     REM User specified a custom source path - resolve to absolute path
@@ -82,16 +84,17 @@ if defined SOURCE_PATH (
     popd
 )
 if defined TARGET_PATH (
-    set "TARGET_DIR=%TARGET_PATH%\%NEW_FOLDER%"
+    call :resolve_path "%TARGET_PATH%"
+    set "TARGET_DIR=!RESOLVE_RESULT!\%NEW_FOLDER%"
 ) else (
     set "GRANDPARENT_PATH=%SCRIPT_DIR%..\.."
-    call :resolve_path "%GRANDPARENT_PATH%"
+    call :resolve_path "!GRANDPARENT_PATH!"
     if errorlevel 1 (
         echo ERROR: Could not resolve parent directory path!
         exit /b 1
     )
-    set "PARENT_DIR=%RESOLVE_RESULT%"
-    set "TARGET_DIR=%PARENT_DIR%\%NEW_FOLDER%"
+    set "PARENT_DIR=!RESOLVE_RESULT!"
+    set "TARGET_DIR=!PARENT_DIR!\%NEW_FOLDER%"
 )
 
 echo.
@@ -222,8 +225,9 @@ mkdir "%TARGET_DIR%\data" 2>nul
 echo   - Creating uploads directory...
 mkdir "%TARGET_DIR%\uploads" 2>nul
 
+
 echo   - Creating scripts directory...
-mkdir "%TARGET_DIR%\scripts" 2>nul
+mkdir "!TARGET_DIR!\scripts" 2>nul
 
 echo   - Copying scripts...
 REM Copy all script files by iterating through source directory
@@ -232,7 +236,7 @@ pushd "%SCRIPT_DIR%"
 REM Copy .bat files
 for %%f in (*.bat) do (
     if exist "%%f" (
-        copy "%%f" "%TARGET_DIR%\scripts\" >nul 2>&1
+        copy "%%f" "!TARGET_DIR!\scripts\" >nul 2>&1
         if not errorlevel 1 (
             set /a SCRIPT_COUNT+=1
             echo     Copied: %%f
@@ -244,7 +248,7 @@ for %%f in (*.bat) do (
 REM Copy .sh files
 for %%f in (*.sh) do (
     if exist "%%f" (
-        copy "%%f" "%TARGET_DIR%\scripts\" >nul 2>&1
+        copy "%%f" "!TARGET_DIR!\scripts\" >nul 2>&1
         if not errorlevel 1 (
             set /a SCRIPT_COUNT+=1
             echo     Copied: %%f
@@ -256,7 +260,7 @@ for %%f in (*.sh) do (
 REM Copy .php files
 for %%f in (*.php) do (
     if exist "%%f" (
-        copy "%%f" "%TARGET_DIR%\scripts\" >nul 2>&1
+        copy "%%f" "!TARGET_DIR!\scripts\" >nul 2>&1
         if not errorlevel 1 (
             set /a SCRIPT_COUNT+=1
             echo     Copied: %%f
@@ -268,7 +272,7 @@ for %%f in (*.php) do (
 REM Copy .md files
 for %%f in (*.md) do (
     if exist "%%f" (
-        copy "%%f" "%TARGET_DIR%\scripts\" >nul 2>&1
+        copy "%%f" "!TARGET_DIR!\scripts\" >nul 2>&1
         if not errorlevel 1 (
             set /a SCRIPT_COUNT+=1
             echo     Copied: %%f
@@ -279,6 +283,7 @@ for %%f in (*.md) do (
 )
 popd
 echo     Total: !SCRIPT_COUNT! script files copied to target folder
+
 
 REM Copy assets if requested
 if not "%COPY_ASSETS%"=="1" goto skip_assets
@@ -462,4 +467,8 @@ if "%COPY_DATABASE%"=="1" (
 )
 echo.
 pause
+
+:resolve_path
+set "RESOLVE_RESULT=%~f1"
+exit /b
 
