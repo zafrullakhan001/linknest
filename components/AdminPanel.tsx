@@ -17,7 +17,7 @@ interface AdminPanelProps {
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const { refreshSettings } = useSettings();
-  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'access'>('pending');
+  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'access' | 'clone'>('pending');
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
   const [allUsers, setAllUsers] = useState<AllUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -116,6 +116,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     canEdit: false,
     canDelete: false
   });
+
+  // Clone state
+  const [cloneFolderName, setCloneFolderName] = useState('');
+  const [cloneSourcePath, setCloneSourcePath] = useState('');
+  const [cloneTargetPath, setCloneTargetPath] = useState('');
+  const [cloneCopyAssets, setCloneCopyAssets] = useState(false);
+  const [cloneCopyDatabase, setCloneCopyDatabase] = useState(false);
+  const [cloneLoading, setCloneLoading] = useState(false);
 
   const loadPendingUsers = async () => {
     try {
@@ -666,6 +674,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             }`}
         >
           Access Manager
+        </button>
+        <button
+          onClick={() => setActiveTab('clone')}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'clone'
+            ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+            : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+        >
+          Clone
         </button>
       </div>
 
@@ -2341,6 +2358,169 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Clone Tab */}
+          {activeTab === 'clone' && (
+            <div className="space-y-6">
+              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Clone Instance</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                  Clone the current LinkNest setup to a new folder. This will create a complete copy of the application with all necessary files.
+                </p>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      New Folder Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={cloneFolderName}
+                      onChange={(e) => setCloneFolderName(e.target.value)}
+                      placeholder="e.g., myspaces"
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                    />
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Name of the new folder to create (no path separators or special characters)
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Source Path (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={cloneSourcePath}
+                      onChange={(e) => setCloneSourcePath(e.target.value)}
+                      placeholder="e.g., C:\xampp\htdocs\linknest"
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                    />
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Source directory to clone from (leave empty to use current directory)
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Target Path (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={cloneTargetPath}
+                      onChange={(e) => setCloneTargetPath(e.target.value)}
+                      placeholder="e.g., C:\projects"
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                    />
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Target directory where the new folder will be created (leave empty to use default)
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={cloneCopyAssets}
+                        onChange={(e) => setCloneCopyAssets(e.target.checked)}
+                        className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                      />
+                      <div>
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Copy Assets</span>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          Copy logos and favicon from uploads folder
+                        </p>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={cloneCopyDatabase}
+                        onChange={(e) => setCloneCopyDatabase(e.target.checked)}
+                        className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                      />
+                      <div>
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Copy Database</span>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          Copy database file from data folder (LDAP passwords will be encrypted automatically)
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                    <button
+                      onClick={async () => {
+                        if (!cloneFolderName.trim()) {
+                          setError('Folder name is required');
+                          return;
+                        }
+
+                        try {
+                          setCloneLoading(true);
+                          setError('');
+
+                          const response = await fetch('/api/clone', {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                              folderName: cloneFolderName.trim(),
+                              sourcePath: cloneSourcePath.trim() || undefined,
+                              targetPath: cloneTargetPath.trim() || undefined,
+                              copyAssets: cloneCopyAssets,
+                              copyDatabase: cloneCopyDatabase,
+                            }),
+                          });
+
+                          const data = await response.json();
+
+                          if (!response.ok) {
+                            const errorMsg = data.error || 'Failed to start clone process';
+                            const logInfo = data.logFile ? `\n\nCheck log file: ${data.logFile}` : '';
+                            throw new Error(errorMsg + logInfo);
+                          }
+
+                          const logInfo = data.logFile ? `\n\nLog files:\n- ${data.logFile} (debug log)\n- ${data.outputLog || 'clone_output.log'} (process output)` : '';
+                          alert(`Clone process started successfully!\n\nNew instance will be created at: ${data.folderName}\n\nThe process is running in the background. Please check the target directory after a few minutes.${logInfo}`);
+                          
+                          // Reset form
+                          setCloneFolderName('');
+                          setCloneSourcePath('');
+                          setCloneTargetPath('');
+                          setCloneCopyAssets(false);
+                          setCloneCopyDatabase(false);
+                        } catch (err: any) {
+                          const errorMsg = err.message || 'Failed to start clone process';
+                          setError(errorMsg + '\n\nCheck clone_debug.log in the project root for details.');
+                        } finally {
+                          setCloneLoading(false);
+                        }
+                      }}
+                      disabled={cloneLoading || !cloneFolderName.trim()}
+                      className="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                    >
+                      {cloneLoading ? 'Starting Clone Process...' : 'Start Clone'}
+                    </button>
+                  </div>
+
+                  <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg">
+                    <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Important Notes:</h4>
+                    <ul className="text-xs text-slate-600 dark:text-slate-400 space-y-1 list-disc list-inside">
+                      <li>The clone process runs in the background and may take several minutes to complete</li>
+                      <li>The process includes: copying files, installing dependencies, and building the application</li>
+                      <li>If the target folder already exists, you will be prompted to replace it (via the script)</li>
+                      <li>After cloning, access the new instance at: http://localhost/{'{'}folderName{'}'}/</li>
+                      <li>Default admin credentials: admin / admin123</li>
+                      <li>Check <code className="px-1 py-0.5 bg-slate-200 dark:bg-slate-700 rounded">clone_debug.log</code> and <code className="px-1 py-0.5 bg-slate-200 dark:bg-slate-700 rounded">clone_output.log</code> in the project root for detailed logs</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
