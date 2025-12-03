@@ -11,6 +11,37 @@ import { getCategoryArrangement } from '../services/storageService';
 import { SecurePasswordInput } from './SecurePasswordInput';
 import { accessService, TilePermission } from '../services/accessService';
 
+// Resolve API base dynamically based on current location
+// This ensures API calls work in both dev mode and runtime mode with any base path
+function resolveApiBase(): string {
+  // Prefer Vite-injected env when available
+  const envBase = (import.meta as any)?.env?.VITE_API_BASE;
+  if (envBase) {
+    return envBase;
+  }
+
+  // Fallback: dynamically detect base path from current location
+  if (typeof window !== 'undefined') {
+    const path = window.location.pathname || '';
+    
+    // Extract base path (everything before the last segment or root)
+    // Examples:
+    // /linknest/ -> /linknest/api
+    // /linknest/index.html -> /linknest/api
+    // / -> /api
+    if (path !== '/' && path.length > 1) {
+      // Remove trailing slash and any filename
+      const cleanPath = path.replace(/\/[^/]*$/, '').replace(/\/$/, '');
+      if (cleanPath && cleanPath !== '/') {
+        return `${cleanPath}/api`;
+      }
+    }
+  }
+
+  // Default fallback (root deployment)
+  return '/api';
+}
+
 interface AdminPanelProps {
   onUserApproved?: () => void;
 }
@@ -234,7 +265,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
   const loadCurrentPath = async () => {
     try {
-      const response = await fetch('/api/clone/current-path');
+      const apiBase = resolveApiBase();
+      const response = await fetch(`${apiBase}/clone/current-path`, {
+        credentials: 'include',
+      });
       if (response.ok) {
         const data = await response.json();
         if (!cloneSourcePath) {
@@ -271,7 +305,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     if (currentCloneId) {
       const interval = setInterval(async () => {
         try {
-          const response = await fetch(`/api/clone/status/${currentCloneId}`);
+          const apiBase = resolveApiBase();
+          const response = await fetch(`${apiBase}/clone/status/${currentCloneId}`, {
+            credentials: 'include',
+          });
           if (response.ok) {
             const data = await response.json();
             const step = data.step || 'running';
@@ -330,7 +367,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const loadClonesList = async () => {
     try {
       setClonesLoading(true);
-      const response = await fetch('/api/clone/list');
+      const apiBase = resolveApiBase();
+      const response = await fetch(`${apiBase}/clone/list`, {
+        credentials: 'include',
+      });
       if (response.ok) {
         const data = await response.json();
         setClonesList(data.clones || []);
@@ -2770,11 +2810,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           setCloneStatus('pending');
                           setCloneLogs([]);
 
-                          const response = await fetch('/api/clone', {
+                          const apiBase = resolveApiBase();
+                          const response = await fetch(`${apiBase}/clone`, {
                             method: 'POST',
                             headers: {
                               'Content-Type': 'application/json',
                             },
+                            credentials: 'include',
                             body: JSON.stringify({
                               folderName: cloneFolderName.trim(),
                               sourcePath: cloneSourcePath.trim() || undefined,
@@ -2937,8 +2979,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     
                                     try {
                                       setRerunCloneLoading(clone.id);
-                                      const response = await fetch(`/api/clone/rerun/${clone.id}`, {
+                                      const apiBase = resolveApiBase();
+                                      const response = await fetch(`${apiBase}/clone/rerun/${clone.id}`, {
                                         method: 'POST',
+                                        credentials: 'include',
                                       });
                                       
                                       const data = await response.json();
@@ -2981,7 +3025,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       setDeleteCloneLoading(clone.id);
                                       setError('');
                                       
-                                      const url = `/api/clone/${clone.id}?deleteFolder=${deleteFolder ? '1' : '0'}`;
+                                      const apiBase = resolveApiBase();
+                                      const url = `${apiBase}/clone/${clone.id}?deleteFolder=${deleteFolder ? '1' : '0'}`;
                                       console.log('Delete request URL:', url);
                                       console.log('Delete folder option:', deleteFolder);
                                       
@@ -2990,6 +3035,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         headers: {
                                           'Content-Type': 'application/json',
                                         },
+                                        credentials: 'include',
                                       });
                                       
                                       const data = await response.json();
@@ -3149,11 +3195,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       setEditCloneLoading(true);
                       setError('');
                       
-                      const response = await fetch(`/api/clone/${editCloneModal.clone.id}`, {
+                      const apiBase = resolveApiBase();
+                      const response = await fetch(`${apiBase}/clone/${editCloneModal.clone.id}`, {
                         method: 'PUT',
                         headers: {
                           'Content-Type': 'application/json',
                         },
+                        credentials: 'include',
                         body: JSON.stringify({
                           folderName: editCloneModal.clone.folderName,
                           sourcePath: editCloneModal.clone.sourcePath,

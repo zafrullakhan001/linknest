@@ -14,23 +14,32 @@ $requestMethod = $_SERVER['REQUEST_METHOD'];
 // Get path from query parameter (for Vite proxy or .htaccess rewrite) or from REQUEST_URI
 $path = $_GET['path'] ?? '';
 
+// Log for debugging
+error_log("api/index.php: REQUEST_URI = " . $requestUri);
+error_log("api/index.php: REQUEST_METHOD = " . $requestMethod);
+error_log("api/index.php: _GET['path'] = " . ($_GET['path'] ?? 'not set'));
+
 // If path comes from query parameter (via .htaccess rewrite or Vite proxy)
 if (!empty($path)) {
     // Path from query parameter - ensure it starts with /
     $path = '/' . ltrim($path, '/');
+    error_log("api/index.php: Path from query parameter: $path");
 } else {
     // Parse from REQUEST_URI (direct access or other routing)
     $parsedPath = parse_url($requestUri, PHP_URL_PATH);
+    error_log("api/index.php: Parsed path from REQUEST_URI: $parsedPath");
     
     // Dynamically detect base path instead of hardcoding /linknest/api
     // Find /api in the path and extract everything after it
     $apiPos = strpos($parsedPath, '/api');
     if ($apiPos !== false) {
         $path = substr($parsedPath, $apiPos + 4); // +4 for '/api'
+        error_log("api/index.php: Extracted path after /api: $path");
     } else {
         // If path doesn't contain /api, it might be a direct request
         // Check if it's just the endpoint name (e.g., /styles, /settings)
         $path = $parsedPath;
+        error_log("api/index.php: No /api found, using parsed path: $path");
     }
     
     // Ensure path starts with / for routing
@@ -38,6 +47,8 @@ if (!empty($path)) {
         $path = '/' . $path;
     }
 }
+
+error_log("api/index.php: Final normalized path: $path");
 
 // Route to appropriate handler
 if (empty($path) || $path === '/') {
@@ -76,16 +87,24 @@ if (empty($path) || $path === '/') {
     $_SERVER['PATH_INFO'] = substr($path, 7); // Remove '/access'
     require __DIR__ . '/access.php';
 } elseif (strpos($path, '/clone') === 0) {
+    error_log("api/index.php: Matched /clone route");
     $remainingPath = substr($path, 6); // Remove '/clone'
     if (empty($remainingPath) || $remainingPath === '/') {
         $_SERVER['PATH_INFO'] = '/';
     } else {
         $_SERVER['PATH_INFO'] = $remainingPath;
     }
+    error_log("api/index.php: Setting PATH_INFO to: " . $_SERVER['PATH_INFO']);
+    error_log("api/index.php: Requiring clone.php");
     require __DIR__ . '/clone.php';
 } elseif (strpos($path, '/ldap_test.php') === 0) {
     require __DIR__ . '/ldap_test.php';
 } else {
+    error_log("api/index.php: No route matched for path: $path");
+    error_log("api/index.php: REQUEST_URI: $requestUri");
+    error_log("api/index.php: REQUEST_METHOD: $requestMethod");
+    error_log("api/index.php: _GET: " . json_encode($_GET));
+    
     http_response_code(404);
     header('Content-Type: application/json');
     // Include debug info to help diagnose routing issues (safe for dev)
@@ -94,7 +113,8 @@ if (empty($path) || $path === '/') {
         'debug' => [
             'path' => $path,
             'request_uri' => $requestUri,
-            'get_path' => $_GET['path'] ?? null
+            'get_path' => $_GET['path'] ?? null,
+            'request_method' => $requestMethod
         ]
     ]);
 }

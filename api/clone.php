@@ -1,6 +1,49 @@
 <?php
 require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/clone_service.php';
+
+// Check if clone_service.php exists and can be loaded
+$cloneServicePath = __DIR__ . '/clone_service.php';
+if (!file_exists($cloneServicePath)) {
+    error_log("ERROR: clone_service.php not found at $cloneServicePath");
+    error_log("ERROR: Current __DIR__ = " . __DIR__);
+    error_log("ERROR: File exists check: " . (file_exists($cloneServicePath) ? 'YES' : 'NO'));
+    
+    // Try to send error response
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['error' => 'Clone service file not found', 'path' => $cloneServicePath]);
+    }
+    exit;
+}
+
+// Try to require the file and catch any errors
+try {
+    require_once $cloneServicePath;
+} catch (Throwable $e) {
+    error_log("ERROR: Failed to require clone_service.php: " . $e->getMessage());
+    error_log("ERROR: File: " . $e->getFile() . " Line: " . $e->getLine());
+    
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['error' => 'Failed to load clone service: ' . $e->getMessage()]);
+    }
+    exit;
+}
+
+// Verify CloneService class is available
+if (!class_exists('CloneService')) {
+    error_log("ERROR: CloneService class not found after requiring clone_service.php");
+    error_log("ERROR: Available classes: " . implode(', ', get_declared_classes()));
+    
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['error' => 'CloneService class not available after loading file']);
+    }
+    exit;
+}
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
@@ -248,6 +291,8 @@ function handleGetCloneStatus($cloneId) {
 
 function handleGetCloneList() {
     try {
+        error_log("handleGetCloneList: Starting");
+        
         // Check authentication first (this may exit)
         $user = getAuthenticatedUser();
         if (!$user) {
@@ -266,8 +311,16 @@ function handleGetCloneList() {
         }
         
         error_log("handleGetCloneList: Getting clones list");
+        
+        // Check if CloneService class exists
+        if (!class_exists('CloneService')) {
+            error_log("handleGetCloneList: CloneService class not found!");
+            sendJSON(['error' => 'CloneService class not available. Check if clone_service.php is loaded.'], 500);
+            return;
+        }
+        
         $clones = CloneService::getAllClones();
-        error_log("handleGetCloneList: Got " . count($clones) . " clones");
+        error_log("handleGetCloneList: Got " . (is_array($clones) ? count($clones) : 'non-array') . " clones");
         
         // Format the response
         $formatted = [];
@@ -290,21 +343,45 @@ function handleGetCloneList() {
             }
         }
         
-        error_log("handleGetCloneList: Sending response");
+        error_log("handleGetCloneList: Sending response with " . count($formatted) . " formatted clones");
         sendJSON(['clones' => $formatted]);
     } catch (Exception $e) {
-        error_log("Exception in handleGetCloneList: " . $e->getMessage());
+        $errorMsg = 'Failed to load clones: ' . $e->getMessage();
+        error_log("Exception in handleGetCloneList: " . $errorMsg);
         error_log("Stack trace: " . $e->getTraceAsString());
-        sendJSON(['error' => 'Failed to load clones: ' . $e->getMessage()], 500);
+        error_log("File: " . $e->getFile() . " Line: " . $e->getLine());
+        
+        // Ensure we can send JSON even if sendJSON fails
+        try {
+            sendJSON(['error' => $errorMsg], 500);
+        } catch (Exception $sendError) {
+            http_response_code(500);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => $errorMsg]);
+            exit;
+        }
     } catch (Error $e) {
-        error_log("Fatal error in handleGetCloneList: " . $e->getMessage());
+        $errorMsg = 'Fatal error loading clones: ' . $e->getMessage();
+        error_log("Fatal error in handleGetCloneList: " . $errorMsg);
         error_log("Stack trace: " . $e->getTraceAsString());
-        sendJSON(['error' => 'Fatal error loading clones: ' . $e->getMessage()], 500);
+        error_log("File: " . $e->getFile() . " Line: " . $e->getLine());
+        
+        // Ensure we can send JSON even if sendJSON fails
+        try {
+            sendJSON(['error' => $errorMsg], 500);
+        } catch (Exception $sendError) {
+            http_response_code(500);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => $errorMsg]);
+            exit;
+        }
     }
 }
 
 function handleGetCurrentPath() {
     try {
+        error_log("handleGetCurrentPath: Starting");
+        
         // Check authentication first (this may exit)
         $user = getAuthenticatedUser();
         if (!$user) {
@@ -323,17 +400,20 @@ function handleGetCurrentPath() {
         }
         
         error_log("handleGetCurrentPath: Getting current path");
+        error_log("handleGetCurrentPath: __DIR__ = " . __DIR__);
         
         // Get the current application directory (parent of api directory)
         $currentPath = realpath(__DIR__ . '/..');
         if (!$currentPath) {
             $currentPath = dirname(__DIR__);
+            error_log("handleGetCurrentPath: realpath failed, using dirname: $currentPath");
         }
         
         $targetPath = dirname($currentPath);
         if (!$targetPath || $targetPath === $currentPath) {
             // Fallback to common XAMPP structure
             $targetPath = 'C:\\xampp\\htdocs';
+            error_log("handleGetCurrentPath: Using fallback target path: $targetPath");
         }
         
         error_log("handleGetCurrentPath: currentPath=$currentPath, targetPath=$targetPath");
@@ -344,13 +424,35 @@ function handleGetCurrentPath() {
             'targetPath' => $targetPath
         ]);
     } catch (Exception $e) {
-        error_log("Error in handleGetCurrentPath: " . $e->getMessage());
+        $errorMsg = 'Failed to get current path: ' . $e->getMessage();
+        error_log("Error in handleGetCurrentPath: " . $errorMsg);
         error_log("Stack trace: " . $e->getTraceAsString());
-        sendJSON(['error' => 'Failed to get current path: ' . $e->getMessage()], 500);
+        error_log("File: " . $e->getFile() . " Line: " . $e->getLine());
+        
+        // Ensure we can send JSON even if sendJSON fails
+        try {
+            sendJSON(['error' => $errorMsg], 500);
+        } catch (Exception $sendError) {
+            http_response_code(500);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => $errorMsg]);
+            exit;
+        }
     } catch (Error $e) {
-        error_log("Fatal error in handleGetCurrentPath: " . $e->getMessage());
+        $errorMsg = 'Fatal error getting current path: ' . $e->getMessage();
+        error_log("Fatal error in handleGetCurrentPath: " . $errorMsg);
         error_log("Stack trace: " . $e->getTraceAsString());
-        sendJSON(['error' => 'Fatal error getting current path: ' . $e->getMessage()], 500);
+        error_log("File: " . $e->getFile() . " Line: " . $e->getLine());
+        
+        // Ensure we can send JSON even if sendJSON fails
+        try {
+            sendJSON(['error' => $errorMsg], 500);
+        } catch (Exception $sendError) {
+            http_response_code(500);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => $errorMsg]);
+            exit;
+        }
     }
 }
 
