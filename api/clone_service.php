@@ -253,6 +253,30 @@ class CloneService {
                     if (copy($srcDb, $destDb)) {
                         $logs = $this->addLog("Database copied successfully", $logs);
                         
+                        // Remove all clone records from target database
+                        $logs = $this->addLog("Removing clone records from target database...", $logs);
+                        try {
+                            $targetDb = new PDO('sqlite:' . $destDb);
+                            $targetDb->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+                            
+                            // Check if clones table exists
+                            $checkStmt = $targetDb->query("SELECT name FROM sqlite_master WHERE type='table' AND name='clones'");
+                            if ($checkStmt && $checkStmt->fetch()) {
+                                // Delete all records from clones table
+                                $deleteStmt = $targetDb->prepare('DELETE FROM clones');
+                                $deleteStmt->execute();
+                                $deletedCount = $deleteStmt->rowCount();
+                                $logs = $this->addLog("Removed $deletedCount clone record(s) from target database", $logs);
+                            } else {
+                                $logs = $this->addLog("Clones table not found in target database (skipping)", $logs);
+                            }
+                            $targetDb = null; // Close connection
+                        } catch (PDOException $e) {
+                            $logs = $this->addLog("WARNING: Failed to remove clone records: " . $e->getMessage(), $logs);
+                        } catch (Exception $e) {
+                            $logs = $this->addLog("WARNING: Error removing clone records: " . $e->getMessage(), $logs);
+                        }
+                        
                         // Encrypt LDAP passwords if script exists
                         $encryptScript = $targetDir . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'encrypt_ldap_passwords.php';
                         if (file_exists($encryptScript)) {
