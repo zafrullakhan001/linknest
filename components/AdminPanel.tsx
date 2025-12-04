@@ -49,9 +49,9 @@ interface AdminPanelProps {
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const { refreshSettings } = useSettings();
   // Initialize activeTab from localStorage or default to 'pending'
-  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'access' | 'clone'>(() => {
+  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'access' | 'clone' | 'browser'>(() => {
     const savedTab = localStorage.getItem('adminPanelActiveTab');
-    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'access' | 'clone'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'footer', 'access', 'clone'];
+    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'access' | 'clone' | 'browser'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'footer', 'access', 'clone', 'browser'];
     return (savedTab && validTabs.includes(savedTab as any)) ? savedTab as any : 'pending';
   });
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
@@ -262,6 +262,48 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   useEffect(() => {
     localStorage.setItem('adminPanelActiveTab', activeTab);
   }, [activeTab]);
+
+  // Browser extension test state
+  const [testUrl, setTestUrl] = useState('https://github.com');
+  const [testBrowser, setTestBrowser] = useState('chrome-stable');
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Check extension status when browser tab is active
+  useEffect(() => {
+    if (activeTab === 'browser') {
+      // Wait a bit for the DOM to be ready
+      setTimeout(() => {
+        const statusDiv = document.getElementById('extension-status-browser');
+        if (!statusDiv) return;
+
+        if (typeof (window as any).BrowserLauncher === 'undefined') {
+          statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
+          statusDiv.innerHTML = '<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Error:</strong> Browser Launcher Pro integration script not loaded. Please check the script path.</div>';
+          return;
+        }
+
+        statusDiv.className = 'p-4 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700';
+        statusDiv.innerHTML = '<div class="flex items-center gap-2"><svg class="animate-spin h-4 w-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span class="text-sm text-slate-600 dark:text-slate-400">Checking extension availability...</span></div>';
+
+        const BrowserLauncher = (window as any).BrowserLauncher;
+        
+        // Configure extension ID if provided
+        if (settings.browser_extension_id) {
+          BrowserLauncher.setExtensionId(settings.browser_extension_id);
+        }
+
+        BrowserLauncher.checkAvailability((available: boolean, message: string) => {
+          if (available) {
+            statusDiv.className = 'p-4 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800';
+            statusDiv.innerHTML = `<div class="text-sm text-emerald-800 dark:text-emerald-300"><strong>✓ Extension Available:</strong> Browser Launcher Pro is ready!<br><small>Extension ID: ${BrowserLauncher.extensionId || 'Auto-detected'} | ${message}</small></div>`;
+          } else {
+            statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
+            statusDiv.innerHTML = `<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Extension Status:</strong> ${message}<br><small><strong>Tips:</strong><br>1. Make sure Browser Launcher Pro extension is installed<br>2. Go to chrome://extensions and reload the extension<br>3. Refresh this page</small></div>`;
+          }
+        }, 5, 1000);
+      }, 500);
+    }
+  }, [activeTab, settings.browser_extension_id]);
 
   const loadCurrentPath = async () => {
     try {
@@ -882,6 +924,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             }`}
         >
           Clone
+        </button>
+        <button
+          onClick={() => setActiveTab('browser')}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'browser'
+            ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+            : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+        >
+          Browser Extn Integration
         </button>
       </div>
 
@@ -4669,6 +4720,479 @@ jane.smith,jane@example.com,CN=Jane Smith,OU=Users,DC=company,DC=com,Jane Smith<
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Browser Extension Integration Tab */}
+      {activeTab === 'browser' && (
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+            <div className="mb-6">
+              <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">🚀 Browser Extension Integration</h3>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Configure and test browser-specific link opening using Browser Launcher Pro extension.
+              </p>
+            </div>
+
+            {/* Configuration Section */}
+            <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
+              <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Configuration</h4>
+              
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.browser_specific_links_enabled === '1'}
+                      onChange={(e) => setSettings({ ...settings, browser_specific_links_enabled: e.target.checked ? '1' : '0' })}
+                      className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                    />
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Enable Browser-Specific Link Opening</span>
+                  </label>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 ml-6">Allow administrators to configure which browser opens specific links using a browser extension</p>
+                </div>
+
+                {settings.browser_specific_links_enabled === '1' && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Browser Extension ID</label>
+                    <input
+                      type="text"
+                      value={settings.browser_extension_id || ''}
+                      onChange={(e) => {
+                        const value = e.target.value.trim();
+                        if (value === '' || /^[a-z0-9]{32}$/i.test(value)) {
+                          setSettings({ ...settings, browser_extension_id: value });
+                        }
+                      }}
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                      placeholder="ifllnbjkoabnnbcodbocddplnhmbobim"
+                      maxLength={32}
+                    />
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Enter the browser extension ID (32 alphanumeric characters). You can find this in chrome://extensions (Developer mode enabled).
+                    </p>
+                    {settings.browser_extension_id && settings.browser_extension_id.length !== 32 && (
+                      <p className="text-xs text-red-500 dark:text-red-400 mt-1">Extension ID must be exactly 32 characters</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Extension Status */}
+            <div className="mb-6">
+              <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Extension Status</h4>
+              <div id="extension-status-browser" className="p-4 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+                <div className="flex items-center gap-2">
+                  <svg className="animate-spin h-4 w-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span className="text-sm text-slate-600 dark:text-slate-400">Checking extension availability...</span>
+                </div>
+              </div>
+              
+              <div className="flex flex-wrap gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const statusDiv = document.getElementById('extension-status-browser');
+                    if (!statusDiv) return;
+
+                    if (typeof (window as any).BrowserLauncher === 'undefined') {
+                      statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
+                      statusDiv.innerHTML = '<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Error:</strong> Browser Launcher Pro integration script not loaded. Please check the script path.</div>';
+                      return;
+                    }
+
+                    statusDiv.className = 'p-4 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700';
+                    statusDiv.innerHTML = '<div class="flex items-center gap-2"><svg class="animate-spin h-4 w-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span class="text-sm text-slate-600 dark:text-slate-400">Checking...</span></div>';
+
+                    const BrowserLauncher = (window as any).BrowserLauncher;
+                    if (settings.browser_extension_id) {
+                      BrowserLauncher.setExtensionId(settings.browser_extension_id);
+                    }
+
+                    BrowserLauncher.checkAvailability((available: boolean, message: string) => {
+                      if (available) {
+                        statusDiv.className = 'p-4 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800';
+                        statusDiv.innerHTML = `<div class="text-sm text-emerald-800 dark:text-emerald-300"><strong>✓ Extension Available:</strong> Browser Launcher Pro is ready!<br><small>Extension ID: ${BrowserLauncher.extensionId || 'Auto-detected'} | ${message}</small></div>`;
+                      } else {
+                        statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
+                        statusDiv.innerHTML = `<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Extension Status:</strong> ${message}<br><small><strong>Tips:</strong><br>1. Make sure Browser Launcher Pro extension is installed<br>2. Go to chrome://extensions and reload the extension<br>3. Refresh this page</small></div>`;
+                      }
+                    }, 5, 1000);
+                  }}
+                  className="px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  🔄 Re-check Extension Status
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const statusDiv = document.getElementById('extension-status-browser');
+                    if (!statusDiv) return;
+
+                    if (typeof (window as any).BrowserLauncher === 'undefined') {
+                      statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
+                      statusDiv.innerHTML = '<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Error:</strong> BrowserLauncher object not found.</div>';
+                      return;
+                    }
+
+                    statusDiv.className = 'p-4 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700';
+                    statusDiv.innerHTML = '<div class="flex items-center gap-2"><svg class="animate-spin h-4 w-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span class="text-sm text-slate-600 dark:text-slate-400">Testing...</span></div>';
+
+                    const BrowserLauncher = (window as any).BrowserLauncher;
+                    if (settings.browser_extension_id) {
+                      BrowserLauncher.setExtensionId(settings.browser_extension_id);
+                    }
+
+                    BrowserLauncher.open('https://www.google.com', 'chrome-stable', {}, (response: any) => {
+                      if (response && response.success !== false) {
+                        statusDiv.className = 'p-4 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800';
+                        statusDiv.innerHTML = '<div class="text-sm text-emerald-800 dark:text-emerald-300"><strong>✓ Test Successful!</strong> Extension is working! The link should have opened in Chrome.</div>';
+                      } else {
+                        statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
+                        statusDiv.innerHTML = `<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Test Result:</strong> ${response ? response.error : 'No response from extension. Check console for details.'}</div>`;
+                      }
+                    });
+                  }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  🧪 Test Extension Directly
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Test Links */}
+            {settings.browser_specific_links_enabled === '1' && (
+              <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
+                <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">📋 Quick Test Links</h4>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                  Click any link below to test opening in the specified browser:
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {[
+                    { url: 'https://github.com', browser: 'chrome-stable', label: 'GitHub', badge: 'Chrome Stable' },
+                    { url: 'https://microsoft.com', browser: 'edge-stable', label: 'Microsoft', badge: 'Edge Stable' },
+                    { url: 'https://google.com', browser: 'chrome-beta', label: 'Google', badge: 'Chrome Beta' },
+                    { url: 'https://stackoverflow.com', browser: 'edge-beta', label: 'Stack Overflow', badge: 'Edge Beta' },
+                    { url: 'https://youtube.com', browser: 'chrome-stable', label: 'YouTube', badge: 'Chrome Stable' },
+                    { url: 'https://reddit.com', browser: 'edge-stable', label: 'Reddit', badge: 'Edge Stable' },
+                  ].map((link, idx) => (
+                    <div key={idx} className="p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg hover:border-brand-500 dark:hover:border-brand-400 transition-colors">
+                      <a
+                        href={link.url}
+                        data-browser={link.browser}
+                        onClick={(e) => {
+                          if (typeof (window as any).BrowserLauncher !== 'undefined') {
+                            e.preventDefault();
+                            const BrowserLauncher = (window as any).BrowserLauncher;
+                            if (settings.browser_extension_id) {
+                              BrowserLauncher.setExtensionId(settings.browser_extension_id);
+                            }
+                            BrowserLauncher.open(link.url, link.browser, { fallback: true });
+                          }
+                        }}
+                        className="block text-brand-600 dark:text-brand-400 font-semibold mb-2 hover:underline"
+                      >
+                        {link.label}
+                      </a>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mb-2">Open in {link.badge}</p>
+                      <span className="inline-block px-2 py-1 text-xs font-medium rounded bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300">
+                        {link.badge}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* JavaScript API Examples */}
+            <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
+              <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">💻 JavaScript API Examples</h4>
+              <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                Use the JavaScript API for programmatic control. Try the examples below:
+              </p>
+              <div className="flex flex-wrap gap-2 mb-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof (window as any).BrowserLauncher !== 'undefined') {
+                      const BrowserLauncher = (window as any).BrowserLauncher;
+                      if (settings.browser_extension_id) {
+                        BrowserLauncher.setExtensionId(settings.browser_extension_id);
+                      }
+                      BrowserLauncher.open('https://github.com', 'chrome-stable', {}, (response: any) => {
+                        if (response && response.success !== false) {
+                          alert('✓ Opening GitHub in Chrome Stable!');
+                        } else {
+                          alert('✗ Error: ' + (response?.error || 'Unknown error'));
+                        }
+                      });
+                    }
+                  }}
+                  className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Open GitHub in Chrome
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof (window as any).BrowserLauncher !== 'undefined') {
+                      const BrowserLauncher = (window as any).BrowserLauncher;
+                      if (settings.browser_extension_id) {
+                        BrowserLauncher.setExtensionId(settings.browser_extension_id);
+                      }
+                      BrowserLauncher.open('https://microsoft.com', 'edge-stable', {}, (response: any) => {
+                        if (response && response.success !== false) {
+                          alert('✓ Opening Microsoft in Edge Stable!');
+                        } else {
+                          alert('✗ Error: ' + (response?.error || 'Unknown error'));
+                        }
+                      });
+                    }
+                  }}
+                  className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Open Microsoft in Edge
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof (window as any).BrowserLauncher !== 'undefined') {
+                      const BrowserLauncher = (window as any).BrowserLauncher;
+                      if (settings.browser_extension_id) {
+                        BrowserLauncher.setExtensionId(settings.browser_extension_id);
+                      }
+                      BrowserLauncher.open('https://google.com', 'chrome-beta', {}, (response: any) => {
+                        if (response && response.success !== false) {
+                          alert('✓ Opening Google in Chrome Beta!');
+                        } else {
+                          alert('✗ Error: ' + (response?.error || 'Unknown error'));
+                        }
+                      });
+                    }
+                  }}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Open Google in Chrome Beta
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof (window as any).BrowserLauncher !== 'undefined') {
+                      const BrowserLauncher = (window as any).BrowserLauncher;
+                      const browsers = BrowserLauncher.getBrowsers();
+                      alert('Available Browser IDs:\n\n' + browsers.join('\n'));
+                    }
+                  }}
+                  className="px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Show Available Browsers
+                </button>
+              </div>
+
+              {/* Code Examples */}
+              <div className="mt-6 space-y-4">
+                <div>
+                  <h5 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Example 1: Simple usage with callback</h5>
+                  <pre className="bg-slate-900 text-slate-100 p-4 rounded-lg text-xs overflow-x-auto">
+{`BrowserLauncher.open('https://github.com', 'chrome-stable', {}, function(response) {
+  if (response.success) {
+    console.log('Opened successfully!');
+  } else {
+    console.error('Error:', response.error);
+  }
+});`}
+                  </pre>
+                </div>
+                <div>
+                  <h5 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Example 2: Using Promises</h5>
+                  <pre className="bg-slate-900 text-slate-100 p-4 rounded-lg text-xs overflow-x-auto">
+{`BrowserLauncher.open('https://example.com', 'edge-stable')
+  .then(response => console.log('Success:', response))
+  .catch(error => console.error('Error:', error));`}
+                  </pre>
+                </div>
+                <div>
+                  <h5 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Example 3: Using async/await</h5>
+                  <pre className="bg-slate-900 text-slate-100 p-4 rounded-lg text-xs overflow-x-auto">
+{`async function openLink() {
+  try {
+    const response = await BrowserLauncher.open('https://example.com', 'chrome-stable');
+    console.log('Success:', response);
+  } catch (error) {
+    console.error('Error:', error);
+  }
+}`}
+                  </pre>
+                </div>
+              </div>
+            </div>
+
+            {/* Interactive Test Area */}
+            <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
+              <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">🧪 Interactive Test Area</h4>
+              <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                Test the integration with your own URLs and browser selections:
+              </p>
+              <div className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-lg border border-slate-200 dark:border-slate-700">
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">URL to Open</label>
+                    <input
+                      type="url"
+                      value={testUrl}
+                      onChange={(e) => setTestUrl(e.target.value)}
+                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                      placeholder="https://example.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Browser</label>
+                    <select
+                      value={testBrowser}
+                      onChange={(e) => setTestBrowser(e.target.value)}
+                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                    >
+                      <option value="chrome-stable">Chrome Stable</option>
+                      <option value="chrome-beta">Chrome Beta</option>
+                      <option value="chrome-dev">Chrome Dev</option>
+                      <option value="edge-stable">Edge Stable</option>
+                      <option value="edge-beta">Edge Beta</option>
+                      <option value="edge-dev">Edge Dev</option>
+                      <option value="chrome-stable-wsl">Chrome Stable (WSL)</option>
+                      <option value="edge-stable-wsl">Edge Stable (WSL)</option>
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!testUrl.trim()) {
+                        setTestResult({ success: false, message: 'Please enter a URL' });
+                        return;
+                      }
+
+                      if (typeof (window as any).BrowserLauncher === 'undefined') {
+                        setTestResult({ success: false, message: 'BrowserLauncher object not found' });
+                        return;
+                      }
+
+                      setTestResult(null);
+                      const BrowserLauncher = (window as any).BrowserLauncher;
+                      if (settings.browser_extension_id) {
+                        BrowserLauncher.setExtensionId(settings.browser_extension_id);
+                      }
+
+                      BrowserLauncher.open(testUrl, testBrowser, { fallback: false }, (response: any) => {
+                        if (response && response.success !== false) {
+                          const message = response.message || 'Browser launch initiated';
+                          setTestResult({ success: true, message: `✓ Success! ${message}` });
+                        } else {
+                          setTestResult({ success: false, message: `✗ Error: ${response ? response.error : 'No response from extension'}` });
+                        }
+                      });
+                    }}
+                    className="w-full px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Open Link in Browser
+                  </button>
+                  {testResult && (
+                    <div className={`p-3 rounded-lg border ${
+                      testResult.success
+                        ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                        : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300'
+                    }`}>
+                      <p className="text-sm">{testResult.message}</p>
+                      {testResult.success && (
+                        <p className="text-xs mt-1 opacity-75">Opening {testUrl} in {testBrowser}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Browser IDs Reference */}
+            <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
+              <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">🔍 Available Browser IDs</h4>
+              <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                Use these browser IDs in your <code className="px-1.5 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-xs">data-browser</code> attributes or JavaScript API calls:
+              </p>
+              <div className="bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500 p-4 rounded">
+                <div className="text-sm text-blue-800 dark:text-blue-300 space-y-2">
+                  <div>
+                    <strong>Windows Local:</strong><br />
+                    chrome-stable, chrome-beta, chrome-dev<br />
+                    edge-stable, edge-beta, edge-dev<br />
+                    chrome (alias), edge (alias)
+                  </div>
+                  <div>
+                    <strong>WSL:</strong><br />
+                    chrome-stable-wsl, chrome-beta-wsl, chrome-dev-wsl<br />
+                    edge-stable-wsl, edge-beta-wsl, edge-dev-wsl<br />
+                    firefox-wsl, opera-wsl, brave-wsl
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Troubleshooting */}
+            <div>
+              <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">🔧 Troubleshooting</h4>
+              <div className="bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 p-4 rounded">
+                <div className="text-sm text-amber-800 dark:text-amber-300">
+                  <strong>If extension is not detected:</strong>
+                  <ol className="list-decimal list-inside mt-2 space-y-1 ml-4">
+                    <li><strong>Reload the extension:</strong> Go to <code className="px-1 py-0.5 bg-amber-100 dark:bg-amber-900/40 rounded">chrome://extensions</code> or <code className="px-1 py-0.5 bg-amber-100 dark:bg-amber-900/40 rounded">edge://extensions</code>, find "Browser Launcher Pro", and click the reload button</li>
+                    <li><strong>Refresh this page:</strong> Press F5 or Ctrl+R to reload</li>
+                    <li><strong>Check browser console:</strong> Press F12 and look for errors</li>
+                    <li><strong>Verify extension is enabled:</strong> Make sure the extension toggle is ON in extensions page</li>
+                  </ol>
+                </div>
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-700">
+              <button
+                onClick={async () => {
+                  try {
+                    setSettingsSaving(true);
+                    setError('');
+                    await settingsService.updateSettings(settings);
+                    await loadSettings();
+                    await refreshSettings();
+                    alert('Settings saved successfully!');
+                  } catch (err: any) {
+                    setError(err.message || 'Failed to save settings');
+                  } finally {
+                    setSettingsSaving(false);
+                  }
+                }}
+                disabled={settingsSaving}
+                className="px-6 py-2.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
+              >
+                {settingsSaving ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                      <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                    </svg>
+                    Save Settings
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

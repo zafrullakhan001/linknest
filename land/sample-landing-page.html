@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browser Launcher Pro - Sample Landing Page</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 40px;
+        }
+
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            background: #f0f0f0;
+            border-left: 4px solid #667eea;
+        }
+
+        .status.success {
+            background: #d4edda;
+            border-left-color: #28a745;
+            color: #155724;
+        }
+
+        .status.warning {
+            background: #fff3cd;
+            border-left-color: #ffc107;
+            color: #856404;
+        }
+
+        .section {
+            margin-bottom: 40px;
+        }
+
+        .section h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .section h3 {
+            color: #555;
+            margin: 20px 0 10px 0;
+        }
+
+        .link-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .link-card {
+            background: #f8f9fa;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .link-card:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+        }
+
+        .link-card a {
+            display: block;
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .link-card a:hover {
+            text-decoration: underline;
+        }
+
+        .browser-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+
+        .browser-badge.chrome {
+            background: #4285f4;
+            color: white;
+        }
+
+        .browser-badge.edge {
+            background: #0078d4;
+            color: white;
+        }
+
+        .browser-badge.chrome-beta {
+            background: #ea4335;
+            color: white;
+        }
+
+        .browser-badge.edge-beta {
+            background: #00a4ef;
+            color: white;
+        }
+
+        .demo-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+        }
+
+        .code-block {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .code-block code {
+            color: #f8f8f2;
+        }
+
+        .info-box {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+        }
+
+        .info-box strong {
+            color: #1976D2;
+        }
+
+        .test-area {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .input-group input,
+        .input-group select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 1em;
+        }
+
+        .input-group input:focus,
+        .input-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .result-box {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 6px;
+            background: white;
+            border: 2px solid #e0e0e0;
+            min-height: 50px;
+        }
+
+        .result-box.success {
+            border-color: #28a745;
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .result-box.error {
+            border-color: #dc3545;
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #e0e0e0;
+            text-align: center;
+            color: #666;
+        }
+    </style>
+    <!-- Include the Browser Launcher Pro integration script -->
+    <script src="browser-launcher-integration.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Browser Launcher Pro</h1>
+        <p class="subtitle">Sample Landing Page - Open Links in Specific Browsers</p>
+
+        <!-- Extension Status -->
+        <div id="extension-status" class="status warning">
+            <strong>Status:</strong> Checking extension availability...
+        </div>
+        
+        <!-- Manual Test Button -->
+        <div style="text-align: center; margin-bottom: 20px;">
+            <button class="btn btn-secondary" onclick="checkExtensionStatus()" style="margin-right: 10px;">
+                🔄 Re-check Extension Status
+            </button>
+            <button class="btn btn-secondary" onclick="testExtensionDirectly()">
+                🧪 Test Extension Directly
+            </button>
+        </div>
+
+        <!-- Section 1: Quick Links with Data Attributes -->
+        <div class="section">
+            <h2>📋 Method 1: Quick Links (Data Attributes)</h2>
+            <p>Simply add <code>data-browser</code> attribute to your links. Click any link below to see it open in the specified browser!</p>
+            
+            <div class="link-grid">
+                <div class="link-card">
+                    <a href="https://github.com" data-browser="chrome-stable">GitHub</a>
+                    <p>Open in Chrome Stable</p>
+                    <span class="browser-badge chrome">Chrome Stable</span>
+                </div>
+
+                <div class="link-card">
+                    <a href="https://microsoft.com" data-browser="edge-stable">Microsoft</a>
+                    <p>Open in Edge Stable</p>
+                    <span class="browser-badge edge">Edge Stable</span>
+                </div>
+
+                <div class="link-card">
+                    <a href="https://google.com" data-browser="chrome-beta">Google</a>
+                    <p>Open in Chrome Beta</p>
+                    <span class="browser-badge chrome-beta">Chrome Beta</span>
+                </div>
+
+                <div class="link-card">
+                    <a href="https://stackoverflow.com" data-browser="edge-beta">Stack Overflow</a>
+                    <p>Open in Edge Beta</p>
+                    <span class="browser-badge edge-beta">Edge Beta</span>
+                </div>
+
+                <div class="link-card">
+                    <a href="https://youtube.com" data-browser="chrome-stable">YouTube</a>
+                    <p>Open in Chrome Stable</p>
+                    <span class="browser-badge chrome">Chrome Stable</span>
+                </div>
+
+                <div class="link-card">
+                    <a href="https://reddit.com" data-browser="edge-stable">Reddit</a>
+                    <p>Open in Edge Stable</p>
+                    <span class="browser-badge edge">Edge Stable</span>
+                </div>
+                
+                <div class="link-card">
+                    <a href="https://example.com" data-browser="chrome-stable" data-no-fallback="true">Example (No Fallback)</a>
+                    <p>Open in Chrome - won't fallback to main browser</p>
+                    <span class="browser-badge chrome">Chrome Stable</span>
+                </div>
+            </div>
+
+            <div class="info-box">
+                <strong>How it works:</strong> Just add <code>data-browser="browser-id"</code> to any link. 
+                The script automatically intercepts clicks and opens them in the specified browser.<br><br>
+                <strong>Disable fallback:</strong> Add <code>data-no-fallback="true"</code> to prevent the link from opening in the main browser if the extension times out.
+            </div>
+        </div>
+
+        <!-- Section 2: JavaScript API Examples -->
+        <div class="section">
+            <h2>💻 Method 2: JavaScript API</h2>
+            <p>Use the JavaScript API for programmatic control. Try the examples below:</p>
+
+            <div class="demo-buttons">
+                <button class="btn btn-primary" onclick="openGitHubInChrome()">
+                    Open GitHub in Chrome
+                </button>
+                <button class="btn btn-primary" onclick="openMicrosoftInEdge()">
+                    Open Microsoft in Edge
+                </button>
+                <button class="btn btn-success" onclick="openGoogleInChromeBeta()">
+                    Open Google in Chrome Beta
+                </button>
+                <button class="btn btn-secondary" onclick="showAvailableBrowsers()">
+                    Show Available Browsers
+                </button>
+            </div>
+
+            <div class="code-block">
+                <code>
+// Example 1: Simple usage with callback<br>
+BrowserLauncher.open('https://github.com', 'chrome-stable', {}, function(response) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;if (response.success) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;console.log('Opened successfully!');<br>
+&nbsp;&nbsp;&nbsp;&nbsp;} else {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;console.error('Error:', response.error);<br>
+&nbsp;&nbsp;&nbsp;&nbsp;}<br>
+});<br><br>
+// Example 2: Using Promises<br>
+BrowserLauncher.open('https://example.com', 'edge-stable')<br>
+&nbsp;&nbsp;&nbsp;&nbsp;.then(response => console.log('Success:', response))<br>
+&nbsp;&nbsp;&nbsp;&nbsp;.catch(error => console.error('Error:', error));<br><br>
+// Example 3: Using async/await<br>
+async function openLink() {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;try {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;const response = await BrowserLauncher.open('https://example.com', 'chrome-stable');<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;console.log('Success:', response);<br>
+&nbsp;&nbsp;&nbsp;&nbsp;} catch (error) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;console.error('Error:', error);<br>
+&nbsp;&nbsp;&nbsp;&nbsp;}<br>
+}
+                </code>
+            </div>
+        </div>
+
+        <!-- Section 3: Interactive Test Area -->
+        <div class="section">
+            <h2>🧪 Interactive Test Area</h2>
+            <p>Test the integration with your own URLs and browser selections:</p>
+
+            <div class="test-area">
+                <div class="input-group">
+                    <label for="test-url">URL to Open:</label>
+                    <input type="url" id="test-url" placeholder="https://example.com" value="https://github.com">
+                </div>
+
+                <div class="input-group">
+                    <label for="test-browser">Browser:</label>
+                    <select id="test-browser">
+                        <option value="chrome-stable">Chrome Stable</option>
+                        <option value="chrome-beta">Chrome Beta</option>
+                        <option value="chrome-dev">Chrome Dev</option>
+                        <option value="edge-stable">Edge Stable</option>
+                        <option value="edge-beta">Edge Beta</option>
+                        <option value="edge-dev">Edge Dev</option>
+                        <option value="chrome-stable-wsl">Chrome Stable (WSL)</option>
+                        <option value="edge-stable-wsl">Edge Stable (WSL)</option>
+                    </select>
+                </div>
+
+                <button class="btn btn-primary" onclick="testOpenLink()">Open Link in Browser</button>
+
+                <div id="test-result" class="result-box" style="display: none;"></div>
+            </div>
+        </div>
+
+        <!-- Section 4: Code Examples -->
+        <div class="section">
+            <h2>📝 Implementation Examples</h2>
+
+            <h3>HTML Example:</h3>
+            <div class="code-block">
+                <code>
+&lt;!-- Include the script --&gt;<br>
+&lt;script src="browser-launcher-integration.js"&gt;&lt;/script&gt;<br><br>
+&lt;!-- Use data-browser attribute --&gt;<br>
+&lt;a href="https://github.com" data-browser="chrome-stable"&gt;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;Open GitHub in Chrome<br>
+&lt;/a&gt;
+                </code>
+            </div>
+
+            <h3>JavaScript Example:</h3>
+            <div class="code-block">
+                <code>
+// Check if extension is available<br>
+if (BrowserLauncher.isAvailable()) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;BrowserLauncher.open('https://example.com', 'chrome-stable');<br>
+} else {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;console.log('Extension not available');<br>
+}
+                </code>
+            </div>
+
+            <h3>Configuration Example:</h3>
+            <div class="code-block">
+                <code>
+// Enable debug mode<br>
+BrowserLauncher.configure({ debug: true });<br><br>
+// Set extension ID manually (if needed)<br>
+BrowserLauncher.setExtensionId('your-extension-id-here');<br><br>
+// Get available browsers<br>
+const browsers = BrowserLauncher.getBrowsers();<br>
+console.log('Available browsers:', browsers);
+                </code>
+            </div>
+        </div>
+
+        <!-- Section 5: Browser IDs Reference -->
+        <div class="section">
+            <h2>🔍 Available Browser IDs</h2>
+            <p>Use these browser IDs in your <code>data-browser</code> attributes or JavaScript API calls:</p>
+            
+            <div class="info-box">
+                <strong>Windows Local:</strong><br>
+                chrome-stable, chrome-beta, chrome-dev<br>
+                edge-stable, edge-beta, edge-dev<br>
+                chrome (alias), edge (alias)<br><br>
+                <strong>WSL:</strong><br>
+                chrome-stable-wsl, chrome-beta-wsl, chrome-dev-wsl<br>
+                edge-stable-wsl, edge-beta-wsl, edge-dev-wsl<br>
+                firefox-wsl, opera-wsl, brave-wsl
+            </div>
+        </div>
+
+        <!-- Troubleshooting Section -->
+        <div class="section">
+            <h2>🔧 Troubleshooting</h2>
+            <div class="info-box">
+                <strong>If extension is not detected:</strong>
+                <ol style="margin-top: 10px; padding-left: 20px;">
+                    <li><strong>Reload the extension:</strong> Go to <code>chrome://extensions</code> or <code>edge://extensions</code>, find "Browser Launcher Pro", and click the reload button</li>
+                    <li><strong>Refresh this page:</strong> Press F5 or Ctrl+R to reload</li>
+                    <li><strong>Check file protocol:</strong> If opening via <code>file://</code>, content scripts may not load. Try:
+                        <ul style="margin-top: 5px;">
+                            <li>Use a local HTTP server (e.g., Python: <code>python -m http.server 8000</code>)</li>
+                            <li>Or test on a hosted page</li>
+                        </ul>
+                    </li>
+                    <li><strong>Check browser console:</strong> Press F12 and look for errors</li>
+                    <li><strong>Verify extension is enabled:</strong> Make sure the extension toggle is ON in extensions page</li>
+                </ol>
+            </div>
+        </div>
+
+        <footer>
+            <p>Browser Launcher Pro Integration Demo | Version 1.0</p>
+            <p>Make sure the Browser Launcher Pro extension is installed and enabled!</p>
+            <p><small>Extension ID: ifllnbjkoabnnbcodbocddplnhmbobim</small></p>
+        </footer>
+    </div>
+
+    <script>
+        // Check extension status on page load
+        window.addEventListener('load', function() {
+            checkExtensionStatus();
+        });
+
+        function checkExtensionStatus() {
+            const statusDiv = document.getElementById('extension-status');
+            
+            if (typeof BrowserLauncher === 'undefined') {
+                statusDiv.className = 'status warning';
+                statusDiv.innerHTML = '<strong>⚠ Error:</strong> Browser Launcher Pro integration script not loaded. Please check the script path.';
+                return;
+            }
+            
+            // Show checking status
+            statusDiv.className = 'status';
+            statusDiv.innerHTML = '<strong>Checking...</strong> Verifying extension availability...';
+            
+            // Use the improved availability check with more retries
+            BrowserLauncher.checkAvailability(function(available, message) {
+                if (available) {
+                    statusDiv.className = 'status success';
+                    statusDiv.innerHTML = '<strong>✓ Extension Available:</strong> Browser Launcher Pro is ready! You can use all features. <br><small>Extension ID: ' + (BrowserLauncher.extensionId || 'Auto-detected') + ' | ' + message + '</small>';
+                } else {
+                    statusDiv.className = 'status warning';
+                    statusDiv.innerHTML = '<strong>⚠ Extension Status:</strong> ' + message + '<br><small><strong>Tips:</strong><br>1. Make sure Browser Launcher Pro extension is installed<br>2. Go to chrome://extensions and reload the extension<br>3. Refresh this page<br>4. If using file:// protocol, try serving via HTTP server</small>';
+                }
+            }, 5, 1000); // 5 retries, 1 second delay
+        }
+
+        // Example functions for JavaScript API
+        function openGitHubInChrome() {
+            BrowserLauncher.open('https://github.com', 'chrome-stable', {}, function(response) {
+                if (response.success) {
+                    alert('✓ Opening GitHub in Chrome Stable!');
+                } else {
+                    alert('✗ Error: ' + (response.error || 'Unknown error'));
+                }
+            });
+        }
+
+        function openMicrosoftInEdge() {
+            BrowserLauncher.open('https://microsoft.com', 'edge-stable', {}, function(response) {
+                if (response.success) {
+                    alert('✓ Opening Microsoft in Edge Stable!');
+                } else {
+                    alert('✗ Error: ' + (response.error || 'Unknown error'));
+                }
+            });
+        }
+
+        function openGoogleInChromeBeta() {
+            BrowserLauncher.open('https://google.com', 'chrome-beta', {}, function(response) {
+                if (response.success) {
+                    alert('✓ Opening Google in Chrome Beta!');
+                } else {
+                    alert('✗ Error: ' + (response.error || 'Unknown error'));
+                }
+            });
+        }
+
+        function showAvailableBrowsers() {
+            const browsers = BrowserLauncher.getBrowsers();
+            alert('Available Browser IDs:\n\n' + browsers.join('\n'));
+        }
+
+        // Test extension directly
+        function testExtensionDirectly() {
+            const statusDiv = document.getElementById('extension-status');
+            statusDiv.className = 'status';
+            statusDiv.innerHTML = '<strong>Testing...</strong> Attempting to open a test link...';
+            
+            // Try to open a test URL
+            if (typeof BrowserLauncher !== 'undefined') {
+                BrowserLauncher.open('https://www.google.com', 'chrome-stable', {}, function(response) {
+                    if (response && response.success) {
+                        statusDiv.className = 'status success';
+                        statusDiv.innerHTML = '<strong>✓ Test Successful!</strong> Extension is working! The link should have opened in Chrome.';
+                    } else {
+                        statusDiv.className = 'status warning';
+                        statusDiv.innerHTML = '<strong>⚠ Test Result:</strong> ' + (response ? response.error : 'No response from extension. Check console for details.');
+                    }
+                });
+            } else {
+                statusDiv.className = 'status warning';
+                statusDiv.innerHTML = '<strong>⚠ Error:</strong> BrowserLauncher object not found.';
+            }
+        }
+
+        // Interactive test function
+        function testOpenLink() {
+            const url = document.getElementById('test-url').value;
+            const browser = document.getElementById('test-browser').value;
+            const resultDiv = document.getElementById('test-result');
+
+            if (!url) {
+                resultDiv.className = 'result-box error';
+                resultDiv.innerHTML = 'Please enter a URL';
+                resultDiv.style.display = 'block';
+                return;
+            }
+
+            resultDiv.className = 'result-box';
+            resultDiv.innerHTML = 'Opening...';
+            resultDiv.style.display = 'block';
+
+            // Disable fallback for test area to prevent double-opening
+            BrowserLauncher.open(url, browser, { fallback: false }, function(response) {
+                if (response && response.success !== false) {
+                    resultDiv.className = 'result-box success';
+                    const message = response.message || 'Browser launch initiated';
+                    resultDiv.innerHTML = '✓ Success! ' + message + '<br><small>Opening ' + url + ' in ' + browser + '</small>';
+                } else {
+                    resultDiv.className = 'result-box error';
+                    resultDiv.innerHTML = '✗ Error: ' + (response ? response.error : 'No response from extension');
+                }
+            });
+        }
+
+        // Enable debug mode for demonstration
+        if (typeof BrowserLauncher !== 'undefined') {
+            BrowserLauncher.configure({ 
+                debug: true,
+                responseTimeout: 15000, // 15 seconds timeout
+                fallbackToNormalNavigation: true // Can be set to false to disable global fallback
+            });
+            
+            // Also listen for the extension ready event
+            window.addEventListener('BrowserLauncherProReady', function(event) {
+                console.log('Browser Launcher Pro extension ready!', event.detail);
+                // Re-check status when extension becomes ready
+                setTimeout(checkExtensionStatus, 500);
+            });
+        }
+    </script>
+</body>
+</html>
+

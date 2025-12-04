@@ -359,7 +359,8 @@ function handleUpdateSettings() {
                 'ldap_search_scope', 'ldap_user_dn_template', 'ldap_nested_groups', 'ldap_case_sensitive',
                 'ldap_ssl_verify', 'ldap_connection_retry', 'ldap_retry_delay', 'ldap_email_attribute',
                 'ldap_display_name_attribute', 'ldap_referrals',
-                'access_control_enabled', 'access_control_mode', 'access_control_allow_anonymous', 'access_control_audit_logging'
+                'access_control_enabled', 'access_control_mode', 'access_control_allow_anonymous', 'access_control_audit_logging',
+                'browser_specific_links_enabled', 'browser_extension_id'
             ];
             if (!in_array($key, $allowedKeys)) {
                 continue; // Skip invalid keys

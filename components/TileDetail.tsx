@@ -4,6 +4,7 @@ import { linkHealthService, LinkHealthMap } from '../services/linkHealthService'
 import { authService, UserListItem } from '../services/authService';
 import { exportTileToFile } from '../services/spaceTransferService';
 import { cloneTile, getTiles, saveTile } from '../services/storageService';
+import { useSettings } from '../contexts/SettingsContext';
 
 interface TileDetailProps {
     tile: Tile;
@@ -165,8 +166,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editColor, setEditColor] = useState<ThemeColor>(tile.themeColor);
     const [editVisibility, setEditVisibility] = useState<TileVisibility>(tile.visibility || 'public');
     const [editAllowedUsers, setEditAllowedUsers] = useState<number[]>(tile.allowedUsers || []);
+    const [editBrowser, setEditBrowser] = useState<string>(tile.browser || 'default');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [showTileUserSelector, setShowTileUserSelector] = useState(false);
+    
+    const { settings } = useSettings();
 
     // Tabs State (new structure)
     const [editTabs, setEditTabs] = useState<Tab[]>(tile.tabs || []);
@@ -174,11 +178,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editSections, setEditSections] = useState<LinkSection[]>(tile.sections || []);
 
     // Temporary State for Adding Links (keyed by section ID)
-    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], notes: string, tooltip: string }>>({});
+    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], notes: string, tooltip: string, browser: string }>>({});
 
     // State for Editing Links (keyed by link ID)
     const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
-    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], notes: string, tooltip: string }>>({});
+    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], notes: string, tooltip: string, browser: string }>>({});
+    
+    // Available browsers from BrowserLauncher API
+    const [availableBrowsers, setAvailableBrowsers] = useState<string[]>([]);
     
     // State for link emoji picker visibility (keyed by section ID or link ID)
     const [showLinkEmojiPicker, setShowLinkEmojiPicker] = useState<Record<string, boolean>>({});
@@ -242,6 +249,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setEditColor(tile.themeColor);
         setEditVisibility(tile.visibility || 'public');
         setEditAllowedUsers(tile.allowedUsers || []);
+        setEditBrowser(tile.browser || 'default');
 
         // Tabs / sections: always reflect the latest tile data when
         // we're *not* editing. While editing, `editTabs` is the source
@@ -343,6 +351,48 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     }, [isEditing, isAuthenticated, tile.canEdit]);
 
+    // Load available browsers from BrowserLauncher API when feature is enabled
+    useEffect(() => {
+        if (settings.browser_specific_links_enabled === '1') {
+            // Wait for BrowserLauncher to be available (it loads asynchronously)
+            const loadBrowsers = (retries = 0) => {
+                if (typeof (window as any).BrowserLauncher !== 'undefined') {
+                    try {
+                        const BrowserLauncher = (window as any).BrowserLauncher;
+                        const browsers = BrowserLauncher.getBrowsers();
+                        if (browsers && browsers.length > 0) {
+                            console.log('Loaded browsers from API:', browsers);
+                            setAvailableBrowsers(browsers);
+                        } else {
+                            // Fallback to default list if empty
+                            const fallbackBrowsers = ['chrome-stable', 'chrome-beta', 'chrome-dev', 'edge-stable', 'edge-beta', 'edge-dev', 'firefox-wsl', 'chrome-stable-wsl', 'edge-stable-wsl', 'chrome-beta-wsl', 'edge-beta-wsl', 'chrome-dev-wsl', 'edge-dev-wsl', 'opera-wsl', 'brave-wsl'];
+                            console.log('Browser API returned empty, using fallback:', fallbackBrowsers);
+                            setAvailableBrowsers(fallbackBrowsers);
+                        }
+                    } catch (error) {
+                        console.error('Failed to load available browsers:', error);
+                        // Fallback to default list if API fails
+                        const fallbackBrowsers = ['chrome-stable', 'chrome-beta', 'chrome-dev', 'edge-stable', 'edge-beta', 'edge-dev', 'firefox-wsl', 'chrome-stable-wsl', 'edge-stable-wsl', 'chrome-beta-wsl', 'edge-beta-wsl', 'chrome-dev-wsl', 'edge-dev-wsl', 'opera-wsl', 'brave-wsl'];
+                        setAvailableBrowsers(fallbackBrowsers);
+                    }
+                } else if (retries < 10) {
+                    // Retry after a short delay if BrowserLauncher is not yet available (max 10 retries = 5 seconds)
+                    setTimeout(() => loadBrowsers(retries + 1), 500);
+                } else {
+                    console.warn('BrowserLauncher not available after retries, using fallback list');
+                    // Fallback to default list if BrowserLauncher never becomes available
+                    const fallbackBrowsers = ['chrome-stable', 'chrome-beta', 'chrome-dev', 'edge-stable', 'edge-beta', 'edge-dev', 'firefox-wsl', 'chrome-stable-wsl', 'edge-stable-wsl', 'chrome-beta-wsl', 'edge-beta-wsl', 'chrome-dev-wsl', 'edge-dev-wsl', 'opera-wsl', 'brave-wsl'];
+                    setAvailableBrowsers(fallbackBrowsers);
+                }
+            };
+            
+            // Start loading browsers
+            loadBrowsers();
+        } else {
+            setAvailableBrowsers([]);
+        }
+    }, [settings.browser_specific_links_enabled]);
+
     const handleSaveChanges = () => {
         console.log('=== SAVE CHANGES START ===');
         console.log('Current editTabs:', editTabs.length, 'tabs');
@@ -368,6 +418,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             sections: editTabs.length > 0 ? undefined : editSections, // Only include sections if no tabs
             visibility: editVisibility,
             allowedUsers: editVisibility === 'private' ? editAllowedUsers : undefined,
+            browser: editBrowser !== 'default' ? editBrowser : undefined,
         };
 
         console.log('Updated tile tabs:', updatedTile.tabs?.length || 0);
@@ -870,11 +921,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     // Link Management
-    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'notes' | 'tooltip', value: string | LinkVisibility | number[]) => {
+    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'notes' | 'tooltip' | 'browser', value: string | LinkVisibility | number[]) => {
         setNewLinkState(prev => ({
             ...prev,
             [sectionId]: {
-                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '' }),
+                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '', browser: 'default' }),
                 [field]: value
             }
         }));
@@ -901,7 +952,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             visibility: state.visibility || 'public',
             allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
             notes: state.notes?.trim() || undefined,
-            tooltip: state.tooltip?.trim() || undefined
+            tooltip: state.tooltip?.trim() || undefined,
+            browser: state.browser && state.browser !== 'default' ? state.browser : undefined
         };
 
         if (editTabs.length > 0) {
@@ -1121,10 +1173,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 visibility: link.visibility || 'public',
                 allowedUsers: link.allowedUsers || [],
                 notes: link.notes || '',
-                tooltip: link.tooltip || ''
+                tooltip: link.tooltip || '',
+                browser: link.browser || 'default'
             }
         });
         setShowUserPicker(prev => ({ ...prev, [link.id]: false }));
+        console.log('Starting to edit link:', link.id, 'browser:', link.browser || 'default');
     };
 
     const handleCancelEditLink = () => {
@@ -1135,6 +1189,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const handleUpdateLink = (tabId: string, sectionId: string, linkId: string) => {
         const state = editLinkState[linkId];
         if (!state || !state.label.trim() || !state.url.trim()) return;
+
+        console.log('Updating link:', linkId, 'browser state:', state.browser, 'full state:', state);
 
         if (editTabs.length > 0) {
             // New structure with tabs
@@ -1159,7 +1215,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         visibility: state.visibility || 'public',
                                         allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
                                         notes: state.notes?.trim() || undefined,
-                                        tooltip: state.tooltip?.trim() || undefined
+                                        tooltip: state.tooltip?.trim() || undefined,
+                                        browser: state.browser && state.browser !== 'default' ? state.browser : undefined
                                     }
                                     : l
                             )
@@ -1183,7 +1240,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 visibility: state.visibility || 'public',
                                 allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
                                 notes: state.notes?.trim() || undefined,
-                                tooltip: state.tooltip?.trim() || undefined
+                                tooltip: state.tooltip?.trim() || undefined,
+                                browser: state.browser && state.browser !== 'default' ? state.browser : undefined
                             }
                             : l
                     )
@@ -1196,7 +1254,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setShowUserPicker(prev => ({ ...prev, [linkId]: false }));
     };
 
-    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'notes' | 'tooltip', value: string | LinkVisibility | number[]) => {
+    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'notes' | 'tooltip' | 'browser', value: string | LinkVisibility | number[]) => {
         setEditLinkState(prev => ({
             ...prev,
             [linkId]: { ...prev[linkId], [field]: value }
@@ -1810,6 +1868,47 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         target="_blank"
                                                         rel="noopener noreferrer"
                                                         className="flex-1 min-w-0 block focus:outline-none"
+                                                        data-browser={settings.browser_specific_links_enabled === '1' && link.browser && link.browser !== 'default' ? link.browser : undefined}
+                                                        onClick={(e) => {
+                                                            // Check if browser-specific link opening is enabled and link has a browser configured
+                                                            if (settings.browser_specific_links_enabled === '1' && link.browser && link.browser !== 'default') {
+                                                                // Check if BrowserLauncher is available
+                                                                if (typeof window !== 'undefined' && (window as any).BrowserLauncher) {
+                                                                    e.preventDefault();
+                                                                    e.stopPropagation();
+                                                                    
+                                                                    const browserId = link.browser;
+                                                                    const BrowserLauncher = (window as any).BrowserLauncher;
+                                                                    
+                                                                    console.log('Opening link in browser:', link.url, 'browser:', browserId);
+                                                                    
+                                                                    // Configure extension ID if provided
+                                                                    if (settings.browser_extension_id) {
+                                                                        BrowserLauncher.setExtensionId(settings.browser_extension_id);
+                                                                    }
+                                                                    
+                                                                    // Open link in specified browser
+                                                                    BrowserLauncher.open(link.url, browserId, { fallback: true }, (response: any) => {
+                                                                        console.log('BrowserLauncher response:', response);
+                                                                        if (response && response.success !== false) {
+                                                                            // Success - link should have opened in the specified browser
+                                                                            console.log('Link opened successfully in browser:', browserId);
+                                                                        } else {
+                                                                            // Fallback to default behavior if extension fails
+                                                                            console.warn('Browser extension failed, falling back to default:', response?.error);
+                                                                            window.open(link.url, '_blank', 'noopener,noreferrer');
+                                                                        }
+                                                                    }).catch((error: any) => {
+                                                                        // Fallback to default behavior on error
+                                                                        console.warn('Browser extension error, falling back to default:', error);
+                                                                        window.open(link.url, '_blank', 'noopener,noreferrer');
+                                                                    });
+                                                                } else {
+                                                                    console.warn('BrowserLauncher not available, using default browser');
+                                                                }
+                                                                // If BrowserLauncher is not available, allow default behavior
+                                                            }
+                                                        }}
                                                     >
                                                         <h4 
                                                             className={`linknest-content-link-title text-sm font-semibold ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}
@@ -2260,6 +2359,32 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     </div>
                                 )}
                             </div>
+
+                            {/* Browser Selection - Only show if feature is enabled */}
+                            {settings.browser_specific_links_enabled === '1' && (
+                                <div>
+                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-3">Open link in</label>
+                                    <select
+                                        value={editBrowser}
+                                        onChange={(e) => setEditBrowser(e.target.value)}
+                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none text-sm transition-all"
+                                    >
+                                        <option value="default">Default Browser</option>
+                                        <option value="chrome-stable">Chrome Stable</option>
+                                        <option value="chrome-beta">Chrome Beta</option>
+                                        <option value="chrome-dev">Chrome Dev</option>
+                                        <option value="edge-stable">Edge Stable</option>
+                                        <option value="edge-beta">Edge Beta</option>
+                                        <option value="edge-dev">Edge Dev</option>
+                                        <option value="firefox">Firefox (WSL)</option>
+                                        <option value="chrome-stable-wsl">Chrome Stable (WSL)</option>
+                                        <option value="edge-stable-wsl">Edge Stable (WSL)</option>
+                                    </select>
+                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-2">
+                                        Select which browser should open links from this tile. Requires browser extension to be installed.
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -2763,6 +2888,51 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 />
                                                                             </div>
                                                                         </div>
+                                                                        
+                                                                        {/* Browser Selection - Only show if feature is enabled */}
+                                                                        {settings.browser_specific_links_enabled === '1' && (
+                                                                            <div>
+                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Open link in</label>
+                                                                                <select
+                                                                                    value={editLinkState[link.id]?.browser || 'default'}
+                                                                                    onChange={(e) => updateEditLinkState(link.id, 'browser', e.target.value)}
+                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                                                                >
+                                                                                    <option value="default">Default Browser</option>
+                                                                                    {availableBrowsers.length > 0 ? (
+                                                                                        availableBrowsers.map((browserId) => {
+                                                                                            // Format browser ID for display
+                                                                                            const displayName = browserId
+                                                                                                .replace(/-/g, ' ')
+                                                                                                .replace(/\b\w/g, (l) => l.toUpperCase())
+                                                                                                .replace('Wsl', '(WSL)')
+                                                                                                .replace('Stable', 'Stable')
+                                                                                                .replace('Beta', 'Beta')
+                                                                                                .replace('Dev', 'Dev');
+                                                                                            return (
+                                                                                                <option key={browserId} value={browserId}>
+                                                                                                    {displayName}
+                                                                                                </option>
+                                                                                            );
+                                                                                        })
+                                                                                    ) : (
+                                                                                        <>
+                                                                                            <option value="chrome-stable">Chrome Stable</option>
+                                                                                            <option value="chrome-beta">Chrome Beta</option>
+                                                                                            <option value="chrome-dev">Chrome Dev</option>
+                                                                                            <option value="edge-stable">Edge Stable</option>
+                                                                                            <option value="edge-beta">Edge Beta</option>
+                                                                                            <option value="edge-dev">Edge Dev</option>
+                                                                                            <option value="firefox">Firefox (WSL)</option>
+                                                                                        </>
+                                                                                    )}
+                                                                                </select>
+                                                                                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                                                                                    Select which browser should open this link. Requires browser extension to be installed.
+                                                                                </p>
+                                                                            </div>
+                                                                        )}
+                                                                        
                                                                         {/* User Selector for Private Visibility */}
                                                                         {editLinkState[link.id]?.visibility === 'private' && (
                                                                             <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border-2 border-slate-200 dark:border-slate-700">
@@ -3073,6 +3243,50 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     />
                                                                 </div>
                                                             </div>
+                                                            
+                                                            {/* Browser Selection - Only show if feature is enabled */}
+                                                            {settings.browser_specific_links_enabled === '1' && (
+                                                                <div>
+                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Open link in</label>
+                                                                    <select
+                                                                        value={newLinkState[section.id]?.browser || 'default'}
+                                                                        onChange={(e) => updateNewLinkState(section.id, 'browser', e.target.value)}
+                                                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                                                    >
+                                                                        <option value="default">Default Browser</option>
+                                                                        {availableBrowsers.length > 0 ? (
+                                                                            availableBrowsers.map((browserId) => {
+                                                                                                // Format browser ID for display
+                                                                                                const displayName = browserId
+                                                                                                    .replace(/-/g, ' ')
+                                                                                                    .replace(/\b\w/g, (l) => l.toUpperCase())
+                                                                                                    .replace('Wsl', '(WSL)')
+                                                                                                    .replace('Stable', 'Stable')
+                                                                                                    .replace('Beta', 'Beta')
+                                                                                                    .replace('Dev', 'Dev');
+                                                                                                return (
+                                                                                                    <option key={browserId} value={browserId}>
+                                                                                                        {displayName}
+                                                                                                    </option>
+                                                                                                );
+                                                                                            })
+                                                                                        ) : (
+                                                                                            <>
+                                                                                                <option value="chrome-stable">Chrome Stable</option>
+                                                                                                <option value="chrome-beta">Chrome Beta</option>
+                                                                                                <option value="chrome-dev">Chrome Dev</option>
+                                                                                                <option value="edge-stable">Edge Stable</option>
+                                                                                                <option value="edge-beta">Edge Beta</option>
+                                                                                                <option value="edge-dev">Edge Dev</option>
+                                                                                                <option value="firefox">Firefox (WSL)</option>
+                                                                                            </>
+                                                                                        )}
+                                                                    </select>
+                                                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                                                                        Select which browser should open this link. Requires browser extension to be installed.
+                                                                    </p>
+                                                                </div>
+                                                            )}
 
                                                             {/* User Selector for Private Visibility */}
                                                             {(newLinkState[section.id]?.visibility || 'public') === 'private' && (

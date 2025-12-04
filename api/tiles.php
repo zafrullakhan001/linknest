@@ -280,7 +280,8 @@ function handleGetTiles() {
                         'notes' => isset($linkRow['notes']) ? $linkRow['notes'] : null,
                         'tooltip' => isset($linkRow['tooltip']) ? $linkRow['tooltip'] : null,
                         'visibleFrom' => isset($linkRow['visible_from']) ? $linkRow['visible_from'] : null,
-                        'expiresAt' => isset($linkRow['expires_at']) ? $linkRow['expires_at'] : null
+                        'expiresAt' => isset($linkRow['expires_at']) ? $linkRow['expires_at'] : null,
+                        'browser' => isset($linkRow['browser']) ? $linkRow['browser'] : null
                     ];
                     
                     // Include health data if available
@@ -349,7 +350,8 @@ function handleGetTiles() {
                             'visibility' => $visibility,
                             'allowedUsers' => $allowedUsers,
                             'notes' => $linkRow['notes'] ?? null,
-                            'tooltip' => $linkRow['tooltip'] ?? null
+                            'tooltip' => $linkRow['tooltip'] ?? null,
+                            'browser' => $linkRow['browser'] ?? null
                         ];
                         
                         if (isset($linkRow['health_status'])) {
@@ -684,7 +686,8 @@ function handleGetTile($tileId) {
                     'notes' => isset($linkRow['notes']) ? $linkRow['notes'] : null,
                     'tooltip' => isset($linkRow['tooltip']) ? $linkRow['tooltip'] : null,
                     'visibleFrom' => isset($linkRow['visible_from']) ? $linkRow['visible_from'] : null,
-                    'expiresAt' => isset($linkRow['expires_at']) ? $linkRow['expires_at'] : null
+                    'expiresAt' => isset($linkRow['expires_at']) ? $linkRow['expires_at'] : null,
+                    'browser' => isset($linkRow['browser']) ? $linkRow['browser'] : null
                 ];
                 
                 // Include health data if available
@@ -760,7 +763,8 @@ function handleGetTile($tileId) {
                         'visibility' => $visibility,
                         'allowedUsers' => $allowedUsers,
                         'notes' => $linkRow['notes'] ?? null,
-                        'tooltip' => $linkRow['tooltip'] ?? null
+                        'tooltip' => $linkRow['tooltip'] ?? null,
+                        'browser' => $linkRow['browser'] ?? null
                     ];
                     
                     if (isset($linkRow['health_status'])) {
@@ -887,7 +891,7 @@ function handleCreateTile() {
                                 ? json_encode($link['allowedUsers']) 
                                 : null;
                             try {
-                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                                 $linkStmt->execute([
                                     $linkId,
                                     $sectionId,
@@ -900,14 +904,15 @@ function handleCreateTile() {
                                     $link['notes'] ?? null,
                                     $link['tooltip'] ?? null,
                                     $link['visibleFrom'] ?? null,
-                                    $link['expiresAt'] ?? null
+                                    $link['expiresAt'] ?? null,
+                                    $link['browser'] ?? null
                                 ]);
                             } catch (PDOException $e) {
                                 error_log('Error inserting link: ' . $e->getMessage());
                                 error_log('Link data: ' . json_encode($link));
                                 // Try without icon/text_color as fallback
                                 try {
-                                    $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, notes, tooltip, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                                    $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                                     $linkStmt->execute([
                                         $linkId,
                                         $sectionId,
@@ -918,7 +923,8 @@ function handleCreateTile() {
                                         $link['notes'] ?? null,
                                         $link['tooltip'] ?? null,
                                         $link['visibleFrom'] ?? null,
-                                        $link['expiresAt'] ?? null
+                                        $link['expiresAt'] ?? null,
+                                        $link['browser'] ?? null
                                     ]);
                                 } catch (PDOException $e2) {
                                     error_log('Error inserting link (fallback): ' . $e2->getMessage());
@@ -960,7 +966,7 @@ function handleCreateTile() {
                         ? json_encode($link['allowedUsers']) 
                         : null;
                     try {
-                        $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                        $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                         $linkStmt->execute([
                             $linkId,
                             $sectionId,
@@ -971,7 +977,8 @@ function handleCreateTile() {
                             $visibility,
                             $allowedUsers,
                             $link['notes'] ?? null,
-                            $link['tooltip'] ?? null
+                            $link['tooltip'] ?? null,
+                            $link['browser'] ?? null
                         ]);
                     } catch (PDOException $e) {
                         error_log('Error inserting link (backward compat): ' . $e->getMessage());
@@ -1122,7 +1129,7 @@ function handleUpdateTile($tileId) {
                                 $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) 
                                     ? json_encode($link['allowedUsers']) 
                                     : null;
-                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                                 $linkStmt->execute([
                                     $linkId,
                                     $sectionId,
@@ -1135,7 +1142,8 @@ function handleUpdateTile($tileId) {
                                     $link['notes'] ?? null,
                                     $link['tooltip'] ?? null,
                                     $link['visibleFrom'] ?? null,
-                                    $link['expiresAt'] ?? null
+                                    $link['expiresAt'] ?? null,
+                                    $link['browser'] ?? null
                                 ]);
                             }
                         }
@@ -1176,7 +1184,7 @@ function handleUpdateTile($tileId) {
                         $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) 
                             ? json_encode($link['allowedUsers']) 
                             : null;
-                        $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                        $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                         $linkStmt->execute([
                             $linkId,
                             $sectionId,
@@ -1187,7 +1195,8 @@ function handleUpdateTile($tileId) {
                             $visibility,
                             $allowedUsers,
                             $link['notes'] ?? null,
-                            $link['tooltip'] ?? null
+                            $link['tooltip'] ?? null,
+                            $link['browser'] ?? null
                         ]);
                     }
                 }
@@ -1361,7 +1370,7 @@ function handleCloneTile($tileId) {
                 
                 foreach ($links as $link) {
                     $newLinkId = uniqid('link_', true);
-                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                     $linkInsertStmt->execute([
                         $newLinkId,
                         $newSectionId,
@@ -1372,7 +1381,8 @@ function handleCloneTile($tileId) {
                         $link['visibility'] ?? 'public',
                         null, // Reset allowed_users for cloned links
                         $link['notes'] ?? null,
-                        $link['tooltip'] ?? null
+                        $link['tooltip'] ?? null,
+                        $link['browser'] ?? null
                     ]);
                 }
             }
@@ -1412,7 +1422,7 @@ function handleCloneTile($tileId) {
                 
                 foreach ($links as $link) {
                     $newLinkId = uniqid('link_', true);
-                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                     $linkInsertStmt->execute([
                         $newLinkId,
                         $newSectionId,
@@ -1423,7 +1433,8 @@ function handleCloneTile($tileId) {
                         $link['visibility'] ?? 'public',
                         null, // Reset allowed_users for cloned links
                         $link['notes'] ?? null,
-                        $link['tooltip'] ?? null
+                        $link['tooltip'] ?? null,
+                        $link['browser'] ?? null
                     ]);
                 }
             }
@@ -1573,7 +1584,7 @@ function handleCloneCategory($categoryName) {
                         
                         foreach ($links as $link) {
                             $newLinkId = uniqid('link_', true);
-                            $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                            $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                             $linkInsertStmt->execute([
                                 $newLinkId,
                                 $newSectionId,
@@ -1586,7 +1597,8 @@ function handleCloneCategory($categoryName) {
                                 $link['notes'] ?? null,
                                 $link['tooltip'] ?? null,
                                 $link['visible_from'] ?? null,
-                                $link['expires_at'] ?? null
+                                $link['expires_at'] ?? null,
+                                $link['browser'] ?? null
                             ]);
                         }
                     }
@@ -1630,7 +1642,7 @@ function handleCloneCategory($categoryName) {
                         
                         foreach ($links as $link) {
                             $newLinkId = uniqid('link_', true);
-                            $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                            $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                             $linkInsertStmt->execute([
                                 $newLinkId,
                                 $newSectionId,
@@ -1643,13 +1655,14 @@ function handleCloneCategory($categoryName) {
                                 $link['notes'] ?? null,
                                 $link['tooltip'] ?? null,
                                 $link['visible_from'] ?? null,
-                                $link['expires_at'] ?? null
+                                $link['expires_at'] ?? null,
+                                $link['browser'] ?? null
                             ]);
                         }
                     }
                 }
             }
-            
+             
             $clonedTiles[] = [
                 'id' => $newTileId,
                 'title' => $newTitle
@@ -2176,60 +2189,24 @@ function handleGetRecycleBin() {
         $user = requireAuth();
         $db = getDB();
     
-    // Get all soft-deleted tiles (deleted_at IS NOT NULL)
-    // Only show tiles that the user has permission to view
-    $stmt = $db->prepare('SELECT * FROM tiles WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC');
-    $stmt->execute();
+    // Get soft-deleted tiles (deleted_at IS NOT NULL)
+    // Users can only see their own deleted tiles, admins can see all
+    if ($user['is_admin']) {
+        // Admins can see all deleted tiles
+        $stmt = $db->prepare('SELECT * FROM tiles WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC');
+        $stmt->execute();
+    } else {
+        // Regular users can only see their own deleted tiles
+        $stmt = $db->prepare('SELECT * FROM tiles WHERE deleted_at IS NOT NULL AND user_id = ? ORDER BY deleted_at DESC');
+        $stmt->execute([$user['id']]);
+    }
     
     $tiles = [];
     $tilesById = [];
     
     while ($row = $stmt->fetch()) {
-        // Filter tiles based on visibility
-        $tileVisibility = $row['visibility'] ?? 'public';
-        $tileAllowedUsers = $row['allowed_users'] ? json_decode($row['allowed_users'], true) : [];
-        
-        // Check if tile should be visible to current user
-        // Admin users can see all tiles regardless of visibility
-        $isTileVisible = false;
-        if ($user && $user['is_admin']) {
-            $isTileVisible = true; // Admins see everything
-        } elseif ($tileVisibility === 'public') {
-            $isTileVisible = true; // Public tiles visible to everyone
-        } elseif ($tileVisibility === 'authenticated' && $user) {
-            $isTileVisible = true; // Authenticated tiles visible to logged-in users
-        } elseif ($tileVisibility === 'private' && $user) {
-            // Private tiles visible only to specific users
-            $isTileVisible = in_array($user['id'], $tileAllowedUsers);
-        }
-        
-        if (!$isTileVisible) {
-            continue; // Skip this tile
-        }
-        
-        // Check if user has permission to view this tile
-        $canView = true;
-        if ($user) {
-            if ($user['is_admin']) {
-                $canView = true;
-            } else {
-                $isCreator = isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id'];
-                if ($isCreator) {
-                    $canView = true;
-                } else {
-                    $permStmt = $db->prepare('SELECT can_view FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
-                    $permStmt->execute([$user['id'], $row['id']]);
-                    $permission = $permStmt->fetch();
-                    if ($permission) {
-                        $canView = (bool)$permission['can_view'];
-                    }
-                }
-            }
-        }
-        
-        if ($user && !$canView) {
-            continue; // Skip tiles where user doesn't have view permission
-        }
+        // For recycle bin, we only show tiles owned by the user (already filtered in query)
+        // No need for additional visibility/permission checks since recycle bin is user-specific
         
         // Check if this tile is favorited by the current user
         $isFavorite = false;
@@ -2308,7 +2285,8 @@ function handleGetRecycleBin() {
                         'notes' => $linkRow['notes'] ?? null,
                         'tooltip' => $linkRow['tooltip'] ?? null,
                         'visibleFrom' => $linkRow['visible_from'] ?? null,
-                        'expiresAt' => $linkRow['expires_at'] ?? null
+                        'expiresAt' => $linkRow['expires_at'] ?? null,
+                        'browser' => $linkRow['browser'] ?? null
                     ];
                     
                     // Include health data if available
@@ -2367,19 +2345,15 @@ function handleRestoreTile($tileId) {
     }
     
     // Check if user has permission to restore this tile
-    // Only admins or the original creator can restore
+    // Only admins or the original creator can restore (recycle bin is user-specific)
     $canRestore = false;
     if ($user['is_admin']) {
         $canRestore = true;
     } else {
+        // Regular users can only restore their own tiles
         $isCreator = isset($tile['user_id']) && (int)$tile['user_id'] === (int)$user['id'];
         if ($isCreator) {
             $canRestore = true;
-        } else {
-            // Check for explicit delete permission (which implies restore permission)
-            if (canUserDeleteTile($user['id'], $tileId, $db)) {
-                $canRestore = true;
-            }
         }
     }
     
@@ -2620,7 +2594,8 @@ function handleGetArchive() {
                             'notes' => $linkRow['notes'] ?? null,
                             'tooltip' => $linkRow['tooltip'] ?? null,
                             'visibleFrom' => $linkRow['visible_from'] ?? null,
-                            'expiresAt' => $linkRow['expires_at'] ?? null
+                            'expiresAt' => $linkRow['expires_at'] ?? null,
+                            'browser' => $linkRow['browser'] ?? null
                         ];
                         
                         if (isset($linkRow['health_status'])) {
@@ -2755,19 +2730,15 @@ function handlePermanentDeleteTile($tileId) {
     }
     
     // Check if user has permission to permanently delete this tile
-    // Only admins or the original creator can permanently delete
+    // Only admins or the original creator can permanently delete (recycle bin is user-specific)
     $canDelete = false;
     if ($user['is_admin']) {
         $canDelete = true;
     } else {
+        // Regular users can only permanently delete their own tiles
         $isCreator = isset($tile['user_id']) && (int)$tile['user_id'] === (int)$user['id'];
         if ($isCreator) {
             $canDelete = true;
-        } else {
-            // Check for explicit delete permission
-            if (canUserDeleteTile($user['id'], $tileId, $db)) {
-                $canDelete = true;
-            }
         }
     }
     
@@ -2789,43 +2760,32 @@ function handlePermanentDeleteCategory($categoryName) {
     // Decode URL-encoded category name
     $categoryName = urldecode($categoryName);
     
-    // Get all soft-deleted tiles in this category
-    $stmt = $db->prepare('SELECT id, user_id FROM tiles WHERE deleted_at IS NOT NULL AND "group" = ?');
-    $stmt->execute([$categoryName]);
+    // Get soft-deleted tiles in this category
+    // Users can only see their own deleted tiles, admins can see all
+    if ($user['is_admin']) {
+        $stmt = $db->prepare('SELECT id, user_id FROM tiles WHERE deleted_at IS NOT NULL AND "group" = ?');
+        $stmt->execute([$categoryName]);
+    } else {
+        // Regular users can only see their own deleted tiles in this category
+        $stmt = $db->prepare('SELECT id, user_id FROM tiles WHERE deleted_at IS NOT NULL AND "group" = ? AND user_id = ?');
+        $stmt->execute([$categoryName, $user['id']]);
+    }
     $deletedTiles = $stmt->fetchAll();
     
     if (empty($deletedTiles)) {
         sendJSON(['error' => 'No tiles found in this category in recycle bin'], 404);
     }
     
-    // Check if user has permission to permanently delete tiles in this category
-    // Only admins or users who created all tiles in the category can delete
-    $canDelete = false;
-    if ($user['is_admin']) {
-        $canDelete = true;
-    } else {
-        // Check if user is the creator of all tiles
-        $allOwned = true;
-        foreach ($deletedTiles as $tile) {
-            if (!isset($tile['user_id']) || (int)$tile['user_id'] !== (int)$user['id']) {
-                // Check for explicit delete permission
-                if (!canUserDeleteTile($user['id'], $tile['id'], $db)) {
-                    $allOwned = false;
-                    break;
-                }
-            }
-        }
-        $canDelete = $allOwned;
-    }
-    
-    if (!$canDelete) {
-        sendJSON(['error' => 'You do not have permission to permanently delete this category'], 403);
-    }
-    
     // Permanently delete all tiles in this category from recycle bin
     // Cascade will delete sections, links, and tabs
-    $deleteStmt = $db->prepare('DELETE FROM tiles WHERE deleted_at IS NOT NULL AND "group" = ?');
-    $deleteStmt->execute([$categoryName]);
+    if ($user['is_admin']) {
+        $deleteStmt = $db->prepare('DELETE FROM tiles WHERE deleted_at IS NOT NULL AND "group" = ?');
+        $deleteStmt->execute([$categoryName]);
+    } else {
+        // Regular users can only delete their own tiles in this category
+        $deleteStmt = $db->prepare('DELETE FROM tiles WHERE deleted_at IS NOT NULL AND "group" = ? AND user_id = ?');
+        $deleteStmt->execute([$categoryName, $user['id']]);
+    }
     $purgedCount = $deleteStmt->rowCount();
     
     sendJSON(['success' => true, 'purgedCount' => $purgedCount, 'categoryName' => $categoryName]);
@@ -2835,23 +2795,18 @@ function handlePurgeRecycleBin() {
     $user = requireAuth();
     $db = getDB();
     
-    // Only admins can purge the recycle bin
-    if (!$user['is_admin']) {
-        sendJSON(['error' => 'Only administrators can purge the recycle bin'], 403);
+    // Users can purge their own recycle bin, admins can purge all
+    if ($user['is_admin']) {
+        // Admins can purge all deleted tiles
+        $deleteStmt = $db->prepare('DELETE FROM tiles WHERE deleted_at IS NOT NULL');
+        $deleteStmt->execute();
+        $purgedCount = $deleteStmt->rowCount();
+    } else {
+        // Regular users can only purge their own deleted tiles
+        $deleteStmt = $db->prepare('DELETE FROM tiles WHERE deleted_at IS NOT NULL AND user_id = ?');
+        $deleteStmt->execute([$user['id']]);
+        $purgedCount = $deleteStmt->rowCount();
     }
-    
-    // Get all soft-deleted tiles
-    $stmt = $db->prepare('SELECT id FROM tiles WHERE deleted_at IS NOT NULL');
-    $stmt->execute();
-    $deletedTiles = $stmt->fetchAll();
-    
-    $purgedCount = 0;
-    
-    // Permanently delete all soft-deleted tiles
-    // Cascade will delete sections, links, and tabs
-    $deleteStmt = $db->prepare('DELETE FROM tiles WHERE deleted_at IS NOT NULL');
-    $deleteStmt->execute();
-    $purgedCount = $deleteStmt->rowCount();
     
     sendJSON(['success' => true, 'purgedCount' => $purgedCount]);
 }

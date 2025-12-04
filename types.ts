@@ -21,6 +21,7 @@ export interface Link {
   tooltip?: string; // Optional custom hover tooltip text
   visibleFrom?: string; // ISO date string - link becomes visible from this date/time
   expiresAt?: string; // ISO date string - link expires at this date/time
+  browser?: string; // Browser to open link in (e.g., 'chrome-stable', 'edge-stable', 'default')
 }
 
 export interface LinkSection {
@@ -69,6 +70,7 @@ export interface Tile {
   visibleFrom?: string; // ISO date string - tile becomes visible from this date/time
   expiresAt?: string; // ISO date string - tile expires at this date/time
   archivedAt?: number; // Timestamp when tile was archived
+  browser?: string; // Browser to open links in: 'default', 'chrome', 'firefox', 'edge', 'safari', or custom browser ID
 }
 
 export const THEME_COLORS = [

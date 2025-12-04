@@ -1499,12 +1499,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
           const updatedTiles = await getTiles();
           onUpdateTiles(updatedTiles);
           
-          // If deleting from archive, reload archive and recycle bin
+          // Always reload recycle bin to update the counter (tile was moved to recycle bin)
+          const updatedRecycleBin = await getRecycleBin();
+          setRecycleBinTiles(updatedRecycleBin);
+          
+          // If deleting from archive, also reload archive
           if (isFromArchive) {
             const updatedArchive = await getArchive();
             setArchiveTiles(updatedArchive);
-            const updatedRecycleBin = await getRecycleBin();
-            setRecycleBinTiles(updatedRecycleBin);
           }
         } catch (error) {
           console.error('Failed to delete tile:', error);
@@ -1512,6 +1514,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
         }
       } else {
         onUpdateTiles(tiles.filter(t => t.id !== id));
+        // Still refresh recycle bin even if using local state
+        try {
+          const updatedRecycleBin = await getRecycleBin();
+          setRecycleBinTiles(updatedRecycleBin);
+        } catch (error) {
+          console.error('Failed to refresh recycle bin:', error);
+        }
       }
     }
   };
@@ -1642,19 +1651,19 @@ export const TileGrid: React.FC<TileGridProps> = ({
   };
 
   const handlePurgeRecycleBin = async () => {
-    if (!isAuthenticated || !user?.is_admin) {
-      alert('Only administrators can purge the recycle bin.');
+    if (!isAuthenticated) {
+      alert('You must be logged in to purge the recycle bin.');
       return;
     }
 
-    if (!confirm(`Are you sure you want to permanently delete all ${recycleBinTiles.length} space(s) from the recycle bin? This action cannot be undone.`)) {
+    if (!confirm(`Are you sure you want to permanently delete all ${recycleBinTiles.length} space(s) from your recycle bin? This action cannot be undone.`)) {
       return;
     }
 
     try {
       const result = await purgeRecycleBin();
       setRecycleBinTiles([]);
-      alert(`Successfully purged ${result.purgedCount} space(s) from the recycle bin.`);
+      alert(`Successfully purged ${result.purgedCount} space(s) from your recycle bin.`);
     } catch (error) {
       console.error('Failed to purge recycle bin:', error);
       alert('Failed to purge recycle bin. Please try again.');
@@ -2264,14 +2273,15 @@ export const TileGrid: React.FC<TileGridProps> = ({
       // Reload tiles, recycle bin, and archive
       const updatedTiles = await getTiles();
       onUpdateTiles(updatedTiles);
-      if (activeTab === 'recycle-bin') {
-        const updatedRecycleBin = await getRecycleBin();
-        setRecycleBinTiles(updatedRecycleBin);
-      } else if (activeTab === 'archive') {
+      
+      // Always reload recycle bin to update the counter (tiles were moved to recycle bin)
+      const updatedRecycleBin = await getRecycleBin();
+      setRecycleBinTiles(updatedRecycleBin);
+      
+      // If deleting from archive, also reload archive
+      if (activeTab === 'archive') {
         const updatedArchive = await getArchive();
         setArchiveTiles(updatedArchive);
-        const updatedRecycleBin = await getRecycleBin();
-        setRecycleBinTiles(updatedRecycleBin);
       }
     } catch (error) {
       console.error('Failed to delete category:', error);
@@ -2687,7 +2697,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               </svg>
               Refresh
             </button>
-            {recycleBinTiles.length > 0 && user?.is_admin && (
+            {recycleBinTiles.length > 0 && (
               <button
                 onClick={handlePurgeRecycleBin}
                 className="px-4 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"

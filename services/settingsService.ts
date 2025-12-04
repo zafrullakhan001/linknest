@@ -78,6 +78,10 @@ export interface AppSettings {
   ldap_email_attribute?: string; // custom email attribute
   ldap_display_name_attribute?: string; // custom display name attribute
   ldap_referrals?: string; // '0' or '1'
+
+  // Browser-Specific Link Opening Settings
+  browser_specific_links_enabled?: string; // '0' or '1' - controls whether browser-specific link opening is enabled
+  browser_extension_id?: string; // Browser extension ID for opening links in specific browsers
 }
 
 export const settingsService = {
@@ -141,6 +145,9 @@ export const settingsService = {
       ldap_email_attribute: data.settings?.ldap_email_attribute || '',
       ldap_display_name_attribute: data.settings?.ldap_display_name_attribute || '',
       ldap_referrals: data.settings?.ldap_referrals || '0',
+      // Browser-specific link opening defaults
+      browser_specific_links_enabled: data.settings?.browser_specific_links_enabled || '0',
+      browser_extension_id: data.settings?.browser_extension_id || '',
     };
   },
 
