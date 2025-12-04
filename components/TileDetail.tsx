@@ -1916,7 +1916,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     >
                                                         <h4 
                                                             className={`linknest-content-link-title text-sm font-semibold ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}
-                                                            style={link.textColor ? { color: link.textColor } : undefined}
+                                                            style={link.textColor ? { 
+                                                                color: link.textColor,
+                                                                // Add text shadow for better visibility
+                                                                textShadow: '0 1px 2px rgba(0,0,0,0.15)',
+                                                                fontWeight: '700'
+                                                            } : undefined}
                                                         >
                                                             {link.label}
                                                         </h4>
@@ -2445,10 +2450,32 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         <div className="space-y-6">
                             {/* Render tabs if available, otherwise fall back to sections (backward compatibility) */}
                             {editTabs.length > 0 ? (
-                                editTabs.map((tab, tabIndex) => (
-                                    <div id={`tab-${tab.id}`} key={tab.id} className="bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-lg shadow-slate-200/50 dark:shadow-black/20 scroll-mt-24 hover:shadow-xl transition-shadow">
+                                editTabs.map((tab, tabIndex) => {
+                                    // Generate a color for visual identification based on tab index
+                                    const tabColorIndex = tabIndex % 6;
+                                    const tabBorderColors = [
+                                        'border-l-4 border-l-blue-600',
+                                        'border-l-4 border-l-green-600',
+                                        'border-l-4 border-l-purple-600',
+                                        'border-l-4 border-l-orange-600',
+                                        'border-l-4 border-l-pink-600',
+                                        'border-l-4 border-l-teal-600'
+                                    ];
+                                    const tabBgColors = [
+                                        'bg-gradient-to-r from-blue-50 via-white to-slate-50 dark:from-blue-900/20 dark:via-slate-800/50 dark:to-slate-900/50',
+                                        'bg-gradient-to-r from-green-50 via-white to-slate-50 dark:from-green-900/20 dark:via-slate-800/50 dark:to-slate-900/50',
+                                        'bg-gradient-to-r from-purple-50 via-white to-slate-50 dark:from-purple-900/20 dark:via-slate-800/50 dark:to-slate-900/50',
+                                        'bg-gradient-to-r from-orange-50 via-white to-slate-50 dark:from-orange-900/20 dark:via-slate-800/50 dark:to-slate-900/50',
+                                        'bg-gradient-to-r from-pink-50 via-white to-slate-50 dark:from-pink-900/20 dark:via-slate-800/50 dark:to-slate-900/50',
+                                        'bg-gradient-to-r from-teal-50 via-white to-slate-50 dark:from-teal-900/20 dark:via-slate-800/50 dark:to-slate-900/50'
+                                    ];
+                                    const tabColorClass = tabBorderColors[tabColorIndex];
+                                    const tabBgClass = tabBgColors[tabColorIndex];
+                                    
+                                    return (
+                                    <div id={`tab-${tab.id}`} key={tab.id} className={`bg-white dark:bg-slate-800 border-2 border-t-2 border-r-2 border-b-2 border-slate-200 dark:border-slate-700 ${tabColorClass} rounded-2xl overflow-hidden shadow-lg shadow-slate-200/50 dark:shadow-black/20 scroll-mt-24 hover:shadow-xl transition-shadow`}>
                                         {/* Tab Header */}
-                                        <div className="p-5 border-b-2 border-slate-200 dark:border-slate-700 bg-gradient-to-r from-slate-50 via-white to-slate-50 dark:from-slate-900/50 dark:via-slate-800/50 dark:to-slate-900/50 flex gap-3 items-center">
+                                        <div className={`p-5 border-b-2 border-slate-200 dark:border-slate-700 ${tabBgClass} flex gap-3 items-center`}>
                                             {/* Tab Reorder Buttons */}
                                             <div className="flex flex-col gap-0.5">
                                                 <button
@@ -3082,7 +3109,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         <div className="w-8 h-8 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sm">🔗</div>
                                                                         <div className="flex-1 min-w-0">
                                                                             <div className="flex items-center gap-2">
-                                                                                <div className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{link.label}</div>
+                                                                                <div 
+                                                                                    className={`text-sm font-medium truncate ${!link.textColor ? 'text-slate-700 dark:text-slate-200' : ''}`}
+                                                                                    style={link.textColor ? { 
+                                                                                        color: link.textColor,
+                                                                                        // Add text shadow for better visibility on light backgrounds
+                                                                                        textShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                                                                                        fontWeight: '600'
+                                                                                    } : undefined}
+                                                                                >
+                                                                                    {link.label}
+                                                                                </div>
                                                                                 {link.visibility && link.visibility !== 'public' && (
                                                                                     <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${link.visibility === 'authenticated'
                                                                                         ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
@@ -3450,7 +3487,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             )}
                                         </div>
                                     </div>
-                                ))
+                                    );
+                                })
                             ) : (
                                 // Backward compatibility: Render sections without tabs
                                 editSections.map((section, index) => {
