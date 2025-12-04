@@ -227,6 +227,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [csvImportFile, setCsvImportFile] = useState<Record<string, File | null>>({});
     const [importingCsv, setImportingCsv] = useState<Record<string, boolean>>({});
 
+    // Add Link Form Visibility State
+    const [showAddLinkForm, setShowAddLinkForm] = useState<Record<string, boolean>>({});
+
     const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
 
     // Sync state when tile changes, but only when not editing to prevent losing unsaved changes.
@@ -982,10 +985,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             }));
         }
 
-        // Clear form
-        setNewLinkState(prev => ({ ...prev, [sectionId]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '' } }));
+        // Clear form and hide it
+        setNewLinkState(prev => ({ ...prev, [sectionId]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '', browser: 'default' } }));
         setShowUserPicker(prev => ({ ...prev, [sectionId]: false }));
         setShowLinkEmojiPicker(prev => ({ ...prev, [sectionId]: false }));
+        setShowAddLinkForm(prev => ({ ...prev, [sectionId]: false }));
     };
 
     const handleRemoveLinkFromSection = (tabId: string, sectionId: string, linkId: string) => {
@@ -2548,10 +2552,32 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 </button>
                                             </div>
 
-                                            {tab.sections.map((section, sectionIndex) => (
-                                                <div key={section.id} className="bg-slate-50 dark:bg-slate-900/50 border-2 border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm">
+                                            {tab.sections.map((section, sectionIndex) => {
+                                                // Generate a color for visual identification based on section index
+                                                const colorIndex = sectionIndex % 6;
+                                                const borderColors = [
+                                                    'border-r-4 border-r-blue-500',
+                                                    'border-r-4 border-r-green-500',
+                                                    'border-r-4 border-r-purple-500',
+                                                    'border-r-4 border-r-orange-500',
+                                                    'border-r-4 border-r-pink-500',
+                                                    'border-r-4 border-r-teal-500'
+                                                ];
+                                                const bgColors = [
+                                                    'bg-blue-50 dark:bg-blue-900/10',
+                                                    'bg-green-50 dark:bg-green-900/10',
+                                                    'bg-purple-50 dark:bg-purple-900/10',
+                                                    'bg-orange-50 dark:bg-orange-900/10',
+                                                    'bg-pink-50 dark:bg-pink-900/10',
+                                                    'bg-teal-50 dark:bg-teal-900/10'
+                                                ];
+                                                const sectionColorClass = borderColors[colorIndex];
+                                                const sectionBgClass = bgColors[colorIndex];
+                                                
+                                                return (
+                                                <div key={section.id} className={`bg-slate-50 dark:bg-slate-900/50 border-2 border-l-2 border-t-2 border-b-2 border-slate-200 dark:border-slate-700 ${sectionColorClass} rounded-xl overflow-hidden shadow-sm`}>
                                                     {/* Section Header */}
-                                                    <div className="p-4 border-b-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex gap-3 items-center">
+                                                    <div className={`p-4 border-b-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 ${sectionBgClass} flex gap-3 items-center`}>
                                                         {/* Reorder Buttons */}
                                                         <div className="flex flex-col gap-0.5">
                                                             <button
@@ -3117,8 +3143,43 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             ))}
                                                         </div>
 
-                                                        {/* Inline Add Form - Compact Design */}
-                                                        <div className="bg-white dark:bg-slate-800 border-2 border-brand-500 dark:border-brand-500/50 rounded-xl p-4 shadow-lg space-y-3">
+                                                        {/* Add Link Button - Show when form is collapsed */}
+                                                        {!showAddLinkForm[section.id] && (
+                                                            <div className="mt-3">
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setShowAddLinkForm(prev => ({ ...prev, [section.id]: true }));
+                                                                    }}
+                                                                    className="w-full bg-brand-600 hover:bg-brand-500 text-white px-4 py-3 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center justify-center gap-2"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                                                    </svg>
+                                                                    Add Link
+                                                                </button>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Inline Add Form - Compact Design - Only show when expanded */}
+                                                        {showAddLinkForm[section.id] && (
+                                                        <div className="mt-3 bg-white dark:bg-slate-800 border-2 border-brand-500 dark:border-brand-500/50 rounded-xl p-4 shadow-lg space-y-3">
+                                                            {/* Form Header with Close Button */}
+                                                            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
+                                                                <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Add New Link</h4>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setShowAddLinkForm(prev => ({ ...prev, [section.id]: false }));
+                                                                        // Clear form when closing
+                                                                        setNewLinkState(prev => ({ ...prev, [section.id]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '', browser: 'default' } }));
+                                                                    }}
+                                                                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded transition-colors"
+                                                                    title="Close form"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                                    </svg>
+                                                                </button>
+                                                            </div>
                                                             {/* Link Label & URL */}
                                                             <div className="grid grid-cols-2 gap-3">
                                                                 <div>
@@ -3376,9 +3437,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 </button>
                                                             </div>
                                                         </div>
+                                                        )}
                                                     </div>
                                                 </div>
-                                            ))}
+                                                );
+                                            })}
 
                                             {tab.sections.length === 0 && (
                                                 <div className="text-center py-8 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl text-slate-500 text-sm">
@@ -3390,10 +3453,32 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 ))
                             ) : (
                                 // Backward compatibility: Render sections without tabs
-                                editSections.map((section, index) => (
-                                    <div key={section.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm dark:shadow-black/20">
+                                editSections.map((section, index) => {
+                                    // Generate a color for visual identification based on section index
+                                    const colorIndex = index % 6;
+                                    const borderColors = [
+                                        'border-r-4 border-r-blue-500',
+                                        'border-r-4 border-r-green-500',
+                                        'border-r-4 border-r-purple-500',
+                                        'border-r-4 border-r-orange-500',
+                                        'border-r-4 border-r-pink-500',
+                                        'border-r-4 border-r-teal-500'
+                                    ];
+                                    const bgColors = [
+                                        'bg-blue-50 dark:bg-blue-900/10',
+                                        'bg-green-50 dark:bg-green-900/10',
+                                        'bg-purple-50 dark:bg-purple-900/10',
+                                        'bg-orange-50 dark:bg-orange-900/10',
+                                        'bg-pink-50 dark:bg-pink-900/10',
+                                        'bg-teal-50 dark:bg-teal-900/10'
+                                    ];
+                                    const sectionColorClass = borderColors[colorIndex];
+                                    const sectionBgClass = bgColors[colorIndex];
+                                    
+                                    return (
+                                    <div key={section.id} className={`bg-white dark:bg-slate-800 border border-l-2 border-t-2 border-b-2 border-slate-200 dark:border-slate-700 ${sectionColorClass} rounded-2xl overflow-hidden shadow-sm dark:shadow-black/20`}>
                                         {/* Section Header */}
-                                        <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 flex gap-2 items-center">
+                                        <div className={`p-4 border-b border-slate-200 dark:border-slate-700 ${sectionBgClass} flex gap-2 items-center`}>
                                             <div className="text-slate-400 dark:text-slate-500 font-mono text-sm">#{index + 1}</div>
                                             <input
                                                 type="text"
@@ -3475,7 +3560,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             <p className="text-xs text-slate-400 dark:text-slate-600">Links: {section.links?.length || 0}</p>
                                         </div>
                                     </div>
-                                ))
+                                    );
+                                })
                             )}
 
                             {editTabs.length === 0 && editSections.length === 0 && (
