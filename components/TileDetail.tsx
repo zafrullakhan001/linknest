@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, POPULAR_EMOJIS, LINK_EMOJIS, ALL_LINK_EMOJIS } from '../types';
 import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
 import { authService, UserListItem } from '../services/authService';
@@ -186,6 +187,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     
     // Available browsers from BrowserLauncher API
     const [availableBrowsers, setAvailableBrowsers] = useState<string[]>([]);
+    
+    // State for browser selection menu (keyed by link ID)
+    const [showBrowserMenu, setShowBrowserMenu] = useState<Record<string, boolean>>({});
+    const [browserMenuPosition, setBrowserMenuPosition] = useState<Record<string, { x: number; y: number }>>({});
+    const [saveBrowserForLink, setSaveBrowserForLink] = useState<Record<string, boolean>>({});
+    const [selectedBrowserForLink, setSelectedBrowserForLink] = useState<Record<string, string>>({});
     
     // State for link emoji picker visibility (keyed by section ID or link ID)
     const [showLinkEmojiPicker, setShowLinkEmojiPicker] = useState<Record<string, boolean>>({});
@@ -418,6 +425,83 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             setAvailableBrowsers([]);
         }
     }, [settings.browser_specific_links_enabled]);
+
+    // Close browser menu on ESC key
+    useEffect(() => {
+        const handleEscape = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                setShowBrowserMenu({});
+                setSaveBrowserForLink({});
+                setSelectedBrowserForLink({});
+            }
+        };
+        document.addEventListener('keydown', handleEscape);
+        return () => document.removeEventListener('keydown', handleEscape);
+    }, []);
+
+    // Function to update link browser for admin users
+    const handleUpdateLinkBrowser = async (linkId: string, browserId: string) => {
+        if (!isAuthenticated || !tile.canEdit) {
+            alert('You do not have permission to update link settings.');
+            return;
+        }
+
+        // Find the link in the tile structure
+        const findAndUpdateLink = (tabs: Tab[] | undefined, sections: LinkSection[] | undefined): Tile | null => {
+            if (tabs && tabs.length > 0) {
+                for (const tab of tabs) {
+                    for (const section of tab.sections) {
+                        const linkIndex = section.links.findIndex(l => l.id === linkId);
+                        if (linkIndex !== -1) {
+                            const updatedLinks = [...section.links];
+                            updatedLinks[linkIndex] = {
+                                ...updatedLinks[linkIndex],
+                                browser: browserId && browserId !== 'default' ? browserId : undefined
+                            };
+                            const updatedSections = tab.sections.map(s => 
+                                s.id === section.id ? { ...s, links: updatedLinks } : s
+                            );
+                            const updatedTabs = tabs.map(t => 
+                                t.id === tab.id ? { ...t, sections: updatedSections } : t
+                            );
+                            return {
+                                ...tile,
+                                tabs: updatedTabs
+                            };
+                        }
+                    }
+                }
+            } else if (sections && sections.length > 0) {
+                for (const section of sections) {
+                    const linkIndex = section.links.findIndex(l => l.id === linkId);
+                    if (linkIndex !== -1) {
+                        const updatedLinks = [...section.links];
+                        updatedLinks[linkIndex] = {
+                            ...updatedLinks[linkIndex],
+                            browser: browserId && browserId !== 'default' ? browserId : undefined
+                        };
+                        const updatedSections = sections.map(s => 
+                            s.id === section.id ? { ...s, links: updatedLinks } : s
+                        );
+                        return {
+                            ...tile,
+                            sections: updatedSections
+                        };
+                    }
+                }
+            }
+            return null;
+        };
+
+        const updatedTile = findAndUpdateLink(tile.tabs, tile.sections);
+        if (updatedTile) {
+            const updatedTiles = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
+            onUpdateTiles(updatedTiles);
+            setShowBrowserMenu(prev => ({ ...prev, [linkId]: false }));
+            setSaveBrowserForLink(prev => ({ ...prev, [linkId]: false }));
+            setSelectedBrowserForLink(prev => ({ ...prev, [linkId]: '' }));
+        }
+    };
 
     const handleSaveChanges = () => {
         console.log('=== SAVE CHANGES START ===');
@@ -1377,6 +1461,80 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }));
     };
 
+    // Helper function to format browser name for display
+    const formatBrowserName = (browserId: string | null | undefined): string => {
+        if (!browserId || browserId === 'default') return '';
+        return browserId
+            .replace(/-/g, ' ')
+            .replace(/\b\w/g, (l) => l.toUpperCase())
+            .replace('Wsl', '(WSL)')
+            .trim();
+    };
+
+    // Helper function to normalize browser ID (map aliases to full IDs)
+    // IMPORTANT: We should NOT remove -wsl suffix - the extension's normalizeBrowserId handles that
+    // The extension maps: edge-stable-wsl -> edge-stable (WSL), edge-stable -> edge-stable-local (Local)
+    // So we must pass WSL browsers WITH the -wsl suffix to the extension
+    const normalizeBrowserId = (browserId: string): string => {
+        if (!browserId) return browserId;
+        
+        const normalized = browserId.toLowerCase().trim();
+        
+        // DO NOT remove -wsl suffix - pass it to the extension as-is
+        // The extension's normalizeBrowserId will correctly map:
+        // - edge-stable-wsl -> edge-stable (WSL browser)
+        // - edge-stable -> edge-stable-local (Local browser)
+        
+        // Only handle short aliases that need mapping
+        const shortAliases: Record<string, string> = {
+            'edge': 'edge-stable-local',
+            'chrome': 'chrome-stable-local'
+        };
+        
+        if (shortAliases[normalized]) {
+            return shortAliases[normalized];
+        }
+        
+        // Return as-is - let the extension's normalizeBrowserId handle all WSL/local mapping
+        // This is critical: WSL browsers must keep their -wsl suffix
+        return browserId;
+    };
+
+    // Function to open link in a specific browser
+    const openLinkInBrowser = (url: string, browserId: string) => {
+        if (typeof window !== 'undefined' && (window as any).BrowserLauncher) {
+            const BrowserLauncher = (window as any).BrowserLauncher;
+            
+            // Configure extension ID if provided
+            if (settings.browser_extension_id) {
+                BrowserLauncher.setExtensionId(settings.browser_extension_id);
+            }
+            
+            // Normalize browser ID before opening
+            const normalizedBrowserId = normalizeBrowserId(browserId);
+            console.log('Opening link in browser:', url, 'browserId:', browserId, 'normalized:', normalizedBrowserId);
+            
+            // Open link in specified browser
+            BrowserLauncher.open(url, normalizedBrowserId, { fallback: true }, (response: any) => {
+                if (response && response.success !== false) {
+                    console.log('Link opened successfully in browser:', normalizedBrowserId);
+                } else {
+                    // Fallback to default behavior if extension fails
+                    console.warn('Browser extension failed, falling back to default:', response?.error);
+                    window.open(url, '_blank', 'noopener,noreferrer');
+                }
+            }).catch((error: any) => {
+                // Fallback to default behavior on error
+                console.warn('Browser extension error, falling back to default:', error);
+                window.open(url, '_blank', 'noopener,noreferrer');
+            });
+        } else {
+            // Fallback to default behavior if BrowserLauncher is not available
+            console.warn('BrowserLauncher not available, using default browser');
+            window.open(url, '_blank', 'noopener,noreferrer');
+        }
+    };
+
     const handleCopy = async (e: React.MouseEvent, text: string, id: string) => {
         e.preventDefault();
         e.stopPropagation();
@@ -1897,44 +2055,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         className="flex-1 min-w-0 block focus:outline-none"
                                                         data-browser={settings.browser_specific_links_enabled === '1' && link.browser && link.browser !== 'default' ? link.browser : undefined}
                                                         onClick={(e) => {
-                                                            // Check if browser-specific link opening is enabled and link has a browser configured
+                                                            // If browser extension is enabled and a browser is configured (not default), open directly
                                                             if (settings.browser_specific_links_enabled === '1' && link.browser && link.browser !== 'default') {
-                                                                // Check if BrowserLauncher is available
                                                                 if (typeof window !== 'undefined' && (window as any).BrowserLauncher) {
                                                                     e.preventDefault();
                                                                     e.stopPropagation();
-                                                                    
-                                                                    const browserId = link.browser;
-                                                                    const BrowserLauncher = (window as any).BrowserLauncher;
-                                                                    
-                                                                    console.log('Opening link in browser:', link.url, 'browser:', browserId);
-                                                                    
-                                                                    // Configure extension ID if provided
-                                                                    if (settings.browser_extension_id) {
-                                                                        BrowserLauncher.setExtensionId(settings.browser_extension_id);
-                                                                    }
-                                                                    
-                                                                    // Open link in specified browser
-                                                                    BrowserLauncher.open(link.url, browserId, { fallback: true }, (response: any) => {
-                                                                        console.log('BrowserLauncher response:', response);
-                                                                        if (response && response.success !== false) {
-                                                                            // Success - link should have opened in the specified browser
-                                                                            console.log('Link opened successfully in browser:', browserId);
-                                                                        } else {
-                                                                            // Fallback to default behavior if extension fails
-                                                                            console.warn('Browser extension failed, falling back to default:', response?.error);
-                                                                            window.open(link.url, '_blank', 'noopener,noreferrer');
-                                                                        }
-                                                                    }).catch((error: any) => {
-                                                                        // Fallback to default behavior on error
-                                                                        console.warn('Browser extension error, falling back to default:', error);
-                                                                        window.open(link.url, '_blank', 'noopener,noreferrer');
-                                                                    });
-                                                                } else {
-                                                                    console.warn('BrowserLauncher not available, using default browser');
+                                                                    openLinkInBrowser(link.url, link.browser);
                                                                 }
                                                                 // If BrowserLauncher is not available, allow default behavior
                                                             }
+                                                            // If no browser is set or set to default, allow normal link behavior (opens in default browser)
+                                                            // Menu will only appear when clicking the browser button
                                                         }}
                                                     >
                                                         <h4 
@@ -1948,29 +2079,160 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         >
                                                             {link.label}
                                                         </h4>
-                                                        <div className="linknest-content-link-domain flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors mt-0.5">
-                                                            <span className="break-words">
-                                                                {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
-                                                            </span>
-                                                            {link.visibility && link.visibility !== 'public' && (
-                                                                <span
-                                                                    className={`text-xs px-1.5 py-0.5 rounded-md font-medium ${link.visibility === 'authenticated'
-                                                                        ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400'
-                                                                        : 'bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400'
-                                                                        }`}
-                                                                    title={link.visibility === 'authenticated' ? 'Authenticated users only' : 'Private - specific users only'}
-                                                                >
-                                                                    {link.visibility === 'authenticated' ? '🔒' : '🔐'}
+                                                        <div className="flex flex-col gap-0.5 mt-0.5">
+                                                            <div className="linknest-content-link-domain flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors">
+                                                                <span className="break-words">
+                                                                    {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
                                                                 </span>
-                                                            )}
-                                                            {isBroken && (
-                                                                <span className="text-red-500 text-xs font-medium flex items-center gap-1">
-                                                                    <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                                                                    Broken
-                                                                </span>
+                                                                {link.visibility && link.visibility !== 'public' && (
+                                                                    <span
+                                                                        className={`text-xs px-1.5 py-0.5 rounded-md font-medium ${link.visibility === 'authenticated'
+                                                                            ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400'
+                                                                            : 'bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400'
+                                                                            }`}
+                                                                        title={link.visibility === 'authenticated' ? 'Authenticated users only' : 'Private - specific users only'}
+                                                                    >
+                                                                        {link.visibility === 'authenticated' ? '🔒' : '🔐'}
+                                                                    </span>
+                                                                )}
+                                                                {isBroken && (
+                                                                    <span className="text-red-500 text-xs font-medium flex items-center gap-1">
+                                                                        <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                                                                        Broken
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            {settings.browser_specific_links_enabled === '1' && link.browser && link.browser !== 'default' && (
+                                                                <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors">
+                                                                    ({formatBrowserName(link.browser)} browser)
+                                                                </div>
                                                             )}
                                                         </div>
                                                     </a>
+
+                                                    {/* Browser Selection Menu - Rendered via Portal */}
+                                                    {showBrowserMenu[link.id] && settings.browser_specific_links_enabled === '1' && typeof document !== 'undefined' && createPortal(
+                                                        <>
+                                                            <div 
+                                                                className="fixed inset-0 z-[99998] bg-transparent" 
+                                                                onClick={() => {
+                                                                    setShowBrowserMenu(prev => ({ ...prev, [link.id]: false }));
+                                                                    setSaveBrowserForLink(prev => ({ ...prev, [link.id]: false }));
+                                                                    setSelectedBrowserForLink(prev => ({ ...prev, [link.id]: '' }));
+                                                                }}
+                                                                style={{ pointerEvents: 'auto' }}
+                                                            ></div>
+                                                            <div 
+                                                                className="fixed z-[99999] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl max-h-[300px] overflow-y-auto"
+                                                                style={{
+                                                                    top: `${browserMenuPosition[link.id]?.y || 0}px`,
+                                                                    left: `${browserMenuPosition[link.id]?.x || 0}px`,
+                                                                    width: '180px',
+                                                                    maxWidth: '180px',
+                                                                    pointerEvents: 'auto',
+                                                                    position: 'fixed'
+                                                                }}
+                                                            >
+                                                                <div className="py-1">
+                                                                    <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-2 py-1.5 mb-0.5">
+                                                                        Open in Browser
+                                                                    </div>
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.preventDefault();
+                                                                            e.stopPropagation();
+                                                                            setSelectedBrowserForLink(prev => ({ ...prev, [link.id]: 'default' }));
+                                                                            if (!saveBrowserForLink[link.id]) {
+                                                                                // If not saving, just open the link
+                                                                                setShowBrowserMenu(prev => ({ ...prev, [link.id]: false }));
+                                                                                window.open(link.url, '_blank', 'noopener,noreferrer');
+                                                                            }
+                                                                        }}
+                                                                        className={`w-full text-left px-2 py-1 text-xs rounded transition-colors flex items-center gap-1.5 ${
+                                                                            (!link.browser || link.browser === 'default') && !selectedBrowserForLink[link.id]
+                                                                                ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 font-medium'
+                                                                                : selectedBrowserForLink[link.id] === 'default'
+                                                                                ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 font-medium'
+                                                                                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                                                        }`}
+                                                                    >
+                                                                        <span className="text-xs">🌐</span>
+                                                                        <span>Default Browser</span>
+                                                                    </button>
+                                                                    {availableBrowsers.length > 0 ? (
+                                                                        availableBrowsers.map((browserId) => {
+                                                                            const displayName = formatBrowserName(browserId);
+                                                                            const isSelected = link.browser === browserId;
+                                                                            const isCurrentlySelected = selectedBrowserForLink[link.id] === browserId || (!selectedBrowserForLink[link.id] && isSelected);
+                                                                            return (
+                                                                                <button
+                                                                                    key={browserId}
+                                                                                    onClick={(e) => {
+                                                                                        e.preventDefault();
+                                                                                        e.stopPropagation();
+                                                                                        setSelectedBrowserForLink(prev => ({ ...prev, [link.id]: browserId }));
+                                                                                        if (!saveBrowserForLink[link.id]) {
+                                                                                            // If not saving, just open the link
+                                                                                            setShowBrowserMenu(prev => ({ ...prev, [link.id]: false }));
+                                                                                            openLinkInBrowser(link.url, browserId);
+                                                                                        }
+                                                                                    }}
+                                                                                    className={`w-full text-left px-2 py-1 text-xs rounded transition-colors flex items-center gap-1.5 ${
+                                                                                        isCurrentlySelected
+                                                                                            ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 font-medium'
+                                                                                            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                                                                    }`}
+                                                                                >
+                                                                                    <span className="text-xs">{isCurrentlySelected ? '✓' : '○'}</span>
+                                                                                    <span className="truncate">{displayName || browserId}</span>
+                                                                                </button>
+                                                                            );
+                                                                        })
+                                                                    ) : (
+                                                                        <div className="px-2 py-1 text-[10px] text-slate-500 dark:text-slate-400">
+                                                                            No browsers available
+                                                                        </div>
+                                                                    )}
+                                                                    {/* Admin controls */}
+                                                                    {isAuthenticated && tile.canEdit && (
+                                                                        <>
+                                                                            <div className="border-t border-slate-200 dark:border-slate-700 my-1"></div>
+                                                                            <label className="flex items-center gap-2 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-300 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded">
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    checked={saveBrowserForLink[link.id] || false}
+                                                                                    onChange={(e) => {
+                                                                                        setSaveBrowserForLink(prev => ({ ...prev, [link.id]: e.target.checked }));
+                                                                                        if (!e.target.checked) {
+                                                                                            setSelectedBrowserForLink(prev => ({ ...prev, [link.id]: '' }));
+                                                                                        } else {
+                                                                                            setSelectedBrowserForLink(prev => ({ ...prev, [link.id]: link.browser || 'default' }));
+                                                                                        }
+                                                                                    }}
+                                                                                    className="w-3 h-3 text-brand-600 rounded focus:ring-brand-500"
+                                                                                />
+                                                                                <span>Save as default</span>
+                                                                            </label>
+                                                                            {saveBrowserForLink[link.id] && (
+                                                                                <button
+                                                                                    onClick={(e) => {
+                                                                                        e.preventDefault();
+                                                                                        e.stopPropagation();
+                                                                                        const browserToSave = selectedBrowserForLink[link.id] || link.browser || 'default';
+                                                                                        handleUpdateLinkBrowser(link.id, browserToSave);
+                                                                                    }}
+                                                                                    className="w-full mx-2 mb-1 px-2 py-1.5 text-xs font-medium text-white bg-brand-600 hover:bg-brand-700 rounded transition-colors"
+                                                                                >
+                                                                                    Save
+                                                                                </button>
+                                                                            )}
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </>,
+                                                        document.body
+                                                    )}
 
                                                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 px-1">
                                                         {/* Re-check button */}
@@ -2013,6 +2275,55 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 </svg>
                                                             )}
                                                         </button>
+
+                                                        {/* Browser selection button - only show when extension is enabled */}
+                                                        {settings.browser_specific_links_enabled === '1' && typeof window !== 'undefined' && (window as any).BrowserLauncher && (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.preventDefault();
+                                                                    e.stopPropagation();
+                                                                    
+                                                                    // Show browser selection menu with smart positioning
+                                                                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                                                    const menuWidth = 180;
+                                                                    const menuHeight = Math.min(300, (availableBrowsers.length + 1) * 28 + 40);
+                                                                    const spaceBelow = window.innerHeight - rect.bottom;
+                                                                    const spaceAbove = rect.top;
+                                                                    const spaceRight = window.innerWidth - rect.right;
+                                                                    const spaceLeft = rect.left;
+                                                                    
+                                                                    // Calculate vertical position - align with button top
+                                                                    let menuY = rect.top;
+                                                                    // If not enough space below, align with button bottom
+                                                                    if (spaceBelow < menuHeight && spaceAbove > spaceBelow) {
+                                                                        menuY = rect.bottom - menuHeight;
+                                                                    }
+                                                                    menuY = Math.max(10, Math.min(menuY, window.innerHeight - menuHeight - 10));
+                                                                    
+                                                                    // Calculate horizontal position - prefer right side of button, fallback to left
+                                                                    let menuX = rect.right + 8;
+                                                                    if (spaceRight < menuWidth && spaceLeft > spaceRight) {
+                                                                        menuX = rect.left - menuWidth - 8;
+                                                                    }
+                                                                    menuX = Math.max(10, Math.min(menuX, window.innerWidth - menuWidth - 10));
+                                                                    
+                                                                    setBrowserMenuPosition(prev => ({
+                                                                        ...prev,
+                                                                        [link.id]: { 
+                                                                            x: menuX,
+                                                                            y: menuY
+                                                                        }
+                                                                    }));
+                                                                    setShowBrowserMenu(prev => ({ ...prev, [link.id]: true }));
+                                                                }}
+                                                                className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all"
+                                                                title="Open in browser"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                    <path fillRule="evenodd" d="M4.25 2A2.25 2.25 0 002 4.25v11.5A2.25 2.25 0 004.25 18h11.5A2.25 2.25 0 0018 15.75V4.25A2.25 2.25 0 0015.75 2H4.25zM9 8a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1zm3 0a1 1 0 011-1h.01a1 1 0 110 2H13a1 1 0 01-1-1zm-3 4a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1zm3 0a1 1 0 011-1h.01a1 1 0 110 2H13a1 1 0 01-1-1z" clipRule="evenodd" />
+                                                                </svg>
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </div>
                                             );
