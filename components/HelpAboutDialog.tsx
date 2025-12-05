@@ -113,9 +113,11 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                   <ol className="list-decimal list-inside space-y-2 ml-2">
                     <li><strong>Sign In:</strong> Click "Sign In" in the navigation bar and create an account or log in</li>
                     <li><strong>Create Space:</strong> Click the "New Space" button on the main page</li>
+                    <li><strong>Choose Type:</strong> Select between a "Space" (for organizing links) or "Hyperlink" (for quick external links)</li>
                     <li><strong>Customize:</strong> Choose an emoji, color theme, title, and description for your space</li>
                     <li><strong>Add Links:</strong> Click on your tile to open it, then add links to sections</li>
                     <li><strong>Organize:</strong> Create tabs and sections to organize your links logically</li>
+                    <li><strong>Optional:</strong> Set scheduling dates, browser preferences, or visibility settings</li>
                   </ol>
                 </div>
               </section>
@@ -131,7 +133,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Tiles & Spaces</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Create visual tiles for different topics. Each tile can contain multiple tabs and sections to organize your links.
+                      Create visual tiles for different topics. Each tile can contain multiple tabs and sections to organize your links. Tiles can also be hyperlinks that redirect to external URLs.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -158,6 +160,52 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                       Set tiles, tabs, sections, and links as public, authenticated-only, or private with user-specific access.
                     </p>
                   </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Scheduling</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Schedule tiles and tabs to appear or expire at specific dates and times. Perfect for time-sensitive content and announcements.
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path d="M3 4a2 2 0 00-2 2v1.161l8.441 4.221a1.25 1.25 0 001.118 0L19 7.162V6a2 2 0 00-2-2H3z" />
+                    <path d="M19 8.839l-7.77 3.885a2.75 2.75 0 01-2.46 0L1 8.839V14a2 2 0 002 2h14a2 2 0 002-2V8.839z" />
+                  </svg>
+                  Browser Integration
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p>
+                    LinkNest integrates with <strong>Browser Launcher Pro</strong> extension to open links in specific browsers. This is perfect for testing, development, or organizing links by browser.
+                  </p>
+                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-brand-900 dark:text-brand-100">Browser-Specific Links:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Set a default browser for an entire tile</li>
+                      <li>Override browser per individual link</li>
+                      <li>Support for Chrome, Edge, Firefox, Opera, Brave (stable, beta, dev versions)</li>
+                      <li>WSL browser support for development environments</li>
+                      <li>Automatic fallback to default browser if extension is unavailable</li>
+                    </ul>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-slate-900 dark:text-white">Setup Instructions:</p>
+                    <ol className="list-decimal list-inside space-y-1 ml-2 text-sm">
+                      <li>Install the Browser Launcher Pro extension in your browser</li>
+                      <li>Go to Admin Panel → Browser Extension tab</li>
+                      <li>Configure your extension ID (usually auto-detected)</li>
+                      <li>Enable "Browser-Specific Links" in settings</li>
+                      <li>Select browsers for your tiles or individual links</li>
+                    </ol>
+                  </div>
+                  <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
+                    <p className="text-sm text-amber-800 dark:text-amber-200">
+                      <strong>Note:</strong> Browser integration requires the Browser Launcher Pro extension. Links will open normally in your default browser if the extension is not installed or enabled.
+                    </p>
+                  </div>
                 </div>
               </section>
 
@@ -174,7 +222,10 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     <li>Favorite frequently used tiles for quick access</li>
                     <li>Organize related tiles into categories</li>
                     <li>Use tabs within tiles to group related links</li>
-                    <li>Set expiration dates for time-sensitive links</li>
+                    <li>Create hyperlink tiles for quick access to external resources</li>
+                    <li>Schedule tiles and tabs to appear or expire automatically</li>
+                    <li>Set browser preferences per tile or link for testing workflows</li>
+                    <li>Hold Ctrl/Cmd while clicking links to override browser settings</li>
                     <li>Export and import spaces to share with others</li>
                     <li>Use the recycle bin to recover accidentally deleted tiles</li>
                     <li>Archive old tiles to keep your workspace clean</li>
@@ -204,7 +255,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                 <p className="text-slate-700 dark:text-slate-300">
                   LinkNest helps you create beautiful, organized landing pages for your important links. 
                   Organize links into visual tiles, customize their appearance, and share them with your team or make them public. 
-                  With features like link health monitoring and flexible visibility controls, 
+                  With features like browser integration, scheduling, link health monitoring, and flexible visibility controls, 
                   LinkNest makes managing and sharing links simple and elegant.
                 </p>
               </section>
@@ -247,7 +298,11 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     'Export/Import',
                     'Dark Mode',
                     'Responsive Design',
-                    'Guest Access Mode'
+                    'Guest Access Mode',
+                    'Browser Integration',
+                    'Hyperlink Tiles',
+                    'Scheduling & Time-based Content',
+                    'Tab & Section Organization'
                   ].map((feature, index) => (
                     <div key={index} className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-brand-600 dark:text-brand-400 flex-shrink-0">

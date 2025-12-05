@@ -842,6 +842,206 @@ export const TileGrid: React.FC<TileGridProps> = ({
   // Emoji Picker State
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
+  // Modal drag and resize state
+  const [modalPosition, setModalPosition] = useState({ x: 0, y: 0 });
+  const [modalSize, setModalSize] = useState({ width: 0, height: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
+  const modalPositionRef = useRef({ x: 0, y: 0 });
+  const modalSizeRef = useRef({ width: 0, height: 0 });
+  const animationFrameRef = useRef<number | null>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Initialize modal size when it opens
+  useEffect(() => {
+    if (isModalOpen) {
+      // Use a timeout to ensure the modal is rendered before measuring
+      const timer = setTimeout(() => {
+        if (modalRef.current) {
+          const rect = modalRef.current.getBoundingClientRect();
+          if (modalSize.width === 0 && modalSize.height === 0) {
+            // Set default size if not set
+            const defaultWidth = Math.min(600, window.innerWidth - 40);
+            const defaultHeight = Math.min(700, window.innerHeight - 40);
+            const newSize = { width: defaultWidth, height: defaultHeight };
+            setModalSize(newSize);
+            modalSizeRef.current = newSize;
+            // Center the modal
+            const centerX = (window.innerWidth - defaultWidth) / 2;
+            const centerY = (window.innerHeight - defaultHeight) / 2;
+            const newPos = { x: centerX, y: centerY };
+            setModalPosition(newPos);
+            modalPositionRef.current = newPos;
+          }
+        }
+      }, 10);
+      return () => clearTimeout(timer);
+    } else {
+      // Reset position and size when modal closes
+      setModalPosition({ x: 0, y: 0 });
+      setModalSize({ width: 0, height: 0 });
+      modalPositionRef.current = { x: 0, y: 0 };
+      modalSizeRef.current = { width: 0, height: 0 };
+    }
+  }, [isModalOpen, modalSize.width, modalSize.height]);
+
+  // Sync refs when state changes (when not dragging/resizing)
+  useEffect(() => {
+    if (!isDragging && !isResizing) {
+      modalPositionRef.current = modalPosition;
+      modalSizeRef.current = modalSize;
+    }
+  }, [modalPosition, modalSize, isDragging, isResizing]);
+
+  // Drag handlers - optimized for smooth performance
+  const handleDragStart = (e: React.MouseEvent) => {
+    // Don't start dragging if clicking on interactive elements
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'BUTTON' || target.closest('button') || target.closest('input') || target.closest('textarea')) {
+      return;
+    }
+    e.stopPropagation();
+    if (modalRef.current) {
+      setIsDragging(true);
+      const rect = modalRef.current.getBoundingClientRect();
+      dragStartRef.current = {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+      };
+      modalPositionRef.current = { x: modalPosition.x, y: modalPosition.y };
+      modalSizeRef.current = { width: modalSize.width, height: modalSize.height };
+    }
+  };
+
+  const handleDrag = useCallback((e: MouseEvent) => {
+    if (!isDragging || !modalRef.current) return;
+    
+    // Cancel any pending animation frame
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+    
+    // Use requestAnimationFrame for smooth updates
+    animationFrameRef.current = requestAnimationFrame(() => {
+      if (!modalRef.current) return;
+      
+      const newX = e.clientX - dragStartRef.current.x;
+      const newY = e.clientY - dragStartRef.current.y;
+      
+      // Constrain to viewport
+      const maxX = window.innerWidth - modalSizeRef.current.width;
+      const maxY = window.innerHeight - modalSizeRef.current.height;
+      
+      const constrainedX = Math.max(0, Math.min(newX, maxX));
+      const constrainedY = Math.max(0, Math.min(newY, maxY));
+      
+      // Update ref immediately for next frame
+      modalPositionRef.current = { x: constrainedX, y: constrainedY };
+      
+      // Update DOM directly for smooth performance
+      modalRef.current.style.left = `${constrainedX}px`;
+      modalRef.current.style.top = `${constrainedY}px`;
+      modalRef.current.style.position = 'absolute';
+    });
+  }, [isDragging]);
+
+  const handleDragEnd = useCallback(() => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    // Update state with final position
+    setModalPosition(modalPositionRef.current);
+    setIsDragging(false);
+  }, []);
+
+  // Resize handlers - optimized for smooth performance
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (modalRef.current) {
+      setIsResizing(true);
+      const rect = modalRef.current.getBoundingClientRect();
+      resizeStartRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        width: rect.width,
+        height: rect.height
+      };
+      modalPositionRef.current = { x: modalPosition.x, y: modalPosition.y };
+    }
+  };
+
+  const handleResize = useCallback((e: MouseEvent) => {
+    if (!isResizing || !modalRef.current) return;
+    
+    // Cancel any pending animation frame
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+    
+    // Use requestAnimationFrame for smooth updates
+    animationFrameRef.current = requestAnimationFrame(() => {
+      if (!modalRef.current) return;
+      
+      const deltaX = e.clientX - resizeStartRef.current.x;
+      const deltaY = e.clientY - resizeStartRef.current.y;
+      
+      const minWidth = 400;
+      const minHeight = 300;
+      const maxWidth = window.innerWidth - modalPositionRef.current.x;
+      const maxHeight = window.innerHeight - modalPositionRef.current.y;
+      
+      const newWidth = Math.max(minWidth, Math.min(resizeStartRef.current.width + deltaX, maxWidth));
+      const newHeight = Math.max(minHeight, Math.min(resizeStartRef.current.height + deltaY, maxHeight));
+      
+      // Update ref immediately
+      modalSizeRef.current = { width: newWidth, height: newHeight };
+      
+      // Update DOM directly for smooth performance
+      modalRef.current.style.width = `${newWidth}px`;
+      modalRef.current.style.height = `${newHeight}px`;
+    });
+  }, [isResizing]);
+
+  const handleResizeEnd = useCallback(() => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    // Update state with final size
+    setModalSize(modalSizeRef.current);
+    setIsResizing(false);
+  }, []);
+
+  // Global mouse event listeners for drag and resize
+  useEffect(() => {
+    if (isDragging || isResizing) {
+      // Prevent text selection during drag/resize
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = isDragging ? 'move' : 'nwse-resize';
+      
+      document.addEventListener('mousemove', isDragging ? handleDrag : handleResize);
+      document.addEventListener('mouseup', isDragging ? handleDragEnd : handleResizeEnd);
+      return () => {
+        document.removeEventListener('mousemove', isDragging ? handleDrag : handleResize);
+        document.removeEventListener('mouseup', isDragging ? handleDragEnd : handleResizeEnd);
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+      };
+    }
+  }, [isDragging, isResizing, handleDrag, handleResize, handleDragEnd, handleResizeEnd]);
+
+  // Cleanup animation frames on unmount or modal close
+  useEffect(() => {
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, []);
 
   // Category order state
   const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
@@ -2843,17 +3043,35 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
       {/* Compact Add Tile Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/70 dark:bg-slate-900/90 backdrop-blur-md" onClick={() => setIsModalOpen(false)}></div>
-          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/70 dark:bg-slate-900/90 backdrop-blur-md z-[9998]" onClick={() => setIsModalOpen(false)}></div>
+          <div
+            ref={modalRef}
+            className={`bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 overflow-hidden flex flex-col z-[9999] ${isDragging ? 'cursor-move' : ''} ${isDragging || isResizing ? 'will-change-transform' : ''}`}
+            style={{
+              width: modalSize.width > 0 ? `${modalSize.width}px` : '600px',
+              maxWidth: '90vw',
+              minWidth: '400px',
+              height: modalSize.height > 0 ? `${modalSize.height}px` : '700px',
+              maxHeight: '90vh',
+              minHeight: '300px',
+              left: modalPosition.x > 0 ? `${modalPosition.x}px` : 'auto',
+              top: modalPosition.y > 0 ? `${modalPosition.y}px` : 'auto',
+              position: modalPosition.x > 0 || modalPosition.y > 0 ? 'absolute' : 'relative',
+              transition: isDragging || isResizing ? 'none' : undefined
+            }}
+          >
+            <div 
+              className="flex items-center justify-between mb-6 cursor-move select-none"
+              onMouseDown={handleDragStart}
+            >
               <div>
                 <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">Create New Space</h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400">Organize your links</p>
               </div>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer relative z-[10000]"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
                   <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
@@ -2861,15 +3079,16 @@ export const TileGrid: React.FC<TileGridProps> = ({
               </button>
             </div>
 
-            <div className="space-y-4">
-              {/* Title */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Title</label>
-                <input
-                  type="text"
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  placeholder="e.g., Design Resources"
+            <div className="flex-1 overflow-y-auto pr-2 -mr-2">
+              <div className="space-y-4 pr-2">
+                {/* Title */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Title</label>
+                  <input
+                    type="text"
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    placeholder="e.g., Design Resources"
                   className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
                 />
               </div>
@@ -2981,8 +3200,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                       {/* Emoji Picker Popover */}
                       {showEmojiPicker && (
                         <>
-                          <div className="fixed inset-0 z-10" onClick={() => setShowEmojiPicker(false)}></div>
-                          <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-20 flex flex-col overflow-hidden">
+                          <div className="fixed inset-0 z-[10001]" onClick={() => setShowEmojiPicker(false)}></div>
+                          <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[10002] flex flex-col overflow-hidden">
                             <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
                               <input
                                 type="text"
@@ -3078,8 +3297,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                     {/* Emoji Picker Popover */}
                     {showEmojiPicker && (
                       <>
-                        <div className="fixed inset-0 z-10" onClick={() => setShowEmojiPicker(false)}></div>
-                        <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-20 flex flex-col overflow-hidden">
+                        <div className="fixed inset-0 z-[10001]" onClick={() => setShowEmojiPicker(false)}></div>
+                        <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[10002] flex flex-col overflow-hidden">
                           <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
                             <input
                               type="text"
@@ -3269,25 +3488,36 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 </div>
               )}
 
-              {/* Actions */}
-              <div className="pt-3 flex justify-end gap-2 border-t border-slate-200 dark:border-slate-700">
-                <button
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreateTile}
-                  disabled={
-                    !newTitle.trim() ||
-                    (tileType === 'space' && newVisibility === 'private' && newAllowedUsers.length === 0) ||
-                    (tileType === 'hyperlink' && !hyperlinkUrl.trim())
-                  }
-                  className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-brand-500/20 hover:shadow-lg hover:shadow-brand-500/30 hover:scale-105 active:scale-95"
-                >
-                  {tileType === 'hyperlink' ? 'Create Hyperlink' : 'Create Space'}
-                </button>
+                {/* Actions */}
+                <div className="pt-3 flex justify-end gap-2 border-t border-slate-200 dark:border-slate-700">
+                  <button
+                    onClick={() => setIsModalOpen(false)}
+                    className="px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreateTile}
+                    disabled={
+                      !newTitle.trim() ||
+                      (tileType === 'space' && newVisibility === 'private' && newAllowedUsers.length === 0) ||
+                      (tileType === 'hyperlink' && !hyperlinkUrl.trim())
+                    }
+                    className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-brand-500/20 hover:shadow-lg hover:shadow-brand-500/30 hover:scale-105 active:scale-95"
+                  >
+                    {tileType === 'hyperlink' ? 'Create Hyperlink' : 'Create Space'}
+                  </button>
+                </div>
+              </div>
+            </div>
+            {/* Resize Handle */}
+            <div
+              onMouseDown={handleResizeStart}
+              className={`absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize z-[10000] flex items-end justify-end ${isResizing ? 'bg-brand-500/20' : 'hover:bg-slate-200/50 dark:hover:bg-slate-700/50'}`}
+            >
+              <div className="w-4 h-4 relative">
+                <div className="absolute bottom-0 right-0 w-3 h-3 border-r-2 border-b-2 border-slate-400 dark:border-slate-500 rounded-br-lg"></div>
+                <div className="absolute bottom-1 right-1 w-2 h-2 border-r border-b border-slate-400 dark:border-slate-500 rounded-br"></div>
               </div>
             </div>
           </div>
@@ -3296,13 +3526,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
       {/* Edit Tile Modal */}
       {isEditModalOpen && editingTile && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/70 dark:bg-slate-900/90 backdrop-blur-md" onClick={() => {
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/70 dark:bg-slate-900/90 backdrop-blur-md z-[9998]" onClick={() => {
             setIsEditModalOpen(false);
             setEditingTile(null);
             resetForm();
           }}></div>
-          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto z-[9999]">
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">
@@ -3500,8 +3730,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                   {/* Emoji Picker Popover */}
                   {showEmojiPicker && (
                     <>
-                      <div className="fixed inset-0 z-10" onClick={() => setShowEmojiPicker(false)}></div>
-                      <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-20 flex flex-col overflow-hidden">
+                      <div className="fixed inset-0 z-[10001]" onClick={() => setShowEmojiPicker(false)}></div>
+                      <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[10002] flex flex-col overflow-hidden">
                         <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
                           <input
                             type="text"
@@ -3626,13 +3856,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
       {/* Category Scheduling Modal */}
       {editingCategorySchedule && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/70 dark:bg-slate-900/90 backdrop-blur-md" onClick={() => {
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/70 dark:bg-slate-900/90 backdrop-blur-md z-[9998]" onClick={() => {
             setEditingCategorySchedule(null);
             setCategoryVisibleFrom('');
             setCategoryExpiresAt('');
           }}></div>
-          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-md p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200">
+          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-md p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 z-[9999]">
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">Schedule Category</h2>
