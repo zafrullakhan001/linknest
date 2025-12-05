@@ -1,4 +1,4 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { Tile, Link } from './types';
 import { getTiles, saveTiles, createTile, deleteTile, cloneTile } from './services/storageService';
 import { settingsService } from './services/settingsService';
@@ -66,6 +66,28 @@ const AppContent: React.FC = () => {
     return saved ? saved === 'dark' : true; // Default to dark
   });
 
+  // Auto-switch preference (default: enabled)
+  const [autoSwitchEnabled, setAutoSwitchEnabled] = useState(() => {
+    const saved = localStorage.getItem('linknest_auto_switch');
+    return saved !== null ? saved === 'true' : true; // Default to enabled
+  });
+
+  // Ref to track current darkMode state for auto-switch logic
+  const darkModeRef = useRef(darkMode);
+  useEffect(() => {
+    darkModeRef.current = darkMode;
+  }, [darkMode]);
+
+  // Function to determine if it should be dark mode based on time
+  const shouldBeDarkMode = useCallback(() => {
+    const now = new Date();
+    const hour = now.getHours();
+    // Day mode: 7am-5pm (7:00 to 17:59) = light mode
+    // Night mode: 6pm-6am (18:00 to 6:59) = dark mode
+    return hour >= 18 || hour < 7;
+  }, []);
+
+  // Apply theme to DOM
   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add('dark');
@@ -75,6 +97,84 @@ const AppContent: React.FC = () => {
       localStorage.setItem('linknest_theme', 'light');
     }
   }, [darkMode]);
+
+  // Auto-switch theme based on time
+  useEffect(() => {
+    if (!autoSwitchEnabled) {
+      return; // Don't auto-switch if disabled
+    }
+
+    // Function to check and update theme
+    const checkAndUpdateTheme = () => {
+      const shouldBeDark = shouldBeDarkMode();
+      // Use ref to get current state to avoid stale closure
+      if (shouldBeDark !== darkModeRef.current) {
+        setDarkMode(shouldBeDark);
+      }
+    };
+
+    // Check immediately on mount
+    checkAndUpdateTheme();
+
+    // Calculate milliseconds until next hour change (at 7am or 6pm)
+    const getNextCheckTime = () => {
+      const now = new Date();
+      const hour = now.getHours();
+      let nextHour: number;
+      
+      if (hour < 7) {
+        // Before 7am, next change is at 7am
+        nextHour = 7;
+      } else if (hour < 18) {
+        // Between 7am and 6pm, next change is at 6pm
+        nextHour = 18;
+      } else {
+        // After 6pm, next change is at 7am next day
+        nextHour = 7;
+      }
+
+      const nextCheck = new Date();
+      nextCheck.setHours(nextHour, 0, 0, 0);
+      
+      // If we've passed the hour today, set for tomorrow
+      if (nextCheck <= now) {
+        nextCheck.setDate(nextCheck.getDate() + 1);
+      }
+
+      return nextCheck.getTime() - now.getTime();
+    };
+
+    // Set timeout for next hour change
+    let timeoutId: NodeJS.Timeout;
+    const scheduleNextCheck = () => {
+      const delay = getNextCheckTime();
+      timeoutId = setTimeout(() => {
+        checkAndUpdateTheme();
+        // Schedule subsequent checks every hour
+        const intervalId = setInterval(() => {
+          checkAndUpdateTheme();
+        }, 60 * 60 * 1000); // Check every hour
+
+        // Store interval ID to clear on cleanup
+        (timeoutId as any).intervalId = intervalId;
+      }, delay);
+    };
+
+    scheduleNextCheck();
+
+    // Also check periodically (every minute) as a backup
+    const intervalId = setInterval(() => {
+      checkAndUpdateTheme();
+    }, 60 * 1000); // Check every minute
+
+    return () => {
+      clearTimeout(timeoutId);
+      clearInterval(intervalId);
+      if ((timeoutId as any)?.intervalId) {
+        clearInterval((timeoutId as any).intervalId);
+      }
+    };
+  }, [autoSwitchEnabled, shouldBeDarkMode]);
 
   // Listen for style manager open event
   useEffect(() => {
@@ -90,7 +190,12 @@ const AppContent: React.FC = () => {
     };
   }, [user]);
 
-  const toggleTheme = () => setDarkMode(!darkMode);
+  const toggleTheme = () => {
+    // When user manually toggles, disable auto-switch
+    setAutoSwitchEnabled(false);
+    localStorage.setItem('linknest_auto_switch', 'false');
+    setDarkMode(!darkMode);
+  };
 
   // Check guest access setting
   const guestAccessEnabled = settings.guest_access_enabled !== '0'; // Default to enabled if not set
@@ -410,7 +515,7 @@ const AppContent: React.FC = () => {
           </div>
         </div>
       )}
-      <footer className="linknest-footer py-6 text-sm">
+      <footer className="linknest-footer py-6 text-sm relative">
         <div className="container mx-auto max-w-6xl-plus px-4">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex-1 min-w-0 flex flex-col gap-2">
@@ -425,10 +530,10 @@ const AppContent: React.FC = () => {
                 </div>
               )}
             </div>
-            <div className="flex-shrink-0">
-              <TimezoneDisplay />
-            </div>
           </div>
+        </div>
+        <div className="absolute right-4 bottom-6">
+          <TimezoneDisplay />
         </div>
       </footer>
       <AuthModal
