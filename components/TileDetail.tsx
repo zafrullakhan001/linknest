@@ -230,6 +230,29 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     // Add Link Form Visibility State
     const [showAddLinkForm, setShowAddLinkForm] = useState<Record<string, boolean>>({});
 
+    // Link Search State (for edit mode)
+    const [linkSearchTerm, setLinkSearchTerm] = useState('');
+    const [hoveredLinkId, setHoveredLinkId] = useState<string | null>(null);
+
+    // Auto-scroll to first matching link when search changes
+    useEffect(() => {
+        if (linkSearchTerm) {
+            const allLinks = editTabs.flatMap(tab => tab.sections.flatMap(section => section.links));
+            const firstMatch = allLinks.find(link =>
+                link.label.toLowerCase().includes(linkSearchTerm.toLowerCase()) ||
+                link.url.toLowerCase().includes(linkSearchTerm.toLowerCase())
+            );
+            if (firstMatch) {
+                setTimeout(() => {
+                    const element = document.getElementById(`link-${firstMatch.id}`);
+                    if (element) {
+                        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }, 100);
+            }
+        }
+    }, [linkSearchTerm, editTabs]);
+
     const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
 
     // Sync state when tile changes, but only when not editing to prevent losing unsaved changes.
@@ -2419,6 +2442,45 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             </button>
                         </div>
 
+                        {/* Link Search Box */}
+                        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-sm">
+                            <div className="relative">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                                </svg>
+                                <input
+                                    type="text"
+                                    value={linkSearchTerm}
+                                    onChange={(e) => setLinkSearchTerm(e.target.value)}
+                                    placeholder="Search links by name or URL..."
+                                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                />
+                                {linkSearchTerm && (
+                                    <button
+                                        onClick={() => setLinkSearchTerm('')}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded transition-colors"
+                                        title="Clear search"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                        </svg>
+                                    </button>
+                                )}
+                            </div>
+                            {linkSearchTerm && (
+                                <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                                    {(() => {
+                                        const allLinks = editTabs.flatMap(tab => tab.sections.flatMap(section => section.links));
+                                        const matchedLinks = allLinks.filter(link =>
+                                            link.label.toLowerCase().includes(linkSearchTerm.toLowerCase()) ||
+                                            link.url.toLowerCase().includes(linkSearchTerm.toLowerCase())
+                                        );
+                                        return `${matchedLinks.length} link${matchedLinks.length !== 1 ? 's' : ''} found`;
+                                    })()}
+                                </div>
+                            )}
+                        </div>
+
                         {/* Tab Navigation Bar - Sticky */}
                         {editTabs.length > 1 && (
                             <div className="sticky top-0 z-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
@@ -2813,8 +2875,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             {section.links.length === 0 && (
                                                                 <p className="text-slate-400 dark:text-slate-600 text-sm italic py-2">No links in this section yet.</p>
                                                             )}
-                                                            {section.links.map((link, linkIndex) => (
-                                                                editingLinkId === link.id ? (
+                                                            {section.links.map((link, linkIndex) => {
+                                                                const matchesSearch = linkSearchTerm
+                                                                    ? link.label.toLowerCase().includes(linkSearchTerm.toLowerCase()) ||
+                                                                      link.url.toLowerCase().includes(linkSearchTerm.toLowerCase())
+                                                                    : true;
+                                                                const isHovered = hoveredLinkId === link.id;
+                                                                
+                                                                return editingLinkId === link.id ? (
                                                                     // Edit Mode
                                                                     <div key={link.id} className="bg-white dark:bg-slate-800 border-2 border-brand-500 dark:border-brand-500/50 rounded-xl p-4 shadow-lg space-y-3">
                                                                         {/* Link Label & URL */}
@@ -3082,7 +3150,28 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     </div>
                                                                 ) : (
                                                                     // View Mode
-                                                                    <div key={link.id} className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
+                                                                    <div 
+                                                                        key={link.id} 
+                                                                        id={`link-${link.id}`}
+                                                                        className={`flex items-center gap-2 p-2 rounded-lg border transition-all duration-200 cursor-pointer ${
+                                                                            matchesSearch
+                                                                                ? linkSearchTerm
+                                                                                    ? isHovered
+                                                                                        ? 'bg-yellow-300 dark:bg-yellow-600/40 border-yellow-400 dark:border-yellow-500 shadow-lg scale-[1.02]'
+                                                                                        : 'bg-yellow-200 dark:bg-yellow-600/30 border-yellow-300 dark:border-yellow-500 hover:bg-yellow-300 dark:hover:bg-yellow-600/40 hover:border-yellow-400 dark:hover:border-yellow-500 hover:shadow-md'
+                                                                                    : isHovered
+                                                                                        ? 'bg-brand-50 dark:bg-brand-900/20 border-brand-300 dark:border-brand-700 shadow-md scale-[1.02]'
+                                                                                        : 'bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-brand-200 dark:hover:border-brand-700 hover:shadow-sm'
+                                                                                : 'bg-slate-50 dark:bg-slate-900 opacity-40 border-slate-100 dark:border-slate-800'
+                                                                        }`}
+                                                                        onMouseEnter={() => setHoveredLinkId(link.id)}
+                                                                        onMouseLeave={() => setHoveredLinkId(null)}
+                                                                        onClick={() => {
+                                                                            if (linkSearchTerm && matchesSearch) {
+                                                                                document.getElementById(`link-${link.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                                            }
+                                                                        }}
+                                                                    >
                                                                         {/* Link Reorder Buttons */}
                                                                         <div className="flex flex-col gap-0.5">
                                                                             <button
@@ -3110,12 +3199,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         <div className="flex-1 min-w-0">
                                                                             <div className="flex items-center gap-2">
                                                                                 <div 
-                                                                                    className={`text-sm font-medium truncate ${!link.textColor ? 'text-slate-700 dark:text-slate-200' : ''}`}
+                                                                                    className={`text-sm font-medium truncate transition-colors duration-200 ${
+                                                                                        !link.textColor 
+                                                                                            ? 'text-slate-700 dark:text-slate-200' 
+                                                                                            : isHovered
+                                                                                                ? ''
+                                                                                                : ''
+                                                                                    }`}
                                                                                     style={link.textColor ? { 
-                                                                                        color: link.textColor,
+                                                                                        color: isHovered ? link.textColor : link.textColor,
                                                                                         // Add text shadow for better visibility on light backgrounds
-                                                                                        textShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                                                                                        fontWeight: '600'
+                                                                                        textShadow: isHovered ? '0 2px 4px rgba(0,0,0,0.2)' : '0 1px 2px rgba(0,0,0,0.1)',
+                                                                                        fontWeight: isHovered ? '700' : '600',
+                                                                                        filter: isHovered ? 'brightness(1.1)' : 'none',
+                                                                                        transition: 'all 0.2s ease'
                                                                                     } : undefined}
                                                                                 >
                                                                                     {link.label}
@@ -3176,8 +3273,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             </button>
                                                                         </div>
                                                                     </div>
-                                                                )
-                                                            ))}
+                                                                );
+                                                            })}
                                                         </div>
 
                                                         {/* Add Link Button - Show when form is collapsed */}
