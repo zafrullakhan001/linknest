@@ -168,8 +168,10 @@ class CloneService {
                 '.htaccess',
                 '.gitignore',
                 'README.md',
+                'BUNDLE_DEPLOYMENT_GUIDE.md',
                 'bulk-import-template.csv',
-                'section-links-import-template.csv'
+                'section-links-import-template.csv',
+                'metadata.json'
             ];
             
             $copiedCount = 0;
@@ -187,7 +189,7 @@ class CloneService {
             $logs = $this->addLog("Copied $copiedCount root files", $logs);
             
             // Copy directories
-            $directories = ['api', 'components', 'contexts', 'services', 'src'];
+            $directories = ['api', 'components', 'contexts', 'services', 'src', 'docker', 'docs', 'land'];
             foreach ($directories as $dir) {
                 $srcDir = $realSourcePath . DIRECTORY_SEPARATOR . $dir;
                 if (is_dir($srcDir)) {

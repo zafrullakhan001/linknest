@@ -1,0 +1,156 @@
+{
+    "step": "complete",
+    "progress": 100,
+    "message": "Clone completed successfully!",
+    "logs": [
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Starting clone operation for: zafar3"
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Source: C:\\xampp\\htdocs\\linknest"
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Target: C:\\xampp\\htdocs\\zafar3"
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Target directory created"
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Copying root files..."
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Copied 21 root files"
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Copying api directory..."
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Copying components directory..."
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Copying contexts directory..."
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Copying services directory..."
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Copying src directory..."
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Copying docker directory..."
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Copying docs directory..."
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Copying land directory..."
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Created data directory"
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Created uploads directory"
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Created scripts directory"
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Copying scripts..."
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Copied 27 script files"
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Copying assets..."
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Copied 4 asset files"
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Copying database..."
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Database copied successfully"
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Removing clone records from target database..."
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Removed 3 clone record(s) from target database"
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Encrypting LDAP passwords..."
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "LDAP passwords encrypted"
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Creating .env file..."
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Created .env with VITE_BASE_PATH=\/zafar3"
+        },
+        {
+            "time": "2025-12-05 03:04:03",
+            "message": "Installing npm dependencies (this may take a few minutes)..."
+        },
+        {
+            "time": "2025-12-05 03:04:08",
+            "message": "npm install completed successfully"
+        },
+        {
+            "time": "2025-12-05 03:04:08",
+            "message": "Building application (this may take a few minutes)..."
+        },
+        {
+            "time": "2025-12-05 03:04:15",
+            "message": "Build completed successfully"
+        },
+        {
+            "time": "2025-12-05 03:04:17",
+            "message": "Cleaned up node_modules"
+        },
+        {
+            "time": "2025-12-05 03:04:17",
+            "message": "Creating deployment README..."
+        },
+        {
+            "time": "2025-12-05 03:04:17",
+            "message": "Clone completed successfully!"
+        },
+        {
+            "time": "2025-12-05 03:04:17",
+            "message": "URL: http:\/\/localhost\/zafar3\/"
+        }
+    ],
+    "timestamp": 1764900257
+}
