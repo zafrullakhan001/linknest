@@ -1378,7 +1378,7 @@ function handleCloneTile($tileId) {
     $newVisibility = 'public'; // Cloned tiles default to public
     $newAllowedUsers = null;
     
-    $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     
     if (!$insertStmt->execute([
         $newTileId,
@@ -1394,6 +1394,9 @@ function handleCloneTile($tileId) {
         $originalTile['is_hyperlink'] ?? 0,
         $originalTile['hyperlink_url'] ?? null,
         $originalTile['open_in_new_tab'] ?? 0,
+        $originalTile['visible_from'] ?? null,
+        $originalTile['expires_at'] ?? null,
+        $originalTile['browser'] ?? null,
         $newPosition,
         time()
     ])) {
@@ -1424,13 +1427,15 @@ function handleCloneTile($tileId) {
             
             foreach ($legacySections as $section) {
                 $newSectionId = uniqid('section_', true);
-                $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color) VALUES (?, ?, ?, ?, ?)');
+                $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
                 $sectionInsertStmt->execute([
                     $newSectionId,
                     $newTileId,
                     $defaultTabId,
                     $section['title'],
-                    isset($section['text_color']) ? $section['text_color'] : null
+                    isset($section['text_color']) ? $section['text_color'] : null,
+                    $section['visible_from'] ?? null,
+                    $section['expires_at'] ?? null
                 ]);
                 
                 // Clone links
@@ -1440,7 +1445,7 @@ function handleCloneTile($tileId) {
                 
                 foreach ($links as $link) {
                     $newLinkId = uniqid('link_', true);
-                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                     $linkInsertStmt->execute([
                         $newLinkId,
                         $newSectionId,
@@ -1452,21 +1457,25 @@ function handleCloneTile($tileId) {
                         null, // Reset allowed_users for cloned links
                         $link['notes'] ?? null,
                         $link['tooltip'] ?? null,
+                        $link['visible_from'] ?? null,
+                        $link['expires_at'] ?? null,
                         $link['browser'] ?? null
                     ]);
                 }
             }
         }
     } else {
-        // Clone tabs and their sections/links
-        foreach ($tabs as $tab) {
+            // Clone tabs and their sections/links
+            foreach ($tabs as $tab) {
             $newTabId = uniqid('tab_', true);
-            $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
+            $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?)');
             $tabInsertStmt->execute([
                 $newTabId,
                 $newTileId,
                 $tab['title'],
-                $tab['position'] ?? 0
+                $tab['position'] ?? 0,
+                $tab['visible_from'] ?? null,
+                $tab['expires_at'] ?? null
             ]);
             
             // Clone sections for this tab
@@ -1476,13 +1485,15 @@ function handleCloneTile($tileId) {
             
             foreach ($sections as $section) {
                 $newSectionId = uniqid('section_', true);
-                $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color) VALUES (?, ?, ?, ?, ?)');
+                $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
                 $sectionInsertStmt->execute([
                     $newSectionId,
                     $newTileId,
                     $newTabId,
                     $section['title'],
-                    isset($section['text_color']) ? $section['text_color'] : null
+                    isset($section['text_color']) ? $section['text_color'] : null,
+                    $section['visible_from'] ?? null,
+                    $section['expires_at'] ?? null
                 ]);
                 
                 // Clone links
@@ -1492,7 +1503,7 @@ function handleCloneTile($tileId) {
                 
                 foreach ($links as $link) {
                     $newLinkId = uniqid('link_', true);
-                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                     $linkInsertStmt->execute([
                         $newLinkId,
                         $newSectionId,
@@ -1504,6 +1515,8 @@ function handleCloneTile($tileId) {
                         null, // Reset allowed_users for cloned links
                         $link['notes'] ?? null,
                         $link['tooltip'] ?? null,
+                        $link['visible_from'] ?? null,
+                        $link['expires_at'] ?? null,
                         $link['browser'] ?? null
                     ]);
                 }
@@ -1589,7 +1602,7 @@ function handleCloneCategory($categoryName) {
             $newVisibility = 'public'; // Cloned tiles default to public
             $newAllowedUsers = null;
             
-            $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             
             if (!$insertStmt->execute([
                 $newTileId,
@@ -1605,6 +1618,9 @@ function handleCloneCategory($categoryName) {
                 $originalTile['is_hyperlink'] ?? 0,
                 $originalTile['hyperlink_url'] ?? null,
                 $originalTile['open_in_new_tab'] ?? 0,
+                $originalTile['visible_from'] ?? null,
+                $originalTile['expires_at'] ?? null,
+                $originalTile['browser'] ?? null,
                 $nextPosition++,
                 time()
             ])) {
