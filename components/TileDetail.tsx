@@ -2053,14 +2053,27 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         target="_blank"
                                                         rel="noopener noreferrer"
                                                         className="flex-1 min-w-0 block focus:outline-none"
-                                                        data-browser={settings.browser_specific_links_enabled === '1' && link.browser && link.browser !== 'default' ? link.browser : undefined}
                                                         onClick={(e) => {
+                                                            // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
+                                                            if (e.ctrlKey || e.metaKey) {
+                                                                // Explicitly open in new tab and focus it using window.open
+                                                                e.preventDefault();
+                                                                e.stopPropagation();
+                                                                const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
+                                                                // Focus the new window/tab if it was successfully opened
+                                                                if (newWindow) {
+                                                                    newWindow.focus();
+                                                                }
+                                                                return;
+                                                            }
+                                                            
                                                             // If browser extension is enabled and a browser is configured (not default), open directly
                                                             if (settings.browser_specific_links_enabled === '1' && link.browser && link.browser !== 'default') {
                                                                 if (typeof window !== 'undefined' && (window as any).BrowserLauncher) {
                                                                     e.preventDefault();
                                                                     e.stopPropagation();
                                                                     openLinkInBrowser(link.url, link.browser);
+                                                                    return;
                                                                 }
                                                                 // If BrowserLauncher is not available, allow default behavior
                                                             }
@@ -2276,8 +2289,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             )}
                                                         </button>
 
-                                                        {/* Browser selection button - only show when extension is enabled */}
-                                                        {settings.browser_specific_links_enabled === '1' && typeof window !== 'undefined' && (window as any).BrowserLauncher && (
+                                                        {/* Browser selection button - only show when extension is enabled and user is authenticated */}
+                                                        {settings.browser_specific_links_enabled === '1' && isAuthenticated && typeof window !== 'undefined' && (window as any).BrowserLauncher && (
                                                             <button
                                                                 onClick={(e) => {
                                                                     e.preventDefault();
