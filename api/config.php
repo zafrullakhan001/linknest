@@ -330,6 +330,23 @@ function initDatabase() {
             error_log('Tiles archived_at migration warning: ' . $e->getMessage());
         }
         
+        // Migrate existing tiles table to add browser column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $hasBrowser = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'browser') {
+                    $hasBrowser = true;
+                    break;
+                }
+            }
+            if (!$hasBrowser) {
+                $db->exec('ALTER TABLE tiles ADD COLUMN browser TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Tiles browser migration warning: ' . $e->getMessage());
+        }
+        
         // Create tabs table
         $db->exec('CREATE TABLE IF NOT EXISTS tabs (
             id TEXT PRIMARY KEY,

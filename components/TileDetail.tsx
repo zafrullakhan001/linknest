@@ -503,6 +503,47 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     };
 
+    // Function to update all links' browser settings in this tile
+    const handleUpdateLinksBrowser = async () => {
+        if (!tile.canEdit) {
+            alert('You do not have permission to edit this tile.');
+            return;
+        }
+
+        try {
+            const API_BASE = (import.meta as any).env?.VITE_API_BASE || '/api';
+            const response = await fetch(`${API_BASE}/tiles/${tile.id}/update-links-browser`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    browser: editBrowser
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: 'Failed to update links browser' }));
+                throw new Error(errorData.error || 'Failed to update links browser');
+            }
+
+            const result = await response.json();
+            
+            // Update the tile's browser setting in local state
+            const updatedTile: Tile = {
+                ...tile,
+                browser: editBrowser !== 'default' ? editBrowser : undefined,
+            };
+            const updatedTiles = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
+            onUpdateTiles(updatedTiles, true); // Skip reload since we're just updating browser
+            
+            // Show success message
+            alert(`Successfully updated default browser for ${result.updatedLinks || 0} link(s) in this tile.`);
+        } catch (error) {
+            console.error('Failed to update links browser:', error);
+            alert(`Failed to update links browser: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    };
+
     const handleSaveChanges = () => {
         console.log('=== SAVE CHANGES START ===');
         console.log('Current editTabs:', editTabs.length, 'tabs');
@@ -2067,12 +2108,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 return;
                                                             }
                                                             
-                                                            // If browser extension is enabled and a browser is configured (not default), open directly
-                                                            if (settings.browser_specific_links_enabled === '1' && link.browser && link.browser !== 'default') {
-                                                                if (typeof window !== 'undefined' && (window as any).BrowserLauncher) {
+                                                            // If browser extension is enabled, check for browser configuration
+                                                            if (settings.browser_specific_links_enabled === '1') {
+                                                                // Priority: link-specific browser > tile default browser > default browser
+                                                                const browserToUse = link.browser && link.browser !== 'default' 
+                                                                    ? link.browser 
+                                                                    : (tile.browser && tile.browser !== 'default' ? tile.browser : null);
+                                                                
+                                                                if (browserToUse && typeof window !== 'undefined' && (window as any).BrowserLauncher) {
                                                                     e.preventDefault();
                                                                     e.stopPropagation();
-                                                                    openLinkInBrowser(link.url, link.browser);
+                                                                    openLinkInBrowser(link.url, browserToUse);
                                                                     return;
                                                                 }
                                                                 // If BrowserLauncher is not available, allow default behavior
@@ -2115,11 +2161,23 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     </span>
                                                                 )}
                                                             </div>
-                                                            {settings.browser_specific_links_enabled === '1' && link.browser && link.browser !== 'default' && (
-                                                                <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors">
-                                                                    ({formatBrowserName(link.browser)} browser)
-                                                                </div>
-                                                            )}
+                                                            {settings.browser_specific_links_enabled === '1' && (() => {
+                                                                // Determine which browser is being used for this link
+                                                                // Priority: link-specific browser > tile default browser > system default
+                                                                const browserToUse = link.browser && link.browser !== 'default' 
+                                                                    ? link.browser 
+                                                                    : (tile.browser && tile.browser !== 'default' ? tile.browser : null);
+                                                                
+                                                                // Only show browser indicator if it's not the system default
+                                                                if (browserToUse) {
+                                                                    return (
+                                                                        <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors">
+                                                                            ({formatBrowserName(browserToUse)} browser)
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                                return null;
+                                                            })()}
                                                         </div>
                                                     </a>
 
@@ -2719,26 +2777,55 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             {/* Browser Selection - Only show if feature is enabled */}
                             {settings.browser_specific_links_enabled === '1' && (
                                 <div>
-                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-3">Open link in</label>
+                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-3">Default Browser for All Links</label>
                                     <select
                                         value={editBrowser}
                                         onChange={(e) => setEditBrowser(e.target.value)}
                                         className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none text-sm transition-all"
                                     >
                                         <option value="default">Default Browser</option>
-                                        <option value="chrome-stable">Chrome Stable</option>
-                                        <option value="chrome-beta">Chrome Beta</option>
-                                        <option value="chrome-dev">Chrome Dev</option>
-                                        <option value="edge-stable">Edge Stable</option>
-                                        <option value="edge-beta">Edge Beta</option>
-                                        <option value="edge-dev">Edge Dev</option>
-                                        <option value="firefox">Firefox (WSL)</option>
-                                        <option value="chrome-stable-wsl">Chrome Stable (WSL)</option>
-                                        <option value="edge-stable-wsl">Edge Stable (WSL)</option>
+                                        {availableBrowsers.length > 0 ? (
+                                            availableBrowsers.map((browserId) => {
+                                                // Format browser ID for display
+                                                const displayName = browserId
+                                                    .replace(/-/g, ' ')
+                                                    .replace(/\b\w/g, (l) => l.toUpperCase())
+                                                    .replace('Wsl', '(WSL)')
+                                                    .replace('Stable', 'Stable')
+                                                    .replace('Beta', 'Beta')
+                                                    .replace('Dev', 'Dev');
+                                                return (
+                                                    <option key={browserId} value={browserId}>
+                                                        {displayName}
+                                                    </option>
+                                                );
+                                            })
+                                        ) : (
+                                            <>
+                                                <option value="chrome-stable">Chrome Stable</option>
+                                                <option value="chrome-beta">Chrome Beta</option>
+                                                <option value="chrome-dev">Chrome Dev</option>
+                                                <option value="edge-stable">Edge Stable</option>
+                                                <option value="edge-beta">Edge Beta</option>
+                                                <option value="edge-dev">Edge Dev</option>
+                                                <option value="firefox-wsl">Firefox (WSL)</option>
+                                                <option value="chrome-stable-wsl">Chrome Stable (WSL)</option>
+                                                <option value="edge-stable-wsl">Edge Stable (WSL)</option>
+                                            </>
+                                        )}
                                     </select>
-                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-2">
-                                        Select which browser should open links from this tile. Requires browser extension to be installed.
+                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-2 mb-3">
+                                        Select which browser should open links from this tile. This will apply to all links unless they have a specific browser override. Requires browser extension to be installed.
                                     </p>
+                                    <button
+                                        onClick={handleUpdateLinksBrowser}
+                                        className="w-full bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center justify-center gap-2"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        Save Default Browser for All Links
+                                    </button>
                                 </div>
                             )}
                         </div>
@@ -3556,6 +3643,23 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 )}
                                                                             </div>
                                                                             <div className="text-xs text-slate-500 truncate font-mono">{link.url}</div>
+                                                                            {settings.browser_specific_links_enabled === '1' && (() => {
+                                                                                // Determine which browser is being used for this link
+                                                                                // Priority: link-specific browser > tile default browser > system default
+                                                                                const browserToUse = link.browser && link.browser !== 'default' 
+                                                                                    ? link.browser 
+                                                                                    : (tile.browser && tile.browser !== 'default' ? tile.browser : null);
+                                                                                
+                                                                                // Only show browser indicator if it's not the system default
+                                                                                if (browserToUse) {
+                                                                                    return (
+                                                                                        <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors">
+                                                                                            ({formatBrowserName(browserToUse)} browser)
+                                                                                        </div>
+                                                                                    );
+                                                                                }
+                                                                                return null;
+                                                                            })()}
                                                                         </div>
                                                                         <div className="flex gap-1">
                                                                             <button

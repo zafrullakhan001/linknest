@@ -50,6 +50,8 @@ switch ($method) {
             handleArchiveTile($matches[1]);
         } elseif (preg_match('#^/([^/]+)/unarchive$#', $path, $matches)) {
             handleUnarchiveTile($matches[1]);
+        } elseif (preg_match('#^/([^/]+)/update-links-browser$#', $path, $matches)) {
+            handleUpdateLinksBrowser($matches[1]);
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -205,6 +207,7 @@ function handleGetTiles() {
             'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
             'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
             'openInNewTab' => isset($row['open_in_new_tab']) ? (bool)$row['open_in_new_tab'] : null,
+            'browser' => isset($row['browser']) ? $row['browser'] : null,
             'canView' => $canView,
             'canEdit' => $canEdit,
             'canDelete' => $canDelete,
@@ -614,6 +617,7 @@ function handleGetTile($tileId) {
         'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
         'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
         'openInNewTab' => isset($row['open_in_new_tab']) ? (bool)$row['open_in_new_tab'] : null,
+        'browser' => isset($row['browser']) ? $row['browser'] : null,
         'canView' => $canView,
         'canEdit' => $canEdit,
         'canDelete' => $canDelete,
@@ -1058,8 +1062,11 @@ function handleUpdateTile($tileId) {
         $visibleFrom = isset($data['visibleFrom']) && $data['visibleFrom'] ? $data['visibleFrom'] : null;
         $expiresAt = isset($data['expiresAt']) && $data['expiresAt'] ? $data['expiresAt'] : null;
         
+        // Handle browser field
+        $browser = isset($data['browser']) && $data['browser'] !== 'default' ? $data['browser'] : null;
+        
         // Update tile
-        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ? WHERE id = ?');
+        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ? WHERE id = ?');
         $stmt->execute([
             $data['title'] ?? '',
             $data['description'] ?? '',
@@ -1074,6 +1081,7 @@ function handleUpdateTile($tileId) {
             $openInNewTab,
             $visibleFrom,
             $expiresAt,
+            $browser,
             $tileId
         ]);
         
@@ -1255,6 +1263,68 @@ function handleDeleteTile($tileId) {
     $stmt->execute([time(), $tileId]);
     
     sendJSON(['success' => true]);
+}
+
+function handleUpdateLinksBrowser($tileId) {
+    $user = requireAuth();
+    $data = getJSONInput();
+    $db = getDB();
+    
+    // Verify tile exists
+    $checkStmt = $db->prepare('SELECT id FROM tiles WHERE id = ? AND deleted_at IS NULL');
+    $checkStmt->execute([$tileId]);
+    $tile = $checkStmt->fetch();
+    
+    if (!$tile) {
+        sendJSON(['error' => 'Tile not found'], 404);
+        return;
+    }
+    
+    // Check if user has permission to edit this tile
+    if (!canUserEditTile($user['id'], $tileId, $db)) {
+        sendJSON(['error' => 'You do not have permission to edit this tile'], 403);
+        return;
+    }
+    
+    // Get the browser value from request (default to null if 'default' or not provided)
+    $browser = isset($data['browser']) && $data['browser'] !== 'default' && $data['browser'] !== '' ? $data['browser'] : null;
+    
+    // Update tile's default browser
+    $updateTileStmt = $db->prepare('UPDATE tiles SET browser = ? WHERE id = ?');
+    $updateTileStmt->execute([$browser, $tileId]);
+    
+    // Get all sections for this tile (through tabs or directly)
+    $sectionsStmt = $db->prepare('
+        SELECT DISTINCT s.id 
+        FROM sections s
+        LEFT JOIN tabs t ON s.tab_id = t.id
+        WHERE (t.tile_id = ? OR s.tile_id = ?)
+    ');
+    $sectionsStmt->execute([$tileId, $tileId]);
+    $sections = $sectionsStmt->fetchAll(PDO::FETCH_COLUMN);
+    
+    $updatedCount = 0;
+    
+    // Update all links that don't have a browser set (or have 'default' or NULL)
+    // This respects links that already have a specific browser override
+    if (!empty($sections)) {
+        $placeholders = str_repeat('?,', count($sections) - 1) . '?';
+        $updateLinksStmt = $db->prepare("
+            UPDATE links 
+            SET browser = ? 
+            WHERE section_id IN ($placeholders) 
+            AND (browser IS NULL OR browser = '' OR browser = 'default')
+        ");
+        $params = array_merge([$browser], $sections);
+        $updateLinksStmt->execute($params);
+        $updatedCount = $updateLinksStmt->rowCount();
+    }
+    
+    sendJSON([
+        'success' => true,
+        'updatedLinks' => $updatedCount,
+        'browser' => $browser
+    ]);
 }
 
 function handleCloneTile($tileId) {

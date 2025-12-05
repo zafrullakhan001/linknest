@@ -29,7 +29,8 @@ const transformTile = (apiTile: any): Tile => {
     deletedAt: apiTile.deletedAt || undefined, // Include deletedAt if present (for recycle bin)
     archivedAt: apiTile.archivedAt || undefined, // Include archivedAt if present (for archive)
     visibleFrom: apiTile.visibleFrom || undefined,
-    expiresAt: apiTile.expiresAt || undefined
+    expiresAt: apiTile.expiresAt || undefined,
+    browser: apiTile.browser || undefined // Include browser if present
   };
 };
 
