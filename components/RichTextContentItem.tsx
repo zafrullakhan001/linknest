@@ -57,7 +57,8 @@ export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
         formData.append('section_id', sectionId);
 
         try {
-            const response = await fetch('/api/uploads/rich-text-image', {
+            const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+            const response = await fetch(`${API_BASE}/uploads/rich-text-image`, {
                 method: 'POST',
                 body: formData
             });
@@ -69,7 +70,7 @@ export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
 
             const data = await response.json();
             const imageUrl = data.url;
-            
+
             // Insert image into content
             const imageHtml = `<img src="${imageUrl}" alt="Uploaded image" style="max-width: 100%; height: auto; margin: 10px 0;" />`;
             const newContent = localContent + imageHtml;
@@ -175,7 +176,7 @@ export const RichTextContentItem: React.FC<RichTextContentItemProps> = ({
                 </div>
 
                 {/* Content */}
-                <div 
+                <div
                     className="flex-1 min-w-0 rich-text-content"
                     dangerouslySetInnerHTML={{ __html: content.content || '<p class="text-slate-400 italic">Empty content</p>' }}
                 />

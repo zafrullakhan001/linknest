@@ -106,8 +106,27 @@ function handleRichTextImageUpload() {
         return;
     }
     
-    // Return URL (relative path)
-    $url = '/uploads/' . $filename;
+    // Determine base path for URL
+    // e.g. /linknest/api/index.php -> /linknest
+    // Determine base path for URL
+    // e.g. /linknest/api/index.php -> /linknest
+    $requestUri = $_SERVER['REQUEST_URI'];
+    // Remove query string if present
+    if (($pos = strpos($requestUri, '?')) !== false) {
+        $requestUri = substr($requestUri, 0, $pos);
+    }
+    
+    // Find where /api/ starts
+    $apiPos = strpos($requestUri, '/api/');
+    if ($apiPos !== false) {
+        $basePath = substr($requestUri, 0, $apiPos);
+    } else {
+        // Fallback or root
+        $basePath = '';
+    }
+    
+    // Return URL
+    $url = $basePath . '/uploads/' . $filename;
     
     sendJSON([
         'success' => true,

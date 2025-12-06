@@ -62,7 +62,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
 
     const getCurrentRange = (): Range | null => {
         if (!editorRef.current) return null;
-        
+
         const selection = window.getSelection();
         if (selection && selection.rangeCount > 0) {
             const range = selection.getRangeAt(0);
@@ -75,10 +75,10 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
 
     const wrapSelection = (tagName: string, attributes: Record<string, string> = {}) => {
         if (!editorRef.current) return;
-        
+
         editorRef.current.focus();
         restoreSelection();
-        
+
         const range = getCurrentRange();
         if (!range) {
             // No selection, create range at end
@@ -139,16 +139,16 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 range.insertNode(element);
             }
         }
-        
+
         handleInput();
     };
 
     const applyFormat = (command: string, value?: string) => {
         if (!editorRef.current) return;
-        
+
         editorRef.current.focus();
         restoreSelection();
-        
+
         try {
             document.execCommand(command, false, value);
             handleInput();
@@ -182,18 +182,18 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
 
     const insertLink = () => {
         if (!editorRef.current) return;
-        
+
         editorRef.current.focus();
         restoreSelection();
-        
+
         const selection = window.getSelection();
         const selectedText = selection && selection.rangeCount > 0 ? selection.toString() : '';
-        
+
         const url = prompt('Enter URL:', selectedText || '');
         if (url && url.trim()) {
             const linkText = selectedText || url;
             const linkUrl = url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`;
-            
+
             const range = getCurrentRange();
             if (range) {
                 if (!range.collapsed && selectedText) {
@@ -228,10 +228,10 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
 
     const insertHTML = (html: string) => {
         if (!editorRef.current) return;
-        
+
         editorRef.current.focus();
         restoreSelection();
-        
+
         const range = getCurrentRange();
         if (range) {
             if (!range.collapsed) {
@@ -270,19 +270,19 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
 
     const insertDate = () => {
         const now = new Date();
-        const dateStr = now.toLocaleDateString('en-US', { 
-            year: 'numeric', 
-            month: 'short', 
-            day: 'numeric' 
+        const dateStr = now.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
         });
         insertHTML(`<span style="font-weight: 600;">${dateStr}</span>`);
     };
 
     const insertTime = () => {
         const now = new Date();
-        const timeStr = now.toLocaleTimeString('en-US', { 
-            hour: '2-digit', 
-            minute: '2-digit' 
+        const timeStr = now.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit'
         });
         insertHTML(`<span style="font-weight: 600;">${timeStr}</span>`);
     };
@@ -290,7 +290,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     return (
         <div className={`rich-text-editor ${className}`}>
             {/* Toolbar */}
-            <div 
+            <div
                 className="flex flex-wrap items-center gap-1 p-2 bg-slate-100 dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-t-lg border-b-0"
                 onMouseDown={(e) => e.preventDefault()}
             >
@@ -347,7 +347,10 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
                     <select
                         onFocus={saveSelection}
-                        onMouseDown={saveSelection}
+                        onMouseDown={(e) => {
+                            e.stopPropagation();
+                            saveSelection();
+                        }}
                         onChange={(e) => {
                             const level = e.target.value;
                             if (level) {
@@ -409,7 +412,10 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
                     <select
                         onFocus={saveSelection}
-                        onMouseDown={saveSelection}
+                        onMouseDown={(e) => {
+                            e.stopPropagation();
+                            saveSelection();
+                        }}
                         onChange={(e) => {
                             const size = e.target.value;
                             if (size) {
@@ -435,7 +441,10 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
                     <select
                         onFocus={saveSelection}
-                        onMouseDown={saveSelection}
+                        onMouseDown={(e) => {
+                            e.stopPropagation();
+                            saveSelection();
+                        }}
                         onChange={(e) => {
                             const font = e.target.value;
                             if (font) {
@@ -466,7 +475,10 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                     <input
                         type="color"
                         onFocus={saveSelection}
-                        onMouseDown={saveSelection}
+                        onMouseDown={(e) => {
+                            e.stopPropagation();
+                            saveSelection();
+                        }}
                         onChange={(e) => {
                             wrapSelection('span', { style: `color: ${e.target.value};` });
                         }}
@@ -480,7 +492,10 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                     <input
                         type="color"
                         onFocus={saveSelection}
-                        onMouseDown={saveSelection}
+                        onMouseDown={(e) => {
+                            e.stopPropagation();
+                            saveSelection();
+                        }}
                         onChange={(e) => {
                             wrapSelection('span', { style: `background-color: ${e.target.value};` });
                         }}
@@ -569,14 +584,14 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 onMouseUp={saveSelection}
                 onKeyUp={saveSelection}
                 className="min-h-[60px] bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-b-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                style={{ 
+                style={{
                     whiteSpace: 'pre-wrap',
                     wordBreak: 'break-word'
                 }}
                 data-placeholder={placeholder}
                 suppressContentEditableWarning
             />
-            
+
             <style>{`
                 .rich-text-editor [contenteditable][data-placeholder]:empty:before {
                     content: attr(data-placeholder);
