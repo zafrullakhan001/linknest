@@ -205,7 +205,39 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     // View State
     const [searchTerm, setSearchTerm] = useState('');
     const [copiedId, setCopiedId] = useState<string | null>(null);
-    const [selectedTabId, setSelectedTabId] = useState<string | null>(null);
+    // Initialize selectedTabId from localStorage, keyed by tile ID
+    const [selectedTabId, setSelectedTabId] = useState<string | null>(() => {
+        try {
+            const savedTabId = localStorage.getItem(`tile_selected_tab_${tile.id}`);
+            return savedTabId || null;
+        } catch {
+            return null;
+        }
+    });
+    
+    // Save selectedTabId to localStorage whenever it changes
+    useEffect(() => {
+        if (selectedTabId) {
+            try {
+                localStorage.setItem(`tile_selected_tab_${tile.id}`, selectedTabId);
+            } catch (error) {
+                console.error('Failed to save selected tab to localStorage:', error);
+            }
+        }
+    }, [selectedTabId, tile.id]);
+    
+    // Reload selected tab from localStorage when tile changes (when viewing a different tile)
+    // This needs to run before the tab initialization useEffect
+    useEffect(() => {
+        try {
+            const savedTabId = localStorage.getItem(`tile_selected_tab_${tile.id}`);
+            // Set to null first, then the initialization useEffect will validate and set it properly
+            setSelectedTabId(savedTabId || null);
+        } catch (error) {
+            console.error('Failed to load selected tab from localStorage:', error);
+            setSelectedTabId(null);
+        }
+    }, [tile.id]);
     const [viewLayout, setViewLayout] = useState<'stacked' | 'side-by-side'>(() => {
         // Load saved preference from localStorage
         try {
@@ -1725,19 +1757,45 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         return true;
     };
 
-    // Initialize selected tab to first visible tab if tabs exist
+    // Initialize selected tab: restore from localStorage if valid, otherwise select first visible tab
     useEffect(() => {
-        if (tile.tabs && tile.tabs.length > 0 && !selectedTabId) {
-            // Sort tabs by position and select the first visible one
+        if (tile.tabs && tile.tabs.length > 0) {
+            // Sort tabs by position and filter visible ones
             const sortedTabs = [...tile.tabs]
                 .sort((a, b) => (a.position || 0) - (b.position || 0))
                 .filter(tab => isEditing || isContentVisible(tab)); // Show all in edit mode
 
             if (sortedTabs.length > 0) {
+                // Check if saved tab ID is still valid (exists and is visible)
+                if (selectedTabId) {
+                    const savedTabExists = sortedTabs.some(tab => tab.id === selectedTabId);
+                    if (savedTabExists) {
+                        // Saved tab is valid, keep it selected
+                        return;
+                    } else {
+                        // Saved tab no longer exists or is not visible, clear it
+                        try {
+                            localStorage.removeItem(`tile_selected_tab_${tile.id}`);
+                        } catch (error) {
+                            console.error('Failed to remove invalid tab from localStorage:', error);
+                        }
+                        // Fall through to select first tab
+                    }
+                }
+                
+                // No valid saved tab, select the first visible one
                 setSelectedTabId(sortedTabs[0].id);
             }
+        } else if (!tile.tabs || tile.tabs.length === 0) {
+            // No tabs exist, clear the saved selection
+            try {
+                localStorage.removeItem(`tile_selected_tab_${tile.id}`);
+            } catch (error) {
+                console.error('Failed to clear tab selection from localStorage:', error);
+            }
+            setSelectedTabId(null);
         }
-    }, [tile.tabs, selectedTabId, isEditing]);
+    }, [tile.tabs, selectedTabId, isEditing, tile.id]);
 
     const getFilteredSections = () => {
         let sectionsToFilter = [];
