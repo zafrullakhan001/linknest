@@ -1,9 +1,17 @@
 <?php
-// Serve uploaded files (logos, etc.)
+// Serve uploaded files (logos, etc.) and handle image uploads for rich text
 require_once __DIR__ . '/config.php';
 
-// Get the requested filename from the path
+$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
+
+// Handle POST requests for image uploads
+if ($method === 'POST' && $path === '/rich-text-image') {
+    handleRichTextImageUpload();
+    exit;
+}
+
+// Handle GET requests - serve uploaded files
 $filename = ltrim($path, '/');
 
 // Security: Only allow alphanumeric, dots, underscores, and hyphens in filename
@@ -48,4 +56,62 @@ header('Cache-Control: public, max-age=31536000'); // Cache for 1 year
 // Output file
 readfile($filepath);
 exit;
+
+function handleRichTextImageUpload() {
+    requireAuth(); // Require authentication
+    
+    // Check if file was uploaded
+    if (!isset($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
+        sendJSON(['error' => 'No file uploaded or upload error'], 400);
+        return;
+    }
+    
+    $file = $_FILES['image'];
+    
+    // Validate file type
+    $allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/svg+xml', 'image/webp'];
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mimeType = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+    
+    if (!in_array($mimeType, $allowedTypes)) {
+        sendJSON(['error' => 'Invalid file type. Allowed: JPEG, PNG, GIF, SVG, WebP'], 400);
+        return;
+    }
+    
+    // Validate file size (max 5MB)
+    $maxSize = 5 * 1024 * 1024; // 5MB
+    if ($file['size'] > $maxSize) {
+        sendJSON(['error' => 'File size too large. Maximum size: 5MB'], 400);
+        return;
+    }
+    
+    // Create uploads directory if it doesn't exist
+    $uploadDir = __DIR__ . '/../uploads';
+    if (!file_exists($uploadDir)) {
+        if (!mkdir($uploadDir, 0755, true)) {
+            sendJSON(['error' => 'Failed to create uploads directory'], 500);
+            return;
+        }
+    }
+    
+    // Generate unique filename
+    $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
+    $filename = 'richtext_' . time() . '_' . uniqid() . '.' . $extension;
+    $filepath = $uploadDir . '/' . $filename;
+    
+    // Move uploaded file
+    if (!move_uploaded_file($file['tmp_name'], $filepath)) {
+        sendJSON(['error' => 'Failed to save uploaded file'], 500);
+        return;
+    }
+    
+    // Return URL (relative path)
+    $url = '/uploads/' . $filename;
+    
+    sendJSON([
+        'success' => true,
+        'url' => $url
+    ]);
+}
 

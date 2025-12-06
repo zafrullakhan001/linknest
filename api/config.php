@@ -569,6 +569,15 @@ function initDatabase() {
         } catch (PDOException $e) {
             error_log('Links browser migration warning: ' . $e->getMessage());
         }
+        
+        // Create rich_text_content table
+        $db->exec('CREATE TABLE IF NOT EXISTS rich_text_content (
+            id TEXT PRIMARY KEY,
+            section_id TEXT NOT NULL,
+            content TEXT NOT NULL,
+            position INTEGER DEFAULT 0,
+            FOREIGN KEY (section_id) REFERENCES sections(id) ON DELETE CASCADE
+        )');
 
         // Migrate existing links table to add scheduling columns if they don't exist
         try {

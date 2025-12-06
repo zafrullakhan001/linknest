@@ -24,10 +24,17 @@ export interface Link {
   browser?: string; // Browser to open link in (e.g., 'chrome-stable', 'edge-stable', 'default')
 }
 
+export interface RichTextContent {
+  id: string;
+  content: string; // HTML content with text and images
+  position: number; // Position in the section (for sorting)
+}
+
 export interface LinkSection {
   id: string;
   title: string;
   links: Link[];
+  richTextContent?: RichTextContent[]; // Rich text content items in this section
   textColor?: string; // Optional custom text color for section title (hex color code)
   visibility?: LinkVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
   allowedUsers?: number[]; // Array of user IDs for private sections

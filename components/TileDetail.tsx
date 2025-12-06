@@ -6,6 +6,9 @@ import { authService, UserListItem } from '../services/authService';
 import { exportTileToFile } from '../services/spaceTransferService';
 import { cloneTile, getTiles, saveTile } from '../services/storageService';
 import { useSettings } from '../contexts/SettingsContext';
+import { RichTextEditor } from './RichTextEditor';
+import { RichTextContentItem } from './RichTextContentItem';
+import { RichTextContent } from '../types';
 
 interface TileDetailProps {
     tile: Tile;
@@ -268,6 +271,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     // Add Link Form Visibility State
     const [showAddLinkForm, setShowAddLinkForm] = useState<Record<string, boolean>>({});
+    
+    // Rich Text Content State
+    const [editingRichTextId, setEditingRichTextId] = useState<Record<string, string | null>>({}); // sectionId -> richTextId
+    const [showAddRichTextForm, setShowAddRichTextForm] = useState<Record<string, boolean>>({});
+    const [newRichTextContent, setNewRichTextContent] = useState<Record<string, string>>({}); // sectionId -> content
 
     // Link Search State (for edit mode)
     const [linkSearchTerm, setLinkSearchTerm] = useState('');
@@ -302,7 +310,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         // CRITICAL: Don't sync ANYTHING if we're currently editing - user might have unsaved changes
         // This prevents overwriting deletions or other edits while user is working
         if (isEditing) {
-            console.log('useEffect: BLOCKED - isEditing is true, preserving unsaved changes');
             return;
         }
 
@@ -320,14 +327,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         // we're *not* editing. While editing, `editTabs` is the source
         // of truth and won't be touched by this effect.
         if (tile.tabs && tile.tabs.length > 0) {
-            // Deep clone tabs to ensure all properties including textColor are preserved
+            // Deep clone tabs to ensure all properties including textColor and richTextContent are preserved
             const clonedTabs = tile.tabs.map(tab => ({
                 ...tab,
                 sections: tab.sections ? tab.sections.map(section => ({
                     ...section,
-                    links: section.links ? section.links.map(link => ({ ...link })) : []
+                    links: section.links ? section.links.map(link => ({ ...link })) : [],
+                    richTextContent: section.richTextContent ? section.richTextContent.map(rt => ({ ...rt })) : []
                 })) : []
             }));
+            
+            // Debug: Log richTextContent when loading
+            clonedTabs.forEach(tab => {
+                tab.sections.forEach(section => {
+                });
+            });
+            
             setEditTabs(clonedTabs);
             const allSections: LinkSection[] = [];
             clonedTabs.forEach(tab => {
@@ -335,8 +350,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             });
             setEditSections(allSections);
         } else {
+            // Also clone sections to preserve richTextContent
+            const clonedSections = (tile.sections || []).map(section => ({
+                ...section,
+                links: section.links ? section.links.map(link => ({ ...link })) : [],
+                richTextContent: section.richTextContent ? section.richTextContent.map(rt => ({ ...rt })) : []
+            }));
             setEditTabs([]);
-            setEditSections(tile.sections || []);
+            setEditSections(clonedSections);
         }
 
         // Load health status from tile data
@@ -359,6 +380,37 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             setIsEditing(true);
         }
     }, [isEditing]);
+
+    // Refresh editTabs when entering edit mode to ensure we have the latest data
+    useEffect(() => {
+        if (isEditing && tile.canEdit) {
+            if (tile.tabs && tile.tabs.length > 0) {
+                const clonedTabs = tile.tabs.map(tab => ({
+                    ...tab,
+                    sections: tab.sections ? tab.sections.map(section => ({
+                        ...section,
+                        links: section.links ? section.links.map(link => ({ ...link })) : [],
+                        richTextContent: section.richTextContent ? section.richTextContent.map(rt => ({ ...rt })) : []
+                    })) : []
+                }));
+                
+                setEditTabs(clonedTabs);
+                const allSections: LinkSection[] = [];
+                clonedTabs.forEach(tab => {
+                    allSections.push(...tab.sections);
+                });
+                setEditSections(allSections);
+            } else {
+                const clonedSections = (tile.sections || []).map(section => ({
+                    ...section,
+                    links: section.links ? section.links.map(link => ({ ...link })) : [],
+                    richTextContent: section.richTextContent ? section.richTextContent.map(rt => ({ ...rt })) : []
+                }));
+                setEditTabs([]);
+                setEditSections(clonedSections);
+            }
+        }
+    }, [isEditing, tile.id, tile.tabs, tile.sections]); // Run when isEditing becomes true, tile.id changes, OR tile data changes
 
     // Load fresh health data on mount
     useEffect(() => {
@@ -585,9 +637,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     const handleSaveChanges = () => {
-        console.log('=== SAVE CHANGES START ===');
-        console.log('Current editTabs:', editTabs.length, 'tabs');
-        console.log('EditTabs details:', editTabs.map(t => ({ id: t.id, title: t.title, position: t.position })));
         
         // Check if user has edit permission
         if (!tile.canEdit) {
@@ -598,6 +647,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
 
         // Use tabs if we have them, otherwise use sections (backward compatibility)
+        // Deep clone editTabs to ensure richTextContent is included
+        const clonedTabs = editTabs.length > 0 ? editTabs.map(tab => ({
+            ...tab,
+            sections: tab.sections.map(section => ({
+                ...section,
+                links: section.links ? [...section.links] : [],
+                richTextContent: section.richTextContent ? section.richTextContent.map(rt => ({ ...rt })) : []
+            }))
+        })) : undefined;
+        
+        const clonedSections = editTabs.length === 0 ? editSections.map(section => ({
+            ...section,
+            links: section.links ? [...section.links] : [],
+            richTextContent: section.richTextContent ? section.richTextContent.map(rt => ({ ...rt })) : []
+        })) : undefined;
+        
         const updatedTile: Tile = {
             ...tile,
             title: editTitle,
@@ -605,32 +670,24 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             htmlContent: editHtml,
             emoji: editEmoji,
             themeColor: editColor,
-            tabs: editTabs.length > 0 ? editTabs : undefined,
-            sections: editTabs.length > 0 ? undefined : editSections, // Only include sections if no tabs
+            tabs: clonedTabs,
+            sections: clonedSections, // Only include sections if no tabs
             visibility: editVisibility,
             allowedUsers: editVisibility === 'private' ? editAllowedUsers : undefined,
             browser: editBrowser !== 'default' ? editBrowser : undefined,
         };
 
-        console.log('Updated tile tabs:', updatedTile.tabs?.length || 0);
-        console.log('Updated tile tab IDs:', updatedTile.tabs?.map(t => ({ id: t.id, title: t.title, textColor: t.textColor })) || []);
-        console.log('Full updatedTile tabs with colors:', JSON.stringify(updatedTile.tabs?.map(t => ({ id: t.id, title: t.title, position: t.position, textColor: t.textColor })), null, 2));
-        console.log('EditTabs textColors before save:', editTabs.map(t => ({ id: t.id, title: t.title, textColor: t.textColor })));
 
         const updatedTiles = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
-        console.log('Calling onUpdateTiles with', updatedTiles.length, 'tiles');
-        console.log('=== SAVE CHANGES COMPLETE ===');
         
         // Push the updated tiles up; App will persist them and re‑pass
         // the updated `tile` prop back down.
+        // Note: onUpdateTiles will reload from server, which should include richTextContent
         onUpdateTiles(updatedTiles);
         
         // Only exit edit mode if this is NOT an auto-save
         if (!autoSavingRef.current) {
-            console.log('Manual save - exiting edit mode');
             setIsEditing(false);
-        } else {
-            console.log('Auto-save detected in handleSaveChanges - keeping edit mode active');
         }
     };
 
@@ -1163,7 +1220,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         ...tab,
                         sections: tab.sections.map(s => {
                             if (s.id === sectionId) {
-                                return { ...s, links: [...s.links, newLink] };
+                                return { ...s, links: [...s.links, newLink], richTextContent: s.richTextContent || [] };
                             }
                             return s;
                         })
@@ -1175,7 +1232,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             // Backward compatibility: sections without tabs
             setEditSections(editSections.map(s => {
                 if (s.id === sectionId) {
-                    return { ...s, links: [...s.links, newLink] };
+                    return { ...s, links: [...s.links, newLink], richTextContent: s.richTextContent || [] };
                 }
                 return s;
             }));
@@ -1201,7 +1258,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         ...tab,
                         sections: tab.sections.map(s => {
                             if (s.id === sectionId) {
-                                return { ...s, links: s.links.filter(l => l.id !== linkId) };
+                                return { ...s, links: s.links.filter(l => l.id !== linkId), richTextContent: s.richTextContent || [] };
                             }
                             return s;
                         })
@@ -1213,7 +1270,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             // Backward compatibility: sections without tabs
             setEditSections(editSections.map(s => {
                 if (s.id === sectionId) {
-                    return { ...s, links: s.links.filter(l => l.id !== linkId) };
+                    return { ...s, links: s.links.filter(l => l.id !== linkId), richTextContent: s.richTextContent || [] };
                 }
                 return s;
             }));
@@ -1332,7 +1389,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             ...tab,
                             sections: tab.sections.map(s => {
                                 if (s.id === sectionId) {
-                                    return { ...s, links: [...s.links, ...newLinks] };
+                                    return { ...s, links: [...s.links, ...newLinks], richTextContent: s.richTextContent || [] };
                                 }
                                 return s;
                             })
@@ -1344,7 +1401,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 // Backward compatibility: sections without tabs
                 setEditSections(editSections.map(s => {
                     if (s.id === sectionId) {
-                        return { ...s, links: [...s.links, ...newLinks] };
+                        return { ...s, links: [...s.links, ...newLinks], richTextContent: s.richTextContent || [] };
                     }
                     return s;
                 }));
@@ -1419,7 +1476,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         browser: state.browser && state.browser !== 'default' ? state.browser : undefined
                                     }
                                     : l
-                            )
+                            ),
+                            richTextContent: s.richTextContent || [] // Preserve richTextContent
                         };
                     })
                 };
@@ -1444,7 +1502,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 browser: state.browser && state.browser !== 'default' ? state.browser : undefined
                             }
                             : l
-                    )
+                    ),
+                    richTextContent: s.richTextContent || [] // Preserve richTextContent
                 };
             }));
         }
@@ -1488,7 +1547,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                         const newLinks = [...s.links];
                         [newLinks[index], newLinks[newIndex]] = [newLinks[newIndex], newLinks[index]];
-                        return { ...s, links: newLinks };
+                        return { ...s, links: newLinks, richTextContent: s.richTextContent || [] };
                     })
                 };
             }));
@@ -1505,7 +1564,155 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                 const newLinks = [...s.links];
                 [newLinks[index], newLinks[newIndex]] = [newLinks[newIndex], newLinks[index]];
-                return { ...s, links: newLinks };
+                return { ...s, links: newLinks, richTextContent: s.richTextContent || [] };
+            }));
+        }
+    };
+
+    // Rich Text Content Handlers
+    const handleAddRichTextToSection = (tabId: string, sectionId: string) => {
+        const content = newRichTextContent[sectionId]?.trim();
+        if (!content) return;
+
+        const newRichText: RichTextContent = {
+            id: generateId(),
+            content: content,
+            position: 0 // Will be set based on current items
+        };
+
+        if (editTabs.length > 0) {
+            setEditTabs(editTabs.map(tab => {
+                if (tab.id !== tabId) return tab;
+                return {
+                    ...tab,
+                    sections: tab.sections.map(s => {
+                        if (s.id !== sectionId) return s;
+                        const richTextItems = s.richTextContent || [];
+                        const maxPosition = Math.max(...richTextItems.map(rt => rt.position || 0), -1);
+                        newRichText.position = maxPosition + 1;
+                        return {
+                            ...s,
+                            richTextContent: [...richTextItems, newRichText]
+                        };
+                    })
+                };
+            }));
+        } else {
+            setEditSections(editSections.map(s => {
+                if (s.id !== sectionId) return s;
+                const richTextItems = s.richTextContent || [];
+                const maxPosition = Math.max(...richTextItems.map(rt => rt.position || 0), -1);
+                newRichText.position = maxPosition + 1;
+                return {
+                    ...s,
+                    richTextContent: [...richTextItems, newRichText]
+                };
+            }));
+        }
+
+        setNewRichTextContent(prev => ({ ...prev, [sectionId]: '' }));
+        setShowAddRichTextForm(prev => ({ ...prev, [sectionId]: false }));
+    };
+
+    const handleUpdateRichText = (tabId: string, sectionId: string, richTextId: string, content: string) => {
+        if (editTabs.length > 0) {
+            setEditTabs(editTabs.map(tab => {
+                if (tab.id !== tabId) return tab;
+                return {
+                    ...tab,
+                    sections: tab.sections.map(s => {
+                        if (s.id !== sectionId) return s;
+                        return {
+                            ...s,
+                            richTextContent: (s.richTextContent || []).map(rt =>
+                                rt.id === richTextId ? { ...rt, content } : rt
+                            )
+                        };
+                    })
+                };
+            }));
+        } else {
+            setEditSections(editSections.map(s => {
+                if (s.id !== sectionId) return s;
+                return {
+                    ...s,
+                    richTextContent: (s.richTextContent || []).map(rt =>
+                        rt.id === richTextId ? { ...rt, content } : rt
+                    )
+                };
+            }));
+        }
+    };
+
+    const handleDeleteRichText = (tabId: string, sectionId: string, richTextId: string) => {
+        if (editTabs.length > 0) {
+            setEditTabs(editTabs.map(tab => {
+                if (tab.id !== tabId) return tab;
+                return {
+                    ...tab,
+                    sections: tab.sections.map(s => {
+                        if (s.id !== sectionId) return s;
+                        return {
+                            ...s,
+                            richTextContent: (s.richTextContent || []).filter(rt => rt.id !== richTextId)
+                        };
+                    })
+                };
+            }));
+        } else {
+            setEditSections(editSections.map(s => {
+                if (s.id !== sectionId) return s;
+                return {
+                    ...s,
+                    richTextContent: (s.richTextContent || []).filter(rt => rt.id !== richTextId)
+                };
+            }));
+        }
+        setEditingRichTextId(prev => ({ ...prev, [sectionId]: null }));
+    };
+
+    const handleMoveRichText = (tabId: string, sectionId: string, richTextId: string, direction: 'up' | 'down') => {
+        if (editTabs.length > 0) {
+            setEditTabs(editTabs.map(tab => {
+                if (tab.id !== tabId) return tab;
+                return {
+                    ...tab,
+                    sections: tab.sections.map(s => {
+                        if (s.id !== sectionId) return s;
+                        const richTextItems = s.richTextContent || [];
+                        const index = richTextItems.findIndex(rt => rt.id === richTextId);
+                        if (index === -1) return s;
+
+                        const newIndex = direction === 'up' ? index - 1 : index + 1;
+                        if (newIndex < 0 || newIndex >= richTextItems.length) return s;
+
+                        const newItems = [...richTextItems];
+                        [newItems[index], newItems[newIndex]] = [newItems[newIndex], newItems[index]];
+                        // Update positions
+                        newItems.forEach((item, idx) => {
+                            item.position = idx;
+                        });
+                        return { ...s, richTextContent: newItems };
+                    })
+                };
+            }));
+        } else {
+            setEditSections(editSections.map(s => {
+                if (s.id !== sectionId) return s;
+                const richTextItems = s.richTextContent || [];
+                const index = richTextItems.findIndex(rt => rt.id === richTextId);
+                if (index === -1) return s;
+
+                const newIndex = direction === 'up' ? index - 1 : index + 1;
+                if (newIndex < 0 || newIndex >= richTextItems.length) return s;
+
+                const newItems = [...richTextItems];
+                [newItems[index], newItems[newIndex]] = [newItems[newIndex], newItems[index]];
+                // Update positions
+                newItems.forEach((item, idx) => {
+                    item.position = idx;
+                });
+                return { ...s, richTextContent: newItems };
             }));
         }
     };
@@ -1544,7 +1751,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         ...section.links.slice(index + 1)
                     ];
 
-                    return { ...section, links: newLinks };
+                    return { ...section, links: newLinks, richTextContent: section.richTextContent || [] };
                 })
             };
         }));
@@ -2210,9 +2417,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 textShadow: '0 1px 2px rgba(0,0,0,0.15)',
                                                                 fontWeight: '700'
                                                             } : undefined}
-                                                        >
-                                                            {link.label}
-                                                        </h4>
+                                                            dangerouslySetInnerHTML={{ __html: link.label || '' }}
+                                                        />
                                                         <div className="flex flex-col gap-0.5 mt-0.5">
                                                             <div className="linknest-content-link-domain flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors">
                                                                 <span className="break-words">
@@ -2475,6 +2681,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             );
                                         })}
                                     </div>
+                                    
+                                    {/* Rich Text Content in View Mode */}
+                                    {section.richTextContent && section.richTextContent.length > 0 && (
+                                        <div className="mt-4 space-y-3">
+                                            {section.richTextContent
+                                                .sort((a, b) => (a.position || 0) - (b.position || 0))
+                                                .map((richText) => (
+                                                    <div
+                                                        key={richText.id}
+                                                        className="bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 rounded-xl p-4 shadow-sm"
+                                                    >
+                                                        <div
+                                                            className="rich-text-content prose prose-sm max-w-none dark:prose-invert"
+                                                            dangerouslySetInnerHTML={{ __html: richText.content || '' }}
+                                                        />
+                                                    </div>
+                                                ))}
+                                        </div>
+                                    )}
                                 </div>
                             ))}
                         </div>
@@ -3399,15 +3624,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     // Edit Mode
                                                                     <div key={link.id} className="bg-white dark:bg-slate-800 border-2 border-brand-500 dark:border-brand-500/50 rounded-xl p-4 shadow-lg space-y-3">
                                                                         {/* Link Label & URL */}
-                                                                        <div className="grid grid-cols-2 gap-3">
+                                                                        <div className="space-y-3">
                                                                             <div>
-                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Link Label</label>
-                                                                                <input
-                                                                                    type="text"
+                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Link Label (Rich Text)</label>
+                                                                                <RichTextEditor
                                                                                     value={editLinkState[link.id]?.label || ''}
-                                                                                    onChange={(e) => updateEditLinkState(link.id, 'label', e.target.value)}
-                                                                                    placeholder="Enter link name..."
-                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-medium text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                                                                    onChange={(value) => updateEditLinkState(link.id, 'label', value)}
+                                                                                    placeholder="Enter link name with formatting..."
                                                                                 />
                                                                             </div>
                                                                             <div>
@@ -3727,9 +3950,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         filter: isHovered ? 'brightness(1.1)' : 'none',
                                                                                         transition: 'all 0.2s ease'
                                                                                     } : undefined}
-                                                                                >
-                                                                                    {link.label}
-                                                                                </div>
+                                                                                    dangerouslySetInnerHTML={{ __html: link.label || '' }}
+                                                                                />
                                                                                 {link.visibility && link.visibility !== 'public' && (
                                                                                     <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${link.visibility === 'authenticated'
                                                                                         ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
@@ -3807,14 +4029,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             })}
                                                         </div>
 
-                                                        {/* Add Link Button - Show when form is collapsed */}
-                                                        {!showAddLinkForm[section.id] && (
-                                                            <div className="mt-3">
+                                                        {/* Add Link and Rich Text Buttons - Show when forms are collapsed */}
+                                                        {!showAddLinkForm[section.id] && !showAddRichTextForm[section.id] && (
+                                                            <div className="mt-3 flex justify-end gap-2">
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setShowAddRichTextForm(prev => ({ ...prev, [section.id]: true }));
+                                                                    }}
+                                                                    className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/40 flex items-center justify-center gap-2"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                                                                    </svg>
+                                                                    Add Rich Text
+                                                                </button>
                                                                 <button
                                                                     onClick={() => {
                                                                         setShowAddLinkForm(prev => ({ ...prev, [section.id]: true }));
                                                                     }}
-                                                                    className="w-full bg-brand-600 hover:bg-brand-500 text-white px-4 py-3 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center justify-center gap-2"
+                                                                    className="bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center justify-center gap-2"
                                                                 >
                                                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
                                                                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -3845,15 +4078,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 </button>
                                                             </div>
                                                             {/* Link Label & URL */}
-                                                            <div className="grid grid-cols-2 gap-3">
+                                                            <div className="space-y-3">
                                                                 <div>
-                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Link Label</label>
-                                                                    <input
-                                                                        type="text"
+                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Link Label (Rich Text)</label>
+                                                                    <RichTextEditor
                                                                         value={newLinkState[section.id]?.label || ''}
-                                                                        onChange={(e) => updateNewLinkState(section.id, 'label', e.target.value)}
-                                                                        placeholder="Enter link name..."
-                                                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-medium text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                                                        onChange={(value) => updateNewLinkState(section.id, 'label', value)}
+                                                                        placeholder="Enter link name with formatting..."
                                                                     />
                                                                 </div>
                                                                 <div>
@@ -4101,6 +4332,77 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 </button>
                                                             </div>
                                                         </div>
+                                                        )}
+
+                                                        {/* Add Rich Text Form */}
+                                                        {showAddRichTextForm[section.id] && (
+                                                            <div className="mt-3 bg-white dark:bg-slate-800 border-2 border-emerald-500 dark:border-emerald-500/50 rounded-xl p-4 shadow-lg space-y-3">
+                                                            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
+                                                                <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Add Rich Text Content</h4>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setShowAddRichTextForm(prev => ({ ...prev, [section.id]: false }));
+                                                                        setNewRichTextContent(prev => ({ ...prev, [section.id]: '' }));
+                                                                    }}
+                                                                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded transition-colors"
+                                                                    title="Close form"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                                    </svg>
+                                                                </button>
+                                                            </div>
+                                                            <RichTextEditor
+                                                                value={newRichTextContent[section.id] || ''}
+                                                                onChange={(value) => setNewRichTextContent(prev => ({ ...prev, [section.id]: value }))}
+                                                                placeholder="Enter rich text content with formatting..."
+                                                            />
+                                                            <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
+                                                                <button
+                                                                    onClick={() => handleAddRichTextToSection(tab.id, section.id)}
+                                                                    disabled={!newRichTextContent[section.id]?.trim()}
+                                                                    className="px-4 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-md hover:shadow-lg shadow-emerald-500/30 flex items-center gap-1.5"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                                                    </svg>
+                                                                    Add Rich Text
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                        )}
+
+                                                        {/* Display Rich Text Content Items */}
+                                                        {section.richTextContent && section.richTextContent.length > 0 && (
+                                                            <div className="mt-3 space-y-2">
+                                                                {section.richTextContent
+                                                                    .sort((a, b) => (a.position || 0) - (b.position || 0))
+                                                                    .map((richText) => {
+                                                                        const sortedItems = section.richTextContent || [];
+                                                                        const currentIndex = sortedItems.findIndex(rt => rt.id === richText.id);
+                                                                        const canMoveUp = currentIndex > 0;
+                                                                        const canMoveDown = currentIndex < sortedItems.length - 1;
+                                                                        const isEditing = editingRichTextId[section.id] === richText.id;
+                                                                        
+                                                                        return (
+                                                                            <RichTextContentItem
+                                                                                key={richText.id}
+                                                                                content={richText}
+                                                                                sectionId={section.id}
+                                                                                onUpdate={(id, content) => handleUpdateRichText(tab.id, section.id, id, content)}
+                                                                                onDelete={(id) => handleDeleteRichText(tab.id, section.id, id)}
+                                                                                onMoveUp={() => handleMoveRichText(tab.id, section.id, richText.id, 'up')}
+                                                                                onMoveDown={() => handleMoveRichText(tab.id, section.id, richText.id, 'down')}
+                                                                                canMoveUp={canMoveUp}
+                                                                                canMoveDown={canMoveDown}
+                                                                                isEditing={isEditing}
+                                                                                onEdit={() => setEditingRichTextId(prev => ({ ...prev, [section.id]: richText.id }))}
+                                                                                onCancel={() => setEditingRichTextId(prev => ({ ...prev, [section.id]: null }))}
+                                                                                onSave={() => setEditingRichTextId(prev => ({ ...prev, [section.id]: null }))}
+                                                                            />
+                                                                        );
+                                                                    })}
+                                                            </div>
                                                         )}
                                                     </div>
                                                 </div>
@@ -4638,7 +4940,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setSchedulingDialogLink(null)}>
                                 <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
                                     <div className="flex items-center justify-between mb-4">
-                                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Schedule Link: {link.label}</h3>
+                                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Schedule Link: <span dangerouslySetInnerHTML={{ __html: link.label || '' }} /></h3>
                                         <button
                                             onClick={() => setSchedulingDialogLink(null)}
                                             className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"

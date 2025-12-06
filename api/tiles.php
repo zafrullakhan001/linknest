@@ -301,6 +301,18 @@ function handleGetTiles() {
                     $section['links'][] = $link;
                 }
                 
+                // Get rich text content for this section (inside tabs)
+                $richTextStmt = $db->prepare('SELECT * FROM rich_text_content WHERE section_id = ? ORDER BY position ASC');
+                $richTextStmt->execute([$sectionRow['id']]);
+                $section['richTextContent'] = [];
+                while ($richTextRow = $richTextStmt->fetch()) {
+                    $section['richTextContent'][] = [
+                        'id' => $richTextRow['id'],
+                        'content' => $richTextRow['content'],
+                        'position' => (int)($richTextRow['position'] ?? 0)
+                    ];
+                }
+                
                 $tab['sections'][] = $section;
             }
             
@@ -368,6 +380,18 @@ function handleGetTiles() {
                         }
                         
                         $section['links'][] = $link;
+                    }
+                    
+                    // Get rich text content for this section
+                    $richTextStmt = $db->prepare('SELECT * FROM rich_text_content WHERE section_id = ? ORDER BY position ASC');
+                    $richTextStmt->execute([$sectionRow['id']]);
+                    $section['richTextContent'] = [];
+                    while ($richTextRow = $richTextStmt->fetch()) {
+                        $section['richTextContent'][] = [
+                            'id' => $richTextRow['id'],
+                            'content' => $richTextRow['content'],
+                            'position' => (int)($richTextRow['position'] ?? 0)
+                        ];
                     }
                     
                     $allSections[] = $section;
@@ -711,6 +735,18 @@ function handleGetTile($tileId) {
                 $section['links'][] = $link;
             }
             
+            // Get rich text content for this section
+            $richTextStmt = $db->prepare('SELECT * FROM rich_text_content WHERE section_id = ? ORDER BY position ASC');
+            $richTextStmt->execute([$sectionRow['id']]);
+            $section['richTextContent'] = [];
+            while ($richTextRow = $richTextStmt->fetch()) {
+                $section['richTextContent'][] = [
+                    'id' => $richTextRow['id'],
+                    'content' => $richTextRow['content'],
+                    'position' => (int)($richTextRow['position'] ?? 0)
+                ];
+            }
+            
             $tab['sections'][] = $section;
         }
         
@@ -941,6 +977,24 @@ function handleCreateTile() {
                                 }
                             }
                         }
+                        
+                        // Insert rich text content for this section
+                        if (isset($section['richTextContent']) && is_array($section['richTextContent'])) {
+                            foreach ($section['richTextContent'] as $richText) {
+                                $richTextId = $richText['id'] ?? uniqid('richtext_', true);
+                                try {
+                                    $richTextStmt = $db->prepare('INSERT INTO rich_text_content (id, section_id, content, position) VALUES (?, ?, ?, ?)');
+                                    $richTextStmt->execute([
+                                        $richTextId,
+                                        $sectionId,
+                                        $richText['content'] ?? '',
+                                        $richText['position'] ?? 0
+                                    ]);
+                                } catch (PDOException $e) {
+                                    error_log('Rich text content insert error: ' . $e->getMessage());
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1091,7 +1145,10 @@ function handleUpdateTile($tileId) {
             $tileId
         ]);
         
-        // Delete existing tabs, sections, and links
+        // Delete existing tabs, sections, links, and rich text content
+        $deleteRichTextStmt = $db->prepare('DELETE FROM rich_text_content WHERE section_id IN (SELECT id FROM sections WHERE tile_id = ?)');
+        $deleteRichTextStmt->execute([$tileId]);
+        
         $deleteLinksStmt = $db->prepare('DELETE FROM links WHERE section_id IN (SELECT id FROM sections WHERE tile_id = ?)');
         $deleteLinksStmt->execute([$tileId]);
         
@@ -1165,6 +1222,26 @@ function handleUpdateTile($tileId) {
                                 ]);
                             }
                         }
+                        
+                        // Insert rich text content for this section (tabs structure)
+                        if (isset($section['richTextContent']) && is_array($section['richTextContent'])) {
+                            foreach ($section['richTextContent'] as $richText) {
+                                $richTextId = $richText['id'] ?? uniqid('richtext_', true);
+                                $content = $richText['content'] ?? '';
+                                $position = isset($richText['position']) ? (int)$richText['position'] : 0;
+                                try {
+                                    $richTextStmt = $db->prepare('INSERT INTO rich_text_content (id, section_id, content, position) VALUES (?, ?, ?, ?)');
+                                    $richTextStmt->execute([
+                                        $richTextId,
+                                        $sectionId,
+                                        $content,
+                                        $position
+                                    ]);
+                                } catch (PDOException $e) {
+                                    error_log('Rich text content insert error (tabs): ' . $e->getMessage());
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1217,16 +1294,32 @@ function handleUpdateTile($tileId) {
                             $link['browser'] ?? null
                         ]);
                     }
+                    
+                    // Insert rich text content for this section
+                    if (isset($section['richTextContent']) && is_array($section['richTextContent'])) {
+                        foreach ($section['richTextContent'] as $richText) {
+                            $richTextId = $richText['id'] ?? uniqid('richtext_', true);
+                            $content = $richText['content'] ?? '';
+                            $position = isset($richText['position']) ? (int)$richText['position'] : 0;
+                            try {
+                                $richTextStmt = $db->prepare('INSERT INTO rich_text_content (id, section_id, content, position) VALUES (?, ?, ?, ?)');
+                                $richTextStmt->execute([
+                                    $richTextId,
+                                    $sectionId,
+                                    $content,
+                                    $position
+                                ]);
+                            } catch (PDOException $e) {
+                                error_log('Rich text content insert error: ' . $e->getMessage());
+                            }
+                        }
+                    }
                 }
             }
         }
         
         // Commit the transaction
         $db->commit();
-        
-        // Log success with tab count for debugging
-        $finalTabCount = isset($data['tabs']) && is_array($data['tabs']) ? count($data['tabs']) : 0;
-        error_log('Successfully updated tile ' . $tileId . ' with ' . $finalTabCount . ' tabs');
         
         sendJSON(['success' => true]);
     } catch (PDOException $e) {
@@ -2401,6 +2494,18 @@ function handleGetRecycleBin() {
                     $section['links'][] = $link;
                 }
                 
+                // Get rich text content for this section
+                $richTextStmt = $db->prepare('SELECT * FROM rich_text_content WHERE section_id = ? ORDER BY position ASC');
+                $richTextStmt->execute([$sectionRow['id']]);
+                $section['richTextContent'] = [];
+                while ($richTextRow = $richTextStmt->fetch()) {
+                    $section['richTextContent'][] = [
+                        'id' => $richTextRow['id'],
+                        'content' => $richTextRow['content'],
+                        'position' => (int)($richTextRow['position'] ?? 0)
+                    ];
+                }
+                
                 $tab['sections'][] = $section;
             }
             
@@ -2707,16 +2812,28 @@ function handleGetArchive() {
                             ];
                         }
                         
-                        $section['links'][] = $link;
-                    }
-                    
-                    $tab['sections'][] = $section;
+                    $section['links'][] = $link;
                 }
                 
-                $tabs[] = $tab;
+                // Get rich text content for this section
+                $richTextStmt = $db->prepare('SELECT * FROM rich_text_content WHERE section_id = ? ORDER BY position ASC');
+                $richTextStmt->execute([$sectionRow['id']]);
+                $section['richTextContent'] = [];
+                while ($richTextRow = $richTextStmt->fetch()) {
+                    $section['richTextContent'][] = [
+                        'id' => $richTextRow['id'],
+                        'content' => $richTextRow['content'],
+                        'position' => (int)($richTextRow['position'] ?? 0)
+                    ];
+                }
+                
+                $tab['sections'][] = $section;
             }
             
-            $tile['tabs'] = $tabs;
+            $tabs[] = $tab;
+        }
+        
+        $tile['tabs'] = $tabs;
             $tile['sections'] = [];
             foreach ($tile['tabs'] as $tab) {
                 $tile['sections'] = array_merge($tile['sections'], $tab['sections']);

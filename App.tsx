@@ -277,8 +277,6 @@ const AppContent: React.FC = () => {
       if (!skipReload) {
         const stored = await getTiles();
         setTiles(stored);
-      } else {
-        console.log('Skipping tile reload to preserve edit mode');
       }
     } catch (error) {
       console.error('Failed to save tiles:', error);

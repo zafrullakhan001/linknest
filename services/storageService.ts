@@ -15,8 +15,8 @@ const transformTile = (apiTile: any): Tile => {
     themeColor: (apiTile.themeColor || 'blue') as any,
     group: apiTile.group || 'General',
     createdAt: apiTile.createdAt || Date.now(),
-    tabs: apiTile.tabs || undefined, // Include tabs if present
-    sections: apiTile.sections || [], // Keep for backward compatibility
+    tabs: apiTile.tabs || undefined, // Include tabs if present (with richTextContent)
+    sections: apiTile.sections || [], // Keep for backward compatibility (with richTextContent)
     visibility: apiTile.visibility || 'public',
     allowedUsers: apiTile.allowedUsers || undefined,
     isFavorite: apiTile.isFavorite || false,

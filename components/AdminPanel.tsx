@@ -4937,9 +4937,8 @@ jane.smith,jane@example.com,CN=Jane Smith,OU=Users,DC=company,DC=com,Jane Smith<
                           }
                         }}
                         className="block text-brand-600 dark:text-brand-400 font-semibold mb-2 hover:underline"
-                      >
-                        {link.label}
-                      </a>
+                        dangerouslySetInnerHTML={{ __html: link.label || '' }}
+                      />
                       <p className="text-xs text-slate-600 dark:text-slate-400 mb-2">Open in {link.badge}</p>
                       <span className="inline-block px-2 py-1 text-xs font-medium rounded bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300">
                         {link.badge}
