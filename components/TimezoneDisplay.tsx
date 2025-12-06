@@ -86,6 +86,7 @@ export const TimezoneDisplay: React.FC = () => {
   return (
     <div 
       className={`relative flex flex-col items-start gap-2 px-3 py-2 text-xs text-slate-600 dark:text-slate-400 bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm rounded-lg border border-slate-200 dark:border-slate-700 shadow-lg transition-all ${isAnalog ? 'py-4 px-4' : ''}`}
+      style={{ zIndex: 2 }}
       title={`Click to switch to ${isAnalog ? 'digital' : 'analog'} clock - Timezone: ${timezone} (UTC${timezoneOffset})`}
     >
       {isAnalog ? (

@@ -515,7 +515,7 @@ const AppContent: React.FC = () => {
           </div>
         </div>
       )}
-      <footer className="linknest-footer py-6 text-sm relative">
+      <footer className="linknest-footer py-6 text-sm relative" style={{ zIndex: 1 }}>
         <div className="container mx-auto max-w-6xl-plus px-4">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex-1 min-w-0 flex flex-col gap-2">

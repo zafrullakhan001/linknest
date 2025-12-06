@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Tile, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS, TileVisibility } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles, cloneCategory, toggleCategoryFavorite, getRecycleBin, restoreTile, purgeRecycleBin, permanentDeleteTile, permanentDeleteCategory, deleteTile, getArchive, archiveTile, unarchiveTile, purgeArchive, archiveCategory, unarchiveCategory } from '../services/storageService';
@@ -3042,13 +3043,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
       </div>
 
       {/* Compact Add Tile Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/70 dark:bg-slate-900/90 backdrop-blur-md z-[9998]" onClick={() => setIsModalOpen(false)}></div>
+      {isModalOpen && createPortal(
+        <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 99999 }}>
+          <div className="absolute inset-0 bg-transparent" style={{ zIndex: 99998 }} onClick={() => setIsModalOpen(false)}></div>
           <div
             ref={modalRef}
-            className={`bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 overflow-hidden flex flex-col z-[9999] ${isDragging ? 'cursor-move' : ''} ${isDragging || isResizing ? 'will-change-transform' : ''}`}
+            className={`bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 overflow-hidden flex flex-col ${isDragging ? 'cursor-move' : ''} ${isDragging || isResizing ? 'will-change-transform' : ''}`}
             style={{
+              zIndex: 99999,
               width: modalSize.width > 0 ? `${modalSize.width}px` : '600px',
               maxWidth: '90vw',
               minWidth: '400px',
@@ -3071,7 +3073,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
               </div>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer relative z-[10000]"
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer relative"
+                style={{ zIndex: 100000 }}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
                   <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
@@ -3200,8 +3203,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                       {/* Emoji Picker Popover */}
                       {showEmojiPicker && (
                         <>
-                          <div className="fixed inset-0 z-[10001]" onClick={() => setShowEmojiPicker(false)}></div>
-                          <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[10002] flex flex-col overflow-hidden">
+                          <div className="fixed inset-0" style={{ zIndex: 100001 }} onClick={() => setShowEmojiPicker(false)}></div>
+                          <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl flex flex-col overflow-hidden" style={{ zIndex: 100002 }}>
                             <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
                               <input
                                 type="text"
@@ -3513,7 +3516,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
             {/* Resize Handle */}
             <div
               onMouseDown={handleResizeStart}
-              className={`absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize z-[10000] flex items-end justify-end ${isResizing ? 'bg-brand-500/20' : 'hover:bg-slate-200/50 dark:hover:bg-slate-700/50'}`}
+              className={`absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize flex items-end justify-end ${isResizing ? 'bg-brand-500/20' : 'hover:bg-slate-200/50 dark:hover:bg-slate-700/50'}`}
+              style={{ zIndex: 100000 }}
             >
               <div className="w-4 h-4 relative">
                 <div className="absolute bottom-0 right-0 w-3 h-3 border-r-2 border-b-2 border-slate-400 dark:border-slate-500 rounded-br-lg"></div>
@@ -3521,18 +3525,19 @@ export const TileGrid: React.FC<TileGridProps> = ({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Edit Tile Modal */}
-      {isEditModalOpen && editingTile && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/70 dark:bg-slate-900/90 backdrop-blur-md z-[9998]" onClick={() => {
+      {isEditModalOpen && editingTile && createPortal(
+        <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 99999 }}>
+          <div className="absolute inset-0 bg-transparent" style={{ zIndex: 99998 }} onClick={() => {
             setIsEditModalOpen(false);
             setEditingTile(null);
             resetForm();
           }}></div>
-          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto z-[9999]">
+          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto" style={{ zIndex: 99999 }}>
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">
@@ -3851,18 +3856,19 @@ export const TileGrid: React.FC<TileGridProps> = ({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Category Scheduling Modal */}
-      {editingCategorySchedule && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/70 dark:bg-slate-900/90 backdrop-blur-md z-[9998]" onClick={() => {
+      {editingCategorySchedule && createPortal(
+        <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 99999 }}>
+          <div className="absolute inset-0 bg-transparent" style={{ zIndex: 99998 }} onClick={() => {
             setEditingCategorySchedule(null);
             setCategoryVisibleFrom('');
             setCategoryExpiresAt('');
           }}></div>
-          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-md p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 z-[9999]">
+          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-md p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200" style={{ zIndex: 99999 }}>
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">Schedule Category</h2>
@@ -3930,7 +3936,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
