@@ -1542,11 +1542,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         return [...links, ...richText].sort((a, b) => {
             const posA = a.position !== undefined ? a.position : 0;
             const posB = b.position !== undefined ? b.position : 0;
-            if (posA !== posB) return posA - posB;
-            // Stable sort for items with same position (legacy)
-            // Links before RichText if both 0
-            if (a.type !== b.type) return a.type === 'link' ? -1 : 1;
-            return 0;
+            return posA - posB;
         });
     };
 
@@ -2341,24 +2337,54 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         </h3>
                                     )}
 
-                                    {/* Links Grid */}
+                                    {/* Links and Rich Text Grid - Merged and Sorted by Position */}
                                     <div className="linknest-content-link-grid">
-                                        {section.links.map((link, linkIndex) => {
-                                            const health = linkHealth[link.id];
-                                            const isBroken = health?.status === 'broken';
-                                            const animationDelay = (sectionIndex * 100) + (linkIndex * 30);
+                                        {(() => {
+                                            // Merge links and rich text, sort by position
+                                            const sortedItems = [
+                                                ...(section.links || []).map(l => ({ ...l, itemType: 'link' as const })),
+                                                ...(section.richTextContent || []).map(rt => ({ ...rt, itemType: 'rich-text' as const }))
+                                            ].sort((a, b) => {
+                                                const posA = a.position ?? 0;
+                                                const posB = b.position ?? 0;
+                                                return posA - posB;
+                                            });
 
-                                            return (
-                                                <div
-                                                    key={link.id}
-                                                    style={{ animationDelay: `${animationDelay}ms` }}
-                                                    className={`
-                                                linknest-content-link group relative flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60
-                                                hover:border-brand-300 dark:hover:border-brand-500/50 transition-all duration-300 shadow-sm
-                                                ${isBroken ? 'border-red-300 dark:border-red-500/50 bg-red-50/50 dark:bg-red-900/10' : ''}
-                                            `}
-                                                    title={link.tooltip || link.label}
-                                                >
+                                            return sortedItems.map((item, itemIndex) => {
+                                                const animationDelay = (sectionIndex * 100) + (itemIndex * 30);
+
+                                                // Render rich text content
+                                                if (item.itemType === 'rich-text') {
+                                                    return (
+                                                        <div
+                                                            key={item.id}
+                                                            style={{ animationDelay: `${animationDelay}ms` }}
+                                                            className="linknest-content-rich-text animate-in fade-in slide-in-from-bottom-2 bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 rounded-xl p-4 shadow-sm"
+                                                        >
+                                                            <div
+                                                                className="rich-text-content prose prose-sm max-w-none dark:prose-invert prose-p:text-slate-600 dark:prose-p:text-slate-400 prose-a:text-brand-500 dark:prose-a:text-brand-400 prose-headings:text-slate-800 dark:prose-headings:text-slate-200"
+                                                                dangerouslySetInnerHTML={{ __html: item.content || '' }}
+                                                            />
+                                                        </div>
+                                                    );
+                                                }
+
+                                                // Render link (itemType === 'link')
+                                                const link = item as Link;
+                                                const health = linkHealth[link.id];
+                                                const isBroken = health?.status === 'broken';
+
+                                                return (
+                                                    <div
+                                                        key={link.id}
+                                                        style={{ animationDelay: `${animationDelay}ms` }}
+                                                        className={`
+                                                    linknest-content-link group relative flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60
+                                                    hover:border-brand-300 dark:hover:border-brand-500/50 transition-all duration-300 shadow-sm
+                                                    ${isBroken ? 'border-red-300 dark:border-red-500/50 bg-red-50/50 dark:bg-red-900/10' : ''}
+                                                `}
+                                                        title={link.tooltip || link.label}
+                                                    >
                                                     {/* Health Indicator */}
                                                     <div className="linknest-content-link-health flex flex-col items-center gap-1 shrink-0">
                                                         {getHealthIndicator(link.id)}
@@ -2671,30 +2697,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 </svg>
                                                             </button>
                                                         )}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            );
-                                        })}
+                                                );
+                                            });
+                                        })()}
                                     </div>
-
-                                    {/* Rich Text Content in View Mode */}
-                                    {section.richTextContent && section.richTextContent.length > 0 && (
-                                        <div className="mt-4 space-y-3">
-                                            {section.richTextContent
-                                                .sort((a, b) => (a.position || 0) - (b.position || 0))
-                                                .map((richText) => (
-                                                    <div
-                                                        key={richText.id}
-                                                        className="bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 rounded-xl p-4 shadow-sm"
-                                                    >
-                                                        <div
-                                                            className="rich-text-content prose prose-sm max-w-none dark:prose-invert"
-                                                            dangerouslySetInnerHTML={{ __html: richText.content || '' }}
-                                                        />
-                                                    </div>
-                                                ))}
-                                        </div>
-                                    )}
                                 </div>
                             ))}
                         </div>
@@ -3610,9 +3618,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         ].sort((a, b) => {
                                                                             const posA = a.position ?? 0;
                                                                             const posB = b.position ?? 0;
-                                                                            if (posA !== posB) return posA - posB;
-                                                                            if (a.itemType !== b.itemType) return a.itemType === 'link' ? -1 : 1;
-                                                                            return 0;
+                                                                            return posA - posB;
                                                                         });
 
                                                                         if (sortedItems.length === 0) {
@@ -4060,34 +4066,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     })()}
                                                                 </div>
 
-                                                                {/* Add Link and Rich Text Buttons - Show when forms are collapsed */}
-                                                                {!showAddLinkForm[section.id] && !showAddRichTextForm[section.id] && (
-                                                                    <div className="mt-3 flex justify-end gap-2">
-                                                                        <button
-                                                                            onClick={() => {
-                                                                                setShowAddRichTextForm(prev => ({ ...prev, [section.id]: true }));
-                                                                            }}
-                                                                            className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/40 flex items-center justify-center gap-2"
-                                                                        >
-                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
-                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                                                                            </svg>
-                                                                            Add Rich Text
-                                                                        </button>
-                                                                        <button
-                                                                            onClick={() => {
-                                                                                setShowAddLinkForm(prev => ({ ...prev, [section.id]: true }));
-                                                                            }}
-                                                                            className="bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center justify-center gap-2"
-                                                                        >
-                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
-                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                                                            </svg>
-                                                                            Add Link
-                                                                        </button>
-                                                                    </div>
-                                                                )}
-
                                                                 {/* Inline Add Form - Compact Design - Only show when expanded */}
                                                                 {showAddLinkForm[section.id] && (
                                                                     <div className="mt-3 bg-white dark:bg-slate-800 border-2 border-brand-500 dark:border-brand-500/50 rounded-xl p-4 shadow-lg space-y-3">
@@ -4403,6 +4381,33 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     </div>
                                                                 )}
 
+                                                                {/* Add Link and Rich Text Buttons - Show when forms are collapsed - At bottom of section */}
+                                                                {!showAddLinkForm[section.id] && !showAddRichTextForm[section.id] && (
+                                                                    <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-2">
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                setShowAddRichTextForm(prev => ({ ...prev, [section.id]: true }));
+                                                                            }}
+                                                                            className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/40 flex items-center justify-center gap-2"
+                                                                        >
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                                                                            </svg>
+                                                                            Add Rich Text
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                setShowAddLinkForm(prev => ({ ...prev, [section.id]: true }));
+                                                                            }}
+                                                                            className="bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center justify-center gap-2"
+                                                                        >
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                                                            </svg>
+                                                                            Add Link
+                                                                        </button>
+                                                                    </div>
+                                                                )}
 
                                                             </div>
                                                         </div>

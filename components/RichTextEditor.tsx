@@ -15,15 +15,19 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
 }) => {
     const editorRef = useRef<HTMLDivElement>(null);
     const savedRangeRef = useRef<Range | null>(null);
+    const isInternalUpdateRef = useRef(false);
 
     useEffect(() => {
-        if (editorRef.current && value !== editorRef.current.innerHTML) {
+        // Only update if the change came from outside (not from user input)
+        if (editorRef.current && value !== editorRef.current.innerHTML && !isInternalUpdateRef.current) {
             editorRef.current.innerHTML = value || '';
         }
+        isInternalUpdateRef.current = false;
     }, [value]);
 
     const handleInput = () => {
         if (editorRef.current) {
+            isInternalUpdateRef.current = true;
             onChange(editorRef.current.innerHTML);
         }
     };
@@ -140,21 +144,56 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
             }
         }
 
-        handleInput();
+        // Use setTimeout to ensure the DOM is updated before calling handleInput
+        setTimeout(() => {
+            handleInput();
+        }, 0);
     };
 
     const applyFormat = (command: string, value?: string) => {
         if (!editorRef.current) return;
 
+        // Save selection before any operations
+        saveSelection();
+        
+        // Focus and restore selection
         editorRef.current.focus();
-        restoreSelection();
+        
+        // Small delay to ensure focus is set
+        setTimeout(() => {
+            if (!editorRef.current) return;
+            
+            restoreSelection();
+            
+            // Ensure we have a valid selection
+            const selection = window.getSelection();
+            if (!selection || selection.rangeCount === 0) {
+                // No selection, create one at the end
+                const range = document.createRange();
+                range.selectNodeContents(editorRef.current);
+                range.collapse(false);
+                selection?.removeAllRanges();
+                selection?.addRange(range);
+            }
 
-        try {
-            document.execCommand(command, false, value);
-            handleInput();
-        } catch (e) {
-            console.error(`Format command failed: ${command}`, e);
-        }
+            try {
+                // Execute the command
+                const success = document.execCommand(command, false, value);
+                
+                if (!success) {
+                    console.warn(`Format command failed: ${command}`);
+                }
+                
+                // Update the value after formatting
+                setTimeout(() => {
+                    handleInput();
+                    // Save selection again after formatting
+                    saveSelection();
+                }, 0);
+            } catch (e) {
+                console.error(`Format command error: ${command}`, e);
+            }
+        }, 10);
     };
 
     const applyFontSize = (size: string) => {
@@ -221,7 +260,9 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                     sel.removeAllRanges();
                     sel.addRange(range);
                 }
-                handleInput();
+                setTimeout(() => {
+                    handleInput();
+                }, 0);
             }
         }
     };
@@ -245,7 +286,9 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
             }
             range.insertNode(fragment);
             range.collapse(false);
-            handleInput();
+            setTimeout(() => {
+                handleInput();
+            }, 0);
         } else {
             // No range, insert at end
             const newRange = document.createRange();
@@ -264,7 +307,9 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 selection.removeAllRanges();
                 selection.addRange(newRange);
             }
-            handleInput();
+            setTimeout(() => {
+                handleInput();
+            }, 0);
         }
     };
 
@@ -298,8 +343,14 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
                     <button
                         type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => applyFormat('bold')}
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            applyFormat('bold');
+                        }}
                         className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
                         title="Bold"
                     >
@@ -310,8 +361,14 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                     </button>
                     <button
                         type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => applyFormat('italic')}
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            applyFormat('italic');
+                        }}
                         className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
                         title="Italic"
                     >
@@ -321,8 +378,14 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                     </button>
                     <button
                         type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => applyFormat('underline')}
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            applyFormat('underline');
+                        }}
                         className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
                         title="Underline"
                     >
@@ -332,8 +395,14 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                     </button>
                     <button
                         type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => applyFormat('strikeThrough')}
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            applyFormat('strikeThrough');
+                        }}
                         className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
                         title="Strikethrough"
                     >
@@ -375,8 +444,14 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
                     <button
                         type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => applyFormat('subscript')}
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            applyFormat('subscript');
+                        }}
                         className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors text-xs font-bold"
                         title="Subscript"
                     >
@@ -384,8 +459,14 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                     </button>
                     <button
                         type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => applyFormat('superscript')}
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            applyFormat('superscript');
+                        }}
                         className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors text-xs font-bold"
                         title="Superscript"
                     >
@@ -397,8 +478,14 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
                     <button
                         type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={insertLink}
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            insertLink();
+                        }}
                         className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
                         title="Insert Link"
                     >
@@ -508,8 +595,14 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
                     <button
                         type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => applyFormat('justifyLeft')}
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            applyFormat('justifyLeft');
+                        }}
                         className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
                         title="Align Left"
                     >
@@ -519,8 +612,14 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                     </button>
                     <button
                         type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => applyFormat('justifyCenter')}
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            applyFormat('justifyCenter');
+                        }}
                         className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
                         title="Align Center"
                     >
@@ -530,8 +629,14 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                     </button>
                     <button
                         type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => applyFormat('justifyRight')}
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            applyFormat('justifyRight');
+                        }}
                         className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
                         title="Align Right"
                     >
@@ -545,8 +650,14 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
                     <button
                         type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={insertDate}
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            insertDate();
+                        }}
                         className="px-2 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                         title="Insert Date"
                     >
@@ -554,8 +665,14 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                     </button>
                     <button
                         type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={insertTime}
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            insertTime();
+                        }}
                         className="px-2 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                         title="Insert Time"
                     >
@@ -567,7 +684,84 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 <button
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => applyFormat('removeFormat')}
+                    onClick={() => {
+                        if (!editorRef.current) return;
+                        
+                        editorRef.current.focus();
+                        restoreSelection();
+                        
+                        const selection = window.getSelection();
+                        if (selection && selection.rangeCount > 0) {
+                            const range = selection.getRangeAt(0);
+                            
+                            if (range.collapsed) {
+                                // No selection - clear all formatting in the editor
+                                const textContent = editorRef.current.textContent || '';
+                                editorRef.current.innerHTML = '';
+                                const textNode = document.createTextNode(textContent);
+                                editorRef.current.appendChild(textNode);
+                                
+                                // Set cursor at end
+                                const newRange = document.createRange();
+                                newRange.selectNodeContents(editorRef.current);
+                                newRange.collapse(false);
+                                selection.removeAllRanges();
+                                selection.addRange(newRange);
+                            } else {
+                                // Has selection - remove formatting from selected text
+                                try {
+                                    // First try removeFormat
+                                    document.execCommand('removeFormat', false);
+                                    
+                                    // Then remove all inline styles and tags, keeping only text
+                                    const selectedContent = range.extractContents();
+                                    const textContent = selectedContent.textContent || '';
+                                    
+                                    // Create a text node with just the text
+                                    const textNode = document.createTextNode(textContent);
+                                    range.insertNode(textNode);
+                                    
+                                    // Collapse range after inserted text
+                                    range.collapse(false);
+                                    selection.removeAllRanges();
+                                    selection.addRange(range);
+                                } catch (e) {
+                                    // Fallback: just extract text content
+                                    const selectedContent = range.extractContents();
+                                    const textContent = selectedContent.textContent || '';
+                                    const textNode = document.createTextNode(textContent);
+                                    range.insertNode(textNode);
+                                    range.collapse(false);
+                                    selection.removeAllRanges();
+                                    selection.addRange(range);
+                                }
+                            }
+                            
+                            setTimeout(() => {
+                                handleInput();
+                            }, 0);
+                        } else {
+                            // No selection - clear all formatting
+                            const textContent = editorRef.current.textContent || '';
+                            editorRef.current.innerHTML = '';
+                            const textNode = document.createTextNode(textContent);
+                            editorRef.current.appendChild(textNode);
+                            
+                            // Set cursor at end
+                            const newRange = document.createRange();
+                            newRange.selectNodeContents(editorRef.current);
+                            newRange.collapse(false);
+                            const sel = window.getSelection();
+                            if (sel) {
+                                sel.removeAllRanges();
+                                sel.addRange(newRange);
+                            }
+                            
+                            setTimeout(() => {
+                                handleInput();
+                            }, 0);
+                        }
+                    }}
                     className="px-2 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                     title="Clear Formatting"
                 >

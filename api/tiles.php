@@ -940,7 +940,7 @@ function handleCreateTile() {
                                 ? json_encode($link['allowedUsers']) 
                                 : null;
                             try {
-                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                                 $linkStmt->execute([
                                     $linkId,
                                     $sectionId,
@@ -954,7 +954,8 @@ function handleCreateTile() {
                                     $link['tooltip'] ?? null,
                                     $link['visibleFrom'] ?? null,
                                     $link['expiresAt'] ?? null,
-                                    $link['browser'] ?? null
+                                    $link['browser'] ?? null,
+                                    isset($link['position']) ? (int)$link['position'] : 0
                                 ]);
                             } catch (PDOException $e) {
                                 error_log('Error inserting link: ' . $e->getMessage());
@@ -1222,7 +1223,8 @@ function handleUpdateTile($tileId) {
                                     $link['tooltip'] ?? null,
                                     $link['visibleFrom'] ?? null,
                                     $link['expiresAt'] ?? null,
-                                    $link['browser'] ?? null
+                                    $link['browser'] ?? null,
+                                    isset($link['position']) ? (int)$link['position'] : 0
                                 ]);
                             }
                         }
@@ -1295,7 +1297,8 @@ function handleUpdateTile($tileId) {
                             $allowedUsers,
                             $link['notes'] ?? null,
                             $link['tooltip'] ?? null,
-                            $link['browser'] ?? null
+                            $link['browser'] ?? null,
+                            isset($link['position']) ? (int)$link['position'] : 0
                         ]);
                     }
                     
@@ -1438,84 +1441,96 @@ function handleCloneTile($tileId) {
     $user = requireAuth();
     $db = getDB();
     
-    // Get the original tile
-    $stmt = $db->prepare('SELECT * FROM tiles WHERE id = ?');
-    $stmt->execute([$tileId]);
-    $originalTile = $stmt->fetch();
+    // Begin transaction for atomicity
+    $db->beginTransaction();
     
-    if (!$originalTile) {
-        sendJSON(['error' => 'Tile not found'], 404);
-    }
+    try {
+        // Get the original tile
+        $stmt = $db->prepare('SELECT * FROM tiles WHERE id = ?');
+        $stmt->execute([$tileId]);
+        $originalTile = $stmt->fetch();
+        
+        if (!$originalTile) {
+            $db->rollBack();
+            sendJSON(['error' => 'Tile not found'], 404);
+            return;
+        }
     
-    // Check if user has permission to view this tile (required to clone it)
-    if (!canUserViewTile($user['id'], $tileId, $db)) {
-        sendJSON(['error' => 'You do not have permission to view this tile'], 403);
-    }
+        // Check if user has permission to view this tile (required to clone it)
+        if (!canUserViewTile($user['id'], $tileId, $db)) {
+            $db->rollBack();
+            sendJSON(['error' => 'You do not have permission to view this tile'], 403);
+            return;
+        }
+        
+        // Check visibility - user must be able to see the tile to clone it
+        $tileVisibility = $originalTile['visibility'] ?? 'public';
+        $tileAllowedUsers = $originalTile['allowed_users'] ? json_decode($originalTile['allowed_users'], true) : [];
+        
+        $isTileVisible = false;
+        if ($user && $user['is_admin']) {
+            $isTileVisible = true;
+        } elseif ($tileVisibility === 'public') {
+            $isTileVisible = true;
+        } elseif ($tileVisibility === 'authenticated' && $user) {
+            $isTileVisible = true;
+        } elseif ($tileVisibility === 'private' && $user) {
+            $isTileVisible = in_array($user['id'], $tileAllowedUsers);
+        }
+        
+        if (!$isTileVisible) {
+            $db->rollBack();
+            sendJSON(['error' => 'Tile not found'], 404);
+            return;
+        }
     
-    // Check visibility - user must be able to see the tile to clone it
-    $tileVisibility = $originalTile['visibility'] ?? 'public';
-    $tileAllowedUsers = $originalTile['allowed_users'] ? json_decode($originalTile['allowed_users'], true) : [];
+        // Generate new tile ID
+        $newTileId = uniqid('tile_', true);
+        
+        // Get current max position to append new tile
+        $maxPositionStmt = $db->prepare('SELECT MAX(position) as max_pos FROM tiles');
+        $maxPositionStmt->execute();
+        $maxPosRow = $maxPositionStmt->fetch();
+        $newPosition = ($maxPosRow && $maxPosRow['max_pos'] !== null) ? (int)$maxPosRow['max_pos'] + 1 : 0;
+        
+        // Create new tile with "Copy of" prefix
+        $newTitle = 'Copy of ' . $originalTile['title'];
+        $newVisibility = 'public'; // Cloned tiles default to public
+        $newAllowedUsers = null;
+        
+        $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        
+        if (!$insertStmt->execute([
+            $newTileId,
+            $user['id'],
+            $newTitle,
+            $originalTile['description'],
+            $originalTile['html_content'],
+            $originalTile['emoji'],
+            $originalTile['theme_color'],
+            $originalTile['group'],
+            $newVisibility,
+            $newAllowedUsers,
+            $originalTile['is_hyperlink'] ?? 0,
+            $originalTile['hyperlink_url'] ?? null,
+            $originalTile['open_in_new_tab'] ?? 0,
+            $originalTile['visible_from'] ?? null,
+            $originalTile['expires_at'] ?? null,
+            $originalTile['browser'] ?? null,
+            $newPosition,
+            time()
+        ])) {
+            $db->rollBack();
+            sendJSON(['error' => 'Failed to create cloned tile'], 500);
+            return;
+        }
     
-    $isTileVisible = false;
-    if ($user && $user['is_admin']) {
-        $isTileVisible = true;
-    } elseif ($tileVisibility === 'public') {
-        $isTileVisible = true;
-    } elseif ($tileVisibility === 'authenticated' && $user) {
-        $isTileVisible = true;
-    } elseif ($tileVisibility === 'private' && $user) {
-        $isTileVisible = in_array($user['id'], $tileAllowedUsers);
-    }
-    
-    if (!$isTileVisible) {
-        sendJSON(['error' => 'Tile not found'], 404);
-    }
-    
-    // Generate new tile ID
-    $newTileId = uniqid('tile_', true);
-    
-    // Get current max position to append new tile
-    $maxPositionStmt = $db->prepare('SELECT MAX(position) as max_pos FROM tiles');
-    $maxPositionStmt->execute();
-    $maxPosRow = $maxPositionStmt->fetch();
-    $newPosition = ($maxPosRow && $maxPosRow['max_pos'] !== null) ? (int)$maxPosRow['max_pos'] + 1 : 0;
-    
-    // Create new tile with "Copy of" prefix
-    $newTitle = 'Copy of ' . $originalTile['title'];
-    $newVisibility = 'public'; // Cloned tiles default to public
-    $newAllowedUsers = null;
-    
-    $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    
-    if (!$insertStmt->execute([
-        $newTileId,
-        $user['id'],
-        $newTitle,
-        $originalTile['description'],
-        $originalTile['html_content'],
-        $originalTile['emoji'],
-        $originalTile['theme_color'],
-        $originalTile['group'],
-        $newVisibility,
-        $newAllowedUsers,
-        $originalTile['is_hyperlink'] ?? 0,
-        $originalTile['hyperlink_url'] ?? null,
-        $originalTile['open_in_new_tab'] ?? 0,
-        $originalTile['visible_from'] ?? null,
-        $originalTile['expires_at'] ?? null,
-        $originalTile['browser'] ?? null,
-        $newPosition,
-        time()
-    ])) {
-        sendJSON(['error' => 'Failed to create cloned tile'], 500);
-    }
-    
-    // Clone tabs, sections, and links
-    $tabStmt = $db->prepare('SELECT * FROM tabs WHERE tile_id = ? ORDER BY position ASC');
-    $tabStmt->execute([$tileId]);
-    $tabs = $tabStmt->fetchAll();
-    
-    if (empty($tabs)) {
+        // Clone tabs, sections, and links
+        $tabStmt = $db->prepare('SELECT * FROM tabs WHERE tile_id = ? ORDER BY position ASC');
+        $tabStmt->execute([$tileId]);
+        $tabs = $tabStmt->fetchAll();
+        
+        if (empty($tabs)) {
         // Check for legacy sections (backward compatibility)
         $legacySectionStmt = $db->prepare('SELECT * FROM sections WHERE tile_id = ? AND (tab_id IS NULL OR tab_id = "")');
         $legacySectionStmt->execute([$tileId]);
@@ -1553,7 +1568,7 @@ function handleCloneTile($tileId) {
                 
                 foreach ($links as $link) {
                     $newLinkId = uniqid('link_', true);
-                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                     $linkInsertStmt->execute([
                         $newLinkId,
                         $newSectionId,
@@ -1568,14 +1583,30 @@ function handleCloneTile($tileId) {
                         $link['visible_from'] ?? null,
                         $link['expires_at'] ?? null,
                         $link['browser'] ?? null,
-                        $link['position'] ?? 0
+                        isset($link['position']) ? (int)$link['position'] : 0
+                    ]);
+                }
+                
+                // Clone rich text content for legacy sections
+                $richTextStmt = $db->prepare('SELECT * FROM rich_text_content WHERE section_id = ?');
+                $richTextStmt->execute([$section['id']]);
+                $richTextItems = $richTextStmt->fetchAll();
+                
+                foreach ($richTextItems as $richText) {
+                    $newRichTextId = uniqid('richtext_', true);
+                    $richTextInsertStmt = $db->prepare('INSERT INTO rich_text_content (id, section_id, content, position) VALUES (?, ?, ?, ?)');
+                    $richTextInsertStmt->execute([
+                        $newRichTextId,
+                        $newSectionId,
+                        $richText['content'] ?? '',
+                        isset($richText['position']) ? (int)$richText['position'] : 0
                     ]);
                 }
             }
         }
     } else {
-            // Clone tabs and their sections/links
-            foreach ($tabs as $tab) {
+        // Clone tabs and their sections/links
+        foreach ($tabs as $tab) {
             $newTabId = uniqid('tab_', true);
             $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
             $tabInsertStmt->execute([
@@ -1613,7 +1644,7 @@ function handleCloneTile($tileId) {
                 
                 foreach ($links as $link) {
                     $newLinkId = uniqid('link_', true);
-                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                     $linkInsertStmt->execute([
                         $newLinkId,
                         $newSectionId,
@@ -1628,14 +1659,45 @@ function handleCloneTile($tileId) {
                         $link['visible_from'] ?? null,
                         $link['expires_at'] ?? null,
                         $link['browser'] ?? null,
-                        $link['position'] ?? 0
+                        isset($link['position']) ? (int)$link['position'] : 0
+                    ]);
+                }
+                
+                // Clone rich text content for sections
+                $richTextStmt = $db->prepare('SELECT * FROM rich_text_content WHERE section_id = ?');
+                $richTextStmt->execute([$section['id']]);
+                $richTextItems = $richTextStmt->fetchAll();
+                
+                foreach ($richTextItems as $richText) {
+                    $newRichTextId = uniqid('richtext_', true);
+                    $richTextInsertStmt = $db->prepare('INSERT INTO rich_text_content (id, section_id, content, position) VALUES (?, ?, ?, ?)');
+                    $richTextInsertStmt->execute([
+                        $newRichTextId,
+                        $newSectionId,
+                        $richText['content'] ?? '',
+                        isset($richText['position']) ? (int)$richText['position'] : 0
                     ]);
                 }
             }
         }
     }
+        
+    // Commit transaction
+    $db->commit();
     
     sendJSON(['success' => true, 'id' => $newTileId], 201);
+    
+    } catch (PDOException $e) {
+        $db->rollBack();
+        error_log('Clone tile error: ' . $e->getMessage());
+        error_log('Stack trace: ' . $e->getTraceAsString());
+        sendJSON(['error' => 'Failed to clone tile: ' . $e->getMessage()], 500);
+    } catch (Exception $e) {
+        $db->rollBack();
+        error_log('Clone tile error (non-PDO): ' . $e->getMessage());
+        error_log('Stack trace: ' . $e->getTraceAsString());
+        sendJSON(['error' => 'Failed to clone tile: ' . $e->getMessage()], 500);
+    }
 }
 
 function handleCloneCategory($categoryName) {

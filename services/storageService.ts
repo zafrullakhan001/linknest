@@ -261,10 +261,15 @@ export const cloneTile = async (tileId: string): Promise<Tile> => {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to clone tile');
+      const errorData = await response.json().catch(() => ({ error: 'Failed to clone tile' }));
+      throw new Error(errorData.error || 'Failed to clone tile');
     }
 
     const data = await response.json();
+    if (!data.success || !data.id) {
+      throw new Error(data.error || 'Failed to clone tile');
+    }
+    
     // Fetch the cloned tile to get full data
     const tiles = await getTiles();
     const cloned = tiles.find(t => t.id === data.id);
