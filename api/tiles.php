@@ -247,7 +247,7 @@ function handleGetTiles() {
                 ];
                 
                 // Get links for this section with visibility filtering
-                $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
+                $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ? ORDER BY position ASC, id ASC');
                 $linkStmt->execute([$sectionRow['id']]);
                 
                 while ($linkRow = $linkStmt->fetch()) {
@@ -285,7 +285,8 @@ function handleGetTiles() {
                         'tooltip' => isset($linkRow['tooltip']) ? $linkRow['tooltip'] : null,
                         'visibleFrom' => isset($linkRow['visible_from']) ? $linkRow['visible_from'] : null,
                         'expiresAt' => isset($linkRow['expires_at']) ? $linkRow['expires_at'] : null,
-                        'browser' => isset($linkRow['browser']) ? $linkRow['browser'] : null
+                        'browser' => isset($linkRow['browser']) ? $linkRow['browser'] : null,
+                        'position' => (int)($linkRow['position'] ?? 0)
                     ];
                     
                     // Include health data if available
@@ -335,7 +336,7 @@ function handleGetTiles() {
                         'links' => []
                     ];
                     
-                    $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
+                    $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ? ORDER BY position ASC, id ASC');
                     $linkStmt->execute([$sectionRow['id']]);
                     
                     while ($linkRow = $linkStmt->fetch()) {
@@ -367,7 +368,8 @@ function handleGetTiles() {
                             'allowedUsers' => $allowedUsers,
                             'notes' => $linkRow['notes'] ?? null,
                             'tooltip' => $linkRow['tooltip'] ?? null,
-                            'browser' => $linkRow['browser'] ?? null
+                            'browser' => $linkRow['browser'] ?? null,
+                            'position' => (int)($linkRow['position'] ?? 0)
                         ];
                         
                         if (isset($linkRow['health_status'])) {
@@ -682,7 +684,7 @@ function handleGetTile($tileId) {
             
             // Get links with visibility filtering
             $user = getAuthenticatedUser();
-            $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
+            $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ? ORDER BY position ASC, id ASC');
             $linkStmt->execute([$sectionRow['id']]);
             
             while ($linkRow = $linkStmt->fetch()) {
@@ -719,7 +721,8 @@ function handleGetTile($tileId) {
                     'tooltip' => isset($linkRow['tooltip']) ? $linkRow['tooltip'] : null,
                     'visibleFrom' => isset($linkRow['visible_from']) ? $linkRow['visible_from'] : null,
                     'expiresAt' => isset($linkRow['expires_at']) ? $linkRow['expires_at'] : null,
-                    'browser' => isset($linkRow['browser']) ? $linkRow['browser'] : null
+                    'browser' => isset($linkRow['browser']) ? $linkRow['browser'] : null,
+                    'position' => (int)($linkRow['position'] ?? 0)
                 ];
                 
                 // Include health data if available
@@ -776,7 +779,7 @@ function handleGetTile($tileId) {
                 ];
                 
                 $user = getAuthenticatedUser();
-                $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
+                $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ? ORDER BY position ASC, id ASC');
                 $linkStmt->execute([$sectionRow['id']]);
                 
                 while ($linkRow = $linkStmt->fetch()) {
@@ -808,7 +811,8 @@ function handleGetTile($tileId) {
                         'allowedUsers' => $allowedUsers,
                         'notes' => $linkRow['notes'] ?? null,
                         'tooltip' => $linkRow['tooltip'] ?? null,
-                        'browser' => $linkRow['browser'] ?? null
+                        'browser' => $linkRow['browser'] ?? null,
+                        'position' => (int)($linkRow['position'] ?? 0)
                     ];
                     
                     if (isset($linkRow['health_status'])) {
@@ -1204,7 +1208,7 @@ function handleUpdateTile($tileId) {
                                 $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) 
                                     ? json_encode($link['allowedUsers']) 
                                     : null;
-                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                                 $linkStmt->execute([
                                     $linkId,
                                     $sectionId,
@@ -1279,7 +1283,7 @@ function handleUpdateTile($tileId) {
                         $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) 
                             ? json_encode($link['allowedUsers']) 
                             : null;
-                        $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                        $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, browser, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                         $linkStmt->execute([
                             $linkId,
                             $sectionId,
@@ -1563,7 +1567,8 @@ function handleCloneTile($tileId) {
                         $link['tooltip'] ?? null,
                         $link['visible_from'] ?? null,
                         $link['expires_at'] ?? null,
-                        $link['browser'] ?? null
+                        $link['browser'] ?? null,
+                        $link['position'] ?? 0
                     ]);
                 }
             }
@@ -1622,7 +1627,8 @@ function handleCloneTile($tileId) {
                         $link['tooltip'] ?? null,
                         $link['visible_from'] ?? null,
                         $link['expires_at'] ?? null,
-                        $link['browser'] ?? null
+                        $link['browser'] ?? null,
+                        $link['position'] ?? 0
                     ]);
                 }
             }
@@ -1775,7 +1781,7 @@ function handleCloneCategory($categoryName) {
                         
                         foreach ($links as $link) {
                             $newLinkId = uniqid('link_', true);
-                            $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                            $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                             $linkInsertStmt->execute([
                                 $newLinkId,
                                 $newSectionId,
@@ -1789,7 +1795,8 @@ function handleCloneCategory($categoryName) {
                                 $link['tooltip'] ?? null,
                                 $link['visible_from'] ?? null,
                                 $link['expires_at'] ?? null,
-                                $link['browser'] ?? null
+                                $link['browser'] ?? null,
+                                $link['position'] ?? 0
                             ]);
                         }
                     }
@@ -1833,7 +1840,7 @@ function handleCloneCategory($categoryName) {
                         
                         foreach ($links as $link) {
                             $newLinkId = uniqid('link_', true);
-                            $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                            $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                             $linkInsertStmt->execute([
                                 $newLinkId,
                                 $newSectionId,
@@ -1847,7 +1854,8 @@ function handleCloneCategory($categoryName) {
                                 $link['tooltip'] ?? null,
                                 $link['visible_from'] ?? null,
                                 $link['expires_at'] ?? null,
-                                $link['browser'] ?? null
+                                $link['browser'] ?? null,
+                                $link['position'] ?? 0
                             ]);
                         }
                     }

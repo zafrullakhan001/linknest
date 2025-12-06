@@ -619,6 +619,23 @@ function initDatabase() {
         } catch (PDOException $e) {
             error_log('Links icon/textColor migration warning: ' . $e->getMessage());
         }
+
+        // Migrate existing links table to add position column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(links)")->fetchAll();
+            $hasPosition = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'position') {
+                    $hasPosition = true;
+                    break;
+                }
+            }
+            if (!$hasPosition) {
+                $db->exec('ALTER TABLE links ADD COLUMN position INTEGER DEFAULT 0');
+            }
+        } catch (PDOException $e) {
+            error_log('Links position migration warning: ' . $e->getMessage());
+        }
         
         // Create settings table
         $db->exec('CREATE TABLE IF NOT EXISTS settings (

@@ -22,6 +22,7 @@ export interface Link {
   visibleFrom?: string; // ISO date string - link becomes visible from this date/time
   expiresAt?: string; // ISO date string - link expires at this date/time
   browser?: string; // Browser to open link in (e.g., 'chrome-stable', 'edge-stable', 'default')
+  position?: number; // Position for ordering mixed content
 }
 
 export interface RichTextContent {

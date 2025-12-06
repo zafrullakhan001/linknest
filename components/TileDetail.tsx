@@ -62,7 +62,7 @@ const EmojiPickerTabs: React.FC<{
     // Get all emojis for search
     const allEmojis = categories.flatMap(cat => cat.emojis);
     const uniqueEmojis = Array.from(new Set(allEmojis));
-    
+
     const filteredEmojis = searchTerm
         ? uniqueEmojis.filter(emoji => emoji.includes(searchTerm))
         : categories.find(cat => cat.id === activeTab)?.emojis || [];
@@ -95,11 +95,10 @@ const EmojiPickerTabs: React.FC<{
                                 setActiveTab(category.id);
                                 setSearchTerm('');
                             }}
-                            className={`px-3 py-2 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
-                                activeTab === category.id
-                                    ? 'border-brand-500 text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/20'
-                                    : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'
-                            }`}
+                            className={`px-3 py-2 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${activeTab === category.id
+                                ? 'border-brand-500 text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/20'
+                                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'
+                                }`}
                         >
                             {category.name}
                         </button>
@@ -173,7 +172,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editBrowser, setEditBrowser] = useState<string>(tile.browser || 'default');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [showTileUserSelector, setShowTileUserSelector] = useState(false);
-    
+
     const { settings } = useSettings();
 
     // Tabs State (new structure)
@@ -187,16 +186,16 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     // State for Editing Links (keyed by link ID)
     const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
     const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], notes: string, tooltip: string, browser: string }>>({});
-    
+
     // Available browsers from BrowserLauncher API
     const [availableBrowsers, setAvailableBrowsers] = useState<string[]>([]);
-    
+
     // State for browser selection menu (keyed by link ID)
     const [showBrowserMenu, setShowBrowserMenu] = useState<Record<string, boolean>>({});
     const [browserMenuPosition, setBrowserMenuPosition] = useState<Record<string, { x: number; y: number }>>({});
     const [saveBrowserForLink, setSaveBrowserForLink] = useState<Record<string, boolean>>({});
     const [selectedBrowserForLink, setSelectedBrowserForLink] = useState<Record<string, string>>({});
-    
+
     // State for link emoji picker visibility (keyed by section ID or link ID)
     const [showLinkEmojiPicker, setShowLinkEmojiPicker] = useState<Record<string, boolean>>({});
 
@@ -217,7 +216,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             return null;
         }
     });
-    
+
     // Save selectedTabId to localStorage whenever it changes
     useEffect(() => {
         if (selectedTabId) {
@@ -228,7 +227,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             }
         }
     }, [selectedTabId, tile.id]);
-    
+
     // Reload selected tab from localStorage when tile changes (when viewing a different tile)
     // This needs to run before the tab initialization useEffect
     useEffect(() => {
@@ -271,7 +270,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     // Add Link Form Visibility State
     const [showAddLinkForm, setShowAddLinkForm] = useState<Record<string, boolean>>({});
-    
+
     // Rich Text Content State
     const [editingRichTextId, setEditingRichTextId] = useState<Record<string, string | null>>({}); // sectionId -> richTextId
     const [showAddRichTextForm, setShowAddRichTextForm] = useState<Record<string, boolean>>({});
@@ -336,13 +335,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     richTextContent: section.richTextContent ? section.richTextContent.map(rt => ({ ...rt })) : []
                 })) : []
             }));
-            
+
             // Debug: Log richTextContent when loading
             clonedTabs.forEach(tab => {
                 tab.sections.forEach(section => {
                 });
             });
-            
+
             setEditTabs(clonedTabs);
             const allSections: LinkSection[] = [];
             clonedTabs.forEach(tab => {
@@ -393,7 +392,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         richTextContent: section.richTextContent ? section.richTextContent.map(rt => ({ ...rt })) : []
                     })) : []
                 }));
-                
+
                 setEditTabs(clonedTabs);
                 const allSections: LinkSection[] = [];
                 clonedTabs.forEach(tab => {
@@ -510,7 +509,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     setAvailableBrowsers(fallbackBrowsers);
                 }
             };
-            
+
             // Start loading browsers
             loadBrowsers();
         } else {
@@ -550,10 +549,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 ...updatedLinks[linkIndex],
                                 browser: browserId && browserId !== 'default' ? browserId : undefined
                             };
-                            const updatedSections = tab.sections.map(s => 
+                            const updatedSections = tab.sections.map(s =>
                                 s.id === section.id ? { ...s, links: updatedLinks } : s
                             );
-                            const updatedTabs = tabs.map(t => 
+                            const updatedTabs = tabs.map(t =>
                                 t.id === tab.id ? { ...t, sections: updatedSections } : t
                             );
                             return {
@@ -572,7 +571,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             ...updatedLinks[linkIndex],
                             browser: browserId && browserId !== 'default' ? browserId : undefined
                         };
-                        const updatedSections = sections.map(s => 
+                        const updatedSections = sections.map(s =>
                             s.id === section.id ? { ...s, links: updatedLinks } : s
                         );
                         return {
@@ -619,7 +618,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             }
 
             const result = await response.json();
-            
+
             // Update the tile's browser setting in local state
             const updatedTile: Tile = {
                 ...tile,
@@ -627,7 +626,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             };
             const updatedTiles = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
             onUpdateTiles(updatedTiles, true); // Skip reload since we're just updating browser
-            
+
             // Show success message
             alert(`Successfully updated default browser for ${result.updatedLinks || 0} link(s) in this tile.`);
         } catch (error) {
@@ -637,7 +636,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     const handleSaveChanges = () => {
-        
+
         // Check if user has edit permission
         if (!tile.canEdit) {
             console.log('ERROR: No edit permission');
@@ -656,13 +655,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 richTextContent: section.richTextContent ? section.richTextContent.map(rt => ({ ...rt })) : []
             }))
         })) : undefined;
-        
+
         const clonedSections = editTabs.length === 0 ? editSections.map(section => ({
             ...section,
             links: section.links ? [...section.links] : [],
             richTextContent: section.richTextContent ? section.richTextContent.map(rt => ({ ...rt })) : []
         })) : undefined;
-        
+
         const updatedTile: Tile = {
             ...tile,
             title: editTitle,
@@ -679,12 +678,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
 
         const updatedTiles = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
-        
+
         // Push the updated tiles up; App will persist them and re‑pass
         // the updated `tile` prop back down.
         // Note: onUpdateTiles will reload from server, which should include richTextContent
         onUpdateTiles(updatedTiles);
-        
+
         // Only exit edit mode if this is NOT an auto-save
         if (!autoSavingRef.current) {
             setIsEditing(false);
@@ -715,14 +714,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         console.log('isEditing:', isEditing);
         console.log('Current editTabs before deletion:', editTabs.map(t => ({ id: t.id, title: t.title, position: t.position })));
         console.log('Current editTabs count:', editTabs.length);
-        
+
         // Ensure we're in edit mode
         if (!isEditing) {
             console.error('ERROR: Not in edit mode!');
             alert('Please enter edit mode first before deleting tabs.');
             return;
         }
-        
+
         if (!tile.canEdit) {
             console.log('ERROR: No edit permission');
             alert('You do not have permission to edit this tile.');
@@ -753,35 +752,35 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
 
         console.log('Proceeding with deletion...');
-        
+
         // Calculate the updated tabs first
         const filteredTabs = editTabs.filter(t => t.id !== tabId);
         const reorderedTabs = filteredTabs.map((t, idx) => ({ ...t, position: idx }));
-        
+
         console.log('After filter - remaining tabs:', reorderedTabs.map(t => ({ id: t.id, title: t.title })));
         console.log('After reorder - final tabs:', reorderedTabs.map(t => ({ id: t.id, title: t.title, position: t.position })));
         console.log('=== TAB DELETION COMPLETE ===');
-        
+
         // Update state
         setEditTabs(reorderedTabs);
-        
+
         // Automatically save after deletion
         // Mark that we're auto-saving to prevent edit mode from exiting
         autoSavingRef.current = true;
-        
+
         // Use setTimeout to ensure state update is processed first
         setTimeout(() => {
             console.log('Auto-saving after tab deletion...');
             console.log('Tabs to save:', reorderedTabs.length);
             console.log('Current isEditing state:', isEditing);
-            
+
             // Ensure we're still in edit mode before saving
             if (!isEditing) {
                 console.log('WARNING: Not in edit mode anymore, skipping auto-save');
                 autoSavingRef.current = false;
                 return;
             }
-            
+
             // Build updated tile with the new tabs
             const updatedTile: Tile = {
                 ...tile,
@@ -801,13 +800,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
             const updatedTiles = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
             console.log('Auto-save: Calling onUpdateTiles with skipReload=true');
-            
+
             // Call onUpdateTiles with skipReload=true to prevent reload that resets edit mode
             try {
                 // This will save to server but skip the reload
                 onUpdateTiles(updatedTiles, true);
                 console.log('Auto-save: Tab deletion saved successfully - staying in edit mode');
-                
+
                 // Reset the flag after a delay
                 setTimeout(() => {
                     autoSavingRef.current = false;
@@ -967,28 +966,28 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const handleRemoveSection = (tabId: string, sectionId: string) => {
         console.log('=== SECTION DELETION START ===');
         console.log('Tab ID:', tabId, 'Section ID:', sectionId);
-        
+
         if (!tile.canEdit) {
             alert('You do not have permission to edit this tile.');
             return;
         }
-        
+
         // Ensure we're in edit mode
         if (!isEditing) {
             console.error('ERROR: Not in edit mode!');
             alert('Please enter edit mode first before deleting sections.');
             return;
         }
-        
+
         const confirmed = window.confirm('Delete this section and all its links?');
         if (!confirmed) {
             console.log('User cancelled section deletion');
             return;
         }
-        
+
         console.log('Proceeding with section deletion...');
         console.log('Current editTabs:', editTabs.map(t => ({ id: t.id, title: t.title, sectionsCount: t.sections.length })));
-        
+
         // Find the tab and section
         const tab = editTabs.find(t => t.id === tabId);
         if (!tab) {
@@ -996,17 +995,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             alert('Tab not found. This may be a synchronization issue.');
             return;
         }
-        
+
         const section = tab.sections.find(s => s.id === sectionId);
         if (!section) {
             console.error('ERROR: Section not found!', sectionId);
             alert('Section not found. This may be a synchronization issue.');
             return;
         }
-        
+
         console.log('Found tab:', tab.title, 'Found section:', section.title);
         console.log('Tab sections before deletion:', tab.sections.map(s => ({ id: s.id, title: s.title })));
-        
+
         // Calculate the updated tabs with section removed
         const updatedTabs = editTabs.map(tab => {
             if (tab.id === tabId) {
@@ -1020,10 +1019,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             }
             return tab;
         });
-        
+
         console.log('=== SECTION DELETION COMPLETE ===');
         console.log('Updated tabs:', updatedTabs.map(t => ({ id: t.id, title: t.title, sectionsCount: t.sections.length })));
-        
+
         // Update state using functional update to ensure we have latest state
         setEditTabs(prevTabs => {
             console.log('Inside setEditTabs for section deletion - prevTabs:', prevTabs.map(t => ({ id: t.id, sectionsCount: t.sections.length })));
@@ -1041,14 +1040,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             console.log('setEditTabs result:', result.map(t => ({ id: t.id, sectionsCount: t.sections.length })));
             return result;
         });
-        
+
         // Automatically save after deletion
         autoSavingRef.current = true;
-        
+
         // Use setTimeout to ensure state update is processed first
         setTimeout(() => {
             console.log('Auto-saving after section deletion...');
-            
+
             // Get the latest tabs state for saving
             setEditTabs(currentTabs => {
                 // Build updated tile with the current tabs (which should have section removed)
@@ -1070,14 +1069,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                 const updatedTilesArray = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
                 console.log('Auto-save: Calling onUpdateTiles with skipReload=true');
-                
+
                 // Call onUpdateTiles with skipReload=true to prevent reload that resets edit mode
                 // Do this outside the setState callback to avoid issues
                 setTimeout(() => {
                     try {
                         onUpdateTiles(updatedTilesArray, true);
                         console.log('Auto-save: Section deletion saved successfully - staying in edit mode');
-                        
+
                         // Reset the flag after a delay
                         setTimeout(() => {
                             autoSavingRef.current = false;
@@ -1089,7 +1088,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         autoSavingRef.current = false;
                     }
                 }, 50);
-                
+
                 // Return current tabs unchanged (state already updated above)
                 return currentTabs;
             });
@@ -1220,7 +1219,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         ...tab,
                         sections: tab.sections.map(s => {
                             if (s.id === sectionId) {
-                                return { ...s, links: [...s.links, newLink], richTextContent: s.richTextContent || [] };
+                                // Calculate position
+                                const items = getSortedItems(s);
+                                const maxPosition = Math.max(...items.map(i => i.position || 0), -1);
+                                const linkWithPos = { ...newLink, position: maxPosition + 1 };
+                                return { ...s, links: [...s.links, linkWithPos], richTextContent: s.richTextContent || [] };
                             }
                             return s;
                         })
@@ -1232,7 +1235,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             // Backward compatibility: sections without tabs
             setEditSections(editSections.map(s => {
                 if (s.id === sectionId) {
-                    return { ...s, links: [...s.links, newLink], richTextContent: s.richTextContent || [] };
+                    // Calculate position
+                    const items = getSortedItems(s);
+                    const maxPosition = Math.max(...items.map(i => i.position || 0), -1);
+                    const linkWithPos = { ...newLink, position: maxPosition + 1 };
+                    return { ...s, links: [...s.links, linkWithPos], richTextContent: s.richTextContent || [] };
                 }
                 return s;
             }));
@@ -1528,44 +1535,62 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         updateEditLinkState(linkId, 'allowedUsers', newUsers);
     };
 
-    const handleMoveLink = (tabId: string, sectionId: string, linkId: string, direction: 'up' | 'down') => {
+    // Helper to get normalized sorted items
+    const getSortedItems = (section: LinkSection) => {
+        const links = (section.links || []).map(l => ({ ...l, type: 'link' as const }));
+        const richText = (section.richTextContent || []).map(r => ({ ...r, type: 'rich-text' as const }));
+        return [...links, ...richText].sort((a, b) => {
+            const posA = a.position !== undefined ? a.position : 0;
+            const posB = b.position !== undefined ? b.position : 0;
+            if (posA !== posB) return posA - posB;
+            // Stable sort for items with same position (legacy)
+            // Links before RichText if both 0
+            if (a.type !== b.type) return a.type === 'link' ? -1 : 1;
+            return 0;
+        });
+    };
+
+    const handleMoveItem = (tabId: string, sectionId: string, itemId: string, direction: 'up' | 'down') => {
+        const updateSection = (s: LinkSection) => {
+            if (s.id !== sectionId) return s;
+
+            // 1. Get all items sorted and normalized
+            let items = getSortedItems(s);
+
+            // 2. Find index of item to move
+            const index = items.findIndex(i => i.id === itemId);
+            if (index === -1) return s;
+
+            // 3. Calculate target index
+            const newIndex = direction === 'up' ? index - 1 : index + 1;
+            if (newIndex < 0 || newIndex >= items.length) return s;
+
+            // 4. Swap in the array
+            const newItems = [...items];
+            [newItems[index], newItems[newIndex]] = [newItems[newIndex], newItems[index]];
+
+            // 5. Re-assign strict positions
+            newItems.forEach((item, idx) => {
+                item.position = idx;
+            });
+
+            // 6. Split back into links and richTextContent
+            const newLinks = newItems.filter(i => i.type === 'link').map(({ type, ...rest }) => rest as Link);
+            const newRichText = newItems.filter(i => i.type === 'rich-text').map(({ type, ...rest }) => rest as RichTextContent);
+
+            return { ...s, links: newLinks, richTextContent: newRichText };
+        };
+
         if (editTabs.length > 0) {
-            // New structure with tabs
             setEditTabs(editTabs.map(tab => {
                 if (tab.id !== tabId) return tab;
-
                 return {
                     ...tab,
-                    sections: tab.sections.map(s => {
-                        if (s.id !== sectionId) return s;
-
-                        const index = s.links.findIndex(l => l.id === linkId);
-                        if (index === -1) return s;
-
-                        const newIndex = direction === 'up' ? index - 1 : index + 1;
-                        if (newIndex < 0 || newIndex >= s.links.length) return s;
-
-                        const newLinks = [...s.links];
-                        [newLinks[index], newLinks[newIndex]] = [newLinks[newIndex], newLinks[index]];
-                        return { ...s, links: newLinks, richTextContent: s.richTextContent || [] };
-                    })
+                    sections: tab.sections.map(updateSection)
                 };
             }));
         } else {
-            // Backward compatibility: sections without tabs
-            setEditSections(editSections.map(s => {
-                if (s.id !== sectionId) return s;
-
-                const index = s.links.findIndex(l => l.id === linkId);
-                if (index === -1) return s;
-
-                const newIndex = direction === 'up' ? index - 1 : index + 1;
-                if (newIndex < 0 || newIndex >= s.links.length) return s;
-
-                const newLinks = [...s.links];
-                [newLinks[index], newLinks[newIndex]] = [newLinks[newIndex], newLinks[index]];
-                return { ...s, links: newLinks, richTextContent: s.richTextContent || [] };
-            }));
+            setEditSections(editSections.map(updateSection));
         }
     };
 
@@ -1580,34 +1605,28 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             position: 0 // Will be set based on current items
         };
 
+        const updateSection = (s: LinkSection) => {
+            if (s.id !== sectionId) return s;
+            const items = getSortedItems(s);
+            const maxPosition = Math.max(...items.map(i => i.position || 0), -1);
+            newRichText.position = maxPosition + 1;
+            const richTextItems = s.richTextContent || [];
+            return {
+                ...s,
+                richTextContent: [...richTextItems, newRichText]
+            };
+        };
+
         if (editTabs.length > 0) {
             setEditTabs(editTabs.map(tab => {
                 if (tab.id !== tabId) return tab;
                 return {
                     ...tab,
-                    sections: tab.sections.map(s => {
-                        if (s.id !== sectionId) return s;
-                        const richTextItems = s.richTextContent || [];
-                        const maxPosition = Math.max(...richTextItems.map(rt => rt.position || 0), -1);
-                        newRichText.position = maxPosition + 1;
-                        return {
-                            ...s,
-                            richTextContent: [...richTextItems, newRichText]
-                        };
-                    })
+                    sections: tab.sections.map(updateSection)
                 };
             }));
         } else {
-            setEditSections(editSections.map(s => {
-                if (s.id !== sectionId) return s;
-                const richTextItems = s.richTextContent || [];
-                const maxPosition = Math.max(...richTextItems.map(rt => rt.position || 0), -1);
-                newRichText.position = maxPosition + 1;
-                return {
-                    ...s,
-                    richTextContent: [...richTextItems, newRichText]
-                };
-            }));
+            setEditSections(editSections.map(updateSection));
         }
 
         setNewRichTextContent(prev => ({ ...prev, [sectionId]: '' }));
@@ -1672,49 +1691,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     const handleMoveRichText = (tabId: string, sectionId: string, richTextId: string, direction: 'up' | 'down') => {
-        if (editTabs.length > 0) {
-            setEditTabs(editTabs.map(tab => {
-                if (tab.id !== tabId) return tab;
-                return {
-                    ...tab,
-                    sections: tab.sections.map(s => {
-                        if (s.id !== sectionId) return s;
-                        const richTextItems = s.richTextContent || [];
-                        const index = richTextItems.findIndex(rt => rt.id === richTextId);
-                        if (index === -1) return s;
-
-                        const newIndex = direction === 'up' ? index - 1 : index + 1;
-                        if (newIndex < 0 || newIndex >= richTextItems.length) return s;
-
-                        const newItems = [...richTextItems];
-                        [newItems[index], newItems[newIndex]] = [newItems[newIndex], newItems[index]];
-                        // Update positions
-                        newItems.forEach((item, idx) => {
-                            item.position = idx;
-                        });
-                        return { ...s, richTextContent: newItems };
-                    })
-                };
-            }));
-        } else {
-            setEditSections(editSections.map(s => {
-                if (s.id !== sectionId) return s;
-                const richTextItems = s.richTextContent || [];
-                const index = richTextItems.findIndex(rt => rt.id === richTextId);
-                if (index === -1) return s;
-
-                const newIndex = direction === 'up' ? index - 1 : index + 1;
-                if (newIndex < 0 || newIndex >= richTextItems.length) return s;
-
-                const newItems = [...richTextItems];
-                [newItems[index], newItems[newIndex]] = [newItems[newIndex], newItems[index]];
-                // Update positions
-                newItems.forEach((item, idx) => {
-                    item.position = idx;
-                });
-                return { ...s, richTextContent: newItems };
-            }));
-        }
+        handleMoveItem(tabId, sectionId, richTextId, direction);
     };
 
     const handleCloneLink = (tabId: string, sectionId: string, linkId: string) => {
@@ -1726,8 +1703,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 sections: tab.sections.map(section => {
                     if (section.id !== sectionId) return section;
 
-                    const linkToClone = section.links.find(l => l.id === linkId);
-                    if (!linkToClone) return section;
+                    const items = getSortedItems(section);
+                    const sourceIndex = items.findIndex(i => i.id === linkId && i.type === 'link');
+
+                    if (sourceIndex === -1) return section;
+
+                    const linkToClone = items[sourceIndex] as Link;
 
                     // Clone the link with a new ID
                     const clonedLink: Link = {
@@ -1740,18 +1721,34 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         allowedUsers: linkToClone.allowedUsers ? [...linkToClone.allowedUsers] : undefined,
                         notes: linkToClone.notes,
                         tooltip: linkToClone.tooltip,
-                        health: linkToClone.health
+                        health: linkToClone.health,
+                        browser: linkToClone.browser
                     };
 
-                    // Insert cloned link after the original
-                    const index = section.links.findIndex(l => l.id === linkId);
-                    const newLinks = [
-                        ...section.links.slice(0, index + 1),
-                        clonedLink,
-                        ...section.links.slice(index + 1)
+                    // Insert cloned link after the original in the sorted list
+                    const updatedItems = [
+                        ...items.slice(0, sourceIndex + 1),
+                        { ...clonedLink, type: 'link' as const },
+                        ...items.slice(sourceIndex + 1)
                     ];
 
-                    return { ...section, links: newLinks, richTextContent: section.richTextContent || [] };
+                    // Re-assign positions and separate back into links and rich text
+                    const finalLinks: Link[] = [];
+                    const finalRichText: RichTextContent[] = [];
+
+                    updatedItems.forEach((item, index) => {
+                        // Extract strictly the properties needed, excluding the temporary 'type'
+                        const { type, ...rest } = item;
+                        const itemWithPos = { ...rest, position: index };
+
+                        if (type === 'link') {
+                            finalLinks.push(itemWithPos as Link);
+                        } else {
+                            finalRichText.push(itemWithPos as RichTextContent);
+                        }
+                    });
+
+                    return { ...section, links: finalLinks, richTextContent: finalRichText };
                 })
             };
         }));
@@ -1773,24 +1770,24 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     // So we must pass WSL browsers WITH the -wsl suffix to the extension
     const normalizeBrowserId = (browserId: string): string => {
         if (!browserId) return browserId;
-        
+
         const normalized = browserId.toLowerCase().trim();
-        
+
         // DO NOT remove -wsl suffix - pass it to the extension as-is
         // The extension's normalizeBrowserId will correctly map:
         // - edge-stable-wsl -> edge-stable (WSL browser)
         // - edge-stable -> edge-stable-local (Local browser)
-        
+
         // Only handle short aliases that need mapping
         const shortAliases: Record<string, string> = {
             'edge': 'edge-stable-local',
             'chrome': 'chrome-stable-local'
         };
-        
+
         if (shortAliases[normalized]) {
             return shortAliases[normalized];
         }
-        
+
         // Return as-is - let the extension's normalizeBrowserId handle all WSL/local mapping
         // This is critical: WSL browsers must keep their -wsl suffix
         return browserId;
@@ -1800,16 +1797,16 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const openLinkInBrowser = (url: string, browserId: string) => {
         if (typeof window !== 'undefined' && (window as any).BrowserLauncher) {
             const BrowserLauncher = (window as any).BrowserLauncher;
-            
+
             // Configure extension ID if provided
             if (settings.browser_extension_id) {
                 BrowserLauncher.setExtensionId(settings.browser_extension_id);
             }
-            
+
             // Normalize browser ID before opening
             const normalizedBrowserId = normalizeBrowserId(browserId);
             console.log('Opening link in browser:', url, 'browserId:', browserId, 'normalized:', normalizedBrowserId);
-            
+
             // Open link in specified browser
             BrowserLauncher.open(url, normalizedBrowserId, { fallback: true }, (response: any) => {
                 if (response && response.success !== false) {
@@ -1880,7 +1877,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             e.preventDefault();
             e.stopPropagation();
         }
-        
+
         setCheckingHealth(true);
         try {
             const results = await linkHealthService.checkTileLinks(tile.id);
@@ -1989,7 +1986,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         // Fall through to select first tab
                     }
                 }
-                
+
                 // No valid saved tab, select the first visible one
                 setSelectedTabId(sortedTabs[0].id);
             }
@@ -2389,14 +2386,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 }
                                                                 return;
                                                             }
-                                                            
+
                                                             // If browser extension is enabled, check for browser configuration
                                                             if (settings.browser_specific_links_enabled === '1') {
                                                                 // Priority: link-specific browser > tile default browser > default browser
-                                                                const browserToUse = link.browser && link.browser !== 'default' 
-                                                                    ? link.browser 
+                                                                const browserToUse = link.browser && link.browser !== 'default'
+                                                                    ? link.browser
                                                                     : (tile.browser && tile.browser !== 'default' ? tile.browser : null);
-                                                                
+
                                                                 if (browserToUse && typeof window !== 'undefined' && (window as any).BrowserLauncher) {
                                                                     e.preventDefault();
                                                                     e.stopPropagation();
@@ -2409,9 +2406,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             // Menu will only appear when clicking the browser button
                                                         }}
                                                     >
-                                                        <h4 
+                                                        <h4
                                                             className={`linknest-content-link-title text-sm font-semibold ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}
-                                                            style={link.textColor ? { 
+                                                            style={link.textColor ? {
                                                                 color: link.textColor,
                                                                 // Add text shadow for better visibility
                                                                 textShadow: '0 1px 2px rgba(0,0,0,0.15)',
@@ -2445,10 +2442,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             {settings.browser_specific_links_enabled === '1' && (() => {
                                                                 // Determine which browser is being used for this link
                                                                 // Priority: link-specific browser > tile default browser > system default
-                                                                const browserToUse = link.browser && link.browser !== 'default' 
-                                                                    ? link.browser 
+                                                                const browserToUse = link.browser && link.browser !== 'default'
+                                                                    ? link.browser
                                                                     : (tile.browser && tile.browser !== 'default' ? tile.browser : null);
-                                                                
+
                                                                 // Only show browser indicator if it's not the system default
                                                                 if (browserToUse) {
                                                                     return (
@@ -2465,8 +2462,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     {/* Browser Selection Menu - Rendered via Portal */}
                                                     {showBrowserMenu[link.id] && settings.browser_specific_links_enabled === '1' && typeof document !== 'undefined' && createPortal(
                                                         <>
-                                                            <div 
-                                                                className="fixed inset-0 z-[99998] bg-transparent" 
+                                                            <div
+                                                                className="fixed inset-0 z-[99998] bg-transparent"
                                                                 onClick={() => {
                                                                     setShowBrowserMenu(prev => ({ ...prev, [link.id]: false }));
                                                                     setSaveBrowserForLink(prev => ({ ...prev, [link.id]: false }));
@@ -2474,7 +2471,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 }}
                                                                 style={{ pointerEvents: 'auto' }}
                                                             ></div>
-                                                            <div 
+                                                            <div
                                                                 className="fixed z-[99999] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl max-h-[300px] overflow-y-auto"
                                                                 style={{
                                                                     top: `${browserMenuPosition[link.id]?.y || 0}px`,
@@ -2500,13 +2497,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 window.open(link.url, '_blank', 'noopener,noreferrer');
                                                                             }
                                                                         }}
-                                                                        className={`w-full text-left px-2 py-1 text-xs rounded transition-colors flex items-center gap-1.5 ${
-                                                                            (!link.browser || link.browser === 'default') && !selectedBrowserForLink[link.id]
-                                                                                ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 font-medium'
-                                                                                : selectedBrowserForLink[link.id] === 'default'
+                                                                        className={`w-full text-left px-2 py-1 text-xs rounded transition-colors flex items-center gap-1.5 ${(!link.browser || link.browser === 'default') && !selectedBrowserForLink[link.id]
+                                                                            ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 font-medium'
+                                                                            : selectedBrowserForLink[link.id] === 'default'
                                                                                 ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 font-medium'
                                                                                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-                                                                        }`}
+                                                                            }`}
                                                                     >
                                                                         <span className="text-xs">🌐</span>
                                                                         <span>Default Browser</span>
@@ -2529,11 +2525,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             openLinkInBrowser(link.url, browserId);
                                                                                         }
                                                                                     }}
-                                                                                    className={`w-full text-left px-2 py-1 text-xs rounded transition-colors flex items-center gap-1.5 ${
-                                                                                        isCurrentlySelected
-                                                                                            ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 font-medium'
-                                                                                            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-                                                                                    }`}
+                                                                                    className={`w-full text-left px-2 py-1 text-xs rounded transition-colors flex items-center gap-1.5 ${isCurrentlySelected
+                                                                                        ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 font-medium'
+                                                                                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                                                                        }`}
                                                                                 >
                                                                                     <span className="text-xs">{isCurrentlySelected ? '✓' : '○'}</span>
                                                                                     <span className="truncate">{displayName || browserId}</span>
@@ -2634,7 +2629,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 onClick={(e) => {
                                                                     e.preventDefault();
                                                                     e.stopPropagation();
-                                                                    
+
                                                                     // Show browser selection menu with smart positioning
                                                                     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                                                                     const menuWidth = 180;
@@ -2643,7 +2638,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     const spaceAbove = rect.top;
                                                                     const spaceRight = window.innerWidth - rect.right;
                                                                     const spaceLeft = rect.left;
-                                                                    
+
                                                                     // Calculate vertical position - align with button top
                                                                     let menuY = rect.top;
                                                                     // If not enough space below, align with button bottom
@@ -2651,17 +2646,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         menuY = rect.bottom - menuHeight;
                                                                     }
                                                                     menuY = Math.max(10, Math.min(menuY, window.innerHeight - menuHeight - 10));
-                                                                    
+
                                                                     // Calculate horizontal position - prefer right side of button, fallback to left
                                                                     let menuX = rect.right + 8;
                                                                     if (spaceRight < menuWidth && spaceLeft > spaceRight) {
                                                                         menuX = rect.left - menuWidth - 8;
                                                                     }
                                                                     menuX = Math.max(10, Math.min(menuX, window.innerWidth - menuWidth - 10));
-                                                                    
+
                                                                     setBrowserMenuPosition(prev => ({
                                                                         ...prev,
-                                                                        [link.id]: { 
+                                                                        [link.id]: {
                                                                             x: menuX,
                                                                             y: menuY
                                                                         }
@@ -2681,7 +2676,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             );
                                         })}
                                     </div>
-                                    
+
                                     {/* Rich Text Content in View Mode */}
                                     {section.richTextContent && section.richTextContent.length > 0 && (
                                         <div className="mt-4 space-y-3">
@@ -2779,7 +2774,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 </div>
                                 <h3 className="text-lg font-bold text-slate-800 dark:text-white">General Settings</h3>
                             </div>
-                            
+
                             {/* Emoji & Title */}
                             <div className="space-y-4">
                                 <div>
@@ -2889,11 +2884,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             <div>
                                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-3">Visibility</label>
                                 <div className="space-y-2.5">
-                                    <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border-2 transition-all ${
-                                        editVisibility === 'public' 
-                                            ? 'border-brand-500 dark:border-brand-400 bg-brand-50 dark:bg-brand-900/20' 
-                                            : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-900/50'
-                                    }`}>
+                                    <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border-2 transition-all ${editVisibility === 'public'
+                                        ? 'border-brand-500 dark:border-brand-400 bg-brand-50 dark:bg-brand-900/20'
+                                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-900/50'
+                                        }`}>
                                         <input
                                             type="radio"
                                             name="tileVisibility"
@@ -2915,11 +2909,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             </svg>
                                         )}
                                     </label>
-                                    <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border-2 transition-all ${
-                                        editVisibility === 'authenticated' 
-                                            ? 'border-brand-500 dark:border-brand-400 bg-brand-50 dark:bg-brand-900/20' 
-                                            : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-900/50'
-                                    }`}>
+                                    <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border-2 transition-all ${editVisibility === 'authenticated'
+                                        ? 'border-brand-500 dark:border-brand-400 bg-brand-50 dark:bg-brand-900/20'
+                                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-900/50'
+                                        }`}>
                                         <input
                                             type="radio"
                                             name="tileVisibility"
@@ -2941,11 +2934,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             </svg>
                                         )}
                                     </label>
-                                    <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border-2 transition-all ${
-                                        editVisibility === 'private' 
-                                            ? 'border-brand-500 dark:border-brand-400 bg-brand-50 dark:bg-brand-900/20' 
-                                            : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-900/50'
-                                    }`}>
+                                    <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border-2 transition-all ${editVisibility === 'private'
+                                        ? 'border-brand-500 dark:border-brand-400 bg-brand-50 dark:bg-brand-900/20'
+                                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-900/50'
+                                        }`}>
                                         <input
                                             type="radio"
                                             name="tileVisibility"
@@ -3244,392 +3236,885 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     ];
                                     const tabColorClass = tabBorderColors[tabColorIndex];
                                     const tabBgClass = tabBgColors[tabColorIndex];
-                                    
+
                                     return (
-                                    <div id={`tab-${tab.id}`} key={tab.id} className={`bg-white dark:bg-slate-800 border-2 border-t-2 border-r-2 border-b-2 border-slate-200 dark:border-slate-700 ${tabColorClass} rounded-2xl overflow-hidden shadow-lg shadow-slate-200/50 dark:shadow-black/20 scroll-mt-24 hover:shadow-xl transition-shadow`}>
-                                        {/* Tab Header */}
-                                        <div className={`p-5 border-b-2 border-slate-200 dark:border-slate-700 ${tabBgClass} flex gap-3 items-center`}>
-                                            {/* Tab Reorder Buttons */}
-                                            <div className="flex flex-col gap-0.5">
-                                                <button
-                                                    onClick={() => handleMoveTab(tab.id, 'up')}
-                                                    disabled={tabIndex === 0}
-                                                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-1"
-                                                    title="Move Tab Up"
-                                                >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
-                                                    </svg>
-                                                </button>
-                                                <button
-                                                    onClick={() => handleMoveTab(tab.id, 'down')}
-                                                    disabled={tabIndex === editTabs.length - 1}
-                                                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-1"
-                                                    title="Move Tab Down"
-                                                >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                                                    </svg>
-                                                </button>
-                                            </div>
-                                            <div className="text-slate-400 dark:text-slate-500 font-mono text-sm">Tab #{tabIndex + 1}</div>
-                                            <input
-                                                type="text"
-                                                value={tab.title}
-                                                onChange={(e) => handleUpdateTabTitle(tab.id, e.target.value)}
-                                                placeholder="Tab Title (e.g. Resources)"
-                                                className="flex-1 bg-transparent border-none font-bold text-lg focus:ring-0 placeholder-slate-400"
-                                                style={tab.textColor ? { color: tab.textColor } : { color: 'inherit' }}
-                                            />
-                                            {/* Color Picker for Tab Title */}
-                                            <div className="flex items-center gap-1">
-                                                <label
-                                                    className="cursor-pointer p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5"
-                                                    title="Choose text color for this tab"
-                                                >
-                                                    <input
-                                                        type="color"
-                                                        value={tab.textColor && tab.textColor.trim() ? tab.textColor : '#000000'}
-                                                        onChange={(e) => handleUpdateTabColor(tab.id, e.target.value)}
-                                                        className="w-6 h-6 rounded cursor-pointer border border-slate-300 dark:border-slate-600"
-                                                    />
-                                                    <span className="text-xs text-slate-500 dark:text-slate-400">Color</span>
-                                                </label>
-                                                {tab.textColor && (
+                                        <div id={`tab-${tab.id}`} key={tab.id} className={`bg-white dark:bg-slate-800 border-2 border-t-2 border-r-2 border-b-2 border-slate-200 dark:border-slate-700 ${tabColorClass} rounded-2xl overflow-hidden shadow-lg shadow-slate-200/50 dark:shadow-black/20 scroll-mt-24 hover:shadow-xl transition-shadow`}>
+                                            {/* Tab Header */}
+                                            <div className={`p-5 border-b-2 border-slate-200 dark:border-slate-700 ${tabBgClass} flex gap-3 items-center`}>
+                                                {/* Tab Reorder Buttons */}
+                                                <div className="flex flex-col gap-0.5">
                                                     <button
-                                                        onClick={() => handleUpdateTabColor(tab.id, '')}
-                                                        className="text-slate-400 hover:text-red-500 p-1"
-                                                        title="Remove color"
+                                                        onClick={() => handleMoveTab(tab.id, 'up')}
+                                                        disabled={tabIndex === 0}
+                                                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-1"
+                                                        title="Move Tab Up"
                                                     >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
                                                         </svg>
                                                     </button>
-                                                )}
-                                            </div>
-                                            <button
-                                                onClick={() => handleCloneTab(tab.id)}
-                                                className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2"
-                                                title="Clone Tab"
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                                                    <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
-                                                    <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
-                                                </svg>
-                                            </button>
-                                            <button
-                                                onClick={() => setSchedulingDialogTab(tab.id)}
-                                                className="text-slate-400 hover:text-green-600 dark:hover:text-green-400 p-2"
-                                                title="Schedule Tab"
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                                                    <path fillRule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75z" clipRule="evenodd" />
-                                                </svg>
-                                            </button>
-                                            {(tab.visibleFrom || tab.expiresAt) && (
-                                                <span className="text-xs px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
-                                                    📅 Scheduled
-                                                </span>
-                                            )}
-                                            {tab.visibility && tab.visibility !== 'public' && (
-                                                <span className={`text-xs px-2 py-1 rounded ${tab.visibility === 'authenticated'
-                                                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                                                    : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
-                                                    }`}>
-                                                    {tab.visibility === 'authenticated' ? '🔒 Auth' : '🔐 Private'}
-                                                </span>
-                                            )}
-                                            <button
-                                                onClick={() => setVisibilityDialogTab(tab.id)}
-                                                className="text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 p-2"
-                                                title="Set Tab Visibility"
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                                                    <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
-                                                </svg>
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    console.log('Delete button clicked for tab:', { id: tab.id, title: tab.title });
-                                                    handleRemoveTab(tab.id);
-                                                }}
-                                                disabled={editTabs.length <= 1}
-                                                className="text-slate-400 hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed p-2"
-                                                title={editTabs.length <= 1 ? "Cannot delete the last tab" : "Delete Tab"}
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                                                </svg>
-                                            </button>
-                                        </div>
-
-                                        {/* Tab Sections */}
-                                        <div className="p-4 space-y-4">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wide">Sections in this tab</h4>
+                                                    <button
+                                                        onClick={() => handleMoveTab(tab.id, 'down')}
+                                                        disabled={tabIndex === editTabs.length - 1}
+                                                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-1"
+                                                        title="Move Tab Down"
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                                <div className="text-slate-400 dark:text-slate-500 font-mono text-sm">Tab #{tabIndex + 1}</div>
+                                                <input
+                                                    type="text"
+                                                    value={tab.title}
+                                                    onChange={(e) => handleUpdateTabTitle(tab.id, e.target.value)}
+                                                    placeholder="Tab Title (e.g. Resources)"
+                                                    className="flex-1 bg-transparent border-none font-bold text-lg focus:ring-0 placeholder-slate-400"
+                                                    style={tab.textColor ? { color: tab.textColor } : { color: 'inherit' }}
+                                                />
+                                                {/* Color Picker for Tab Title */}
+                                                <div className="flex items-center gap-1">
+                                                    <label
+                                                        className="cursor-pointer p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5"
+                                                        title="Choose text color for this tab"
+                                                    >
+                                                        <input
+                                                            type="color"
+                                                            value={tab.textColor && tab.textColor.trim() ? tab.textColor : '#000000'}
+                                                            onChange={(e) => handleUpdateTabColor(tab.id, e.target.value)}
+                                                            className="w-6 h-6 rounded cursor-pointer border border-slate-300 dark:border-slate-600"
+                                                        />
+                                                        <span className="text-xs text-slate-500 dark:text-slate-400">Color</span>
+                                                    </label>
+                                                    {tab.textColor && (
+                                                        <button
+                                                            onClick={() => handleUpdateTabColor(tab.id, '')}
+                                                            className="text-slate-400 hover:text-red-500 p-1"
+                                                            title="Remove color"
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                            </svg>
+                                                        </button>
+                                                    )}
+                                                </div>
                                                 <button
-                                                    onClick={() => handleAddSection(tab.id)}
-                                                    className="bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center gap-2"
+                                                    onClick={() => handleCloneTab(tab.id)}
+                                                    className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2"
+                                                    title="Clone Tab"
                                                 >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                        <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                                                        <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
                                                     </svg>
-                                                    Add Section
+                                                </button>
+                                                <button
+                                                    onClick={() => setSchedulingDialogTab(tab.id)}
+                                                    className="text-slate-400 hover:text-green-600 dark:hover:text-green-400 p-2"
+                                                    title="Schedule Tab"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                        <path fillRule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75z" clipRule="evenodd" />
+                                                    </svg>
+                                                </button>
+                                                {(tab.visibleFrom || tab.expiresAt) && (
+                                                    <span className="text-xs px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
+                                                        📅 Scheduled
+                                                    </span>
+                                                )}
+                                                {tab.visibility && tab.visibility !== 'public' && (
+                                                    <span className={`text-xs px-2 py-1 rounded ${tab.visibility === 'authenticated'
+                                                        ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                                                        : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
+                                                        }`}>
+                                                        {tab.visibility === 'authenticated' ? '🔒 Auth' : '🔐 Private'}
+                                                    </span>
+                                                )}
+                                                <button
+                                                    onClick={() => setVisibilityDialogTab(tab.id)}
+                                                    className="text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 p-2"
+                                                    title="Set Tab Visibility"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                        <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                                                    </svg>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        console.log('Delete button clicked for tab:', { id: tab.id, title: tab.title });
+                                                        handleRemoveTab(tab.id);
+                                                    }}
+                                                    disabled={editTabs.length <= 1}
+                                                    className="text-slate-400 hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed p-2"
+                                                    title={editTabs.length <= 1 ? "Cannot delete the last tab" : "Delete Tab"}
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                                    </svg>
                                                 </button>
                                             </div>
 
-                                            {tab.sections.map((section, sectionIndex) => {
-                                                // Generate a color for visual identification based on section index
-                                                const colorIndex = sectionIndex % 6;
-                                                const borderColors = [
-                                                    'border-r-4 border-r-blue-500',
-                                                    'border-r-4 border-r-green-500',
-                                                    'border-r-4 border-r-purple-500',
-                                                    'border-r-4 border-r-orange-500',
-                                                    'border-r-4 border-r-pink-500',
-                                                    'border-r-4 border-r-teal-500'
-                                                ];
-                                                const bgColors = [
-                                                    'bg-blue-50 dark:bg-blue-900/10',
-                                                    'bg-green-50 dark:bg-green-900/10',
-                                                    'bg-purple-50 dark:bg-purple-900/10',
-                                                    'bg-orange-50 dark:bg-orange-900/10',
-                                                    'bg-pink-50 dark:bg-pink-900/10',
-                                                    'bg-teal-50 dark:bg-teal-900/10'
-                                                ];
-                                                const sectionColorClass = borderColors[colorIndex];
-                                                const sectionBgClass = bgColors[colorIndex];
-                                                
-                                                return (
-                                                <div key={section.id} className={`bg-slate-50 dark:bg-slate-900/50 border-2 border-l-2 border-t-2 border-b-2 border-slate-200 dark:border-slate-700 ${sectionColorClass} rounded-xl overflow-hidden shadow-sm`}>
-                                                    {/* Section Header */}
-                                                    <div className={`p-4 border-b-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 ${sectionBgClass} flex gap-3 items-center`}>
-                                                        {/* Reorder Buttons */}
-                                                        <div className="flex flex-col gap-0.5">
-                                                            <button
-                                                                onClick={() => handleMoveSection(tab.id, section.id, 'up')}
-                                                                disabled={sectionIndex === 0}
-                                                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-1"
-                                                                title="Move Up"
-                                                            >
-                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
-                                                                </svg>
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleMoveSection(tab.id, section.id, 'down')}
-                                                                disabled={sectionIndex === tab.sections.length - 1}
-                                                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-1"
-                                                                title="Move Down"
-                                                            >
-                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                                                                </svg>
-                                                            </button>
-                                                        </div>
-                                                        <div className="text-slate-400 dark:text-slate-500 font-mono text-xs">#{sectionIndex + 1}</div>
-                                                        <input
-                                                            type="text"
-                                                            value={section.title}
-                                                            onChange={(e) => handleUpdateSectionTitle(tab.id, section.id, e.target.value)}
-                                                            placeholder="Section Header (e.g. Resources)"
-                                                            className="flex-1 bg-transparent border-none text-slate-900 dark:text-white font-semibold focus:ring-0 placeholder-slate-400"
-                                                        />
-                                                        {/* Color Picker for Section Title */}
-                                                        <div className="flex items-center gap-1">
-                                                            <label
-                                                                className="cursor-pointer p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5"
-                                                                title="Choose text color for this section"
-                                                            >
-                                                                <input
-                                                                    type="color"
-                                                                    value={section.textColor || '#000000'}
-                                                                    onChange={(e) => {
-                                                                        const newTabs = editTabs.map(t => {
-                                                                            if (t.id === tab.id) {
-                                                                                return {
-                                                                                    ...t,
-                                                                                    sections: t.sections.map(s =>
-                                                                                        s.id === section.id
-                                                                                            ? { ...s, textColor: e.target.value }
-                                                                                            : s
-                                                                                    )
-                                                                                };
-                                                                            }
-                                                                            return t;
-                                                                        });
-                                                                        setEditTabs(newTabs);
-                                                                    }}
-                                                                    className="w-6 h-6 rounded cursor-pointer border border-slate-300 dark:border-slate-600"
-                                                                />
-                                                                <span className="text-xs text-slate-500 dark:text-slate-400">Color</span>
-                                                            </label>
-                                                            {section.textColor && (
-                                                                <button
-                                                                    onClick={() => {
-                                                                        const newTabs = editTabs.map(t => {
-                                                                            if (t.id === tab.id) {
-                                                                                return {
-                                                                                    ...t,
-                                                                                    sections: t.sections.map(s =>
-                                                                                        s.id === section.id
-                                                                                            ? { ...s, textColor: undefined }
-                                                                                            : s
-                                                                                    )
-                                                                                };
-                                                                            }
-                                                                            return t;
-                                                                        });
-                                                                        setEditTabs(newTabs);
-                                                                    }}
-                                                                    className="text-slate-400 hover:text-red-500 p-1"
-                                                                    title="Reset to default color"
-                                                                >
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                                        <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                                                                    </svg>
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                        {/* CSV Import */}
-                                                        <div className="flex items-center gap-1">
-                                                            <label className="cursor-pointer">
-                                                                <input
-                                                                    type="file"
-                                                                    accept=".csv,text/csv"
-                                                                    className="hidden"
-                                                                    onChange={(e) => {
-                                                                        const file = e.target.files?.[0] || null;
-                                                                        setCsvImportFile(prev => ({ ...prev, [section.id]: file }));
-                                                                    }}
-                                                                />
-                                                                <span className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2" title="Import Links from CSV (requires 'Link Name' and 'Link' columns)">
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                                                                    </svg>
-                                                                </span>
-                                                            </label>
-                                                            {csvImportFile[section.id] && (
-                                                                <div className="flex items-center gap-1">
-                                                                    <span className="text-xs text-slate-500 dark:text-slate-400 max-w-[100px] truncate" title={csvImportFile[section.id]?.name}>
-                                                                        {csvImportFile[section.id]?.name}
-                                                                    </span>
+                                            {/* Tab Sections */}
+                                            <div className="p-4 space-y-4">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wide">Sections in this tab</h4>
+                                                    <button
+                                                        onClick={() => handleAddSection(tab.id)}
+                                                        className="bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center gap-2"
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                                        </svg>
+                                                        Add Section
+                                                    </button>
+                                                </div>
+
+                                                {tab.sections.map((section, sectionIndex) => {
+                                                    // Generate a color for visual identification based on section index
+                                                    const colorIndex = sectionIndex % 6;
+                                                    const borderColors = [
+                                                        'border-r-4 border-r-blue-500',
+                                                        'border-r-4 border-r-green-500',
+                                                        'border-r-4 border-r-purple-500',
+                                                        'border-r-4 border-r-orange-500',
+                                                        'border-r-4 border-r-pink-500',
+                                                        'border-r-4 border-r-teal-500'
+                                                    ];
+                                                    const bgColors = [
+                                                        'bg-blue-50 dark:bg-blue-900/10',
+                                                        'bg-green-50 dark:bg-green-900/10',
+                                                        'bg-purple-50 dark:bg-purple-900/10',
+                                                        'bg-orange-50 dark:bg-orange-900/10',
+                                                        'bg-pink-50 dark:bg-pink-900/10',
+                                                        'bg-teal-50 dark:bg-teal-900/10'
+                                                    ];
+                                                    const sectionColorClass = borderColors[colorIndex];
+                                                    const sectionBgClass = bgColors[colorIndex];
+
+                                                    return (
+                                                        <div key={section.id} className={`bg-slate-50 dark:bg-slate-900/50 border-2 border-l-2 border-t-2 border-b-2 border-slate-200 dark:border-slate-700 ${sectionColorClass} rounded-xl overflow-hidden shadow-sm`}>
+                                                            {/* Section Header */}
+                                                            <div className={`p-4 border-b-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 ${sectionBgClass} flex gap-3 items-center`}>
+                                                                {/* Reorder Buttons */}
+                                                                <div className="flex flex-col gap-0.5">
                                                                     <button
-                                                                        onClick={() => handleImportLinksFromCSV(tab.id, section.id)}
-                                                                        disabled={importingCsv[section.id]}
-                                                                        className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-2 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1"
-                                                                        title="Import CSV"
+                                                                        onClick={() => handleMoveSection(tab.id, section.id, 'up')}
+                                                                        disabled={sectionIndex === 0}
+                                                                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-1"
+                                                                        title="Move Up"
                                                                     >
-                                                                        {importingCsv[section.id] ? (
-                                                                            <>
-                                                                                <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                                                </svg>
-                                                                                Importing...
-                                                                            </>
-                                                                        ) : (
-                                                                            <>
-                                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3">
-                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                                                                                </svg>
-                                                                                Import
-                                                                            </>
-                                                                        )}
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
+                                                                        </svg>
                                                                     </button>
                                                                     <button
-                                                                        onClick={() => setCsvImportFile(prev => ({ ...prev, [section.id]: null }))}
-                                                                        className="text-slate-400 hover:text-red-500 p-1"
-                                                                        title="Clear file"
+                                                                        onClick={() => handleMoveSection(tab.id, section.id, 'down')}
+                                                                        disabled={sectionIndex === tab.sections.length - 1}
+                                                                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-1"
+                                                                        title="Move Down"
                                                                     >
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                                                            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
                                                                         </svg>
                                                                     </button>
                                                                 </div>
-                                                            )}
-                                                        </div>
-                                                        <button
-                                                            onClick={() => handleCloneSection(tab.id, section.id)}
-                                                            className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2"
-                                                            title="Clone Section"
-                                                        >
-                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                                <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
-                                                                <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
-                                                            </svg>
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setSchedulingDialogSection({ tabId: tab.id, sectionId: section.id })}
-                                                            className="text-slate-400 hover:text-green-600 dark:hover:text-green-400 p-2"
-                                                            title="Schedule Section"
-                                                        >
-                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                                <path fillRule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75z" clipRule="evenodd" />
-                                                            </svg>
-                                                        </button>
-                                                        {(section.visibleFrom || section.expiresAt) && (
-                                                            <span className="text-xs px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
-                                                                📅 Scheduled
-                                                            </span>
-                                                        )}
-                                                        {section.visibility && section.visibility !== 'public' && (
-                                                            <span className={`text-xs px-2 py-1 rounded ${section.visibility === 'authenticated'
-                                                                ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                                                                : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
-                                                                }`}>
-                                                                {section.visibility === 'authenticated' ? '🔒' : '🔐'}
-                                                            </span>
-                                                        )}
-                                                        <button
-                                                            onClick={() => setVisibilityDialogSection({ tabId: tab.id, sectionId: section.id })}
-                                                            className="text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 p-2"
-                                                            title="Set Section Visibility"
-                                                        >
-                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                                <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
-                                                            </svg>
-                                                        </button>
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.preventDefault();
-                                                                e.stopPropagation();
-                                                                console.log('Delete section button clicked:', { tabId: tab.id, sectionId: section.id });
-                                                                handleRemoveSection(tab.id, section.id);
-                                                            }}
-                                                            className="text-slate-400 hover:text-red-500 p-2"
-                                                            title="Delete Section"
-                                                        >
-                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                                                            </svg>
-                                                        </button>
-                                                    </div>
+                                                                <div className="text-slate-400 dark:text-slate-500 font-mono text-xs">#{sectionIndex + 1}</div>
+                                                                <input
+                                                                    type="text"
+                                                                    value={section.title}
+                                                                    onChange={(e) => handleUpdateSectionTitle(tab.id, section.id, e.target.value)}
+                                                                    placeholder="Section Header (e.g. Resources)"
+                                                                    className="flex-1 bg-transparent border-none text-slate-900 dark:text-white font-semibold focus:ring-0 placeholder-slate-400"
+                                                                />
+                                                                {/* Color Picker for Section Title */}
+                                                                <div className="flex items-center gap-1">
+                                                                    <label
+                                                                        className="cursor-pointer p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5"
+                                                                        title="Choose text color for this section"
+                                                                    >
+                                                                        <input
+                                                                            type="color"
+                                                                            value={section.textColor || '#000000'}
+                                                                            onChange={(e) => {
+                                                                                const newTabs = editTabs.map(t => {
+                                                                                    if (t.id === tab.id) {
+                                                                                        return {
+                                                                                            ...t,
+                                                                                            sections: t.sections.map(s =>
+                                                                                                s.id === section.id
+                                                                                                    ? { ...s, textColor: e.target.value }
+                                                                                                    : s
+                                                                                            )
+                                                                                        };
+                                                                                    }
+                                                                                    return t;
+                                                                                });
+                                                                                setEditTabs(newTabs);
+                                                                            }}
+                                                                            className="w-6 h-6 rounded cursor-pointer border border-slate-300 dark:border-slate-600"
+                                                                        />
+                                                                        <span className="text-xs text-slate-500 dark:text-slate-400">Color</span>
+                                                                    </label>
+                                                                    {section.textColor && (
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                const newTabs = editTabs.map(t => {
+                                                                                    if (t.id === tab.id) {
+                                                                                        return {
+                                                                                            ...t,
+                                                                                            sections: t.sections.map(s =>
+                                                                                                s.id === section.id
+                                                                                                    ? { ...s, textColor: undefined }
+                                                                                                    : s
+                                                                                            )
+                                                                                        };
+                                                                                    }
+                                                                                    return t;
+                                                                                });
+                                                                                setEditTabs(newTabs);
+                                                                            }}
+                                                                            className="text-slate-400 hover:text-red-500 p-1"
+                                                                            title="Reset to default color"
+                                                                        >
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                                                            </svg>
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                                {/* CSV Import */}
+                                                                <div className="flex items-center gap-1">
+                                                                    <label className="cursor-pointer">
+                                                                        <input
+                                                                            type="file"
+                                                                            accept=".csv,text/csv"
+                                                                            className="hidden"
+                                                                            onChange={(e) => {
+                                                                                const file = e.target.files?.[0] || null;
+                                                                                setCsvImportFile(prev => ({ ...prev, [section.id]: file }));
+                                                                            }}
+                                                                        />
+                                                                        <span className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2" title="Import Links from CSV (requires 'Link Name' and 'Link' columns)">
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                                                                            </svg>
+                                                                        </span>
+                                                                    </label>
+                                                                    {csvImportFile[section.id] && (
+                                                                        <div className="flex items-center gap-1">
+                                                                            <span className="text-xs text-slate-500 dark:text-slate-400 max-w-[100px] truncate" title={csvImportFile[section.id]?.name}>
+                                                                                {csvImportFile[section.id]?.name}
+                                                                            </span>
+                                                                            <button
+                                                                                onClick={() => handleImportLinksFromCSV(tab.id, section.id)}
+                                                                                disabled={importingCsv[section.id]}
+                                                                                className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-2 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1"
+                                                                                title="Import CSV"
+                                                                            >
+                                                                                {importingCsv[section.id] ? (
+                                                                                    <>
+                                                                                        <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                                                        </svg>
+                                                                                        Importing...
+                                                                                    </>
+                                                                                ) : (
+                                                                                    <>
+                                                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3">
+                                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                                                                                        </svg>
+                                                                                        Import
+                                                                                    </>
+                                                                                )}
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => setCsvImportFile(prev => ({ ...prev, [section.id]: null }))}
+                                                                                className="text-slate-400 hover:text-red-500 p-1"
+                                                                                title="Clear file"
+                                                                            >
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                                                    <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                                                                </svg>
+                                                                            </button>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => handleCloneSection(tab.id, section.id)}
+                                                                    className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2"
+                                                                    title="Clone Section"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                        <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                                                                        <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
+                                                                    </svg>
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setSchedulingDialogSection({ tabId: tab.id, sectionId: section.id })}
+                                                                    className="text-slate-400 hover:text-green-600 dark:hover:text-green-400 p-2"
+                                                                    title="Schedule Section"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                        <path fillRule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75z" clipRule="evenodd" />
+                                                                    </svg>
+                                                                </button>
+                                                                {(section.visibleFrom || section.expiresAt) && (
+                                                                    <span className="text-xs px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
+                                                                        📅 Scheduled
+                                                                    </span>
+                                                                )}
+                                                                {section.visibility && section.visibility !== 'public' && (
+                                                                    <span className={`text-xs px-2 py-1 rounded ${section.visibility === 'authenticated'
+                                                                        ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                                                                        : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
+                                                                        }`}>
+                                                                        {section.visibility === 'authenticated' ? '🔒' : '🔐'}
+                                                                    </span>
+                                                                )}
+                                                                <button
+                                                                    onClick={() => setVisibilityDialogSection({ tabId: tab.id, sectionId: section.id })}
+                                                                    className="text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 p-2"
+                                                                    title="Set Section Visibility"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                        <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                                                                    </svg>
+                                                                </button>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        console.log('Delete section button clicked:', { tabId: tab.id, sectionId: section.id });
+                                                                        handleRemoveSection(tab.id, section.id);
+                                                                    }}
+                                                                    className="text-slate-400 hover:text-red-500 p-2"
+                                                                    title="Delete Section"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                                                    </svg>
+                                                                </button>
+                                                            </div>
 
-                                                    {/* Section Links */}
-                                                    <div className="p-4 bg-white dark:bg-slate-800">
-                                                        <div className="space-y-2 mb-4">
-                                                            {section.links.length === 0 && (
-                                                                <p className="text-slate-400 dark:text-slate-600 text-sm italic py-2">No links in this section yet.</p>
-                                                            )}
-                                                            {section.links.map((link, linkIndex) => {
-                                                                const matchesSearch = linkSearchTerm
-                                                                    ? link.label.toLowerCase().includes(linkSearchTerm.toLowerCase()) ||
-                                                                      link.url.toLowerCase().includes(linkSearchTerm.toLowerCase())
-                                                                    : true;
-                                                                const isHovered = hoveredLinkId === link.id;
-                                                                
-                                                                return editingLinkId === link.id ? (
-                                                                    // Edit Mode
-                                                                    <div key={link.id} className="bg-white dark:bg-slate-800 border-2 border-brand-500 dark:border-brand-500/50 rounded-xl p-4 shadow-lg space-y-3">
+                                                            {/* Section Links */}
+                                                            <div className="p-4 bg-white dark:bg-slate-800">
+                                                                <div className="space-y-2 mb-4">
+                                                                    {/* Merged Content Rendering */}
+                                                                    {(() => {
+                                                                        const sortedItems = [
+                                                                            ...(section.links || []).map(l => ({ ...l, itemType: 'link' as const })),
+                                                                            ...(section.richTextContent || []).map(rt => ({ ...rt, itemType: 'rich-text' as const }))
+                                                                        ].sort((a, b) => {
+                                                                            const posA = a.position ?? 0;
+                                                                            const posB = b.position ?? 0;
+                                                                            if (posA !== posB) return posA - posB;
+                                                                            if (a.itemType !== b.itemType) return a.itemType === 'link' ? -1 : 1;
+                                                                            return 0;
+                                                                        });
+
+                                                                        if (sortedItems.length === 0) {
+                                                                            return <p className="text-slate-400 dark:text-slate-600 text-sm italic py-2">No content in this section yet.</p>;
+                                                                        }
+
+                                                                        return sortedItems.map((item, index) => {
+                                                                            const isFirst = index === 0;
+                                                                            const isLast = index === sortedItems.length - 1;
+
+                                                                            if (item.itemType === 'rich-text') {
+                                                                                const richText = item;
+                                                                                const isEditing = editingRichTextId[section.id] === richText.id;
+                                                                                return (
+                                                                                    <RichTextContentItem
+                                                                                        key={richText.id}
+                                                                                        content={richText}
+                                                                                        sectionId={section.id}
+                                                                                        onUpdate={(id, content) => handleUpdateRichText(tab.id, section.id, id, content)}
+                                                                                        onDelete={(id) => handleDeleteRichText(tab.id, section.id, id)}
+                                                                                        onMoveUp={() => handleMoveItem(tab.id, section.id, richText.id, 'up')}
+                                                                                        onMoveDown={() => handleMoveItem(tab.id, section.id, richText.id, 'down')}
+                                                                                        canMoveUp={!isFirst}
+                                                                                        canMoveDown={!isLast}
+                                                                                        isEditing={isEditing}
+                                                                                        onEdit={() => setEditingRichTextId(prev => ({ ...prev, [section.id]: richText.id }))}
+                                                                                        onCancel={() => setEditingRichTextId(prev => ({ ...prev, [section.id]: null }))}
+                                                                                        onSave={() => setEditingRichTextId(prev => ({ ...prev, [section.id]: null }))}
+                                                                                    />
+                                                                                );
+                                                                            }
+
+                                                                            const link = item as Link;
+                                                                            const matchesSearch = linkSearchTerm
+                                                                                ? link.label.toLowerCase().includes(linkSearchTerm.toLowerCase()) ||
+                                                                                link.url.toLowerCase().includes(linkSearchTerm.toLowerCase())
+                                                                                : true;
+                                                                            const isHovered = hoveredLinkId === link.id;
+
+                                                                            return editingLinkId === link.id ? (
+                                                                                // Edit Mode
+                                                                                <div key={link.id} className="bg-white dark:bg-slate-800 border-2 border-brand-500 dark:border-brand-500/50 rounded-xl p-4 shadow-lg space-y-3">
+                                                                                    {/* Link Label & URL */}
+                                                                                    <div className="space-y-3">
+                                                                                        <div>
+                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Link Label (Rich Text)</label>
+                                                                                            <RichTextEditor
+                                                                                                value={editLinkState[link.id]?.label || ''}
+                                                                                                onChange={(value) => updateEditLinkState(link.id, 'label', value)}
+                                                                                                placeholder="Enter link name with formatting..."
+                                                                                            />
+                                                                                        </div>
+                                                                                        <div>
+                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">URL</label>
+                                                                                            <input
+                                                                                                type="text"
+                                                                                                value={editLinkState[link.id]?.url || ''}
+                                                                                                onChange={(e) => updateEditLinkState(link.id, 'url', e.target.value)}
+                                                                                                placeholder="https://example.com"
+                                                                                                className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
+                                                                                            />
+                                                                                        </div>
+                                                                                    </div>
+
+                                                                                    {/* Emoji Selection */}
+                                                                                    <div className="relative">
+                                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Emoji</label>
+                                                                                        <div className="flex gap-2 items-center">
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: !prev[link.id] }))}
+                                                                                                className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg hover:border-brand-400 dark:hover:border-brand-500 hover:shadow-md transition-all focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
+                                                                                                title="Select emoji"
+                                                                                            >
+                                                                                                <span className="text-xl">
+                                                                                                    {editLinkState[link.id]?.icon || '😀'}
+                                                                                                </span>
+                                                                                            </button>
+                                                                                            <input
+                                                                                                type="text"
+                                                                                                value={editLinkState[link.id]?.icon || ''}
+                                                                                                onChange={(e) => updateEditLinkState(link.id, 'icon', e.target.value)}
+                                                                                                placeholder="Or type emoji..."
+                                                                                                className="flex-1 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                                                                            />
+                                                                                        </div>
+                                                                                        {showLinkEmojiPicker[link.id] && (
+                                                                                            <>
+                                                                                                <div className="fixed inset-0 z-[9998]" onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }))}></div>
+                                                                                                <div className="fixed z-[9999] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl w-96 max-h-[500px] flex flex-col overflow-hidden" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                                                                                                    <EmojiPickerTabs linkId={link.id} editLinkState={editLinkState[link.id]} updateEditLinkState={updateEditLinkState} setShowLinkEmojiPicker={setShowLinkEmojiPicker} />
+                                                                                                </div>
+                                                                                            </>
+                                                                                        )}
+                                                                                    </div>
+
+                                                                                    {/* Text Color & Visibility - Side by Side */}
+                                                                                    <div className="grid grid-cols-2 gap-3">
+                                                                                        <div>
+                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Text Color</label>
+                                                                                            <div className="flex gap-2 items-center">
+                                                                                                <input
+                                                                                                    type="color"
+                                                                                                    value={editLinkState[link.id]?.textColor && editLinkState[link.id]!.textColor.trim() ? editLinkState[link.id]!.textColor : '#000000'}
+                                                                                                    onChange={(e) => updateEditLinkState(link.id, 'textColor', e.target.value)}
+                                                                                                    className="w-12 h-12 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:border-brand-400 dark:hover:border-brand-500 transition-all"
+                                                                                                    title="Select text color"
+                                                                                                />
+                                                                                                <div className="flex-1 flex gap-1.5">
+                                                                                                    <input
+                                                                                                        type="text"
+                                                                                                        value={editLinkState[link.id]?.textColor || ''}
+                                                                                                        onChange={(e) => updateEditLinkState(link.id, 'textColor', e.target.value)}
+                                                                                                        placeholder="#000000"
+                                                                                                        className="flex-1 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-xs text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
+                                                                                                    />
+                                                                                                    <button
+                                                                                                        type="button"
+                                                                                                        onClick={() => updateEditLinkState(link.id, 'textColor', '')}
+                                                                                                        className="px-2.5 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg transition-colors text-xs font-medium"
+                                                                                                        title="Clear color"
+                                                                                                    >
+                                                                                                        Clear
+                                                                                                    </button>
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                        <div>
+                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Visibility</label>
+                                                                                            <select
+                                                                                                value={editLinkState[link.id]?.visibility || 'public'}
+                                                                                                onChange={(e) => updateEditLinkState(link.id, 'visibility', e.target.value as LinkVisibility)}
+                                                                                                className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-medium"
+                                                                                            >
+                                                                                                <option value="public">Public (visible to everyone)</option>
+                                                                                                <option value="authenticated">Authenticated (logged-in users only)</option>
+                                                                                                <option value="private">Private (specific users only)</option>
+                                                                                            </select>
+                                                                                        </div>
+                                                                                    </div>
+
+                                                                                    {/* Notes & Tooltip - Side by Side */}
+                                                                                    <div className="grid grid-cols-2 gap-3">
+                                                                                        <div>
+                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Notes</label>
+                                                                                            <textarea
+                                                                                                value={editLinkState[link.id]?.notes || ''}
+                                                                                                onChange={(e) => updateEditLinkState(link.id, 'notes', e.target.value)}
+                                                                                                placeholder="Add notes..."
+                                                                                                rows={2}
+                                                                                                className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all resize-none"
+                                                                                            />
+                                                                                        </div>
+                                                                                        <div>
+                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Hover Tooltip</label>
+                                                                                            <input
+                                                                                                type="text"
+                                                                                                value={editLinkState[link.id]?.tooltip || ''}
+                                                                                                onChange={(e) => updateEditLinkState(link.id, 'tooltip', e.target.value)}
+                                                                                                placeholder="Text shown on hover..."
+                                                                                                className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                                                                            />
+                                                                                        </div>
+                                                                                    </div>
+
+                                                                                    {/* Browser Selection - Only show if feature is enabled */}
+                                                                                    {settings.browser_specific_links_enabled === '1' && (
+                                                                                        <div>
+                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Open link in</label>
+                                                                                            <select
+                                                                                                value={editLinkState[link.id]?.browser || 'default'}
+                                                                                                onChange={(e) => updateEditLinkState(link.id, 'browser', e.target.value)}
+                                                                                                className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                                                                                            >
+                                                                                                <option value="default">Default Browser</option>
+                                                                                                {availableBrowsers.length > 0 ? (
+                                                                                                    availableBrowsers.map((browserId) => {
+                                                                                                        // Format browser ID for display
+                                                                                                        const displayName = browserId
+                                                                                                            .replace(/-/g, ' ')
+                                                                                                            .replace(/\b\w/g, (l) => l.toUpperCase())
+                                                                                                            .replace('Wsl', '(WSL)')
+                                                                                                            .replace('Stable', 'Stable')
+                                                                                                            .replace('Beta', 'Beta')
+                                                                                                            .replace('Dev', 'Dev');
+                                                                                                        return (
+                                                                                                            <option key={browserId} value={browserId}>
+                                                                                                                {displayName}
+                                                                                                            </option>
+                                                                                                        );
+                                                                                                    })
+                                                                                                ) : (
+                                                                                                    <>
+                                                                                                        <option value="chrome-stable">Chrome Stable</option>
+                                                                                                        <option value="chrome-beta">Chrome Beta</option>
+                                                                                                        <option value="chrome-dev">Chrome Dev</option>
+                                                                                                        <option value="edge-stable">Edge Stable</option>
+                                                                                                        <option value="edge-beta">Edge Beta</option>
+                                                                                                        <option value="edge-dev">Edge Dev</option>
+                                                                                                        <option value="firefox">Firefox (WSL)</option>
+                                                                                                    </>
+                                                                                                )}
+                                                                                            </select>
+                                                                                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                                                                                                Select which browser should open this link. Requires browser extension to be installed.
+                                                                                            </p>
+                                                                                        </div>
+                                                                                    )}
+
+                                                                                    {/* User Selector for Private Visibility */}
+                                                                                    {editLinkState[link.id]?.visibility === 'private' && (
+                                                                                        <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border-2 border-slate-200 dark:border-slate-700">
+                                                                                            <div className="flex items-center justify-between mb-2">
+                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Select Users</label>
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    onClick={() => setShowUserPicker(prev => ({ ...prev, [link.id]: !prev[link.id] }))}
+                                                                                                    className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium flex items-center gap-1"
+                                                                                                >
+                                                                                                    {showUserPicker[link.id] ? 'Hide' : 'Show'}
+                                                                                                </button>
+                                                                                            </div>
+                                                                                            {editLinkState[link.id]?.allowedUsers && editLinkState[link.id]!.allowedUsers.length > 0 && (
+                                                                                                <div className="flex flex-wrap gap-1.5 mb-2">
+                                                                                                    {editLinkState[link.id]!.allowedUsers.map(userId => {
+                                                                                                        const user = usersList.find(u => u.id === userId);
+                                                                                                        return (
+                                                                                                            <span
+                                                                                                                key={userId}
+                                                                                                                className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 rounded text-xs font-medium"
+                                                                                                            >
+                                                                                                                {user?.username || `User ${userId}`}
+                                                                                                                <button
+                                                                                                                    type="button"
+                                                                                                                    onClick={() => toggleEditUserSelection(link.id, userId)}
+                                                                                                                    className="hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                                                                                                                    title="Remove user"
+                                                                                                                >
+                                                                                                                    ×
+                                                                                                                </button>
+                                                                                                            </span>
+                                                                                                        );
+                                                                                                    })}
+                                                                                                </div>
+                                                                                            )}
+                                                                                            {showUserPicker[link.id] && (
+                                                                                                <div className="max-h-40 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
+                                                                                                    {loadingUsers ? (
+                                                                                                        <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2 flex items-center justify-center gap-2">
+                                                                                                            <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                                                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                                                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                                                                            </svg>
+                                                                                                            Loading...
+                                                                                                        </div>
+                                                                                                    ) : usersList.length === 0 ? (
+                                                                                                        <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">No users available</div>
+                                                                                                    ) : (
+                                                                                                        usersList.map(user => (
+                                                                                                            <label
+                                                                                                                key={user.id}
+                                                                                                                className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer transition-colors"
+                                                                                                            >
+                                                                                                                <input
+                                                                                                                    type="checkbox"
+                                                                                                                    checked={editLinkState[link.id]?.allowedUsers?.includes(user.id) || false}
+                                                                                                                    onChange={() => toggleEditUserSelection(link.id, user.id)}
+                                                                                                                    className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 w-3.5 h-3.5"
+                                                                                                                />
+                                                                                                                <span className="text-xs font-medium text-slate-700 dark:text-slate-300 flex-1">{user.username}</span>
+                                                                                                                {user.auth_source === 'ldap' && (
+                                                                                                                    <span className="px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[9px] font-semibold">
+                                                                                                                        LDAP
+                                                                                                                    </span>
+                                                                                                                )}
+                                                                                                            </label>
+                                                                                                        ))
+                                                                                                    )}
+                                                                                                </div>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    )}
+
+                                                                                    {/* Action Buttons */}
+                                                                                    <div className="flex gap-2 justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
+                                                                                        <button
+                                                                                            onClick={handleCancelEditLink}
+                                                                                            className="px-4 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 transition-all"
+                                                                                        >
+                                                                                            Cancel
+                                                                                        </button>
+                                                                                        <button
+                                                                                            onClick={() => handleUpdateLink(tab.id, section.id, link.id)}
+                                                                                            disabled={!editLinkState[link.id]?.label?.trim() || !editLinkState[link.id]?.url?.trim()}
+                                                                                            className="px-4 py-2 text-xs font-semibold bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-md hover:shadow-lg shadow-brand-500/30 flex items-center gap-1.5"
+                                                                                        >
+                                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                                            </svg>
+                                                                                            Save
+                                                                                        </button>
+                                                                                    </div>
+                                                                                </div>
+                                                                            ) : (
+                                                                                // View Mode
+                                                                                <div
+                                                                                    key={link.id}
+                                                                                    id={`link-${link.id}`}
+                                                                                    className={`flex items-center gap-2 p-2 rounded-lg border transition-all duration-200 cursor-pointer ${matchesSearch
+                                                                                        ? linkSearchTerm
+                                                                                            ? isHovered
+                                                                                                ? 'bg-yellow-300 dark:bg-yellow-600/40 border-yellow-400 dark:border-yellow-500 shadow-lg scale-[1.02]'
+                                                                                                : 'bg-yellow-200 dark:bg-yellow-600/30 border-yellow-300 dark:border-yellow-500 hover:bg-yellow-300 dark:hover:bg-yellow-600/40 hover:border-yellow-400 dark:hover:border-yellow-500 hover:shadow-md'
+                                                                                            : isHovered
+                                                                                                ? 'bg-brand-50 dark:bg-brand-900/20 border-brand-300 dark:border-brand-700 shadow-md scale-[1.02]'
+                                                                                                : 'bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-brand-200 dark:hover:border-brand-700 hover:shadow-sm'
+                                                                                        : 'bg-slate-50 dark:bg-slate-900 opacity-40 border-slate-100 dark:border-slate-800'
+                                                                                        }`}
+                                                                                    onMouseEnter={() => setHoveredLinkId(link.id)}
+                                                                                    onMouseLeave={() => setHoveredLinkId(null)}
+                                                                                    onClick={() => {
+                                                                                        if (linkSearchTerm && matchesSearch) {
+                                                                                            document.getElementById(`link-${link.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                                                        }
+                                                                                    }}
+                                                                                >
+                                                                                    {/* Link Reorder Buttons */}
+                                                                                    <div className="flex flex-col gap-0.5">
+                                                                                        <button
+                                                                                            onClick={() => handleMoveItem(tab.id, section.id, link.id, 'up')}
+                                                                                            disabled={isFirst}
+                                                                                            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-0.5"
+                                                                                            title="Move Up"
+                                                                                        >
+                                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+                                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
+                                                                                            </svg>
+                                                                                        </button>
+                                                                                        <button
+                                                                                            onClick={() => handleMoveItem(tab.id, section.id, link.id, 'down')}
+                                                                                            disabled={isLast}
+                                                                                            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-0.5"
+                                                                                            title="Move Down"
+                                                                                        >
+                                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+                                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                                                                                            </svg>
+                                                                                        </button>
+                                                                                    </div>
+                                                                                    <div className="w-8 h-8 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sm">🔗</div>
+                                                                                    <div className="flex-1 min-w-0">
+                                                                                        <div className="flex items-center gap-2">
+                                                                                            <div
+                                                                                                className={`text-sm font-medium truncate transition-colors duration-200 ${!link.textColor
+                                                                                                    ? 'text-slate-700 dark:text-slate-200'
+                                                                                                    : isHovered
+                                                                                                        ? ''
+                                                                                                        : ''
+                                                                                                    }`}
+                                                                                                style={link.textColor ? {
+                                                                                                    color: isHovered ? link.textColor : link.textColor,
+                                                                                                    // Add text shadow for better visibility on light backgrounds
+                                                                                                    textShadow: isHovered ? '0 2px 4px rgba(0,0,0,0.2)' : '0 1px 2px rgba(0,0,0,0.1)',
+                                                                                                    fontWeight: isHovered ? '700' : '600',
+                                                                                                    filter: isHovered ? 'brightness(1.1)' : 'none',
+                                                                                                    transition: 'all 0.2s ease'
+                                                                                                } : undefined}
+                                                                                                dangerouslySetInnerHTML={{ __html: link.label || '' }}
+                                                                                            />
+                                                                                            {link.visibility && link.visibility !== 'public' && (
+                                                                                                <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${link.visibility === 'authenticated'
+                                                                                                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                                                                                                    : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
+                                                                                                    }`}>
+                                                                                                    {link.visibility === 'authenticated' ? '🔒' : '🔐'}
+                                                                                                </span>
+                                                                                            )}
+                                                                                            {(link.visibleFrom || link.expiresAt) && (
+                                                                                                <span className="text-xs px-1.5 py-0.5 rounded shrink-0 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
+                                                                                                    📅
+                                                                                                </span>
+                                                                                            )}
+                                                                                        </div>
+                                                                                        <div className="text-xs text-slate-500 truncate font-mono">{link.url}</div>
+                                                                                        {settings.browser_specific_links_enabled === '1' && (() => {
+                                                                                            // Determine which browser is being used for this link
+                                                                                            // Priority: link-specific browser > tile default browser > system default
+                                                                                            const browserToUse = link.browser && link.browser !== 'default'
+                                                                                                ? link.browser
+                                                                                                : (tile.browser && tile.browser !== 'default' ? tile.browser : null);
+
+                                                                                            // Only show browser indicator if it's not the system default
+                                                                                            if (browserToUse) {
+                                                                                                return (
+                                                                                                    <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors">
+                                                                                                        ({formatBrowserName(browserToUse)} browser)
+                                                                                                    </div>
+                                                                                                );
+                                                                                            }
+                                                                                            return null;
+                                                                                        })()}
+                                                                                    </div>
+                                                                                    <div className="flex gap-1">
+                                                                                        <button
+                                                                                            onClick={() => handleStartEditLink(link)}
+                                                                                            className="p-1.5 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
+                                                                                            title="Edit Link"
+                                                                                        >
+                                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                                                                                            </svg>
+                                                                                        </button>
+                                                                                        <button
+                                                                                            onClick={() => handleCloneLink(tab.id, section.id, link.id)}
+                                                                                            className="p-1.5 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
+                                                                                            title="Clone Link"
+                                                                                        >
+                                                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                                                <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                                                                                                <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
+                                                                                            </svg>
+                                                                                        </button>
+                                                                                        <button
+                                                                                            onClick={() => setSchedulingDialogLink({ tabId: tab.id, sectionId: section.id, linkId: link.id })}
+                                                                                            className="p-1.5 text-slate-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
+                                                                                            title="Schedule Link"
+                                                                                        >
+                                                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                                                <path fillRule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75z" clipRule="evenodd" />
+                                                                                            </svg>
+                                                                                        </button>
+                                                                                        <button
+                                                                                            onClick={() => handleRemoveLinkFromSection(tab.id, section.id, link.id)}
+                                                                                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
+                                                                                            title="Delete Link"
+                                                                                        >
+                                                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                                                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                                                                            </svg>
+                                                                                        </button>
+                                                                                    </div>
+                                                                                </div>
+                                                                            );
+                                                                        });
+                                                                    })()}
+                                                                </div>
+
+                                                                {/* Add Link and Rich Text Buttons - Show when forms are collapsed */}
+                                                                {!showAddLinkForm[section.id] && !showAddRichTextForm[section.id] && (
+                                                                    <div className="mt-3 flex justify-end gap-2">
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                setShowAddRichTextForm(prev => ({ ...prev, [section.id]: true }));
+                                                                            }}
+                                                                            className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/40 flex items-center justify-center gap-2"
+                                                                        >
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                                                                            </svg>
+                                                                            Add Rich Text
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                setShowAddLinkForm(prev => ({ ...prev, [section.id]: true }));
+                                                                            }}
+                                                                            className="bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center justify-center gap-2"
+                                                                        >
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                                                            </svg>
+                                                                            Add Link
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+
+                                                                {/* Inline Add Form - Compact Design - Only show when expanded */}
+                                                                {showAddLinkForm[section.id] && (
+                                                                    <div className="mt-3 bg-white dark:bg-slate-800 border-2 border-brand-500 dark:border-brand-500/50 rounded-xl p-4 shadow-lg space-y-3">
+                                                                        {/* Form Header with Close Button */}
+                                                                        <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
+                                                                            <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Add New Link</h4>
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    setShowAddLinkForm(prev => ({ ...prev, [section.id]: false }));
+                                                                                    // Clear form when closing
+                                                                                    setNewLinkState(prev => ({ ...prev, [section.id]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '', browser: 'default' } }));
+                                                                                }}
+                                                                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded transition-colors"
+                                                                                title="Close form"
+                                                                            >
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                                                </svg>
+                                                                            </button>
+                                                                        </div>
                                                                         {/* Link Label & URL */}
                                                                         <div className="space-y-3">
                                                                             <div>
                                                                                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Link Label (Rich Text)</label>
                                                                                 <RichTextEditor
-                                                                                    value={editLinkState[link.id]?.label || ''}
-                                                                                    onChange={(value) => updateEditLinkState(link.id, 'label', value)}
+                                                                                    value={newLinkState[section.id]?.label || ''}
+                                                                                    onChange={(value) => updateNewLinkState(section.id, 'label', value)}
                                                                                     placeholder="Enter link name with formatting..."
                                                                                 />
                                                                             </div>
@@ -3637,8 +4122,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">URL</label>
                                                                                 <input
                                                                                     type="text"
-                                                                                    value={editLinkState[link.id]?.url || ''}
-                                                                                    onChange={(e) => updateEditLinkState(link.id, 'url', e.target.value)}
+                                                                                    value={newLinkState[section.id]?.url || ''}
+                                                                                    onChange={(e) => updateNewLinkState(section.id, 'url', e.target.value)}
                                                                                     placeholder="https://example.com"
                                                                                     className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
                                                                                 />
@@ -3651,27 +4136,27 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             <div className="flex gap-2 items-center">
                                                                                 <button
                                                                                     type="button"
-                                                                                    onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: !prev[link.id] }))}
+                                                                                    onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: !prev[section.id] }))}
                                                                                     className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg hover:border-brand-400 dark:hover:border-brand-500 hover:shadow-md transition-all focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
                                                                                     title="Select emoji"
                                                                                 >
                                                                                     <span className="text-xl">
-                                                                                        {editLinkState[link.id]?.icon || '😀'}
+                                                                                        {newLinkState[section.id]?.icon || '😀'}
                                                                                     </span>
                                                                                 </button>
                                                                                 <input
                                                                                     type="text"
-                                                                                    value={editLinkState[link.id]?.icon || ''}
-                                                                                    onChange={(e) => updateEditLinkState(link.id, 'icon', e.target.value)}
+                                                                                    value={newLinkState[section.id]?.icon || ''}
+                                                                                    onChange={(e) => updateNewLinkState(section.id, 'icon', e.target.value)}
                                                                                     placeholder="Or type emoji..."
                                                                                     className="flex-1 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
                                                                                 />
                                                                             </div>
-                                                                            {showLinkEmojiPicker[link.id] && (
+                                                                            {showLinkEmojiPicker[section.id] && (
                                                                                 <>
-                                                                                    <div className="fixed inset-0 z-[9998]" onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [link.id]: false }))}></div>
+                                                                                    <div className="fixed inset-0 z-[9998]" onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: false }))}></div>
                                                                                     <div className="fixed z-[9999] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl w-96 max-h-[500px] flex flex-col overflow-hidden" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
-                                                                                        <EmojiPickerTabs linkId={link.id} editLinkState={editLinkState[link.id]} updateEditLinkState={updateEditLinkState} setShowLinkEmojiPicker={setShowLinkEmojiPicker} />
+                                                                                        <EmojiPickerTabs linkId={section.id} editLinkState={newLinkState[section.id]} updateEditLinkState={(id, field, value) => updateNewLinkState(id, field, value)} setShowLinkEmojiPicker={setShowLinkEmojiPicker} />
                                                                                     </div>
                                                                                 </>
                                                                             )}
@@ -3684,22 +4169,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 <div className="flex gap-2 items-center">
                                                                                     <input
                                                                                         type="color"
-                                                                                        value={editLinkState[link.id]?.textColor && editLinkState[link.id]!.textColor.trim() ? editLinkState[link.id]!.textColor : '#000000'}
-                                                                                        onChange={(e) => updateEditLinkState(link.id, 'textColor', e.target.value)}
+                                                                                        value={newLinkState[section.id]?.textColor && newLinkState[section.id]!.textColor.trim() ? newLinkState[section.id]!.textColor : '#000000'}
+                                                                                        onChange={(e) => updateNewLinkState(section.id, 'textColor', e.target.value)}
                                                                                         className="w-12 h-12 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:border-brand-400 dark:hover:border-brand-500 transition-all"
                                                                                         title="Select text color"
                                                                                     />
                                                                                     <div className="flex-1 flex gap-1.5">
                                                                                         <input
                                                                                             type="text"
-                                                                                            value={editLinkState[link.id]?.textColor || ''}
-                                                                                            onChange={(e) => updateEditLinkState(link.id, 'textColor', e.target.value)}
+                                                                                            value={newLinkState[section.id]?.textColor || ''}
+                                                                                            onChange={(e) => updateNewLinkState(section.id, 'textColor', e.target.value)}
                                                                                             placeholder="#000000"
                                                                                             className="flex-1 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-xs text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
                                                                                         />
                                                                                         <button
                                                                                             type="button"
-                                                                                            onClick={() => updateEditLinkState(link.id, 'textColor', '')}
+                                                                                            onClick={() => updateNewLinkState(section.id, 'textColor', '')}
                                                                                             className="px-2.5 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg transition-colors text-xs font-medium"
                                                                                             title="Clear color"
                                                                                         >
@@ -3711,8 +4196,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             <div>
                                                                                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Visibility</label>
                                                                                 <select
-                                                                                    value={editLinkState[link.id]?.visibility || 'public'}
-                                                                                    onChange={(e) => updateEditLinkState(link.id, 'visibility', e.target.value as LinkVisibility)}
+                                                                                    value={newLinkState[section.id]?.visibility || 'public'}
+                                                                                    onChange={(e) => updateNewLinkState(section.id, 'visibility', e.target.value as LinkVisibility)}
                                                                                     className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-medium"
                                                                                 >
                                                                                     <option value="public">Public (visible to everyone)</option>
@@ -3727,8 +4212,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             <div>
                                                                                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Notes</label>
                                                                                 <textarea
-                                                                                    value={editLinkState[link.id]?.notes || ''}
-                                                                                    onChange={(e) => updateEditLinkState(link.id, 'notes', e.target.value)}
+                                                                                    value={newLinkState[section.id]?.notes || ''}
+                                                                                    onChange={(e) => updateNewLinkState(section.id, 'notes', e.target.value)}
                                                                                     placeholder="Add notes..."
                                                                                     rows={2}
                                                                                     className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all resize-none"
@@ -3738,21 +4223,21 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Hover Tooltip</label>
                                                                                 <input
                                                                                     type="text"
-                                                                                    value={editLinkState[link.id]?.tooltip || ''}
-                                                                                    onChange={(e) => updateEditLinkState(link.id, 'tooltip', e.target.value)}
+                                                                                    value={newLinkState[section.id]?.tooltip || ''}
+                                                                                    onChange={(e) => updateNewLinkState(section.id, 'tooltip', e.target.value)}
                                                                                     placeholder="Text shown on hover..."
                                                                                     className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
                                                                                 />
                                                                             </div>
                                                                         </div>
-                                                                        
+
                                                                         {/* Browser Selection - Only show if feature is enabled */}
                                                                         {settings.browser_specific_links_enabled === '1' && (
                                                                             <div>
                                                                                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Open link in</label>
                                                                                 <select
-                                                                                    value={editLinkState[link.id]?.browser || 'default'}
-                                                                                    onChange={(e) => updateEditLinkState(link.id, 'browser', e.target.value)}
+                                                                                    value={newLinkState[section.id]?.browser || 'default'}
+                                                                                    onChange={(e) => updateNewLinkState(section.id, 'browser', e.target.value)}
                                                                                     className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
                                                                                 >
                                                                                     <option value="default">Default Browser</option>
@@ -3789,23 +4274,23 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 </p>
                                                                             </div>
                                                                         )}
-                                                                        
+
                                                                         {/* User Selector for Private Visibility */}
-                                                                        {editLinkState[link.id]?.visibility === 'private' && (
+                                                                        {(newLinkState[section.id]?.visibility || 'public') === 'private' && (
                                                                             <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border-2 border-slate-200 dark:border-slate-700">
                                                                                 <div className="flex items-center justify-between mb-2">
                                                                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Select Users</label>
                                                                                     <button
                                                                                         type="button"
-                                                                                        onClick={() => setShowUserPicker(prev => ({ ...prev, [link.id]: !prev[link.id] }))}
+                                                                                        onClick={() => setShowUserPicker(prev => ({ ...prev, [section.id]: !prev[section.id] }))}
                                                                                         className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium flex items-center gap-1"
                                                                                     >
-                                                                                        {showUserPicker[link.id] ? 'Hide' : 'Show'}
+                                                                                        {showUserPicker[section.id] ? 'Hide' : 'Show'}
                                                                                     </button>
                                                                                 </div>
-                                                                                {editLinkState[link.id]?.allowedUsers && editLinkState[link.id]!.allowedUsers.length > 0 && (
+                                                                                {newLinkState[section.id]?.allowedUsers && newLinkState[section.id]!.allowedUsers.length > 0 && (
                                                                                     <div className="flex flex-wrap gap-1.5 mb-2">
-                                                                                        {editLinkState[link.id]!.allowedUsers.map(userId => {
+                                                                                        {newLinkState[section.id]!.allowedUsers.map(userId => {
                                                                                             const user = usersList.find(u => u.id === userId);
                                                                                             return (
                                                                                                 <span
@@ -3815,7 +4300,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     {user?.username || `User ${userId}`}
                                                                                                     <button
                                                                                                         type="button"
-                                                                                                        onClick={() => toggleEditUserSelection(link.id, userId)}
+                                                                                                        onClick={() => toggleUserSelection(section.id, userId)}
                                                                                                         className="hover:text-red-600 dark:hover:text-red-400 transition-colors"
                                                                                                         title="Remove user"
                                                                                                     >
@@ -3826,7 +4311,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         })}
                                                                                     </div>
                                                                                 )}
-                                                                                {showUserPicker[link.id] && (
+                                                                                {showUserPicker[section.id] && (
                                                                                     <div className="max-h-40 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
                                                                                         {loadingUsers ? (
                                                                                             <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2 flex items-center justify-center gap-2">
@@ -3846,8 +4331,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 >
                                                                                                     <input
                                                                                                         type="checkbox"
-                                                                                                        checked={editLinkState[link.id]?.allowedUsers?.includes(user.id) || false}
-                                                                                                        onChange={() => toggleEditUserSelection(link.id, user.id)}
+                                                                                                        checked={newLinkState[section.id]?.allowedUsers?.includes(user.id) || false}
+                                                                                                        onChange={() => toggleUserSelection(section.id, user.id)}
                                                                                                         className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 w-3.5 h-3.5"
                                                                                                     />
                                                                                                     <span className="text-xs font-medium text-slate-700 dark:text-slate-300 flex-1">{user.username}</span>
@@ -3864,558 +4349,73 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             </div>
                                                                         )}
 
-                                                                        {/* Action Buttons */}
-                                                                        <div className="flex gap-2 justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
+                                                                        {/* Action Button */}
+                                                                        <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
                                                                             <button
-                                                                                onClick={handleCancelEditLink}
-                                                                                className="px-4 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 transition-all"
-                                                                            >
-                                                                                Cancel
-                                                                            </button>
-                                                                            <button
-                                                                                onClick={() => handleUpdateLink(tab.id, section.id, link.id)}
-                                                                                disabled={!editLinkState[link.id]?.label?.trim() || !editLinkState[link.id]?.url?.trim()}
+                                                                                onClick={() => handleAddLinkToSection(tab.id, section.id)}
+                                                                                disabled={!newLinkState[section.id]?.label || !newLinkState[section.id]?.url}
                                                                                 className="px-4 py-2 text-xs font-semibold bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-md hover:shadow-lg shadow-brand-500/30 flex items-center gap-1.5"
                                                                             >
                                                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                                                                                 </svg>
-                                                                                Save
+                                                                                Add Link
                                                                             </button>
                                                                         </div>
                                                                     </div>
-                                                                ) : (
-                                                                    // View Mode
-                                                                    <div 
-                                                                        key={link.id} 
-                                                                        id={`link-${link.id}`}
-                                                                        className={`flex items-center gap-2 p-2 rounded-lg border transition-all duration-200 cursor-pointer ${
-                                                                            matchesSearch
-                                                                                ? linkSearchTerm
-                                                                                    ? isHovered
-                                                                                        ? 'bg-yellow-300 dark:bg-yellow-600/40 border-yellow-400 dark:border-yellow-500 shadow-lg scale-[1.02]'
-                                                                                        : 'bg-yellow-200 dark:bg-yellow-600/30 border-yellow-300 dark:border-yellow-500 hover:bg-yellow-300 dark:hover:bg-yellow-600/40 hover:border-yellow-400 dark:hover:border-yellow-500 hover:shadow-md'
-                                                                                    : isHovered
-                                                                                        ? 'bg-brand-50 dark:bg-brand-900/20 border-brand-300 dark:border-brand-700 shadow-md scale-[1.02]'
-                                                                                        : 'bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-brand-200 dark:hover:border-brand-700 hover:shadow-sm'
-                                                                                : 'bg-slate-50 dark:bg-slate-900 opacity-40 border-slate-100 dark:border-slate-800'
-                                                                        }`}
-                                                                        onMouseEnter={() => setHoveredLinkId(link.id)}
-                                                                        onMouseLeave={() => setHoveredLinkId(null)}
-                                                                        onClick={() => {
-                                                                            if (linkSearchTerm && matchesSearch) {
-                                                                                document.getElementById(`link-${link.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                                                            }
-                                                                        }}
-                                                                    >
-                                                                        {/* Link Reorder Buttons */}
-                                                                        <div className="flex flex-col gap-0.5">
-                                                                            <button
-                                                                                onClick={() => handleMoveLink(tab.id, section.id, link.id, 'up')}
-                                                                                disabled={linkIndex === 0}
-                                                                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-0.5"
-                                                                                title="Move Up"
-                                                                            >
-                                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
-                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
-                                                                                </svg>
-                                                                            </button>
-                                                                            <button
-                                                                                onClick={() => handleMoveLink(tab.id, section.id, link.id, 'down')}
-                                                                                disabled={linkIndex === section.links.length - 1}
-                                                                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-0.5"
-                                                                                title="Move Down"
-                                                                            >
-                                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
-                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                                                                                </svg>
-                                                                            </button>
-                                                                        </div>
-                                                                        <div className="w-8 h-8 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sm">🔗</div>
-                                                                        <div className="flex-1 min-w-0">
-                                                                            <div className="flex items-center gap-2">
-                                                                                <div 
-                                                                                    className={`text-sm font-medium truncate transition-colors duration-200 ${
-                                                                                        !link.textColor 
-                                                                                            ? 'text-slate-700 dark:text-slate-200' 
-                                                                                            : isHovered
-                                                                                                ? ''
-                                                                                                : ''
-                                                                                    }`}
-                                                                                    style={link.textColor ? { 
-                                                                                        color: isHovered ? link.textColor : link.textColor,
-                                                                                        // Add text shadow for better visibility on light backgrounds
-                                                                                        textShadow: isHovered ? '0 2px 4px rgba(0,0,0,0.2)' : '0 1px 2px rgba(0,0,0,0.1)',
-                                                                                        fontWeight: isHovered ? '700' : '600',
-                                                                                        filter: isHovered ? 'brightness(1.1)' : 'none',
-                                                                                        transition: 'all 0.2s ease'
-                                                                                    } : undefined}
-                                                                                    dangerouslySetInnerHTML={{ __html: link.label || '' }}
-                                                                                />
-                                                                                {link.visibility && link.visibility !== 'public' && (
-                                                                                    <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${link.visibility === 'authenticated'
-                                                                                        ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                                                                                        : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
-                                                                                        }`}>
-                                                                                        {link.visibility === 'authenticated' ? '🔒' : '🔐'}
-                                                                                    </span>
-                                                                                )}
-                                                                                {(link.visibleFrom || link.expiresAt) && (
-                                                                                    <span className="text-xs px-1.5 py-0.5 rounded shrink-0 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
-                                                                                        📅
-                                                                                    </span>
-                                                                                )}
-                                                                            </div>
-                                                                            <div className="text-xs text-slate-500 truncate font-mono">{link.url}</div>
-                                                                            {settings.browser_specific_links_enabled === '1' && (() => {
-                                                                                // Determine which browser is being used for this link
-                                                                                // Priority: link-specific browser > tile default browser > system default
-                                                                                const browserToUse = link.browser && link.browser !== 'default' 
-                                                                                    ? link.browser 
-                                                                                    : (tile.browser && tile.browser !== 'default' ? tile.browser : null);
-                                                                                
-                                                                                // Only show browser indicator if it's not the system default
-                                                                                if (browserToUse) {
-                                                                                    return (
-                                                                                        <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors">
-                                                                                            ({formatBrowserName(browserToUse)} browser)
-                                                                                        </div>
-                                                                                    );
-                                                                                }
-                                                                                return null;
-                                                                            })()}
-                                                                        </div>
-                                                                        <div className="flex gap-1">
-                                                                            <button
-                                                                                onClick={() => handleStartEditLink(link)}
-                                                                                className="p-1.5 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
-                                                                                title="Edit Link"
-                                                                            >
-                                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
-                                                                                </svg>
-                                                                            </button>
-                                                                            <button
-                                                                                onClick={() => handleCloneLink(tab.id, section.id, link.id)}
-                                                                                className="p-1.5 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
-                                                                                title="Clone Link"
-                                                                            >
-                                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                                                    <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
-                                                                                    <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
-                                                                                </svg>
-                                                                            </button>
-                                                                            <button
-                                                                                onClick={() => setSchedulingDialogLink({ tabId: tab.id, sectionId: section.id, linkId: link.id })}
-                                                                                className="p-1.5 text-slate-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
-                                                                                title="Schedule Link"
-                                                                            >
-                                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                                                    <path fillRule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75z" clipRule="evenodd" />
-                                                                                </svg>
-                                                                            </button>
-                                                                            <button
-                                                                                onClick={() => handleRemoveLinkFromSection(tab.id, section.id, link.id)}
-                                                                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
-                                                                                title="Delete Link"
-                                                                            >
-                                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                                                    <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                                                                                </svg>
-                                                                            </button>
-                                                                        </div>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-
-                                                        {/* Add Link and Rich Text Buttons - Show when forms are collapsed */}
-                                                        {!showAddLinkForm[section.id] && !showAddRichTextForm[section.id] && (
-                                                            <div className="mt-3 flex justify-end gap-2">
-                                                                <button
-                                                                    onClick={() => {
-                                                                        setShowAddRichTextForm(prev => ({ ...prev, [section.id]: true }));
-                                                                    }}
-                                                                    className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/40 flex items-center justify-center gap-2"
-                                                                >
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                                                                    </svg>
-                                                                    Add Rich Text
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => {
-                                                                        setShowAddLinkForm(prev => ({ ...prev, [section.id]: true }));
-                                                                    }}
-                                                                    className="bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center justify-center gap-2"
-                                                                >
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                                                    </svg>
-                                                                    Add Link
-                                                                </button>
-                                                            </div>
-                                                        )}
-
-                                                        {/* Inline Add Form - Compact Design - Only show when expanded */}
-                                                        {showAddLinkForm[section.id] && (
-                                                        <div className="mt-3 bg-white dark:bg-slate-800 border-2 border-brand-500 dark:border-brand-500/50 rounded-xl p-4 shadow-lg space-y-3">
-                                                            {/* Form Header with Close Button */}
-                                                            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
-                                                                <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Add New Link</h4>
-                                                                <button
-                                                                    onClick={() => {
-                                                                        setShowAddLinkForm(prev => ({ ...prev, [section.id]: false }));
-                                                                        // Clear form when closing
-                                                                        setNewLinkState(prev => ({ ...prev, [section.id]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '', browser: 'default' } }));
-                                                                    }}
-                                                                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded transition-colors"
-                                                                    title="Close form"
-                                                                >
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                                                    </svg>
-                                                                </button>
-                                                            </div>
-                                                            {/* Link Label & URL */}
-                                                            <div className="space-y-3">
-                                                                <div>
-                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Link Label (Rich Text)</label>
-                                                                    <RichTextEditor
-                                                                        value={newLinkState[section.id]?.label || ''}
-                                                                        onChange={(value) => updateNewLinkState(section.id, 'label', value)}
-                                                                        placeholder="Enter link name with formatting..."
-                                                                    />
-                                                                </div>
-                                                                <div>
-                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">URL</label>
-                                                                    <input
-                                                                        type="text"
-                                                                        value={newLinkState[section.id]?.url || ''}
-                                                                        onChange={(e) => updateNewLinkState(section.id, 'url', e.target.value)}
-                                                                        placeholder="https://example.com"
-                                                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
-                                                                    />
-                                                                </div>
-                                                            </div>
-
-                                                            {/* Emoji Selection */}
-                                                            <div className="relative">
-                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Emoji</label>
-                                                                <div className="flex gap-2 items-center">
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: !prev[section.id] }))}
-                                                                        className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg hover:border-brand-400 dark:hover:border-brand-500 hover:shadow-md transition-all focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
-                                                                        title="Select emoji"
-                                                                    >
-                                                                        <span className="text-xl">
-                                                                            {newLinkState[section.id]?.icon || '😀'}
-                                                                        </span>
-                                                                    </button>
-                                                                    <input
-                                                                        type="text"
-                                                                        value={newLinkState[section.id]?.icon || ''}
-                                                                        onChange={(e) => updateNewLinkState(section.id, 'icon', e.target.value)}
-                                                                        placeholder="Or type emoji..."
-                                                                        className="flex-1 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                                    />
-                                                                </div>
-                                                                {showLinkEmojiPicker[section.id] && (
-                                                                    <>
-                                                                        <div className="fixed inset-0 z-[9998]" onClick={() => setShowLinkEmojiPicker(prev => ({ ...prev, [section.id]: false }))}></div>
-                                                                        <div className="fixed z-[9999] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl w-96 max-h-[500px] flex flex-col overflow-hidden" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
-                                                                            <EmojiPickerTabs linkId={section.id} editLinkState={newLinkState[section.id]} updateEditLinkState={(id, field, value) => updateNewLinkState(id, field, value)} setShowLinkEmojiPicker={setShowLinkEmojiPicker} />
-                                                                        </div>
-                                                                    </>
                                                                 )}
-                                                            </div>
 
-                                                            {/* Text Color & Visibility - Side by Side */}
-                                                            <div className="grid grid-cols-2 gap-3">
-                                                                <div>
-                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Text Color</label>
-                                                                    <div className="flex gap-2 items-center">
-                                                                        <input
-                                                                            type="color"
-                                                                            value={newLinkState[section.id]?.textColor && newLinkState[section.id]!.textColor.trim() ? newLinkState[section.id]!.textColor : '#000000'}
-                                                                            onChange={(e) => updateNewLinkState(section.id, 'textColor', e.target.value)}
-                                                                            className="w-12 h-12 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:border-brand-400 dark:hover:border-brand-500 transition-all"
-                                                                            title="Select text color"
-                                                                        />
-                                                                        <div className="flex-1 flex gap-1.5">
-                                                                            <input
-                                                                                type="text"
-                                                                                value={newLinkState[section.id]?.textColor || ''}
-                                                                                onChange={(e) => updateNewLinkState(section.id, 'textColor', e.target.value)}
-                                                                                placeholder="#000000"
-                                                                                className="flex-1 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-xs text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
-                                                                            />
+                                                                {/* Add Rich Text Form */}
+                                                                {showAddRichTextForm[section.id] && (
+                                                                    <div className="mt-3 bg-white dark:bg-slate-800 border-2 border-emerald-500 dark:border-emerald-500/50 rounded-xl p-4 shadow-lg space-y-3">
+                                                                        <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
+                                                                            <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Add Rich Text Content</h4>
                                                                             <button
-                                                                                type="button"
-                                                                                onClick={() => updateNewLinkState(section.id, 'textColor', '')}
-                                                                                className="px-2.5 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg transition-colors text-xs font-medium"
-                                                                                title="Clear color"
+                                                                                onClick={() => {
+                                                                                    setShowAddRichTextForm(prev => ({ ...prev, [section.id]: false }));
+                                                                                    setNewRichTextContent(prev => ({ ...prev, [section.id]: '' }));
+                                                                                }}
+                                                                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded transition-colors"
+                                                                                title="Close form"
                                                                             >
-                                                                                Clear
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                                                </svg>
+                                                                            </button>
+                                                                        </div>
+                                                                        <RichTextEditor
+                                                                            value={newRichTextContent[section.id] || ''}
+                                                                            onChange={(value) => setNewRichTextContent(prev => ({ ...prev, [section.id]: value }))}
+                                                                            placeholder="Enter rich text content with formatting..."
+                                                                        />
+                                                                        <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
+                                                                            <button
+                                                                                onClick={() => handleAddRichTextToSection(tab.id, section.id)}
+                                                                                disabled={!newRichTextContent[section.id]?.trim()}
+                                                                                className="px-4 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-md hover:shadow-lg shadow-emerald-500/30 flex items-center gap-1.5"
+                                                                            >
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                                                                </svg>
+                                                                                Add Rich Text
                                                                             </button>
                                                                         </div>
                                                                     </div>
-                                                                </div>
-                                                                <div>
-                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Visibility</label>
-                                                                    <select
-                                                                        value={newLinkState[section.id]?.visibility || 'public'}
-                                                                        onChange={(e) => updateNewLinkState(section.id, 'visibility', e.target.value as LinkVisibility)}
-                                                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-medium"
-                                                                    >
-                                                                        <option value="public">Public (visible to everyone)</option>
-                                                                        <option value="authenticated">Authenticated (logged-in users only)</option>
-                                                                        <option value="private">Private (specific users only)</option>
-                                                                    </select>
-                                                                </div>
-                                                            </div>
+                                                                )}
 
-                                                            {/* Notes & Tooltip - Side by Side */}
-                                                            <div className="grid grid-cols-2 gap-3">
-                                                                <div>
-                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Notes</label>
-                                                                    <textarea
-                                                                        value={newLinkState[section.id]?.notes || ''}
-                                                                        onChange={(e) => updateNewLinkState(section.id, 'notes', e.target.value)}
-                                                                        placeholder="Add notes..."
-                                                                        rows={2}
-                                                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all resize-none"
-                                                                    />
-                                                                </div>
-                                                                <div>
-                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Hover Tooltip</label>
-                                                                    <input
-                                                                        type="text"
-                                                                        value={newLinkState[section.id]?.tooltip || ''}
-                                                                        onChange={(e) => updateNewLinkState(section.id, 'tooltip', e.target.value)}
-                                                                        placeholder="Text shown on hover..."
-                                                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                                    />
-                                                                </div>
-                                                            </div>
-                                                            
-                                                            {/* Browser Selection - Only show if feature is enabled */}
-                                                            {settings.browser_specific_links_enabled === '1' && (
-                                                                <div>
-                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Open link in</label>
-                                                                    <select
-                                                                        value={newLinkState[section.id]?.browser || 'default'}
-                                                                        onChange={(e) => updateNewLinkState(section.id, 'browser', e.target.value)}
-                                                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                                    >
-                                                                        <option value="default">Default Browser</option>
-                                                                        {availableBrowsers.length > 0 ? (
-                                                                            availableBrowsers.map((browserId) => {
-                                                                                                // Format browser ID for display
-                                                                                                const displayName = browserId
-                                                                                                    .replace(/-/g, ' ')
-                                                                                                    .replace(/\b\w/g, (l) => l.toUpperCase())
-                                                                                                    .replace('Wsl', '(WSL)')
-                                                                                                    .replace('Stable', 'Stable')
-                                                                                                    .replace('Beta', 'Beta')
-                                                                                                    .replace('Dev', 'Dev');
-                                                                                                return (
-                                                                                                    <option key={browserId} value={browserId}>
-                                                                                                        {displayName}
-                                                                                                    </option>
-                                                                                                );
-                                                                                            })
-                                                                                        ) : (
-                                                                                            <>
-                                                                                                <option value="chrome-stable">Chrome Stable</option>
-                                                                                                <option value="chrome-beta">Chrome Beta</option>
-                                                                                                <option value="chrome-dev">Chrome Dev</option>
-                                                                                                <option value="edge-stable">Edge Stable</option>
-                                                                                                <option value="edge-beta">Edge Beta</option>
-                                                                                                <option value="edge-dev">Edge Dev</option>
-                                                                                                <option value="firefox">Firefox (WSL)</option>
-                                                                                            </>
-                                                                                        )}
-                                                                    </select>
-                                                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                                                                        Select which browser should open this link. Requires browser extension to be installed.
-                                                                    </p>
-                                                                </div>
-                                                            )}
 
-                                                            {/* User Selector for Private Visibility */}
-                                                            {(newLinkState[section.id]?.visibility || 'public') === 'private' && (
-                                                                <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border-2 border-slate-200 dark:border-slate-700">
-                                                                    <div className="flex items-center justify-between mb-2">
-                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Select Users</label>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => setShowUserPicker(prev => ({ ...prev, [section.id]: !prev[section.id] }))}
-                                                                            className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium flex items-center gap-1"
-                                                                        >
-                                                                            {showUserPicker[section.id] ? 'Hide' : 'Show'}
-                                                                        </button>
-                                                                    </div>
-                                                                    {newLinkState[section.id]?.allowedUsers && newLinkState[section.id]!.allowedUsers.length > 0 && (
-                                                                        <div className="flex flex-wrap gap-1.5 mb-2">
-                                                                            {newLinkState[section.id]!.allowedUsers.map(userId => {
-                                                                                const user = usersList.find(u => u.id === userId);
-                                                                                return (
-                                                                                    <span
-                                                                                        key={userId}
-                                                                                        className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 rounded text-xs font-medium"
-                                                                                    >
-                                                                                        {user?.username || `User ${userId}`}
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            onClick={() => toggleUserSelection(section.id, userId)}
-                                                                                            className="hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                                                                                            title="Remove user"
-                                                                                        >
-                                                                                            ×
-                                                                                        </button>
-                                                                                    </span>
-                                                                                );
-                                                                            })}
-                                                                        </div>
-                                                                    )}
-                                                                    {showUserPicker[section.id] && (
-                                                                        <div className="max-h-40 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-2 space-y-1">
-                                                                            {loadingUsers ? (
-                                                                                <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2 flex items-center justify-center gap-2">
-                                                                                    <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                                                    </svg>
-                                                                                    Loading...
-                                                                                </div>
-                                                                            ) : usersList.length === 0 ? (
-                                                                                <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">No users available</div>
-                                                                            ) : (
-                                                                                usersList.map(user => (
-                                                                                    <label
-                                                                                        key={user.id}
-                                                                                        className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer transition-colors"
-                                                                                    >
-                                                                                        <input
-                                                                                            type="checkbox"
-                                                                                            checked={newLinkState[section.id]?.allowedUsers?.includes(user.id) || false}
-                                                                                            onChange={() => toggleUserSelection(section.id, user.id)}
-                                                                                            className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 w-3.5 h-3.5"
-                                                                                        />
-                                                                                        <span className="text-xs font-medium text-slate-700 dark:text-slate-300 flex-1">{user.username}</span>
-                                                                                        {user.auth_source === 'ldap' && (
-                                                                                            <span className="px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[9px] font-semibold">
-                                                                                                LDAP
-                                                                                            </span>
-                                                                                        )}
-                                                                                    </label>
-                                                                                ))
-                                                                            )}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            )}
-
-                                                            {/* Action Button */}
-                                                            <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
-                                                                <button
-                                                                    onClick={() => handleAddLinkToSection(tab.id, section.id)}
-                                                                    disabled={!newLinkState[section.id]?.label || !newLinkState[section.id]?.url}
-                                                                    className="px-4 py-2 text-xs font-semibold bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-md hover:shadow-lg shadow-brand-500/30 flex items-center gap-1.5"
-                                                                >
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                                                    </svg>
-                                                                    Add Link
-                                                                </button>
                                                             </div>
                                                         </div>
-                                                        )}
+                                                    );
+                                                })}
 
-                                                        {/* Add Rich Text Form */}
-                                                        {showAddRichTextForm[section.id] && (
-                                                            <div className="mt-3 bg-white dark:bg-slate-800 border-2 border-emerald-500 dark:border-emerald-500/50 rounded-xl p-4 shadow-lg space-y-3">
-                                                            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
-                                                                <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Add Rich Text Content</h4>
-                                                                <button
-                                                                    onClick={() => {
-                                                                        setShowAddRichTextForm(prev => ({ ...prev, [section.id]: false }));
-                                                                        setNewRichTextContent(prev => ({ ...prev, [section.id]: '' }));
-                                                                    }}
-                                                                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded transition-colors"
-                                                                    title="Close form"
-                                                                >
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                                                    </svg>
-                                                                </button>
-                                                            </div>
-                                                            <RichTextEditor
-                                                                value={newRichTextContent[section.id] || ''}
-                                                                onChange={(value) => setNewRichTextContent(prev => ({ ...prev, [section.id]: value }))}
-                                                                placeholder="Enter rich text content with formatting..."
-                                                            />
-                                                            <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
-                                                                <button
-                                                                    onClick={() => handleAddRichTextToSection(tab.id, section.id)}
-                                                                    disabled={!newRichTextContent[section.id]?.trim()}
-                                                                    className="px-4 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-md hover:shadow-lg shadow-emerald-500/30 flex items-center gap-1.5"
-                                                                >
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                                                    </svg>
-                                                                    Add Rich Text
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                        )}
-
-                                                        {/* Display Rich Text Content Items */}
-                                                        {section.richTextContent && section.richTextContent.length > 0 && (
-                                                            <div className="mt-3 space-y-2">
-                                                                {section.richTextContent
-                                                                    .sort((a, b) => (a.position || 0) - (b.position || 0))
-                                                                    .map((richText) => {
-                                                                        const sortedItems = section.richTextContent || [];
-                                                                        const currentIndex = sortedItems.findIndex(rt => rt.id === richText.id);
-                                                                        const canMoveUp = currentIndex > 0;
-                                                                        const canMoveDown = currentIndex < sortedItems.length - 1;
-                                                                        const isEditing = editingRichTextId[section.id] === richText.id;
-                                                                        
-                                                                        return (
-                                                                            <RichTextContentItem
-                                                                                key={richText.id}
-                                                                                content={richText}
-                                                                                sectionId={section.id}
-                                                                                onUpdate={(id, content) => handleUpdateRichText(tab.id, section.id, id, content)}
-                                                                                onDelete={(id) => handleDeleteRichText(tab.id, section.id, id)}
-                                                                                onMoveUp={() => handleMoveRichText(tab.id, section.id, richText.id, 'up')}
-                                                                                onMoveDown={() => handleMoveRichText(tab.id, section.id, richText.id, 'down')}
-                                                                                canMoveUp={canMoveUp}
-                                                                                canMoveDown={canMoveDown}
-                                                                                isEditing={isEditing}
-                                                                                onEdit={() => setEditingRichTextId(prev => ({ ...prev, [section.id]: richText.id }))}
-                                                                                onCancel={() => setEditingRichTextId(prev => ({ ...prev, [section.id]: null }))}
-                                                                                onSave={() => setEditingRichTextId(prev => ({ ...prev, [section.id]: null }))}
-                                                                            />
-                                                                        );
-                                                                    })}
-                                                            </div>
-                                                        )}
+                                                {tab.sections.length === 0 && (
+                                                    <div className="text-center py-8 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl text-slate-500 text-sm">
+                                                        <p>No sections in this tab. Click "Add Section" to get started.</p>
                                                     </div>
-                                                </div>
-                                                );
-                                            })}
-
-                                            {tab.sections.length === 0 && (
-                                                <div className="text-center py-8 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl text-slate-500 text-sm">
-                                                    <p>No sections in this tab. Click "Add Section" to get started.</p>
-                                                </div>
-                                            )}
+                                                )}
+                                            </div>
                                         </div>
-                                    </div>
                                     );
                                 })
                             ) : (
@@ -4441,92 +4441,92 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     ];
                                     const sectionColorClass = borderColors[colorIndex];
                                     const sectionBgClass = bgColors[colorIndex];
-                                    
-                                    return (
-                                    <div key={section.id} className={`bg-white dark:bg-slate-800 border border-l-2 border-t-2 border-b-2 border-slate-200 dark:border-slate-700 ${sectionColorClass} rounded-2xl overflow-hidden shadow-sm dark:shadow-black/20`}>
-                                        {/* Section Header */}
-                                        <div className={`p-4 border-b border-slate-200 dark:border-slate-700 ${sectionBgClass} flex gap-2 items-center`}>
-                                            <div className="text-slate-400 dark:text-slate-500 font-mono text-sm">#{index + 1}</div>
-                                            <input
-                                                type="text"
-                                                value={section.title}
-                                                onChange={(e) => {
-                                                    // For backward compatibility, update sections directly
-                                                    const newSections = editSections.map(s => s.id === section.id ? { ...s, title: e.target.value } : s);
-                                                    setEditSections(newSections);
-                                                }}
-                                                placeholder="Section Header (e.g. Resources)"
-                                                className="flex-1 bg-transparent border-none text-slate-900 dark:text-white font-bold focus:ring-0 placeholder-slate-400"
-                                            />
-                                            <button
-                                                onClick={() => {
-                                                    console.log('=== LEGACY SECTION DELETION START ===');
-                                                    console.log('Section ID:', section.id);
-                                                    
-                                                    if (!isEditing) {
-                                                        alert('Please enter edit mode first before deleting sections.');
-                                                        return;
-                                                    }
-                                                    
-                                                    const confirmed = window.confirm('Delete this section and all its links?');
-                                                    if (!confirmed) {
-                                                        return;
-                                                    }
-                                                    
-                                                    console.log('Proceeding with legacy section deletion...');
-                                                    const filteredSections = editSections.filter(s => s.id !== section.id);
-                                                    console.log('Sections before:', editSections.length, 'after:', filteredSections.length);
-                                                    
-                                                    setEditSections(filteredSections);
-                                                    
-                                                    // Automatically save after deletion
-                                                    autoSavingRef.current = true;
-                                                    
-                                                    setTimeout(() => {
-                                                        console.log('Auto-saving after legacy section deletion...');
-                                                        
-                                                        const updatedTile: Tile = {
-                                                            ...tile,
-                                                            title: editTitle,
-                                                            description: editDesc,
-                                                            htmlContent: editHtml,
-                                                            emoji: editEmoji,
-                                                            themeColor: editColor,
-                                                            tabs: editTabs.length > 0 ? editTabs : undefined,
-                                                            sections: editTabs.length > 0 ? undefined : filteredSections,
-                                                            visibility: editVisibility,
-                                                            allowedUsers: editVisibility === 'private' ? editAllowedUsers : undefined,
-                                                        };
 
-                                                        const updatedTilesArray = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
-                                                        
-                                                        try {
-                                                            onUpdateTiles(updatedTilesArray, true);
-                                                            console.log('Auto-save: Legacy section deletion saved successfully');
-                                                            
-                                                            setTimeout(() => {
-                                                                autoSavingRef.current = false;
-                                                            }, 1000);
-                                                        } catch (error) {
-                                                            console.error('Auto-save: Failed to save:', error);
-                                                            alert('Failed to save section deletion. Please try saving manually.');
-                                                            autoSavingRef.current = false;
+                                    return (
+                                        <div key={section.id} className={`bg-white dark:bg-slate-800 border border-l-2 border-t-2 border-b-2 border-slate-200 dark:border-slate-700 ${sectionColorClass} rounded-2xl overflow-hidden shadow-sm dark:shadow-black/20`}>
+                                            {/* Section Header */}
+                                            <div className={`p-4 border-b border-slate-200 dark:border-slate-700 ${sectionBgClass} flex gap-2 items-center`}>
+                                                <div className="text-slate-400 dark:text-slate-500 font-mono text-sm">#{index + 1}</div>
+                                                <input
+                                                    type="text"
+                                                    value={section.title}
+                                                    onChange={(e) => {
+                                                        // For backward compatibility, update sections directly
+                                                        const newSections = editSections.map(s => s.id === section.id ? { ...s, title: e.target.value } : s);
+                                                        setEditSections(newSections);
+                                                    }}
+                                                    placeholder="Section Header (e.g. Resources)"
+                                                    className="flex-1 bg-transparent border-none text-slate-900 dark:text-white font-bold focus:ring-0 placeholder-slate-400"
+                                                />
+                                                <button
+                                                    onClick={() => {
+                                                        console.log('=== LEGACY SECTION DELETION START ===');
+                                                        console.log('Section ID:', section.id);
+
+                                                        if (!isEditing) {
+                                                            alert('Please enter edit mode first before deleting sections.');
+                                                            return;
                                                         }
-                                                    }, 150);
-                                                }}
-                                                className="text-slate-400 hover:text-red-500 p-2"
-                                                title="Delete Section"
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                                                </svg>
-                                            </button>
+
+                                                        const confirmed = window.confirm('Delete this section and all its links?');
+                                                        if (!confirmed) {
+                                                            return;
+                                                        }
+
+                                                        console.log('Proceeding with legacy section deletion...');
+                                                        const filteredSections = editSections.filter(s => s.id !== section.id);
+                                                        console.log('Sections before:', editSections.length, 'after:', filteredSections.length);
+
+                                                        setEditSections(filteredSections);
+
+                                                        // Automatically save after deletion
+                                                        autoSavingRef.current = true;
+
+                                                        setTimeout(() => {
+                                                            console.log('Auto-saving after legacy section deletion...');
+
+                                                            const updatedTile: Tile = {
+                                                                ...tile,
+                                                                title: editTitle,
+                                                                description: editDesc,
+                                                                htmlContent: editHtml,
+                                                                emoji: editEmoji,
+                                                                themeColor: editColor,
+                                                                tabs: editTabs.length > 0 ? editTabs : undefined,
+                                                                sections: editTabs.length > 0 ? undefined : filteredSections,
+                                                                visibility: editVisibility,
+                                                                allowedUsers: editVisibility === 'private' ? editAllowedUsers : undefined,
+                                                            };
+
+                                                            const updatedTilesArray = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
+
+                                                            try {
+                                                                onUpdateTiles(updatedTilesArray, true);
+                                                                console.log('Auto-save: Legacy section deletion saved successfully');
+
+                                                                setTimeout(() => {
+                                                                    autoSavingRef.current = false;
+                                                                }, 1000);
+                                                            } catch (error) {
+                                                                console.error('Auto-save: Failed to save:', error);
+                                                                alert('Failed to save section deletion. Please try saving manually.');
+                                                                autoSavingRef.current = false;
+                                                            }
+                                                        }, 150);
+                                                    }}
+                                                    className="text-slate-400 hover:text-red-500 p-2"
+                                                    title="Delete Section"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                            <div className="p-4 bg-white dark:bg-slate-800">
+                                                <p className="text-sm text-slate-500 dark:text-slate-400 italic mb-4">This section uses the old structure. Add a tab to use the new tab-based organization.</p>
+                                                <p className="text-xs text-slate-400 dark:text-slate-600">Links: {section.links?.length || 0}</p>
+                                            </div>
                                         </div>
-                                        <div className="p-4 bg-white dark:bg-slate-800">
-                                            <p className="text-sm text-slate-500 dark:text-slate-400 italic mb-4">This section uses the old structure. Add a tab to use the new tab-based organization.</p>
-                                            <p className="text-xs text-slate-400 dark:text-slate-600">Links: {section.links?.length || 0}</p>
-                                        </div>
-                                    </div>
                                     );
                                 })
                             )}
