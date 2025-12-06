@@ -288,9 +288,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         // we're *not* editing. While editing, `editTabs` is the source
         // of truth and won't be touched by this effect.
         if (tile.tabs && tile.tabs.length > 0) {
-            setEditTabs(tile.tabs);
+            // Deep clone tabs to ensure all properties including textColor are preserved
+            const clonedTabs = tile.tabs.map(tab => ({
+                ...tab,
+                sections: tab.sections ? tab.sections.map(section => ({
+                    ...section,
+                    links: section.links ? section.links.map(link => ({ ...link })) : []
+                })) : []
+            }));
+            setEditTabs(clonedTabs);
             const allSections: LinkSection[] = [];
-            tile.tabs.forEach(tab => {
+            clonedTabs.forEach(tab => {
                 allSections.push(...tab.sections);
             });
             setEditSections(allSections);
@@ -573,8 +581,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         };
 
         console.log('Updated tile tabs:', updatedTile.tabs?.length || 0);
-        console.log('Updated tile tab IDs:', updatedTile.tabs?.map(t => ({ id: t.id, title: t.title })) || []);
-        console.log('Full updatedTile tabs:', JSON.stringify(updatedTile.tabs?.map(t => ({ id: t.id, title: t.title, position: t.position })), null, 2));
+        console.log('Updated tile tab IDs:', updatedTile.tabs?.map(t => ({ id: t.id, title: t.title, textColor: t.textColor })) || []);
+        console.log('Full updatedTile tabs with colors:', JSON.stringify(updatedTile.tabs?.map(t => ({ id: t.id, title: t.title, position: t.position, textColor: t.textColor })), null, 2));
+        console.log('EditTabs textColors before save:', editTabs.map(t => ({ id: t.id, title: t.title, textColor: t.textColor })));
 
         const updatedTiles = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
         console.log('Calling onUpdateTiles with', updatedTiles.length, 'tiles');
@@ -727,6 +736,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setEditTabs(editTabs.map(t => t.id === tabId ? { ...t, title: newTitle } : t));
     };
 
+    const handleUpdateTabColor = (tabId: string, textColor: string) => {
+        // Convert empty string to undefined to properly clear the color
+        const normalizedColor = textColor && textColor.trim() ? textColor : undefined;
+        setEditTabs(editTabs.map(t => t.id === tabId ? { ...t, textColor: normalizedColor } : t));
+    };
+
     const handleMoveTab = (tabId: string, direction: 'up' | 'down') => {
         const index = editTabs.findIndex(t => t.id === tabId);
         if (index === -1) return;
@@ -750,6 +765,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             id: generateId(),
             title: `${tabToClone.title} (Copy)`,
             position: tabToClone.position + 1,
+            textColor: tabToClone.textColor,
             sections: tabToClone.sections.map(section => ({
                 id: generateId(),
                 title: section.title,
@@ -2019,6 +2035,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 ? `${styles.text} font-semibold`
                                                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
                                                 }`}
+                                            style={tab.textColor && isActive ? { color: tab.textColor } : undefined}
                                         >
                                             <span className="flex items-center gap-2">
                                                 {tab.title}
@@ -2978,8 +2995,35 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 value={tab.title}
                                                 onChange={(e) => handleUpdateTabTitle(tab.id, e.target.value)}
                                                 placeholder="Tab Title (e.g. Resources)"
-                                                className="flex-1 bg-transparent border-none text-slate-900 dark:text-white font-bold text-lg focus:ring-0 placeholder-slate-400"
+                                                className="flex-1 bg-transparent border-none font-bold text-lg focus:ring-0 placeholder-slate-400"
+                                                style={tab.textColor ? { color: tab.textColor } : { color: 'inherit' }}
                                             />
+                                            {/* Color Picker for Tab Title */}
+                                            <div className="flex items-center gap-1">
+                                                <label
+                                                    className="cursor-pointer p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5"
+                                                    title="Choose text color for this tab"
+                                                >
+                                                    <input
+                                                        type="color"
+                                                        value={tab.textColor && tab.textColor.trim() ? tab.textColor : '#000000'}
+                                                        onChange={(e) => handleUpdateTabColor(tab.id, e.target.value)}
+                                                        className="w-6 h-6 rounded cursor-pointer border border-slate-300 dark:border-slate-600"
+                                                    />
+                                                    <span className="text-xs text-slate-500 dark:text-slate-400">Color</span>
+                                                </label>
+                                                {tab.textColor && (
+                                                    <button
+                                                        onClick={() => handleUpdateTabColor(tab.id, '')}
+                                                        className="text-slate-400 hover:text-red-500 p-1"
+                                                        title="Remove color"
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                        </svg>
+                                                    </button>
+                                                )}
+                                            </div>
                                             <button
                                                 onClick={() => handleCloneTab(tab.id)}
                                                 className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2"

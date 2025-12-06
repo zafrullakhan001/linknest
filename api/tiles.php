@@ -226,6 +226,7 @@ function handleGetTiles() {
                 'id' => $tabRow['id'],
                 'title' => $tabRow['title'],
                 'position' => (int)($tabRow['position'] ?? 0),
+                'textColor' => (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null,
                 'visibleFrom' => $tabRow['visible_from'] ?? null,
                 'expiresAt' => $tabRow['expires_at'] ?? null,
                 'sections' => []
@@ -630,10 +631,13 @@ function handleGetTile($tileId) {
     $tabs = [];
     
     while ($tabRow = $tabStmt->fetch()) {
+        $tabColor = (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null;
+        error_log("Retrieved tab {$tabRow['id']} ({$tabRow['title']}) with color: " . ($tabColor ?? 'null'));
         $tab = [
             'id' => $tabRow['id'],
             'title' => $tabRow['title'],
             'position' => (int)($tabRow['position'] ?? 0),
+            'textColor' => $tabColor,
             'visibleFrom' => $tabRow['visible_from'] ?? null,
             'expiresAt' => $tabRow['expires_at'] ?? null,
             'sections' => []
@@ -861,12 +865,13 @@ function handleCreateTile() {
         // New structure with tabs
         foreach ($data['tabs'] as $tabIndex => $tab) {
             $tabId = $tab['id'] ?? uniqid('tab_', true);
-            $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?)');
+            $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
             $tabStmt->execute([
                 $tabId,
                 $tileId,
                 $tab['title'] ?? 'New Tab',
                 $tab['position'] ?? $tabIndex,
+                (!empty($tab['textColor']) && trim($tab['textColor']) !== '') ? trim($tab['textColor']) : null,
                 $tab['visibleFrom'] ?? null,
                 $tab['expiresAt'] ?? null
             ]);
@@ -943,12 +948,13 @@ function handleCreateTile() {
     } elseif (isset($data['sections']) && is_array($data['sections'])) {
         // Backward compatibility: create a default tab for sections
         $defaultTabId = uniqid('tab_', true);
-        $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
+        $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color) VALUES (?, ?, ?, ?, ?)');
         $tabStmt->execute([
             $defaultTabId,
             $tileId,
             'Default',
-            0
+            0,
+            null
         ]);
         
         foreach ($data['sections'] as $section) {
@@ -1100,16 +1106,20 @@ function handleUpdateTile($tileId) {
             // Log for debugging
             error_log('Updating tile ' . $tileId . ' with ' . count($data['tabs']) . ' tabs');
             error_log('Tab IDs: ' . json_encode(array_map(function($t) { return $t['id'] ?? 'no-id'; }, $data['tabs'])));
+            error_log('Tab colors received: ' . json_encode(array_map(function($t) { return ['id' => $t['id'] ?? 'no-id', 'title' => $t['title'] ?? '', 'textColor' => $t['textColor'] ?? 'null']; }, $data['tabs'])));
             
             // New structure with tabs
             foreach ($data['tabs'] as $tabIndex => $tab) {
                 $tabId = $tab['id'] ?? uniqid('tab_', true);
-                $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?)');
+                $tabColor = (!empty($tab['textColor']) && trim($tab['textColor']) !== '') ? trim($tab['textColor']) : null;
+                error_log("Saving tab $tabId with color: " . ($tabColor ?? 'null'));
+                $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
                 $tabStmt->execute([
                     $tabId,
                     $tileId,
                     $tab['title'] ?? 'New Tab',
                     $tab['position'] ?? $tabIndex,
+                    $tabColor,
                     $tab['visibleFrom'] ?? null,
                     $tab['expiresAt'] ?? null
                 ]);
@@ -1417,12 +1427,13 @@ function handleCloneTile($tileId) {
         if (!empty($legacySections)) {
             // Create a default tab for legacy sections
             $defaultTabId = uniqid('tab_', true);
-            $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
+            $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color) VALUES (?, ?, ?, ?, ?)');
             $tabInsertStmt->execute([
                 $defaultTabId,
                 $newTileId,
                 'Default',
-                0
+                0,
+                null
             ]);
             
             foreach ($legacySections as $section) {
@@ -1468,12 +1479,13 @@ function handleCloneTile($tileId) {
             // Clone tabs and their sections/links
             foreach ($tabs as $tab) {
             $newTabId = uniqid('tab_', true);
-            $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?)');
+            $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
             $tabInsertStmt->execute([
                 $newTabId,
                 $newTileId,
                 $tab['title'],
                 $tab['position'] ?? 0,
+                (!empty($tab['text_color']) && trim($tab['text_color']) !== '') ? trim($tab['text_color']) : null,
                 $tab['visible_from'] ?? null,
                 $tab['expires_at'] ?? null
             ]);
@@ -2336,6 +2348,7 @@ function handleGetRecycleBin() {
                 'id' => $tabRow['id'],
                 'title' => $tabRow['title'],
                 'position' => (int)($tabRow['position'] ?? 0),
+                'textColor' => (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null,
                 'visibleFrom' => $tabRow['visible_from'] ?? null,
                 'expiresAt' => $tabRow['expires_at'] ?? null,
                 'sections' => []
@@ -2647,6 +2660,7 @@ function handleGetArchive() {
                     'id' => $tabRow['id'],
                     'title' => $tabRow['title'],
                     'position' => isset($tabRow['position']) ? (int)$tabRow['position'] : 0,
+                    'textColor' => (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null,
                     'sections' => []
                 ];
                 

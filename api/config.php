@@ -363,12 +363,16 @@ function initDatabase() {
             $columns = $db->query("PRAGMA table_info(tabs)")->fetchAll();
             $hasPosition = false;
             $hasScheduling = false;
+            $hasTextColor = false;
             foreach ($columns as $column) {
                 if ($column['name'] === 'position') {
                     $hasPosition = true;
                 }
                 if ($column['name'] === 'visible_from') {
                     $hasScheduling = true;
+                }
+                if ($column['name'] === 'text_color') {
+                    $hasTextColor = true;
                 }
             }
             if (!$hasPosition) {
@@ -377,6 +381,9 @@ function initDatabase() {
             if (!$hasScheduling) {
                 $db->exec('ALTER TABLE tabs ADD COLUMN visible_from TEXT');
                 $db->exec('ALTER TABLE tabs ADD COLUMN expires_at TEXT');
+            }
+            if (!$hasTextColor) {
+                $db->exec('ALTER TABLE tabs ADD COLUMN text_color TEXT');
             }
         } catch (PDOException $e) {
             error_log('Tabs migration warning: ' . $e->getMessage());

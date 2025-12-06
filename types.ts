@@ -40,6 +40,7 @@ export interface Tab {
   title: string;
   position: number;
   sections: LinkSection[];
+  textColor?: string; // Optional custom text color for tab title (hex color code)
   visibility?: LinkVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
   allowedUsers?: number[]; // Array of user IDs for private tabs
   visibleFrom?: string; // ISO date string - tab becomes visible from this date/time
