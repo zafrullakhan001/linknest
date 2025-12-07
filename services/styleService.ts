@@ -2027,13 +2027,13 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
     }
     
     /* Content Link Grid - Completely independent from tile grid */
-    /* Use auto-fit to make columns flexible and expand to fill available space */
-    /* Columns will automatically expand when there are fewer items than max columns */
+    /* Uses contentGridColumns settings ONLY when in stacked view */
+    /* In side-by-side view, uses auto-fit for flexible layout */
     .linknest-content-link-grid {
       gap: ${styles.contentLinkSpacing}px !important;
       display: grid !important;
       width: 100% !important;
-      /* Use auto-fit with a reasonable minimum width - columns will expand to fill space */
+      /* Default: auto-fit for side-by-side view */
       grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)) !important;
     }
     
@@ -2042,28 +2042,45 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       min-width: 0 !important;
     }
     
-    /* Content Link Grid Responsive - Flexible columns that expand to use available space */
-    /* Adjust minimum width per breakpoint to allow better expansion */
+    /* Content Link Grid - Apply grid columns ONLY when parent has data-view-layout="stacked" */
+    [data-view-layout="stacked"] .linknest-content-link-grid {
+      grid-template-columns: repeat(${styles.contentGridColumns.sm || 1}, minmax(0, 1fr)) !important;
+    }
+    
+    /* Content Link Grid Responsive - Uses contentGridColumns settings per breakpoint (only in stacked view) */
     @media (min-width: 640px) {
-      .linknest-content-link-grid {
+      [data-view-layout="stacked"] .linknest-content-link-grid {
+        grid-template-columns: repeat(${styles.contentGridColumns.sm || 1}, minmax(0, 1fr)) !important;
+      }
+      /* Side-by-side view: adjust minmax for better fit */
+      [data-view-layout="side-by-side"] .linknest-content-link-grid {
         grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)) !important;
       }
     }
     
     @media (min-width: 768px) {
-      .linknest-content-link-grid {
+      [data-view-layout="stacked"] .linknest-content-link-grid {
+        grid-template-columns: repeat(${styles.contentGridColumns.md || 2}, minmax(0, 1fr)) !important;
+      }
+      [data-view-layout="side-by-side"] .linknest-content-link-grid {
         grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important;
       }
     }
     
     @media (min-width: 1024px) {
-      .linknest-content-link-grid {
+      [data-view-layout="stacked"] .linknest-content-link-grid {
+        grid-template-columns: repeat(${styles.contentGridColumns.lg || 3}, minmax(0, 1fr)) !important;
+      }
+      [data-view-layout="side-by-side"] .linknest-content-link-grid {
         grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)) !important;
       }
     }
     
     @media (min-width: 1280px) {
-      .linknest-content-link-grid {
+      [data-view-layout="stacked"] .linknest-content-link-grid {
+        grid-template-columns: repeat(${styles.contentGridColumns.xl || 4}, minmax(0, 1fr)) !important;
+      }
+      [data-view-layout="side-by-side"] .linknest-content-link-grid {
         grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)) !important;
       }
     }

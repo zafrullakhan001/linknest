@@ -2433,7 +2433,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             <p className="text-slate-500 font-medium">No links found</p>
                         </div>
                     ) : (
-                        <div className={viewLayout === 'stacked' ? 'space-y-8' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'}>
+                        <div 
+                            className={viewLayout === 'stacked' ? 'space-y-8' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'}
+                            data-view-layout={viewLayout}
+                        >
                             {filteredSections.map((section, sectionIndex) => {
                                 // Check if this section should force stacked view for its content (links/rich text)
                                 const shouldForceStacked = section.forceStackedView === true;
