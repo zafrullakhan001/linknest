@@ -2868,9 +2868,10 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Hover Effect</label>
                     <select
                       value={styles.richTextHoverEffect}
-                      onChange={(e) => updateStyle('richTextHoverEffect', e.target.value as 'lift' | 'glow' | 'scale' | 'slide')}
+                      onChange={(e) => updateStyle('richTextHoverEffect', e.target.value as 'lift' | 'glow' | 'scale' | 'slide' | 'none')}
                       className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
                     >
+                      <option value="none">None</option>
                       <option value="lift">Lift</option>
                       <option value="glow">Glow</option>
                       <option value="scale">Scale</option>
@@ -2891,6 +2892,25 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                         value={styles.richTextBackgroundColor}
                         onChange={(e) => updateStyle('richTextBackgroundColor', e.target.value)}
                         className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Border Color</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="color"
+                        value={styles.richTextBorderColor}
+                        onChange={(e) => updateStyle('richTextBorderColor', e.target.value)}
+                        className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                        disabled={styles.richTextNoBorder}
+                      />
+                      <input
+                        type="text"
+                        value={styles.richTextBorderColor}
+                        onChange={(e) => updateStyle('richTextBorderColor', e.target.value)}
+                        className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                        disabled={styles.richTextNoBorder}
                       />
                     </div>
                   </div>

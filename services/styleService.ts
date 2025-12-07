@@ -216,7 +216,7 @@ export interface SpaceStyles {
   richTextBorderColor: string;
   richTextNoBorder: boolean;
   richTextBorderRadius: number;
-  richTextHoverEffect: 'lift' | 'glow' | 'scale' | 'slide';
+  richTextHoverEffect: 'lift' | 'glow' | 'scale' | 'slide' | 'none';
   richTextPadding: number;
   richTextSpacing: number;
 
@@ -673,7 +673,7 @@ export const styleService = {
     };
     
     const exportData: any = {
-      version: '1.1', // Updated version to include new tile dark mode and description styling properties
+      version: '1.2', // Updated version to include rich text hover effect 'none' option and border color picker
       exportedAt: new Date().toISOString(),
       styles: completeStyles
     };
@@ -756,6 +756,13 @@ export const styleService = {
             ...stylesData
           };
 
+          // Validate richTextHoverEffect - ensure it's a valid value (backward compatibility)
+          const validRichTextHoverEffects: Array<'lift' | 'glow' | 'scale' | 'slide' | 'none'> = ['lift', 'glow', 'scale', 'slide', 'none'];
+          if (styles.richTextHoverEffect && !validRichTextHoverEffects.includes(styles.richTextHoverEffect as any)) {
+            // If invalid value, use default
+            styles.richTextHoverEffect = DEFAULT_STYLES.richTextHoverEffect;
+          }
+
           // Validate and merge gridColumns nested object
           if (!styles.gridColumns || typeof styles.gridColumns !== 'object') {
             styles.gridColumns = { ...DEFAULT_STYLES.gridColumns };
@@ -782,21 +789,29 @@ export const styleService = {
           if (profilesData && Array.isArray(profilesData)) {
             profilesData = profilesData.map((profile: any) => {
               if (profile.styles) {
+                const mergedProfileStyles: SpaceStyles = {
+                  ...DEFAULT_STYLES,
+                  ...profile.styles,
+                  // Ensure nested objects are fully merged
+                  gridColumns: {
+                    ...DEFAULT_STYLES.gridColumns,
+                    ...(profile.styles.gridColumns || {})
+                  },
+                  contentGridColumns: {
+                    ...DEFAULT_STYLES.contentGridColumns,
+                    ...(profile.styles.contentGridColumns || {})
+                  }
+                };
+                
+                // Validate richTextHoverEffect for profile styles
+                const validRichTextHoverEffects: Array<'lift' | 'glow' | 'scale' | 'slide' | 'none'> = ['lift', 'glow', 'scale', 'slide', 'none'];
+                if (mergedProfileStyles.richTextHoverEffect && !validRichTextHoverEffects.includes(mergedProfileStyles.richTextHoverEffect as any)) {
+                  mergedProfileStyles.richTextHoverEffect = DEFAULT_STYLES.richTextHoverEffect;
+                }
+                
                 return {
                   ...profile,
-                  styles: {
-                    ...DEFAULT_STYLES,
-                    ...profile.styles,
-                    // Ensure nested objects are fully merged
-                    gridColumns: {
-                      ...DEFAULT_STYLES.gridColumns,
-                      ...(profile.styles.gridColumns || {})
-                    },
-                    contentGridColumns: {
-                      ...DEFAULT_STYLES.contentGridColumns,
-                      ...(profile.styles.contentGridColumns || {})
-                    }
-                  }
+                  styles: mergedProfileStyles
                 };
               }
               return profile;
@@ -1725,6 +1740,10 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       richTextHoverTransform = 'translateX(4px)';
       richTextHoverShadow = '0 4px 12px rgba(0, 0, 0, 0.1)';
       break;
+    case 'none':
+      richTextHoverTransform = 'none';
+      richTextHoverShadow = 'none';
+      break;
   }
 
   // Link styles
@@ -1970,6 +1989,7 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
     }
     
+    ${styles.richTextHoverEffect !== 'none' ? `
     .rich-text-content-item:hover,
     .linknest-content-rich-text.rich-text-content-item:hover {
       transform: ${richTextHoverTransform} !important;
@@ -1980,6 +2000,7 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
         : `linear-gradient(135deg, ${styles.contentHeaderGradientStart}20, ${styles.contentHeaderGradientEnd}20)`} !important;
       ` : ''}
     }
+    ` : ''}
     
     /* Content Tabs */
     .linknest-content-tab {
