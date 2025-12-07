@@ -359,7 +359,7 @@ function handleLogin() {
                 if (!empty($userDnTemplate)) {
                     // Use DN template for direct bind (no search needed)
                     $caseSensitive = !empty($settings['ldap_case_sensitive']) && $settings['ldap_case_sensitive'] == '1';
-                    $bindUsername = $caseSensitive ? $username : $username;
+                    $bindUsername = $caseSensitive ? $username : strtolower($username);
                     $userDn = str_replace('{username}', ldap_escape_dn($bindUsername), $userDnTemplate);
                     debug_log("LDAP: Using DN template: $userDn");
                     
@@ -394,7 +394,7 @@ function handleLogin() {
                     
                     // Escape username and replace in filter template
                     $caseSensitive = !empty($settings['ldap_case_sensitive']) && $settings['ldap_case_sensitive'] == '1';
-                    $searchUsername = $caseSensitive ? $username : $username;
+                    $searchUsername = $caseSensitive ? $username : strtolower($username);
                     $safeUsername = ldap_escape_filter($searchUsername);
                     $filter = str_replace('{username}', $safeUsername, $filterTemplate);
 

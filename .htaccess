@@ -28,23 +28,23 @@ Options -Indexes +FollowSymLinks
     RewriteEngine On
     
     # FIRST: Allow direct access to dist/ directory and its files (including assets)
-    RewriteCond %{REQUEST_URI} dist/
+    RewriteCond %{REQUEST_URI} ^.*/dist/
     RewriteRule . - [L]
     
     # Route API requests to api/index.php
     # Rewrite /api/... to /api/index.php?path=... (works for any base path)
-    RewriteCond %{REQUEST_URI} api/
+    RewriteCond %{REQUEST_URI} ^.*/api/
     RewriteCond %{REQUEST_URI} !api/index\.php
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^api/(.*)$ api/index.php?path=$1 [L,QSA]
 
     # Allow direct access to uploads/ directory
-    RewriteCond %{REQUEST_URI} uploads/
+    RewriteCond %{REQUEST_URI} ^.*/uploads/
     RewriteRule . - [L]
     
     # SECOND: Serve static assets from dist/assets/
     # Rewrite /assets/ to /dist/assets/ (works for any base path)
-    RewriteCond %{REQUEST_URI} assets/
+    RewriteCond %{REQUEST_URI} ^.*/assets/
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^assets/(.*)$ dist/assets/$1 [L]
     
