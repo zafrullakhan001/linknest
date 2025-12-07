@@ -258,6 +258,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [schedulingDialogTab, setSchedulingDialogTab] = useState<string | null>(null);
     const [schedulingDialogSection, setSchedulingDialogSection] = useState<{ tabId: string; sectionId: string } | null>(null);
     const [schedulingDialogLink, setSchedulingDialogLink] = useState<{ tabId: string; sectionId: string; linkId: string } | null>(null);
+    const [schedulingDialogRichText, setSchedulingDialogRichText] = useState<{ tabId: string; sectionId: string; richTextId: string } | null>(null);
 
     // Health Check State
     const [linkHealth, setLinkHealth] = useState<LinkHealthMap>({});
@@ -447,15 +448,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     setSchedulingDialogSection(null);
                 } else if (schedulingDialogLink) {
                     setSchedulingDialogLink(null);
+                } else if (schedulingDialogRichText) {
+                    setSchedulingDialogRichText(null);
                 }
             }
         };
 
-        if (visibilityDialogTab || visibilityDialogSection || schedulingDialogTab || schedulingDialogSection || schedulingDialogLink) {
+        if (visibilityDialogTab || visibilityDialogSection || schedulingDialogTab || schedulingDialogSection || schedulingDialogLink || schedulingDialogRichText) {
             document.addEventListener('keydown', handleEscKey);
             return () => document.removeEventListener('keydown', handleEscKey);
         }
-    }, [visibilityDialogTab, visibilityDialogSection, schedulingDialogTab, schedulingDialogSection, schedulingDialogLink]);
+    }, [visibilityDialogTab, visibilityDialogSection, schedulingDialogTab, schedulingDialogSection, schedulingDialogLink, schedulingDialogRichText]);
 
     // Load users list when editing and authenticated
     useEffect(() => {
@@ -1750,6 +1753,113 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }));
     };
 
+    const handleCloneRichText = (tabId: string, sectionId: string, richTextId: string) => {
+        setEditTabs(editTabs.map(tab => {
+            if (tab.id !== tabId) return tab;
+
+            return {
+                ...tab,
+                sections: tab.sections.map(section => {
+                    if (section.id !== sectionId) return section;
+
+                    const items = getSortedItems(section);
+                    const sourceIndex = items.findIndex(i => i.id === richTextId && i.type === 'rich-text');
+
+                    if (sourceIndex === -1) return section;
+
+                    const richTextToClone = items[sourceIndex] as RichTextContent;
+
+                    // Clone the rich text with a new ID
+                    const clonedRichText: RichTextContent = {
+                        id: generateId(),
+                        content: richTextToClone.content,
+                        position: richTextToClone.position,
+                        visibility: richTextToClone.visibility,
+                        allowedUsers: richTextToClone.allowedUsers ? [...richTextToClone.allowedUsers] : undefined,
+                        visibleFrom: richTextToClone.visibleFrom,
+                        expiresAt: richTextToClone.expiresAt
+                    };
+
+                    // Insert cloned rich text after the original in the sorted list
+                    const updatedItems = [
+                        ...items.slice(0, sourceIndex + 1),
+                        { ...clonedRichText, type: 'rich-text' as const },
+                        ...items.slice(sourceIndex + 1)
+                    ];
+
+                    // Re-assign positions and separate back into links and rich text
+                    const finalLinks: Link[] = [];
+                    const finalRichText: RichTextContent[] = [];
+
+                    updatedItems.forEach((item, index) => {
+                        const { type, ...rest } = item;
+                        const itemWithPos = { ...rest, position: index };
+
+                        if (type === 'link') {
+                            finalLinks.push(itemWithPos as Link);
+                        } else {
+                            finalRichText.push(itemWithPos as RichTextContent);
+                        }
+                    });
+
+                    return { ...section, links: finalLinks, richTextContent: finalRichText };
+                })
+            };
+        }));
+    };
+
+    const handleUpdateRichTextScheduling = (tabId: string, sectionId: string, richTextId: string, visibleFrom?: string, expiresAt?: string) => {
+        setEditTabs(editTabs.map(tab =>
+            tab.id === tabId
+                ? {
+                    ...tab,
+                    sections: tab.sections.map(section =>
+                        section.id === sectionId
+                            ? {
+                                ...section,
+                                richTextContent: section.richTextContent?.map(richText =>
+                                    richText.id === richTextId
+                                        ? {
+                                            ...richText,
+                                            visibleFrom: visibleFrom || undefined,
+                                            expiresAt: expiresAt || undefined
+                                        }
+                                        : richText
+                                ) || []
+                            }
+                            : section
+                    )
+                }
+                : tab
+        ));
+    };
+
+    const handleUpdateRichTextVisibility = (tabId: string, sectionId: string, richTextId: string, visibility: LinkVisibility) => {
+        setEditTabs(editTabs.map(tab =>
+            tab.id === tabId
+                ? {
+                    ...tab,
+                    sections: tab.sections.map(section =>
+                        section.id === sectionId
+                            ? {
+                                ...section,
+                                richTextContent: section.richTextContent?.map(richText =>
+                                    richText.id === richTextId
+                                        ? {
+                                            ...richText,
+                                            visibility: visibility,
+                                            allowedUsers: visibility === 'private' ? richText.allowedUsers : undefined
+                                        }
+                                        : richText
+                                ) || []
+                            }
+                            : section
+                    )
+                }
+                : tab
+        ));
+    };
+
     // Helper function to format browser name for display
     const formatBrowserName = (browserId: string | null | undefined): string => {
         if (!browserId || browserId === 'default') return '';
@@ -2324,8 +2434,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         </div>
                     ) : (
                         <div className={viewLayout === 'stacked' ? 'space-y-8' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'}>
-                            {filteredSections.map((section, sectionIndex) => (
-                                <div key={section.id} className="linknest-content-section animate-in fade-in slide-in-from-bottom-2 bg-white/80 dark:bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-200/80 dark:border-slate-700/50 p-6 shadow-sm">
+                            {filteredSections.map((section, sectionIndex) => {
+                                // Check if this section should force stacked view for its content (links/rich text)
+                                const shouldForceStacked = section.forceStackedView === true;
+                                
+                                return (
+                                <div 
+                                    key={section.id} 
+                                    className="linknest-content-section animate-in fade-in slide-in-from-bottom-2 bg-white/80 dark:bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-200/80 dark:border-slate-700/50 p-6 shadow-sm"
+                                >
                                     {/* Section Title */}
                                     {section.title && (
                                         <h3
@@ -2337,8 +2454,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         </h3>
                                     )}
 
-                                    {/* Links and Rich Text Grid - Merged and Sorted by Position */}
-                                    <div className="linknest-content-link-grid">
+                                    {/* Links and Rich Text - Force stacked if checkbox is checked, otherwise use grid layout (side-by-side) */}
+                                    <div className={shouldForceStacked ? 'space-y-4' : 'linknest-content-link-grid'}>
                                         {(() => {
                                             // Merge links and rich text, sort by position
                                             const sortedItems = [
@@ -2359,7 +2476,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         <div
                                                             key={item.id}
                                                             style={{ animationDelay: `${animationDelay}ms` }}
-                                                            className="linknest-content-rich-text animate-in fade-in slide-in-from-bottom-2 bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 rounded-xl p-4 shadow-sm"
+                                                            className="linknest-content-rich-text rich-text-content-item animate-in fade-in slide-in-from-bottom-2"
                                                         >
                                                             <div
                                                                 className="rich-text-content prose prose-sm max-w-none dark:prose-invert prose-p:text-slate-600 dark:prose-p:text-slate-400 prose-a:text-brand-500 dark:prose-a:text-brand-400 prose-headings:text-slate-800 dark:prose-headings:text-slate-200"
@@ -2704,7 +2821,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         })()}
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </div>
@@ -3492,6 +3610,33 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         </button>
                                                                     )}
                                                                 </div>
+                                                                {/* Force Stacked View Checkbox */}
+                                                                <div className="flex items-center gap-1">
+                                                                    <label className="flex items-center gap-1.5 cursor-pointer p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors" title="Force stacked view for this section">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={section.forceStackedView || false}
+                                                                            onChange={(e) => {
+                                                                                const newTabs = editTabs.map(t => {
+                                                                                    if (t.id === tab.id) {
+                                                                                        return {
+                                                                                            ...t,
+                                                                                            sections: t.sections.map(s =>
+                                                                                                s.id === section.id
+                                                                                                    ? { ...s, forceStackedView: e.target.checked }
+                                                                                                    : s
+                                                                                            )
+                                                                                        };
+                                                                                    }
+                                                                                    return t;
+                                                                                });
+                                                                                setEditTabs(newTabs);
+                                                                            }}
+                                                                            className="w-4 h-4 text-brand-600 bg-slate-100 border-slate-300 rounded focus:ring-brand-500 dark:focus:ring-brand-600 dark:ring-offset-slate-800 focus:ring-2 dark:bg-slate-700 dark:border-slate-600"
+                                                                        />
+                                                                        <span className="text-xs text-slate-600 dark:text-slate-400">Force Stacked</span>
+                                                                    </label>
+                                                                </div>
                                                                 {/* CSV Import */}
                                                                 <div className="flex items-center gap-1">
                                                                     <label className="cursor-pointer">
@@ -3637,6 +3782,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         key={richText.id}
                                                                                         content={richText}
                                                                                         sectionId={section.id}
+                                                                                        tabId={tab.id}
                                                                                         onUpdate={(id, content) => handleUpdateRichText(tab.id, section.id, id, content)}
                                                                                         onDelete={(id) => handleDeleteRichText(tab.id, section.id, id)}
                                                                                         onMoveUp={() => handleMoveItem(tab.id, section.id, richText.id, 'up')}
@@ -3647,6 +3793,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         onEdit={() => setEditingRichTextId(prev => ({ ...prev, [section.id]: richText.id }))}
                                                                                         onCancel={() => setEditingRichTextId(prev => ({ ...prev, [section.id]: null }))}
                                                                                         onSave={() => setEditingRichTextId(prev => ({ ...prev, [section.id]: null }))}
+                                                                                        onClone={() => handleCloneRichText(tab.id, section.id, richText.id)}
+                                                                                        onSchedule={() => setSchedulingDialogRichText({ tabId: tab.id, sectionId: section.id, richTextId: richText.id })}
+                                                                                        onVisibilityChange={(visibility) => handleUpdateRichTextVisibility(tab.id, section.id, richText.id, visibility)}
+                                                                                        visibility={richText.visibility || 'public'}
+                                                                                        visibleFrom={richText.visibleFrom}
+                                                                                        expiresAt={richText.expiresAt}
                                                                                     />
                                                                                 );
                                                                             }
@@ -5019,6 +5171,101 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         </button>
                                         <button
                                             onClick={() => setSchedulingDialogLink(null)}
+                                            className="flex-1 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                                        >
+                                            Done
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    {/* Rich Text Scheduling Dialog */}
+                    {schedulingDialogRichText && (() => {
+                        const tab = editTabs.find(t => t.id === schedulingDialogRichText.tabId);
+                        const section = tab?.sections.find(s => s.id === schedulingDialogRichText.sectionId);
+                        const richText = section?.richTextContent?.find(r => r.id === schedulingDialogRichText.richTextId);
+                        if (!richText) return null;
+
+                        return (
+                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setSchedulingDialogRichText(null)}>
+                                <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Schedule Rich Text Content</h3>
+                                        <button
+                                            onClick={() => setSchedulingDialogRichText(null)}
+                                            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                                            title="Close"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                            </svg>
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-4 mb-6">
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                                Visible From (optional)
+                                            </label>
+                                            <input
+                                                type="datetime-local"
+                                                value={richText.visibleFrom?.slice(0, 16) || ''}
+                                                onChange={(e) => handleUpdateRichTextScheduling(schedulingDialogRichText.tabId, schedulingDialogRichText.sectionId, schedulingDialogRichText.richTextId, e.target.value, richText.expiresAt)}
+                                                className="w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                                            />
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Content becomes visible at this date/time</p>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                                Expires At (optional)
+                                            </label>
+                                            <input
+                                                type="datetime-local"
+                                                value={richText.expiresAt?.slice(0, 16) || ''}
+                                                onChange={(e) => handleUpdateRichTextScheduling(schedulingDialogRichText.tabId, schedulingDialogRichText.sectionId, schedulingDialogRichText.richTextId, richText.visibleFrom, e.target.value)}
+                                                className="w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                                            />
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Content expires at this date/time</p>
+                                        </div>
+
+                                        <div className="flex items-center gap-2 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg">
+                                            <input
+                                                type="checkbox"
+                                                id="no-expiration-richtext"
+                                                checked={!richText.visibleFrom && !richText.expiresAt}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        handleUpdateRichTextScheduling(schedulingDialogRichText.tabId, schedulingDialogRichText.sectionId, schedulingDialogRichText.richTextId, undefined, undefined);
+                                                    }
+                                                }}
+                                                className="rounded border-slate-300 dark:border-slate-600"
+                                            />
+                                            <label htmlFor="no-expiration-richtext" className="text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
+                                                No expiration (always visible)
+                                            </label>
+                                        </div>
+
+                                        {(richText.visibleFrom || richText.expiresAt) && (
+                                            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                                                <p className="text-xs text-blue-700 dark:text-blue-300">
+                                                    <strong>Note:</strong> Times are in your local timezone. The content will be automatically shown/hidden based on these dates.
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => handleUpdateRichTextScheduling(schedulingDialogRichText.tabId, schedulingDialogRichText.sectionId, schedulingDialogRichText.richTextId, undefined, undefined)}
+                                            className="flex-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg font-medium transition-colors"
+                                        >
+                                            Clear
+                                        </button>
+                                        <button
+                                            onClick={() => setSchedulingDialogRichText(null)}
                                             className="flex-1 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg font-medium transition-colors"
                                         >
                                             Done

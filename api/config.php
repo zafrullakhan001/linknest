@@ -466,6 +466,23 @@ function initDatabase() {
             error_log('Sections text_color migration warning: ' . $e->getMessage());
         }
         
+        // Migrate existing sections table to add force_stacked_view column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(sections)")->fetchAll();
+            $hasForceStackedView = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'force_stacked_view') {
+                    $hasForceStackedView = true;
+                    break;
+                }
+            }
+            if (!$hasForceStackedView) {
+                $db->exec('ALTER TABLE sections ADD COLUMN force_stacked_view INTEGER DEFAULT 0');
+            }
+        } catch (PDOException $e) {
+            error_log('Sections force_stacked_view migration warning: ' . $e->getMessage());
+        }
+        
         // Create links table
         $db->exec('CREATE TABLE IF NOT EXISTS links (
             id TEXT PRIMARY KEY,
@@ -709,6 +726,16 @@ function initDatabase() {
             error_message TEXT,
             created_by INTEGER,
             FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        )');
+        
+        // Create user_preferences table for storing user-specific preferences
+        $db->exec('CREATE TABLE IF NOT EXISTS user_preferences (
+            user_id INTEGER NOT NULL,
+            preference_key TEXT NOT NULL,
+            preference_value TEXT,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, preference_key),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )');
         
         // Migrate existing tables if they exist with NULL user_id

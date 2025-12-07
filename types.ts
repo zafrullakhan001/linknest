@@ -29,6 +29,10 @@ export interface RichTextContent {
   id: string;
   content: string; // HTML content with text and images
   position: number; // Position in the section (for sorting)
+  visibility?: LinkVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
+  allowedUsers?: number[]; // Array of user IDs for private rich text content
+  visibleFrom?: string; // ISO date string - content becomes visible from this date/time
+  expiresAt?: string; // ISO date string - content expires at this date/time
 }
 
 export interface LinkSection {
@@ -41,6 +45,7 @@ export interface LinkSection {
   allowedUsers?: number[]; // Array of user IDs for private sections
   visibleFrom?: string; // ISO date string - section becomes visible from this date/time
   expiresAt?: string; // ISO date string - section expires at this date/time
+  forceStackedView?: boolean; // Force stacked view for this section regardless of global view preference
 }
 
 export interface Tab {

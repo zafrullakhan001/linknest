@@ -210,6 +210,16 @@ export interface SpaceStyles {
   contentLinkSpacing: number;
   contentLinkIconSize: number;
 
+  // Rich Text Content Styling
+  richTextStyle: 'pill' | 'card' | 'minimal' | 'button';
+  richTextBackgroundColor: string;
+  richTextBorderColor: string;
+  richTextNoBorder: boolean;
+  richTextBorderRadius: number;
+  richTextHoverEffect: 'lift' | 'glow' | 'scale' | 'slide';
+  richTextPadding: number;
+  richTextSpacing: number;
+
   // Content Tab Styling
   contentTabStyle: 'underline' | 'pill' | 'box' | 'minimal';
   contentTabActiveColor: string;
@@ -396,6 +406,15 @@ export const DEFAULT_STYLES: SpaceStyles = {
   contentLinkPadding: 16,
   contentLinkSpacing: 12,
   contentLinkIconSize: 40,
+
+  richTextStyle: 'minimal',
+  richTextBackgroundColor: '#fafafa',
+  richTextBorderColor: '#e2e8f0',
+  richTextNoBorder: true,
+  richTextBorderRadius: 14,
+  richTextHoverEffect: 'glow',
+  richTextPadding: 8,
+  richTextSpacing: 4,
 
   contentTabStyle: 'underline',
   contentTabActiveColor: '#3b82f6',
@@ -1628,6 +1647,86 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       break;
   }
 
+  // Rich Text styles
+  let richTextBackground = '';
+  let richTextBorder = '';
+  let richTextShadow = '';
+  
+  // Check if no-border is enabled first
+  if (styles.richTextNoBorder) {
+    richTextBorder = 'none';
+    // Still set background and shadow based on style
+    switch (styles.richTextStyle) {
+      case 'card':
+        richTextBackground = isDark ? 'rgba(51, 65, 85, 0.5)' : styles.richTextBackgroundColor;
+        richTextShadow = '0 2px 4px rgba(0, 0, 0, 0.05)';
+        break;
+      case 'pill':
+        richTextBackground = isDark ? 'rgba(51, 65, 85, 0.4)' : `${styles.richTextBackgroundColor}f5`;
+        richTextShadow = 'none';
+        break;
+      case 'minimal':
+        richTextBackground = 'transparent';
+        richTextShadow = 'none';
+        break;
+      case 'button':
+        richTextBackground = isDark
+          ? `linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(139, 92, 246, 0.2))`
+          : `linear-gradient(135deg, ${styles.contentHeaderGradientStart}10, ${styles.contentHeaderGradientEnd}10)`;
+        richTextShadow = '0 2px 8px rgba(59, 130, 246, 0.1)';
+        break;
+    }
+  } else {
+    // With border
+    switch (styles.richTextStyle) {
+      case 'card':
+        richTextBackground = isDark ? 'rgba(51, 65, 85, 0.5)' : styles.richTextBackgroundColor;
+        richTextBorder = `1px solid ${isDark ? 'rgba(71, 85, 105, 0.5)' : styles.richTextBorderColor}`;
+        richTextShadow = '0 2px 4px rgba(0, 0, 0, 0.05)';
+        break;
+      case 'pill':
+        richTextBackground = isDark ? 'rgba(51, 65, 85, 0.4)' : `${styles.richTextBackgroundColor}f5`;
+        richTextBorder = `1px solid ${isDark ? 'rgba(71, 85, 105, 0.3)' : styles.richTextBorderColor}`;
+        richTextShadow = 'none';
+        break;
+      case 'minimal':
+        richTextBackground = 'transparent';
+        richTextBorder = `1px solid ${isDark ? 'rgba(71, 85, 105, 0.2)' : styles.richTextBorderColor}`;
+        richTextShadow = 'none';
+        break;
+      case 'button':
+        richTextBackground = isDark
+          ? `linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(139, 92, 246, 0.2))`
+          : `linear-gradient(135deg, ${styles.contentHeaderGradientStart}10, ${styles.contentHeaderGradientEnd}10)`;
+        richTextBorder = `1px solid ${isDark ? 'rgba(59, 130, 246, 0.3)' : styles.contentHeaderGradientStart}`;
+        richTextShadow = '0 2px 8px rgba(59, 130, 246, 0.1)';
+        break;
+    }
+  }
+
+  // Rich Text hover effects
+  let richTextHoverTransform = '';
+  let richTextHoverShadow = '';
+  
+  switch (styles.richTextHoverEffect) {
+    case 'lift':
+      richTextHoverTransform = 'translateY(-4px)';
+      richTextHoverShadow = '0 12px 24px -8px rgba(0, 0, 0, 0.15)';
+      break;
+    case 'glow':
+      richTextHoverTransform = 'scale(1.02)';
+      richTextHoverShadow = `0 0 20px ${isDark ? 'rgba(59, 130, 246, 0.4)' : 'rgba(59, 130, 246, 0.3)'}`;
+      break;
+    case 'scale':
+      richTextHoverTransform = 'scale(1.05)';
+      richTextHoverShadow = '0 8px 16px rgba(0, 0, 0, 0.1)';
+      break;
+    case 'slide':
+      richTextHoverTransform = 'translateX(4px)';
+      richTextHoverShadow = '0 4px 12px rgba(0, 0, 0, 0.1)';
+      break;
+  }
+
   // Link styles
   let linkBackground = '';
   let linkBorder = '';
@@ -1857,6 +1956,29 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
     
     .linknest-content-link-health {
       ${!styles.contentShowHealthStatus ? 'display: none !important;' : ''}
+    }
+    
+    /* Rich Text Content - Both edit and view modes */
+    .rich-text-content-item,
+    .linknest-content-rich-text.rich-text-content-item {
+      background: ${richTextBackground} !important;
+      border: ${richTextBorder} !important;
+      border-radius: ${styles.richTextBorderRadius}px !important;
+      box-shadow: ${richTextShadow} !important;
+      padding: ${styles.richTextPadding}px !important;
+      margin-bottom: ${styles.richTextSpacing}px !important;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    }
+    
+    .rich-text-content-item:hover,
+    .linknest-content-rich-text.rich-text-content-item:hover {
+      transform: ${richTextHoverTransform} !important;
+      box-shadow: ${richTextHoverShadow} !important;
+      ${styles.richTextStyle === 'button' ? `
+        background: ${isDark
+        ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(139, 92, 246, 0.3))'
+        : `linear-gradient(135deg, ${styles.contentHeaderGradientStart}20, ${styles.contentHeaderGradientEnd}20)`} !important;
+      ` : ''}
     }
     
     /* Content Tabs */

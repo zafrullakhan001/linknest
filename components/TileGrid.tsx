@@ -11,6 +11,7 @@ import {
 } from '../services/spaceTransferService';
 import { authService, UserListItem } from '../services/authService';
 import { useAuth } from '../contexts/AuthContext';
+import { userPreferencesService } from '../services/userPreferencesService';
 
 interface TileGridProps {
   tiles: Tile[];
@@ -816,6 +817,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [editingTile, setEditingTile] = useState<Tile | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<TabType>('public');
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [recycleBinTiles, setRecycleBinTiles] = useState<Tile[]>([]);
   const [isLoadingRecycleBin, setIsLoadingRecycleBin] = useState(false);
   const [archiveTiles, setArchiveTiles] = useState<Tile[]>([]);
@@ -1178,6 +1180,46 @@ export const TileGrid: React.FC<TileGridProps> = ({
         });
     }
   }, [activeTab, isAuthenticated]);
+
+  // Load saved active tab preference for authenticated users
+  useEffect(() => {
+    if (isAuthenticated && !preferencesLoaded) {
+      userPreferencesService.getPreference('activeTab')
+        .then(savedTab => {
+          if (savedTab && typeof savedTab === 'string') {
+            const validTabs: TabType[] = ['public', 'favorites', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin'];
+            if (validTabs.includes(savedTab as TabType)) {
+              setActiveTab(savedTab as TabType);
+            }
+          }
+          setPreferencesLoaded(true);
+        })
+        .catch(error => {
+          // Silently fail if preferences can't be loaded (e.g., user not authenticated yet)
+          console.debug('Could not load active tab preference:', error);
+          setPreferencesLoaded(true); // Mark as loaded even on error to prevent retries
+        });
+    } else if (!isAuthenticated) {
+      // Reset preferences loaded state when user logs out
+      setPreferencesLoaded(false);
+    }
+  }, [isAuthenticated, preferencesLoaded]);
+
+  // Save active tab preference when it changes (for authenticated users)
+  useEffect(() => {
+    if (isAuthenticated && activeTab && preferencesLoaded) {
+      // Only save if preferences have been loaded (to avoid saving default 'public' on initial load)
+      // Debounce the save to avoid too many API calls
+      const timeoutId = setTimeout(() => {
+        userPreferencesService.updatePreference('activeTab', activeTab)
+          .catch(error => {
+            console.error('Failed to save active tab preference:', error);
+          });
+      }, 300); // Wait 300ms after tab change before saving
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [activeTab, isAuthenticated, preferencesLoaded]);
 
   // Calculate counts for tabs
   const favoriteTilesCount = useMemo(() => {
@@ -1633,7 +1675,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
   // Fetch users when modal opens and visibility is private
   useEffect(() => {
-    if (isModalOpen && isAuthenticated && newVisibility === 'private' && availableUsers.length === 0 && !isLoadingUsers) {
+    const shouldFetchUsers = (isModalOpen || isEditModalOpen) && isAuthenticated && newVisibility === 'private' && availableUsers.length === 0 && !isLoadingUsers;
+    if (shouldFetchUsers) {
       setIsLoadingUsers(true);
       authService.getUsers()
         .then(users => {
@@ -1645,7 +1688,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
           setIsLoadingUsers(false);
         });
     }
-  }, [isModalOpen, isAuthenticated, newVisibility]);
+  }, [isModalOpen, isEditModalOpen, isAuthenticated, newVisibility]);
 
   // Handle ESC key for create tile modal
   useEffect(() => {

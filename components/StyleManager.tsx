@@ -2842,6 +2842,104 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                 </div>
               </section>
 
+              {/* Rich Text Editor Styling */}
+              <section>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-purple-500">
+                    <path fillRule="evenodd" d="M4.25 2A2.25 2.25 0 002 4.25v11.5A2.25 2.25 0 004.25 18h11.5A2.25 2.25 0 0018 15.75V4.25A2.25 2.25 0 0015.75 2H4.25zM6 13.5V6h8v7.5a.75.75 0 01-1.064.681L10 12.576l-2.936 1.605A.75.75 0 016 13.5z" clipRule="evenodd" />
+                  </svg>
+                  Rich Text Editor
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Rich Text Style</label>
+                    <select
+                      value={styles.richTextStyle}
+                      onChange={(e) => updateStyle('richTextStyle', e.target.value as 'pill' | 'card' | 'minimal' | 'button')}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                    >
+                      <option value="card">Card</option>
+                      <option value="pill">Pill</option>
+                      <option value="minimal">Minimal</option>
+                      <option value="button">Button</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Hover Effect</label>
+                    <select
+                      value={styles.richTextHoverEffect}
+                      onChange={(e) => updateStyle('richTextHoverEffect', e.target.value as 'lift' | 'glow' | 'scale' | 'slide')}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                    >
+                      <option value="lift">Lift</option>
+                      <option value="glow">Glow</option>
+                      <option value="scale">Scale</option>
+                      <option value="slide">Slide</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Background Color</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="color"
+                        value={styles.richTextBackgroundColor}
+                        onChange={(e) => updateStyle('richTextBackgroundColor', e.target.value)}
+                        className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                      />
+                      <input
+                        type="text"
+                        value={styles.richTextBackgroundColor}
+                        onChange={(e) => updateStyle('richTextBackgroundColor', e.target.value)}
+                        className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Border Radius: {styles.richTextBorderRadius}px</label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="24"
+                      value={styles.richTextBorderRadius}
+                      onChange={(e) => updateStyle('richTextBorderRadius', parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="richTextNoBorder"
+                      checked={styles.richTextNoBorder}
+                      onChange={(e) => updateStyle('richTextNoBorder', e.target.checked)}
+                      className="w-4 h-4 text-brand-600 bg-slate-100 border-slate-300 rounded focus:ring-brand-500 dark:focus:ring-brand-600 dark:ring-offset-slate-800 focus:ring-2 dark:bg-slate-700 dark:border-slate-600"
+                    />
+                    <label htmlFor="richTextNoBorder" className="text-sm font-medium text-slate-700 dark:text-slate-300">No Border</label>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Padding: {styles.richTextPadding}px</label>
+                    <input
+                      type="range"
+                      min="8"
+                      max="24"
+                      value={styles.richTextPadding}
+                      onChange={(e) => updateStyle('richTextPadding', parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Spacing: {styles.richTextSpacing}px</label>
+                    <input
+                      type="range"
+                      min="4"
+                      max="24"
+                      value={styles.richTextSpacing}
+                      onChange={(e) => updateStyle('richTextSpacing', parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                </div>
+              </section>
+
               {/* Tab Styling */}
               <section>
                 <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">

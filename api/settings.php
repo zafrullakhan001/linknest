@@ -14,6 +14,8 @@ switch ($method) {
             handleGetSettings();
         } else if ($path === '/database-path') {
             handleGetDatabasePath();
+        } else if ($path === '/user-preferences') {
+            handleGetUserPreferences();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -36,6 +38,8 @@ switch ($method) {
     case 'PUT':
         if ($path === '' || $path === '/') {
             handleUpdateSettings();
+        } else if ($path === '/user-preferences') {
+            handleUpdateUserPreferences();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -480,5 +484,58 @@ function handleGetDatabasePath() {
         'database_path' => $displayPath,
         'database_path_absolute' => $absoluteDisplayPath
     ]);
+}
+
+function handleGetUserPreferences() {
+    $user = requireAuth(); // User must be authenticated
+    
+    $userId = $user['id'];
+    $db = getDB();
+    $stmt = $db->prepare('SELECT preference_key, preference_value FROM user_preferences WHERE user_id = ?');
+    $stmt->execute([$userId]);
+    $rows = $stmt->fetchAll();
+    
+    $preferences = [];
+    foreach ($rows as $row) {
+        $preferences[$row['preference_key']] = $row['preference_value'];
+    }
+    
+    sendJSON(['preferences' => $preferences]);
+}
+
+function handleUpdateUserPreferences() {
+    $user = requireAuth(); // User must be authenticated
+    
+    $userId = $user['id'];
+    $data = getJSONInput();
+    
+    if (!isset($data['preferences']) || !is_array($data['preferences'])) {
+        sendJSON(['error' => 'Preferences data is required'], 400);
+        return;
+    }
+    
+    $db = getDB();
+    $db->beginTransaction();
+    
+    try {
+        foreach ($data['preferences'] as $key => $value) {
+            // Validate preference key (only allow alphanumeric, underscore, and hyphen)
+            if (!preg_match('/^[a-zA-Z0-9_-]+$/', $key)) {
+                continue; // Skip invalid keys
+            }
+            
+            // Store preference value as JSON string if it's an array/object, otherwise as string
+            $preferenceValue = is_array($value) || is_object($value) ? json_encode($value) : (string)$value;
+            
+            $stmt = $db->prepare('INSERT OR REPLACE INTO user_preferences (user_id, preference_key, preference_value, updated_at) VALUES (?, ?, ?, ?)');
+            $stmt->execute([$userId, $key, $preferenceValue, time()]);
+        }
+        
+        $db->commit();
+        sendJSON(['success' => true, 'message' => 'Preferences updated successfully']);
+    } catch (Exception $e) {
+        $db->rollBack();
+        sendJSON(['error' => 'Failed to update preferences: ' . $e->getMessage()], 500);
+    }
 }
 

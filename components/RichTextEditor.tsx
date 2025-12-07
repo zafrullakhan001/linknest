@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 
 interface RichTextEditorProps {
     value: string;
@@ -6,6 +6,21 @@ interface RichTextEditorProps {
     placeholder?: string;
     className?: string;
 }
+
+const EMOJI_CATEGORIES = {
+    servers: ['🖥️', '💾', '🖨️', '📡', '🔄', '⚙️', '🔧', '🛠️', '📦', '🗄️', '🗃️', '📊', '📈', '📉', '🔌', '🔋', '⚡', '🌐', '🌍', '🌎', '🖱️', '⌨️', '🖲️', '💿', '💽', '📀', '📼', '📷', '📸', '📹', '🎥'],
+    cloud: ['☁️', '🌥️', '⛅', '🌤️', '☀️', '🌦️', '🌧️', '⛈️', '🌩️', '🌨️', '❄️', '☂️', '☔', '🌈', '🌊', '💧', '💨', '🌪️', '🌀', '🌫️'],
+    onprem: ['🏢', '🏭', '🏗️', '🏛️', '🏘️', '🏠', '🏡', '🏚️', '🏙️', '🌆', '🌇', '🌃', '🌉', '🌁', '🗼', '🗽', '⛪', '🕌', '🕍', '🛕'],
+    hospital: ['🏥', '⚕️', '🩺', '💊', '💉', '🩹', '🩼', '🦽', '🦼', '🚑', '🚨', '🏨', '👨‍⚕️', '👩‍⚕️', '🧑‍⚕️', '👨‍🔬', '👩‍🔬', '🧑‍🔬', '🔬', '🧪', '🫀', '🫁', '🧠', '🦷', '🦴'],
+    technology: ['💻', '⌨️', '🖱️', '🖲️', '🖨️', '🖥️', '📱', '📲', '💾', '💿', '📀', '📼', '📷', '📸', '📹', '🎥', '📽️', '🎞️', '📺', '📻', '📟', '☎️', '📞', '📠', '📧'],
+    network: ['🌐', '📡', '📶', '📞', '☎️', '📠', '📧', '📨', '📩', '📤', '📥', '📦', '📪', '📫', '📬', '📭', '📮', '🗳️', '📯', '📜', '🔗', '⛓️', '🔌', '💡', '⚡'],
+    security: ['🔐', '🔒', '🔓', '🔑', '🗝️', '🛡️', '⚔️', '🗡️', '🔪', '🛠️', '🔧', '🔩', '⚙️', '⛓️', '🔗', '🔫', '💣', '🧨', '🎯', '🚨', '🚔', '🚓', '👮', '🕵️', '🦹'],
+    data: ['📊', '📈', '📉', '📋', '📌', '📍', '🗂️', '📁', '📂', '🗂️', '🗄️', '🗃️', '📑', '📃', '📄', '📜', '📰', '📓', '📔', '📒', '📕', '📗', '📘', '📙', '📚'],
+    communication: ['💬', '💭', '🗨️', '🗯️', '💢', '👤', '👥', '🗣️', '👂', '👃', '👀', '👁️', '👄', '💋', '💌', '💍', '💎', '🎁', '🎉', '🎊'],
+    popular: ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃', '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😙', '😋', '😛', '😜', '🤪', '😝'],
+    objects: ['📱', '⌚', '📷', '📹', '🎥', '📺', '📻', '🔊', '🔉', '🔈', '🔇', '📢', '📣', '📯', '🔔', '🔕', '📻', '📡', '💻', '🖥️', '🖨️', '⌨️', '🖱️', '🖲️', '🖱️'],
+    symbols: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '☮️', '✝️', '☪️', '🕉️', '☸️', '✡️']
+};
 
 export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     value,
@@ -16,6 +31,10 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     const editorRef = useRef<HTMLDivElement>(null);
     const savedRangeRef = useRef<Range | null>(null);
     const isInternalUpdateRef = useRef(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const [emojiActiveTab, setEmojiActiveTab] = useState<string>('popular');
+    const [emojiSearchTerm, setEmojiSearchTerm] = useState('');
 
     useEffect(() => {
         // Only update if the change came from outside (not from user input)
@@ -331,6 +350,121 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         });
         insertHTML(`<span style="font-weight: 600;">${timeStr}</span>`);
     };
+
+    const insertEmoji = (emoji: string) => {
+        insertHTML(emoji);
+        setShowEmojiPicker(false);
+    };
+
+    const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        // Validate file type
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/svg+xml', 'image/webp'];
+        if (!allowedTypes.includes(file.type)) {
+            alert('Invalid file type. Allowed: JPEG, PNG, GIF, SVG, WebP');
+            return;
+        }
+
+        // Validate file size (max 5MB)
+        const maxSize = 5 * 1024 * 1024; // 5MB
+        if (file.size > maxSize) {
+            alert('File size too large. Maximum size: 5MB');
+            return;
+        }
+
+        // Create form data
+        const formData = new FormData();
+        formData.append('image', file);
+
+        try {
+            // Resolve API base dynamically (same pattern as other services)
+            let apiBase = '/api';
+            if (typeof window !== 'undefined') {
+                const path = window.location.pathname || '';
+                if (path !== '/' && path.length > 1) {
+                    const cleanPath = path.replace(/\/[^/]*$/, '').replace(/\/$/, '');
+                    if (cleanPath && cleanPath !== '/') {
+                        apiBase = `${cleanPath}/api`;
+                    }
+                }
+            }
+            
+            const response = await fetch(`${apiBase}/uploads.php/rich-text-image`, {
+                method: 'POST',
+                body: formData,
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({ error: 'Upload failed' }));
+                throw new Error(error.error || 'Upload failed');
+            }
+
+            const data = await response.json();
+            if (data.success && data.url) {
+                // Insert image at cursor position
+                const img = document.createElement('img');
+                img.src = data.url;
+                img.style.maxWidth = '100%';
+                img.style.height = 'auto';
+                img.alt = file.name;
+
+                editorRef.current?.focus();
+                restoreSelection();
+
+                const range = getCurrentRange();
+                if (range) {
+                    if (!range.collapsed) {
+                        range.deleteContents();
+                    }
+                    range.insertNode(img);
+                    range.collapse(false);
+                    const selection = window.getSelection();
+                    if (selection) {
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                    }
+                    setTimeout(() => {
+                        handleInput();
+                    }, 0);
+                }
+            } else {
+                throw new Error(data.error || 'Upload failed');
+            }
+        } catch (error) {
+            console.error('Image upload error:', error);
+            alert(`Failed to upload image: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        } finally {
+            // Reset file input
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
+        }
+    };
+
+    const emojiCategories = [
+        { id: 'popular', name: 'Popular', emojis: EMOJI_CATEGORIES.popular },
+        { id: 'servers', name: 'Servers', emojis: EMOJI_CATEGORIES.servers },
+        { id: 'cloud', name: 'Cloud', emojis: EMOJI_CATEGORIES.cloud },
+        { id: 'technology', name: 'Tech', emojis: EMOJI_CATEGORIES.technology },
+        { id: 'network', name: 'Network', emojis: EMOJI_CATEGORIES.network },
+        { id: 'security', name: 'Security', emojis: EMOJI_CATEGORIES.security },
+        { id: 'data', name: 'Data', emojis: EMOJI_CATEGORIES.data },
+        { id: 'hospital', name: 'Medical', emojis: EMOJI_CATEGORIES.hospital },
+        { id: 'onprem', name: 'On-Prem', emojis: EMOJI_CATEGORIES.onprem },
+        { id: 'communication', name: 'Chat', emojis: EMOJI_CATEGORIES.communication },
+        { id: 'objects', name: 'Objects', emojis: EMOJI_CATEGORIES.objects },
+        { id: 'symbols', name: 'Symbols', emojis: EMOJI_CATEGORIES.symbols }
+    ];
+
+    const allEmojis = emojiCategories.flatMap(cat => cat.emojis);
+    const uniqueEmojis = Array.from(new Set(allEmojis));
+
+    const filteredEmojis = emojiSearchTerm
+        ? uniqueEmojis.filter(emoji => emoji.includes(emojiSearchTerm))
+        : emojiCategories.find(cat => cat.id === emojiActiveTab)?.emojis || [];
 
     return (
         <div className={`rich-text-editor ${className}`}>
@@ -680,6 +814,141 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                     </button>
                 </div>
 
+                {/* Emoji Picker */}
+                <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1 relative">
+                    <button
+                        type="button"
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            setShowEmojiPicker(!showEmojiPicker);
+                        }}
+                        className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+                        title="Insert Emoji"
+                    >
+                        <span className="text-lg">😀</span>
+                    </button>
+                    {showEmojiPicker && (
+                        <>
+                            <div 
+                                className="fixed inset-0 z-[9998]" 
+                                onClick={() => setShowEmojiPicker(false)}
+                            ></div>
+                            <div 
+                                className="absolute z-[9999] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl w-96 max-h-[500px] flex flex-col overflow-hidden"
+                                style={{ top: '100%', left: 0, marginTop: '4px' }}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                {/* Search */}
+                                <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900/50 dark:to-slate-800">
+                                    <input
+                                        type="text"
+                                        value={emojiSearchTerm}
+                                        onChange={(e) => {
+                                            setEmojiSearchTerm(e.target.value);
+                                            if (e.target.value) {
+                                                setEmojiActiveTab('');
+                                            }
+                                        }}
+                                        placeholder="Search emojis..."
+                                        className="w-full text-sm px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 text-slate-900 dark:text-white"
+                                        autoFocus
+                                    />
+                                </div>
+
+                                {/* Tabs */}
+                                {!emojiSearchTerm && (
+                                    <div className="flex border-b border-slate-200 dark:border-slate-700 overflow-x-auto">
+                                        {emojiCategories.map(category => (
+                                            <button
+                                                key={category.id}
+                                                onClick={() => {
+                                                    setEmojiActiveTab(category.id);
+                                                    setEmojiSearchTerm('');
+                                                }}
+                                                className={`px-3 py-2 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${emojiActiveTab === category.id
+                                                    ? 'border-brand-500 text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/20'
+                                                    : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'
+                                                    }`}
+                                            >
+                                                {category.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Emoji Grid */}
+                                <div className="flex-1 overflow-y-auto p-3">
+                                    {filteredEmojis.length > 0 ? (
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {filteredEmojis.map((emoji, idx) => (
+                                                <button
+                                                    key={idx}
+                                                    type="button"
+                                                    onClick={() => insertEmoji(emoji)}
+                                                    className="text-2xl hover:bg-brand-100 dark:hover:bg-brand-900/30 p-2 rounded-lg transition-all hover:scale-110"
+                                                >
+                                                    {emoji}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    ) : emojiSearchTerm ? (
+                                        <div className="text-center py-8 text-sm text-slate-500 dark:text-slate-400">
+                                            No emojis found. Try a different search term.
+                                        </div>
+                                    ) : null}
+                                </div>
+
+                                {/* Footer */}
+                                <div className="p-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex items-center justify-center">
+                                    <a
+                                        href="https://emojipedia.org"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 flex items-center gap-1.5"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                                        </svg>
+                                        Get more emojis from Emojipedia
+                                    </a>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+
+                {/* Image Upload */}
+                <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/jpeg,image/jpg,image/png,image/gif,image/svg+xml,image/webp"
+                        onChange={handleImageUpload}
+                        className="hidden"
+                    />
+                    <button
+                        type="button"
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            fileInputRef.current?.click();
+                        }}
+                        className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+                        title="Insert Image"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+                        </svg>
+                    </button>
+                </div>
+
                 {/* Clear Formatting */}
                 <button
                     type="button"
@@ -801,6 +1070,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 .rich-text-editor h4 { font-size: 1em; font-weight: bold; margin: 1.12em 0; }
                 .rich-text-editor h5 { font-size: 0.83em; font-weight: bold; margin: 1.5em 0; }
                 .rich-text-editor h6 { font-size: 0.75em; font-weight: bold; margin: 1.67em 0; }
+                .rich-text-editor img { max-width: 100%; height: auto; display: block; margin: 0.5em 0; }
             `}</style>
         </div>
     );
