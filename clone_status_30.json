@@ -1,0 +1,132 @@
+{
+    "step": "building",
+    "progress": 80,
+    "message": "Building application...",
+    "logs": [
+        {
+            "time": "2025-12-07 20:35:16",
+            "message": "Starting clone operation for: arch"
+        },
+        {
+            "time": "2025-12-07 20:35:16",
+            "message": "Source: C:\\xampp\\htdocs\\linknest"
+        },
+        {
+            "time": "2025-12-07 20:35:16",
+            "message": "Target: C:\\xampp\\htdocs\\arch"
+        },
+        {
+            "time": "2025-12-07 20:35:16",
+            "message": "Target directory created"
+        },
+        {
+            "time": "2025-12-07 20:35:16",
+            "message": "Copying root files..."
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Copied 21 root files"
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Copying api directory..."
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Copying components directory..."
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Copying contexts directory..."
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Copying services directory..."
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Copying src directory..."
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Copying docker directory..."
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Copying docs directory..."
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Copying land directory..."
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Created data directory"
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Created uploads directory"
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Created scripts directory"
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Copying scripts..."
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Copied 27 script files"
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Copying assets..."
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Copied 4 asset files"
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Copying database..."
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Database copied successfully"
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Removing clone records from target database..."
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Removed 1 clone record(s) from target database"
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Encrypting LDAP passwords..."
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "LDAP passwords encrypted"
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Creating .env file..."
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Created .env with VITE_BASE_PATH=\/arch"
+        },
+        {
+            "time": "2025-12-07 20:35:17",
+            "message": "Installing npm dependencies (this may take a few minutes)..."
+        },
+        {
+            "time": "2025-12-07 20:35:21",
+            "message": "npm install completed successfully"
+        }
+    ],
+    "timestamp": 1765136121
+}

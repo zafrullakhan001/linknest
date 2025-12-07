@@ -38,6 +38,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
   const [dialogSize, setDialogSize] = useState({ width: 900, height: 650 });
   const [isResizing, setIsResizing] = useState(false);
   const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0, handle: '' });
+  const [customZoomInput, setCustomZoomInput] = useState<string>('');
 
   const loadProfiles = async () => {
     if (!user?.is_admin) return;
@@ -69,19 +70,29 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
       // Center the dialog on open - wait for next frame to get dialog dimensions
       setTimeout(() => {
         if (dialogRef.current) {
-          const centerX = window.innerWidth / 2;
-          const centerY = window.innerHeight / 2;
+          // Get zoom scale to account for page zoom
+          const zoomScale = (styles.pageZoom || 100) / 100;
+          const centerX = (window.innerWidth / zoomScale) / 2;
+          const centerY = (window.innerHeight / zoomScale) / 2;
           setPosition({ x: centerX, y: centerY });
         } else {
           // Fallback: center of screen
+          const zoomScale = (styles.pageZoom || 100) / 100;
           setPosition({
-            x: window.innerWidth / 2,
-            y: window.innerHeight / 2
+            x: (window.innerWidth / zoomScale) / 2,
+            y: (window.innerHeight / zoomScale) / 2
           });
         }
       }, 0);
     }
   }, [isOpen]);
+
+  // Sync custom zoom input with pageZoom value
+  useEffect(() => {
+    if (styles.pageZoom) {
+      setCustomZoomInput(styles.pageZoom.toString());
+    }
+  }, [styles.pageZoom]);
 
   // Handle ESC key to close
   useEffect(() => {
@@ -103,14 +114,19 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!dialogRef.current || !headerRef.current) return;
 
+    // Get zoom scale to account for page zoom
+    const zoomScale = (styles.pageZoom || 100) / 100;
+
     // Calculate offset from center of dialog
+    // getBoundingClientRect() returns coordinates in actual viewport (not scaled)
     const rect = dialogRef.current.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
 
+    // Account for zoom when calculating offset
     setDragOffset({
-      x: e.clientX - centerX,
-      y: e.clientY - centerY
+      x: (e.clientX - centerX) / zoomScale,
+      y: (e.clientY - centerY) / zoomScale
     });
     setIsDragging(true);
     e.preventDefault();
@@ -122,18 +138,23 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
     const handleMouseMove = (e: MouseEvent) => {
       if (!dialogRef.current) return;
 
-      // Calculate new position (center point of dialog) accounting for drag offset
-      const newX = e.clientX - dragOffset.x;
-      const newY = e.clientY - dragOffset.y;
+      // Get zoom scale to account for page zoom
+      const zoomScale = (styles.pageZoom || 100) / 100;
 
-      // Keep dialog within viewport bounds
+      // Calculate new position (center point of dialog) accounting for drag offset and zoom
+      // e.clientX/clientY are in actual viewport coordinates, so we need to scale them
+      const newX = (e.clientX / zoomScale) - dragOffset.x;
+      const newY = (e.clientY / zoomScale) - dragOffset.y;
+
+      // Keep dialog within viewport bounds (account for zoom)
       const dialogWidth = dialogRef.current.offsetWidth;
       const dialogHeight = dialogRef.current.offsetHeight;
       const halfWidth = dialogWidth / 2;
       const halfHeight = dialogHeight / 2;
 
-      const maxX = window.innerWidth - halfWidth;
-      const maxY = window.innerHeight - halfHeight;
+      // Viewport dimensions need to be scaled by zoom
+      const maxX = (window.innerWidth / zoomScale) - halfWidth;
+      const maxY = (window.innerHeight / zoomScale) - halfHeight;
 
       setPosition({
         x: Math.max(halfWidth, Math.min(newX, maxX)),
@@ -152,13 +173,16 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, dragOffset]);
+  }, [isDragging, dragOffset, styles.pageZoom]);
 
   // Resize handlers
   const handleResizeStart = (e: React.MouseEvent<HTMLDivElement>, handle: string) => {
     if (!dialogRef.current) return;
     e.preventDefault();
     e.stopPropagation();
+    
+    // Get zoom scale to account for page zoom
+    const zoomScale = (styles.pageZoom || 100) / 100;
     
     const rect = dialogRef.current.getBoundingClientRect();
     setIsResizing(true);
@@ -177,13 +201,18 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
     const handleMouseMove = (e: MouseEvent) => {
       if (!dialogRef.current) return;
 
-      const deltaX = e.clientX - resizeStart.x;
-      const deltaY = e.clientY - resizeStart.y;
+      // Get zoom scale to account for page zoom
+      const zoomScale = (styles.pageZoom || 100) / 100;
+
+      // Scale the delta to account for zoom (clientX/clientY are in actual viewport, but dialog size is in CSS pixels)
+      const deltaX = (e.clientX - resizeStart.x) / zoomScale;
+      const deltaY = (e.clientY - resizeStart.y) / zoomScale;
 
       const minWidth = 600;
       const minHeight = 450;
-      const maxWidth = window.innerWidth - 40;
-      const maxHeight = window.innerHeight - 40;
+      // Viewport dimensions need to be scaled by zoom
+      const maxWidth = (window.innerWidth / zoomScale) - 40;
+      const maxHeight = (window.innerHeight / zoomScale) - 40;
 
       let newWidth = resizeStart.width;
       let newHeight = resizeStart.height;
@@ -214,7 +243,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isResizing, resizeStart]);
+  }, [isResizing, resizeStart, styles.pageZoom]);
 
   const loadStyles = async () => {
     setIsLoading(true);
@@ -707,22 +736,45 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                   </svg>
                   Global Page Settings
                 </h3>
-                <div className="flex items-center gap-6">
-                  <div className="flex-1 max-w-md">
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Page Zoom: {styles.pageZoom || 100}%
-                    </label>
-                    <div className="flex items-center gap-4">
-                      <input
-                        type="range"
-                        min="50"
-                        max="150"
-                        step="5"
-                        value={styles.pageZoom || 100}
-                        onChange={(e) => updateStyle('pageZoom', parseInt(e.target.value))}
-                        className="flex-1"
-                      />
-                      <div className="flex gap-1">
+                <div className="flex flex-col gap-4">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Page Zoom: {styles.pageZoom || 100}%
+                  </label>
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="range"
+                      min="40"
+                      max="150"
+                      step="5"
+                      value={styles.pageZoom || 100}
+                      onChange={(e) => updateStyle('pageZoom', parseInt(e.target.value))}
+                      className="flex-1"
+                    />
+                    <div className="flex gap-1">
+                        <button
+                          onClick={() => updateStyle('pageZoom', 40)}
+                          className={`px-2 py-1 text-xs rounded ${(styles.pageZoom || 100) === 40 ? 'bg-brand-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+                        >
+                          40%
+                        </button>
+                        <button
+                          onClick={() => updateStyle('pageZoom', 50)}
+                          className={`px-2 py-1 text-xs rounded ${(styles.pageZoom || 100) === 50 ? 'bg-brand-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+                        >
+                          50%
+                        </button>
+                        <button
+                          onClick={() => updateStyle('pageZoom', 60)}
+                          className={`px-2 py-1 text-xs rounded ${(styles.pageZoom || 100) === 60 ? 'bg-brand-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+                        >
+                          60%
+                        </button>
+                        <button
+                          onClick={() => updateStyle('pageZoom', 70)}
+                          className={`px-2 py-1 text-xs rounded ${(styles.pageZoom || 100) === 70 ? 'bg-brand-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+                        >
+                          70%
+                        </button>
                         <button
                           onClick={() => updateStyle('pageZoom', 80)}
                           className={`px-2 py-1 text-xs rounded ${(styles.pageZoom || 100) === 80 ? 'bg-brand-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
@@ -742,9 +794,46 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                           120%
                         </button>
                       </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">Custom:</label>
+                        <input
+                          type="number"
+                          min="10"
+                          max="200"
+                          step="1"
+                          value={customZoomInput || styles.pageZoom || 100}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setCustomZoomInput(value);
+                            const numValue = parseInt(value);
+                            if (!isNaN(numValue) && numValue >= 10 && numValue <= 200) {
+                              updateStyle('pageZoom', numValue);
+                            }
+                          }}
+                          onBlur={(e) => {
+                            const numValue = parseInt(e.target.value);
+                            if (isNaN(numValue) || numValue < 10) {
+                              setCustomZoomInput((styles.pageZoom || 100).toString());
+                            } else if (numValue > 200) {
+                              updateStyle('pageZoom', 200);
+                              setCustomZoomInput('200');
+                            } else {
+                              updateStyle('pageZoom', numValue);
+                              setCustomZoomInput(numValue.toString());
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.currentTarget.blur();
+                            }
+                          }}
+                          className="w-16 px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                          placeholder="%"
+                        />
+                        <span className="text-xs text-slate-500 dark:text-slate-400">%</span>
+                      </div>
                     </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">Adjust the overall zoom level of the application</p>
-                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">Adjust the overall zoom level of the application</p>
                 </div>
               </section>
 
