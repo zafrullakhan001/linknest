@@ -12,6 +12,7 @@ import {
 import { authService, UserListItem } from '../services/authService';
 import { useAuth } from '../contexts/AuthContext';
 import { userPreferencesService } from '../services/userPreferencesService';
+import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites } from '../services/publicFavoritesService';
 
 interface TileGridProps {
   tiles: Tile[];
@@ -496,10 +497,11 @@ const SortableTile: React.FC<SortableTileProps> = ({
         `}>
           {tile.emoji}
         </div>
-        {isAuthenticated && (
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-            {/* Category Selector */}
-            {onMoveToCategory && (
+        <div className={`${isAuthenticated ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'} transition-opacity flex items-center gap-1`}>
+          {isAuthenticated && (
+            <>
+              {/* Category Selector */}
+              {onMoveToCategory && (
               <div className="relative">
                 <button
                   onClick={(e) => {
@@ -558,28 +560,49 @@ const SortableTile: React.FC<SortableTileProps> = ({
               </div>
             )}
 
-            {/* Favorite Button - Hide in recycle bin */}
-            {onToggleFavorite && !isRecycleBin && (
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onToggleFavorite(tile.id);
-                }}
-                className={`p-1 rounded transition-all ${tile.isFavorite
-                  ? 'text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10'
-                  : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10'
-                  }`}
-                title={tile.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill={tile.isFavorite ? 'currentColor' : 'none'} stroke="currentColor" className="w-3.5 h-3.5">
-                  <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
-                </svg>
-              </button>
-            )}
+              {/* Favorite Button - Hide in recycle bin */}
+              {onToggleFavorite && !isRecycleBin && (
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onToggleFavorite(tile.id);
+                  }}
+                  className={`p-1 rounded transition-all ${tile.isFavorite
+                    ? 'text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+                    : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+                    }`}
+                  title={tile.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill={tile.isFavorite ? 'currentColor' : 'none'} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              )}
+            </>
+          )}
+          {/* Favorite Button for Public Users - Always visible */}
+          {!isAuthenticated && onToggleFavorite && !isRecycleBin && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onToggleFavorite(tile.id);
+              }}
+              className={`p-1 rounded transition-all ${isPublicFavorite(tile.id)
+                ? 'text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+                : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+                }`}
+              title={isPublicFavorite(tile.id) ? 'Remove from favorites' : 'Add to favorites'}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill={isPublicFavorite(tile.id) ? 'currentColor' : 'none'} stroke="currentColor" className="w-3.5 h-3.5">
+                <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
+              </svg>
+            </button>
+          )}
 
-            {/* Edit Button - Only show if user has edit permission */}
-            {onEditTile && tile.canEdit && (
+          {/* Edit Button - Only show if user has edit permission */}
+          {onEditTile && tile.canEdit && (
               <button
                 onClick={(e) => {
                   e.preventDefault();
@@ -596,8 +619,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
             )}
 
 
-            {/* Clone Button - Only show if user has edit permission (creating a copy requires edit rights) */}
-            {onCloneTile && tile.canEdit && (
+          {/* Clone Button - Only show if user has edit permission (creating a copy requires edit rights) */}
+          {onCloneTile && tile.canEdit && (
               <button
                 onClick={(e) => onCloneTile(e, tile.id)}
                 className="p-1 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded transition-all"
@@ -611,8 +634,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
             )}
 
 
-            {/* Export Button - Only show if user is admin */}
-            {onExportTile && user?.is_admin && (
+          {/* Export Button - Only show if user is admin */}
+          {onExportTile && user?.is_admin && (
               <button
                 onClick={(e) => {
                   e.preventDefault();
@@ -630,8 +653,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
             )}
 
 
-            {/* Delete/Restore Button */}
-            {isRecycleBin && onRestoreTile ? (
+          {/* Delete/Restore Button */}
+          {isRecycleBin && onRestoreTile ? (
               // Show restore and permanent delete buttons in recycle bin
               <>
                 <button
@@ -717,9 +740,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
                   </button>
                 )}
               </>
-            ) : null}
-          </div>
-        )}
+          ) : null}
+        </div>
       </div>
 
       {/* Compact Title and Description */}
@@ -799,7 +821,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
   );
 };
 
-type TabType = 'favorites' | 'public' | 'private' | 'scheduled' | 'expired' | 'archive' | 'recycle-bin';
+type TabType = 'favorites' | 'public' | 'public-favorites' | 'private' | 'scheduled' | 'expired' | 'archive' | 'recycle-bin';
 
 export const TileGrid: React.FC<TileGridProps> = ({
   tiles,
@@ -818,10 +840,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<TabType>('public');
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [publicFavorites, setPublicFavorites] = useState<string[]>([]);
   const [recycleBinTiles, setRecycleBinTiles] = useState<Tile[]>([]);
   const [isLoadingRecycleBin, setIsLoadingRecycleBin] = useState(false);
   const [archiveTiles, setArchiveTiles] = useState<Tile[]>([]);
   const [isLoadingArchive, setIsLoadingArchive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // New Tile Form State
   const [newTitle, setNewTitle] = useState('');
@@ -1200,10 +1224,26 @@ export const TileGrid: React.FC<TileGridProps> = ({
           setPreferencesLoaded(true); // Mark as loaded even on error to prevent retries
         });
     } else if (!isAuthenticated) {
-      // Reset preferences loaded state when user logs out
-      setPreferencesLoaded(false);
+      // For public users, load active tab from localStorage
+      const savedTab = getPublicActiveTab();
+      if (savedTab) {
+        const validTabs: TabType[] = ['public', 'public-favorites'];
+        if (validTabs.includes(savedTab as TabType)) {
+          setActiveTab(savedTab as TabType);
+        }
+      }
+      // Load public favorites
+      setPublicFavorites(getPublicFavorites());
+      setPreferencesLoaded(true);
     }
   }, [isAuthenticated, preferencesLoaded]);
+
+  // Sync public favorites when they change (for public users)
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setPublicFavorites(getPublicFavorites());
+    }
+  }, [isAuthenticated, tiles]);
 
   // Save active tab preference when it changes (for authenticated users)
   useEffect(() => {
@@ -1218,6 +1258,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
       }, 300); // Wait 300ms after tab change before saving
 
       return () => clearTimeout(timeoutId);
+    } else if (!isAuthenticated && activeTab && preferencesLoaded) {
+      // For public users, save active tab to localStorage
+      const validTabs: TabType[] = ['public', 'public-favorites'];
+      if (validTabs.includes(activeTab)) {
+        setPublicActiveTab(activeTab);
+      }
     }
   }, [activeTab, isAuthenticated, preferencesLoaded]);
 
@@ -1225,6 +1271,11 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const favoriteTilesCount = useMemo(() => {
     return tiles.filter(t => t.isFavorite === true).length;
   }, [tiles]);
+
+  const publicFavoritesCount = useMemo(() => {
+    if (isAuthenticated) return 0;
+    return tiles.filter(t => isPublicFavorite(t.id)).length;
+  }, [tiles, isAuthenticated, publicFavorites]);
 
   const privateTilesCount = useMemo(() => {
     if (!isAuthenticated || !user) return 0;
@@ -1273,8 +1324,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
       // Show archived tiles
       filteredTiles = archiveTiles;
     } else if (activeTab === 'favorites') {
-      // Show only favorited tiles
+      // Show only favorited tiles (internal favorites for authenticated users)
       filteredTiles = tiles.filter(t => t.isFavorite === true);
+    } else if (activeTab === 'public-favorites') {
+      // Show only public favorites (localStorage-based for non-authenticated users)
+      // Use publicFavorites state array for immediate updates
+      filteredTiles = tiles.filter(t => publicFavorites.includes(t.id));
     } else if (activeTab === 'public') {
       // Show only public tiles (same as current public access)
       filteredTiles = tiles.filter(t => t.visibility === 'public');
@@ -1602,7 +1657,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
 
     return groups;
-  }, [tiles, searchTerm, categoryOrder, categoryMetadata, activeTab, isAuthenticated, user, recycleBinTiles, archiveTiles]);
+  }, [tiles, searchTerm, categoryOrder, categoryMetadata, activeTab, isAuthenticated, user, recycleBinTiles, archiveTiles, publicFavorites]);
 
   const handleCreateTile = async () => {
     if (!newTitle.trim()) return;
@@ -2658,7 +2713,10 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
   const handleToggleFavorite = useCallback(async (tileId: string) => {
     if (!isAuthenticated) {
-      if (onAuthRequired) onAuthRequired();
+      // For public users, toggle public favorites in localStorage
+      togglePublicFavorite(tileId);
+      // Update public favorites state to trigger re-render
+      setPublicFavorites(getPublicFavorites());
       return;
     }
 
@@ -2676,6 +2734,71 @@ export const TileGrid: React.FC<TileGridProps> = ({
       alert('Failed to update favorite. Please try again.');
     }
   }, [tiles, isAuthenticated, onUpdateTiles, onAuthRequired]);
+
+  const handleExportPublicFavorites = useCallback(() => {
+    try {
+      exportPublicFavorites();
+    } catch (error) {
+      console.error('Failed to export public favorites:', error);
+      alert('Failed to export favorites. Please try again.');
+    }
+  }, []);
+
+  const handleImportPublicFavorites = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const result = await importPublicFavorites(file);
+      if (result.success) {
+        // Update public favorites state immediately
+        const updatedFavorites = getPublicFavorites();
+        setPublicFavorites(updatedFavorites);
+        
+        // Ensure we're on the favorites tab to see the imported tiles
+        if (activeTab !== 'public-favorites') {
+          setActiveTab('public-favorites');
+        }
+        
+        // Force a re-render by updating tiles (this ensures the filtered view updates)
+        // The tiles themselves don't change, but this triggers the useMemo to recalculate
+        onUpdateTiles([...tiles]);
+        
+        alert(result.message);
+      } else {
+        alert(`Import failed: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('Failed to import public favorites:', error);
+      alert('Failed to import favorites. Please ensure the file is a valid export.');
+    } finally {
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  }, [activeTab, tiles, onUpdateTiles]);
+
+  const handleClearAllPublicFavorites = useCallback(() => {
+    const favoritesCount = publicFavorites.length;
+    if (favoritesCount === 0) {
+      alert('No favorites to remove.');
+      return;
+    }
+
+    const confirmMessage = `Are you sure you want to remove all ${favoritesCount} favorite(s)? This action cannot be undone.`;
+    if (window.confirm(confirmMessage)) {
+      try {
+        clearPublicFavorites();
+        // Update state immediately
+        setPublicFavorites([]);
+        alert(`Successfully removed all ${favoritesCount} favorite(s).`);
+      } catch (error) {
+        console.error('Failed to clear public favorites:', error);
+        alert('Failed to clear favorites. Please try again.');
+      }
+    }
+  }, [publicFavorites]);
 
   // Helper function to check if all tiles in a category are favorited
   const isCategoryFavorited = useCallback((categoryName: string): boolean => {
@@ -2782,6 +2905,61 @@ export const TileGrid: React.FC<TileGridProps> = ({
         >
           Public
         </button>
+        {!isAuthenticated && (
+          <button
+            onClick={() => setActiveTab('public-favorites')}
+            data-active={activeTab === 'public-favorites'}
+            className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'public-favorites' ? 'active' : ''}`}
+          >
+            Favorites
+            {publicFavoritesCount > 0 && (
+              <span className="ml-2 px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
+                {publicFavoritesCount}
+              </span>
+            )}
+          </button>
+        )}
+        {/* Export/Import buttons for public favorites - only show when favorites tab is active */}
+        {!isAuthenticated && activeTab === 'public-favorites' && (
+          <div className="flex items-center gap-1 ml-2 pl-2 border-l border-slate-300 dark:border-slate-600">
+            <button
+              onClick={handleExportPublicFavorites}
+              className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded transition-all"
+              title="Export favorites to file"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 2.955a.75.75 0 001.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 001.09 1.03l2.955-2.955V13.25z" />
+                <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+              </svg>
+            </button>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded transition-all"
+              title="Import favorites from file"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.295a.75.75 0 00-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 2.955V2.75z" />
+                <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+              </svg>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json"
+              onChange={handleImportPublicFavorites}
+              className="hidden"
+            />
+            <button
+              onClick={handleClearAllPublicFavorites}
+              className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all"
+              title="Remove all favorites"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+        )}
         {isAuthenticated && (
           <>
             <button
