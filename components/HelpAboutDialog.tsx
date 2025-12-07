@@ -166,6 +166,30 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                       Schedule tiles and tabs to appear or expire at specific dates and times. Perfect for time-sensitive content and announcements.
                     </p>
                   </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Rich Text Content</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Add rich text content to sections with full formatting support, emoji picker, and image uploads. Create formatted notes, documentation, or announcements directly in your tiles.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Style Management</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Administrators can create and manage custom style profiles to customize the appearance of tiles, categories, and the entire application. Switch between different visual themes instantly.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Access Control</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Fine-grained permission system allows administrators to grant specific users view, edit, or delete permissions on individual tiles. Perfect for collaborative workspaces.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Instance Cloning</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Clone entire LinkNest instances with progress tracking. Create copies of your installation with or without assets and database. Perfect for creating test environments or backups.
+                    </p>
+                  </div>
                 </div>
               </section>
 
@@ -229,7 +253,39 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     <li>Export and import spaces to share with others</li>
                     <li>Use the recycle bin to recover accidentally deleted tiles</li>
                     <li>Archive old tiles to keep your workspace clean</li>
+                    <li>Add rich text content with formatting, emojis, and images to sections</li>
+                    <li>Use style profiles to customize the application appearance (admin only)</li>
+                    <li>Grant specific permissions to users for individual tiles (admin only)</li>
+                    <li>Clone LinkNest instances for testing or backup purposes (admin only)</li>
                   </ul>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
+                  </svg>
+                  Administrator Features
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p>
+                    Administrators have access to additional features through the Admin Panel:
+                  </p>
+                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-brand-900 dark:text-brand-100">Admin Panel Features:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li><strong>User Management:</strong> Approve pending users, manage all users, reset passwords</li>
+                      <li><strong>Access Control:</strong> Set view, edit, and delete permissions for users on specific tiles</li>
+                      <li><strong>Style Management:</strong> Create and switch between custom style profiles</li>
+                      <li><strong>Instance Cloning:</strong> Clone LinkNest installations with progress tracking</li>
+                      <li><strong>LDAP Integration:</strong> Configure LDAP authentication for enterprise environments</li>
+                      <li><strong>Browser Extension:</strong> Configure Browser Launcher Pro extension settings</li>
+                      <li><strong>Database Management:</strong> Export and import database backups</li>
+                      <li><strong>Space Management:</strong> Bulk import/export spaces, manage all spaces</li>
+                      <li><strong>Application Settings:</strong> Customize app name, logo, footer, and other global settings</li>
+                    </ul>
+                  </div>
                 </div>
               </section>
             </div>
@@ -255,8 +311,8 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                 <p className="text-slate-700 dark:text-slate-300">
                   LinkNest helps you create beautiful, organized landing pages for your important links. 
                   Organize links into visual tiles, customize their appearance, and share them with your team or make them public. 
-                  With features like browser integration, scheduling, link health monitoring, and flexible visibility controls, 
-                  LinkNest makes managing and sharing links simple and elegant.
+                  With features like browser integration, scheduling, link health monitoring, rich text content, style management, 
+                  access control, and flexible visibility controls, LinkNest makes managing and sharing links simple and elegant.
                 </p>
               </section>
 
@@ -302,7 +358,14 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     'Browser Integration',
                     'Hyperlink Tiles',
                     'Scheduling & Time-based Content',
-                    'Tab & Section Organization'
+                    'Tab & Section Organization',
+                    'Rich Text Content Editor',
+                    'Style Profile Management',
+                    'Access Control & Permissions',
+                    'Instance Cloning',
+                    'LDAP Authentication',
+                    'Admin Panel',
+                    'Bulk Import/Export'
                   ].map((feature, index) => (
                     <div key={index} className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-brand-600 dark:text-brand-400 flex-shrink-0">

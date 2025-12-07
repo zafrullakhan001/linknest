@@ -49,6 +49,11 @@ export const databaseService = {
       settings: number;
       tile_arrangements?: number;
       category_arrangements?: number;
+      rich_text_content?: number;
+      user_tile_favorites?: number;
+      user_tile_permissions?: number;
+      style_profiles?: number;
+      user_preferences?: number;
     };
   }> {
     // Read file as text

@@ -1298,7 +1298,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     <div>
                       <h4 className="text-base font-semibold text-slate-900 dark:text-white mb-2">Export Database</h4>
                       <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                        Download all database data (users, tiles, sections, links, settings) as a JSON file.
+                        Download all database data (users, tiles, tabs, sections, links, settings, arrangements, rich text content, favorites, permissions, style profiles, and user preferences) as a JSON file.
                       </p>
                       <button
                         onClick={async () => {
@@ -1397,6 +1397,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               if (result.imported.category_arrangements !== undefined) {
                                 importedDetails.push(`Category Arrangements: ${result.imported.category_arrangements}`);
                               }
+                              if (result.imported.rich_text_content !== undefined && result.imported.rich_text_content > 0) {
+                                importedDetails.push(`Rich Text Content: ${result.imported.rich_text_content}`);
+                              }
+                              if (result.imported.user_tile_favorites !== undefined && result.imported.user_tile_favorites > 0) {
+                                importedDetails.push(`User Favorites: ${result.imported.user_tile_favorites}`);
+                              }
+                              if (result.imported.user_tile_permissions !== undefined && result.imported.user_tile_permissions > 0) {
+                                importedDetails.push(`User Permissions: ${result.imported.user_tile_permissions}`);
+                              }
+                              if (result.imported.style_profiles !== undefined && result.imported.style_profiles > 0) {
+                                importedDetails.push(`Style Profiles: ${result.imported.style_profiles}`);
+                              }
+                              if (result.imported.user_preferences !== undefined && result.imported.user_preferences > 0) {
+                                importedDetails.push(`User Preferences: ${result.imported.user_preferences}`);
+                              }
                               alert(`Database imported successfully!\n\nImported:\n- ${importedDetails.join('\n- ')}`);
                               // Reload data after import
                               await loadData();
@@ -1441,12 +1456,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     <div>
                       <p className="text-sm font-semibold text-amber-800 dark:text-amber-300 mb-1">Important Notes</p>
                       <ul className="text-xs text-amber-700 dark:text-amber-400 space-y-1 list-disc list-inside">
-                        <li>Export creates a complete backup of all database tables (users, tiles, sections, links, settings, arrangements)</li>
-                        <li>Export includes all data: user authentication sources, link health status, visibility settings, notes, and tooltips</li>
+                        <li>Export creates a complete backup of all database tables including: users, tiles, tabs, sections, links, settings, arrangements, rich text content, user favorites, user permissions, style profiles, and user preferences</li>
+                        <li>Export includes all data: user authentication sources, link health status, visibility settings, notes, tooltips, rich text formatting, access control permissions, and style configurations</li>
                         <li>Import will replace ALL existing data - use with caution</li>
                         <li>Always export before importing to avoid data loss</li>
-                        <li>The exported file contains sensitive information - keep it secure</li>
+                        <li>The exported file contains sensitive information (passwords, permissions, etc.) - keep it secure</li>
                         <li>Database indexes are automatically recreated after import for optimal performance</li>
+                        <li>Note: The clones table is excluded from export/import as it contains operational/temporary data</li>
                       </ul>
                     </div>
                   </div>
@@ -1461,7 +1477,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Spaces Export & Import</h3>
                 <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-                  Export your spaces to JSON or CSV format, or import spaces from previously exported files or CSV spreadsheets.
+                  Export your spaces to JSON or CSV format, or import spaces from previously exported files or CSV spreadsheets. 
+                  JSON format includes all features: rich text content, tabs, scheduling, visibility settings, browser preferences, icons, and more. 
+                  CSV format is simplified and includes only basic link information.
                 </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1470,7 +1488,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     <div>
                       <h4 className="text-base font-semibold text-slate-900 dark:text-white mb-2">Export Spaces</h4>
                       <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                        Export all spaces to JSON or CSV format for backup or sharing.
+                        Export all spaces to JSON or CSV format for backup or sharing. 
+                        JSON format preserves all data including rich text content, tabs, scheduling, visibility, browser settings, and more.
                       </p>
                       <div className="space-y-2">
                         <button
@@ -1516,6 +1535,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               await loadSpaces();
                               
                               // Convert tiles to CSV format
+                              // Note: CSV format is simplified and does not include rich text content, tabs structure, scheduling, browser settings, icons, or other advanced features
                               const csvRows: string[] = [];
                               csvRows.push('Tile Title,Tile Description,Tile Emoji,Tile Theme Color,Tile Group,Tab Title,Section Title,Link Label,Link URL,Link Visibility,Link Notes,Link Tooltip');
                               
@@ -1844,12 +1864,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       <p className="text-sm font-semibold text-blue-800 dark:text-blue-300 mb-1">Import/Export Notes</p>
                       <ul className="text-xs text-blue-700 dark:text-blue-400 space-y-1 list-disc list-inside">
                         <li><strong>JSON Import:</strong> Supports single space exports, category exports, or all categories exports</li>
-                        <li><strong>JSON Export:</strong> Preserves all space data including categories and arrangements</li>
-                        <li><strong>CSV Export:</strong> Creates a spreadsheet-friendly format for bulk editing</li>
-                        <li><strong>CSV Import:</strong> Requires specific column format - download template for reference</li>
+                        <li><strong>JSON Export:</strong> Preserves all space data including categories, arrangements, tabs, rich text content, scheduling, visibility settings, browser preferences, icons, and more</li>
+                        <li><strong>CSV Export:</strong> Creates a simplified spreadsheet-friendly format for bulk editing. <strong>Note:</strong> CSV format does not include rich text content, tabs, scheduling, or advanced features - use JSON for complete data preservation</li>
+                        <li><strong>CSV Import:</strong> Requires specific column format - download template for reference. Only basic link information is imported</li>
                         <li>Importing spaces adds them to your existing collection (does not replace existing spaces)</li>
-                        <li>Both formats support all link properties (visibility, notes, tooltips)</li>
+                        <li><strong>JSON format supports:</strong> All link properties (visibility, notes, tooltips, icons, text colors, browser settings), rich text content with formatting, tabs with scheduling, section and tab text colors, tile-level browser preferences, and visibility controls</li>
                         <li>Category imports preserve the category name from the export file</li>
+                        <li>Rich text content, tabs, and all advanced features are preserved in JSON exports and can be imported back</li>
+                        <li>Export version 1.1 includes all new features - older 1.0 exports are still supported for backward compatibility</li>
                       </ul>
                     </div>
                   </div>

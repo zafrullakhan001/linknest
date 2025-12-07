@@ -59,7 +59,22 @@ function handleGetDatabaseInfo() {
                 ];
                 
                 // Get table counts
-                $tables = ['users', 'tiles', 'sections', 'links', 'settings', 'tabs', 'tile_arrangements', 'category_arrangements'];
+                $tables = [
+                    'users', 
+                    'tiles', 
+                    'tabs',
+                    'sections', 
+                    'links', 
+                    'settings', 
+                    'tile_arrangements', 
+                    'category_arrangements',
+                    'rich_text_content',
+                    'user_tile_favorites',
+                    'user_tile_permissions',
+                    'style_profiles',
+                    'user_preferences',
+                    'clones'
+                ];
                 $tableCounts = [];
                 foreach ($tables as $table) {
                     try {
@@ -112,7 +127,7 @@ function handleExportDatabase() {
     try {
         // Export all tables
         $export = [
-            'version' => '2.0', // Updated to include all new columns and tables
+            'version' => '2.1', // Updated to include all new tables: rich_text_content, user_tile_favorites, user_tile_permissions, style_profiles, user_preferences
             'exported_at' => time(),
             'tables' => []
         ];
@@ -172,6 +187,58 @@ function handleExportDatabase() {
             $export['tables']['category_arrangements'] = [];
         }
         
+        // Export rich_text_content table (if exists)
+        try {
+            $stmt = $db->prepare('SELECT * FROM rich_text_content');
+            $stmt->execute();
+            $export['tables']['rich_text_content'] = $stmt->fetchAll();
+        } catch (PDOException $e) {
+            // Table might not exist in older databases, skip
+            $export['tables']['rich_text_content'] = [];
+        }
+        
+        // Export user_tile_favorites table (if exists)
+        try {
+            $stmt = $db->prepare('SELECT * FROM user_tile_favorites');
+            $stmt->execute();
+            $export['tables']['user_tile_favorites'] = $stmt->fetchAll();
+        } catch (PDOException $e) {
+            // Table might not exist in older databases, skip
+            $export['tables']['user_tile_favorites'] = [];
+        }
+        
+        // Export user_tile_permissions table (if exists)
+        try {
+            $stmt = $db->prepare('SELECT * FROM user_tile_permissions');
+            $stmt->execute();
+            $export['tables']['user_tile_permissions'] = $stmt->fetchAll();
+        } catch (PDOException $e) {
+            // Table might not exist in older databases, skip
+            $export['tables']['user_tile_permissions'] = [];
+        }
+        
+        // Export style_profiles table (if exists)
+        try {
+            $stmt = $db->prepare('SELECT * FROM style_profiles');
+            $stmt->execute();
+            $export['tables']['style_profiles'] = $stmt->fetchAll();
+        } catch (PDOException $e) {
+            // Table might not exist in older databases, skip
+            $export['tables']['style_profiles'] = [];
+        }
+        
+        // Export user_preferences table (if exists)
+        try {
+            $stmt = $db->prepare('SELECT * FROM user_preferences');
+            $stmt->execute();
+            $export['tables']['user_preferences'] = $stmt->fetchAll();
+        } catch (PDOException $e) {
+            // Table might not exist in older databases, skip
+            $export['tables']['user_preferences'] = [];
+        }
+        
+        // Note: clones table is intentionally excluded as it contains operational/temporary data
+        
         // Set headers for file download
         header('Content-Type: application/json');
         header('Content-Disposition: attachment; filename="linknest-database-export-' . date('Y-m-d-His') . '.json"');
@@ -206,7 +273,27 @@ function handleImportDatabase() {
         // This ensures foreign key constraints are satisfied
         
         // Clear existing data (in reverse order of dependencies)
-        // Clear arrangement tables first (they reference tiles)
+        // Clear tables that reference other tables first
+        try {
+            $db->exec('DELETE FROM user_tile_permissions');
+        } catch (PDOException $e) {
+            // Table might not exist, ignore
+        }
+        try {
+            $db->exec('DELETE FROM user_tile_favorites');
+        } catch (PDOException $e) {
+            // Table might not exist, ignore
+        }
+        try {
+            $db->exec('DELETE FROM user_preferences');
+        } catch (PDOException $e) {
+            // Table might not exist, ignore
+        }
+        try {
+            $db->exec('DELETE FROM rich_text_content');
+        } catch (PDOException $e) {
+            // Table might not exist, ignore
+        }
         try {
             $db->exec('DELETE FROM category_arrangements');
         } catch (PDOException $e) {
@@ -225,6 +312,11 @@ function handleImportDatabase() {
             // Table might not exist, ignore
         }
         $db->exec('DELETE FROM tiles');
+        try {
+            $db->exec('DELETE FROM style_profiles');
+        } catch (PDOException $e) {
+            // Table might not exist, ignore
+        }
         $db->exec('DELETE FROM settings');
         $db->exec('DELETE FROM users');
         
@@ -372,12 +464,14 @@ function handleImportDatabase() {
         // Import category_arrangements (if exists in export)
         if (isset($data['tables']['category_arrangements']) && is_array($data['tables']['category_arrangements'])) {
             try {
-                $stmt = $db->prepare('INSERT INTO category_arrangements (user_id, category_name, position) VALUES (?, ?, ?)');
+                $stmt = $db->prepare('INSERT INTO category_arrangements (user_id, category_name, position, visible_from, expires_at) VALUES (?, ?, ?, ?, ?)');
                 foreach ($data['tables']['category_arrangements'] as $arrangement) {
                     $stmt->execute([
                         isset($arrangement['user_id']) ? (int)$arrangement['user_id'] : 0,
                         $arrangement['category_name'] ?? '',
-                        isset($arrangement['position']) ? (int)$arrangement['position'] : 0
+                        isset($arrangement['position']) ? (int)$arrangement['position'] : 0,
+                        $arrangement['visible_from'] ?? null,
+                        $arrangement['expires_at'] ?? null
                     ]);
                 }
             } catch (PDOException $e) {
@@ -385,6 +479,104 @@ function handleImportDatabase() {
                 error_log('Warning: Could not import category_arrangements: ' . $e->getMessage());
             }
         }
+        
+        // Import rich_text_content (if exists in export)
+        if (isset($data['tables']['rich_text_content']) && is_array($data['tables']['rich_text_content'])) {
+            try {
+                $stmt = $db->prepare('INSERT INTO rich_text_content (id, section_id, content, position) VALUES (?, ?, ?, ?)');
+                foreach ($data['tables']['rich_text_content'] as $richText) {
+                    $stmt->execute([
+                        $richText['id'] ?? '',
+                        $richText['section_id'] ?? '',
+                        $richText['content'] ?? '',
+                        isset($richText['position']) ? (int)$richText['position'] : 0
+                    ]);
+                }
+            } catch (PDOException $e) {
+                // Table might not exist, but that's okay - it will be created on next init
+                error_log('Warning: Could not import rich_text_content: ' . $e->getMessage());
+            }
+        }
+        
+        // Import user_tile_favorites (if exists in export)
+        if (isset($data['tables']['user_tile_favorites']) && is_array($data['tables']['user_tile_favorites'])) {
+            try {
+                $stmt = $db->prepare('INSERT INTO user_tile_favorites (user_id, tile_id, created_at) VALUES (?, ?, ?)');
+                foreach ($data['tables']['user_tile_favorites'] as $favorite) {
+                    $stmt->execute([
+                        isset($favorite['user_id']) ? (int)$favorite['user_id'] : 0,
+                        $favorite['tile_id'] ?? '',
+                        isset($favorite['created_at']) ? (int)$favorite['created_at'] : time()
+                    ]);
+                }
+            } catch (PDOException $e) {
+                // Table might not exist, but that's okay - it will be created on next init
+                error_log('Warning: Could not import user_tile_favorites: ' . $e->getMessage());
+            }
+        }
+        
+        // Import user_tile_permissions (if exists in export)
+        if (isset($data['tables']['user_tile_permissions']) && is_array($data['tables']['user_tile_permissions'])) {
+            try {
+                $stmt = $db->prepare('INSERT INTO user_tile_permissions (user_id, tile_id, can_view, can_edit, can_delete, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+                foreach ($data['tables']['user_tile_permissions'] as $permission) {
+                    $stmt->execute([
+                        isset($permission['user_id']) ? (int)$permission['user_id'] : 0,
+                        $permission['tile_id'] ?? '',
+                        isset($permission['can_view']) ? (int)$permission['can_view'] : 1,
+                        isset($permission['can_edit']) ? (int)$permission['can_edit'] : 0,
+                        isset($permission['can_delete']) ? (int)$permission['can_delete'] : 0,
+                        isset($permission['created_at']) ? (int)$permission['created_at'] : time(),
+                        isset($permission['updated_at']) ? (int)$permission['updated_at'] : time()
+                    ]);
+                }
+            } catch (PDOException $e) {
+                // Table might not exist, but that's okay - it will be created on next init
+                error_log('Warning: Could not import user_tile_permissions: ' . $e->getMessage());
+            }
+        }
+        
+        // Import style_profiles (if exists in export)
+        if (isset($data['tables']['style_profiles']) && is_array($data['tables']['style_profiles'])) {
+            try {
+                $stmt = $db->prepare('INSERT INTO style_profiles (id, name, styles_data, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)');
+                foreach ($data['tables']['style_profiles'] as $profile) {
+                    // Handle both old 'styles' column name and new 'styles_data' column name for backward compatibility
+                    $stylesData = $profile['styles_data'] ?? $profile['styles'] ?? '{}';
+                    $stmt->execute([
+                        isset($profile['id']) ? (int)$profile['id'] : null,
+                        $profile['name'] ?? '',
+                        $stylesData,
+                        isset($profile['is_active']) ? (int)$profile['is_active'] : 0,
+                        isset($profile['created_at']) ? (int)$profile['created_at'] : time(),
+                        isset($profile['updated_at']) ? (int)$profile['updated_at'] : time()
+                    ]);
+                }
+            } catch (PDOException $e) {
+                // Table might not exist, but that's okay - it will be created on next init
+                error_log('Warning: Could not import style_profiles: ' . $e->getMessage());
+            }
+        }
+        
+        // Import user_preferences (if exists in export)
+        if (isset($data['tables']['user_preferences']) && is_array($data['tables']['user_preferences'])) {
+            try {
+                $stmt = $db->prepare('INSERT INTO user_preferences (user_id, preference_key, preference_value, updated_at) VALUES (?, ?, ?, ?)');
+                foreach ($data['tables']['user_preferences'] as $preference) {
+                    $stmt->execute([
+                        isset($preference['user_id']) ? (int)$preference['user_id'] : 0,
+                        $preference['preference_key'] ?? '',
+                        $preference['preference_value'] ?? null,
+                        isset($preference['updated_at']) ? (int)$preference['updated_at'] : time()
+                    ]);
+                }
+            } catch (PDOException $e) {
+                // Table might not exist, but that's okay - it will be created on next init
+                error_log('Warning: Could not import user_preferences: ' . $e->getMessage());
+            }
+        }
+        
+        // Note: clones table is intentionally excluded from import as it contains operational/temporary data
         
         // Recreate indexes after import for optimal performance
         createDatabaseIndexes($db);
@@ -405,7 +597,12 @@ function handleImportDatabase() {
                 'links' => count($data['tables']['links'] ?? []),
                 'settings' => count($data['tables']['settings'] ?? []),
                 'tile_arrangements' => count($data['tables']['tile_arrangements'] ?? []),
-                'category_arrangements' => count($data['tables']['category_arrangements'] ?? [])
+                'category_arrangements' => count($data['tables']['category_arrangements'] ?? []),
+                'rich_text_content' => count($data['tables']['rich_text_content'] ?? []),
+                'user_tile_favorites' => count($data['tables']['user_tile_favorites'] ?? []),
+                'user_tile_permissions' => count($data['tables']['user_tile_permissions'] ?? []),
+                'style_profiles' => count($data['tables']['style_profiles'] ?? []),
+                'user_preferences' => count($data['tables']['user_preferences'] ?? [])
             ]
         ]);
         

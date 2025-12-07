@@ -3,7 +3,7 @@ import { Tile, LinkSection, Link } from '../types';
 export type SpaceExportType = 'tile' | 'category' | 'all_categories';
 
 export interface SpaceExportFile {
-  version: '1.0';
+  version: '1.1'; // Updated to include rich text content and all new fields
   type: SpaceExportType;
   exportedAt: number;
   tile?: Tile;
@@ -45,7 +45,7 @@ const triggerDownload = (data: unknown, filename: string) => {
 /** Export a single space/tile to a JSON file */
 export const exportTileToFile = (tile: Tile) => {
   const payload: SpaceExportFile = {
-    version: '1.0',
+    version: '1.1',
     type: 'tile',
     exportedAt: Date.now(),
     tile
@@ -67,7 +67,7 @@ export const exportCategoryToFile = (categoryName: string, tiles: Tile[]) => {
   }
 
   const payload: SpaceExportFile = {
-    version: '1.0',
+    version: '1.1',
     type: 'category',
     exportedAt: Date.now(),
     categoryName,
@@ -112,7 +112,7 @@ export const exportAllCategoriesToFile = (tiles: Tile[], categoryOrder: string[]
   }
 
   const payload: SpaceExportFile = {
-    version: '1.0',
+    version: '1.1',
     type: 'all_categories',
     exportedAt: Date.now(),
     tiles,
@@ -129,7 +129,8 @@ export const parseSpaceExportObject = (data: any): ParsedSpaceImport => {
     throw new Error('Invalid file: expected a JSON object.');
   }
 
-  if (data.version !== '1.0') {
+  // Support both 1.0 and 1.1 versions for backward compatibility
+  if (data.version !== '1.0' && data.version !== '1.1') {
     // Be tolerant but warn
     console.warn('Unknown space export version, proceeding anyway:', data.version);
   }
@@ -180,6 +181,7 @@ export const normalizeImportedTiles = (
           id: generateId(),
           title: String(tab.title || 'New Tab'),
           position: typeof tab.position === 'number' ? tab.position : 0,
+          textColor: typeof tab.textColor === 'string' ? tab.textColor : undefined,
           visibility: tab.visibility || 'public',
           allowedUsers: Array.isArray(tab.allowedUsers)
             ? tab.allowedUsers
@@ -193,27 +195,50 @@ export const normalizeImportedTiles = (
                       id: generateId(),
                       label: String(link.label || ''),
                       url: String(link.url || ''),
+                      icon: typeof link.icon === 'string' ? link.icon : undefined,
+                      textColor: typeof link.textColor === 'string' ? link.textColor : undefined,
+                      browser: typeof link.browser === 'string' ? link.browser : undefined,
+                      position: typeof link.position === 'number' ? link.position : undefined,
                       visibility: link.visibility || 'public',
                       allowedUsers: Array.isArray(link.allowedUsers)
                         ? link.allowedUsers
                         : undefined,
                       notes: link.notes || undefined,
                       tooltip: link.tooltip || undefined,
-                      health: link.health || undefined
+                      health: link.health || undefined,
+                      visibleFrom: typeof link.visibleFrom === 'string' ? link.visibleFrom : undefined,
+                      expiresAt: typeof link.expiresAt === 'string' ? link.expiresAt : undefined
                     }))
                   : [];
+
+                // Handle rich text content
+                const richTextContent = Array.isArray(section.richTextContent)
+                  ? section.richTextContent.map((rtc: any) => ({
+                      id: generateId(),
+                      content: String(rtc.content || ''),
+                      position: typeof rtc.position === 'number' ? rtc.position : 0,
+                      visibility: rtc.visibility || 'public',
+                      allowedUsers: Array.isArray(rtc.allowedUsers)
+                        ? rtc.allowedUsers
+                        : undefined,
+                      visibleFrom: typeof rtc.visibleFrom === 'string' ? rtc.visibleFrom : undefined,
+                      expiresAt: typeof rtc.expiresAt === 'string' ? rtc.expiresAt : undefined
+                    }))
+                  : undefined;
 
                 return {
                   id: generateId(),
                   title: String(section.title || ''),
                   textColor: typeof section.textColor === 'string' ? section.textColor : undefined,
+                  forceStackedView: typeof section.forceStackedView === 'boolean' ? section.forceStackedView : undefined,
                   visibility: section.visibility || 'public',
                   allowedUsers: Array.isArray(section.allowedUsers)
                     ? section.allowedUsers
                     : undefined,
                   visibleFrom: typeof section.visibleFrom === 'string' ? section.visibleFrom : undefined,
                   expiresAt: typeof section.expiresAt === 'string' ? section.expiresAt : undefined,
-                  links
+                  links,
+                  richTextContent
                 };
               })
             : []
@@ -228,27 +253,50 @@ export const normalizeImportedTiles = (
                 id: generateId(),
                 label: String(link.label || ''),
                 url: String(link.url || ''),
+                icon: typeof link.icon === 'string' ? link.icon : undefined,
+                textColor: typeof link.textColor === 'string' ? link.textColor : undefined,
+                browser: typeof link.browser === 'string' ? link.browser : undefined,
+                position: typeof link.position === 'number' ? link.position : undefined,
                 visibility: link.visibility || 'public',
                 allowedUsers: Array.isArray(link.allowedUsers)
                   ? link.allowedUsers
                   : undefined,
                 notes: link.notes || undefined,
                 tooltip: link.tooltip || undefined,
-                health: link.health || undefined
+                health: link.health || undefined,
+                visibleFrom: typeof link.visibleFrom === 'string' ? link.visibleFrom : undefined,
+                expiresAt: typeof link.expiresAt === 'string' ? link.expiresAt : undefined
               }))
             : [];
+
+          // Handle rich text content
+          const richTextContent = Array.isArray(section.richTextContent)
+            ? section.richTextContent.map((rtc: any) => ({
+                id: generateId(),
+                content: String(rtc.content || ''),
+                position: typeof rtc.position === 'number' ? rtc.position : 0,
+                visibility: rtc.visibility || 'public',
+                allowedUsers: Array.isArray(rtc.allowedUsers)
+                  ? rtc.allowedUsers
+                  : undefined,
+                visibleFrom: typeof rtc.visibleFrom === 'string' ? rtc.visibleFrom : undefined,
+                expiresAt: typeof rtc.expiresAt === 'string' ? rtc.expiresAt : undefined
+              }))
+            : undefined;
 
           return {
             id: generateId(),
             title: String(section.title || ''),
             textColor: typeof section.textColor === 'string' ? section.textColor : undefined,
+            forceStackedView: typeof section.forceStackedView === 'boolean' ? section.forceStackedView : undefined,
             visibility: section.visibility || 'public',
             allowedUsers: Array.isArray(section.allowedUsers)
               ? section.allowedUsers
               : undefined,
             visibleFrom: typeof section.visibleFrom === 'string' ? section.visibleFrom : undefined,
             expiresAt: typeof section.expiresAt === 'string' ? section.expiresAt : undefined,
-            links
+            links,
+            richTextContent
           };
         })
       : [];
@@ -268,7 +316,10 @@ export const normalizeImportedTiles = (
       allowedUsers: Array.isArray(src.allowedUsers) ? src.allowedUsers : undefined,
       isHyperlink: src.isHyperlink || false,
       hyperlinkUrl: src.hyperlinkUrl || undefined,
-      openInNewTab: src.openInNewTab !== undefined ? src.openInNewTab : undefined
+      openInNewTab: src.openInNewTab !== undefined ? src.openInNewTab : undefined,
+      browser: typeof src.browser === 'string' ? src.browser : undefined,
+      visibleFrom: typeof src.visibleFrom === 'string' ? src.visibleFrom : undefined,
+      expiresAt: typeof src.expiresAt === 'string' ? src.expiresAt : undefined
     };
 
     return tile;
