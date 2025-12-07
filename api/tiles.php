@@ -33,7 +33,7 @@ switch ($method) {
         } elseif ($path === '/bulk-import' || $path === '/bulk-import/') {
             handleBulkImport();
         } elseif (preg_match('#^/category/([^/]+)/clone$#', $path, $matches)) {
-            handleCloneCategory($matches[1]);
+            handleCloneCategory(rawurldecode($matches[1]));
         } elseif (preg_match('#^/category/([^/]+)/archive$#', $path, $matches)) {
             handleArchiveCategory(urldecode($matches[1]));
         } elseif (preg_match('#^/category/([^/]+)/unarchive$#', $path, $matches)) {
@@ -1713,29 +1713,51 @@ function handleCloneCategory($categoryName) {
     $user = requireAuth();
     $db = getDB();
     
-    // Decode URL-encoded category name
-    $categoryName = urldecode($categoryName);
+    // Category name is already decoded by the routing
+    // Ensure it's properly trimmed
+    $categoryName = trim($categoryName);
     
-    // Get all tiles in this category
-    $stmt = $db->prepare('SELECT * FROM tiles WHERE "group" = ? ORDER BY position ASC');
+    if (empty($categoryName)) {
+        sendJSON(['error' => 'Invalid category name'], 400);
+    }
+    
+    // Log the attempt for debugging
+    error_log('Clone category attempt: User ' . $user['id'] . ' (' . $user['username'] . '), is_admin=' . ($user['is_admin'] ? 'true' : 'false') . ', category="' . $categoryName . '"');
+    
+    // Get all tiles in this category (exclude deleted and archived tiles)
+    $stmt = $db->prepare('SELECT * FROM tiles WHERE "group" = ? AND deleted_at IS NULL AND archived_at IS NULL ORDER BY position ASC');
     $stmt->execute([$categoryName]);
     $tiles = $stmt->fetchAll();
     
     if (empty($tiles)) {
-        sendJSON(['error' => 'Category not found or empty'], 404);
+        // Log for debugging - check if category exists with different encoding
+        $debugStmt = $db->prepare('SELECT DISTINCT "group" FROM tiles WHERE "group" LIKE ? LIMIT 10');
+        $searchPattern = '%' . str_replace([' ', '%'], ['%', '%%'], $categoryName) . '%';
+        $debugStmt->execute([$searchPattern]);
+        $similarCategories = $debugStmt->fetchAll(PDO::FETCH_COLUMN);
+        error_log('Clone category: Category "' . $categoryName . '" not found. Similar categories: ' . json_encode($similarCategories));
+        sendJSON(['error' => 'Category not found or empty', 'searched' => $categoryName], 404);
     }
     
-    // Check if user has permission to view at least one tile in this category
-    $hasViewPermission = false;
-    foreach ($tiles as $tile) {
-        if (canUserViewTile($user['id'], $tile['id'], $db)) {
-            $hasViewPermission = true;
-            break;
+    // Admins can always clone categories, skip permission check for admins
+    if (!$user['is_admin']) {
+        // Check if user has permission to view at least one tile in this category
+        $hasViewPermission = false;
+        $checkedTiles = 0;
+        foreach ($tiles as $tile) {
+            $checkedTiles++;
+            if (canUserViewTile($user['id'], $tile['id'], $db)) {
+                $hasViewPermission = true;
+                break;
+            }
         }
-    }
-    
-    if (!$hasViewPermission) {
-        sendJSON(['error' => 'You do not have permission to view this category'], 403);
+        
+        if (!$hasViewPermission) {
+            error_log('Clone category: User ' . $user['id'] . ' (' . $user['username'] . ') does not have permission to view category "' . $categoryName . '" (checked ' . $checkedTiles . ' of ' . count($tiles) . ' tiles)');
+            sendJSON(['error' => 'You do not have permission to view this category'], 403);
+        }
+    } else {
+        error_log('Clone category: Admin user ' . $user['id'] . ' (' . $user['username'] . ') cloning category "' . $categoryName . '" with ' . count($tiles) . ' tiles');
     }
     
     // Generate new category name
