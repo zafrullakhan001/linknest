@@ -922,20 +922,91 @@ export const styleService = {
       : shadows[Math.min(shadowIntensity, 5)];
 
     const zoomValue = styles.pageZoom || 100;
+    const zoomScale = zoomValue / 100;
+    const inverseScale = 100 / zoomValue;
 
     return `
-      /* Global Page Zoom */
-      .linknest-app-container {
-        zoom: ${zoomValue / 100};
-        -moz-transform: scale(${zoomValue / 100});
-        -moz-transform-origin: top left;
+      /* Global Page Zoom - Applied to html element to match browser zoom behavior */
+      /* This approach scales the entire page including viewport calculations, eliminating white space */
+      html {
+        zoom: ${zoomScale};
+        height: 100%;
+        width: 100%;
+        overflow-x: hidden;
+        box-sizing: border-box;
       }
       
+      body {
+        margin: 0 !important;
+        padding: 0 !important;
+        height: 100% !important;
+        width: 100% !important;
+        overflow-x: hidden;
+        box-sizing: border-box;
+        position: relative;
+      }
+      
+      #root {
+        height: 100% !important;
+        min-height: 100% !important;
+        width: 100% !important;
+        box-sizing: border-box;
+        position: relative;
+      }
+      
+      .linknest-app-container {
+        min-height: 100vh;
+        height: auto;
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        box-sizing: border-box;
+        position: relative;
+      }
+      
+      /* Ensure main content area grows and footer sticks to bottom */
+      .linknest-app-container > main {
+        flex: 1 1 auto;
+      }
+      
+      /* Ensure footer doesn't create extra space */
+      .linknest-footer {
+        flex-shrink: 0;
+        margin-top: auto;
+        width: 100%;
+      }
+      
+      /* Remove any pseudo-elements that might add space */
+      .linknest-app-container::after,
+      .linknest-app-container::before {
+        box-sizing: border-box;
+      }
+      
+      /* Fallback for browsers that don't support zoom property (older browsers) */
       @supports not (zoom: 1) {
-        .linknest-app-container {
-          transform: scale(${zoomValue / 100});
+        html {
+          transform: scale(${zoomScale});
           transform-origin: top left;
-          width: ${100 / (zoomValue / 100)}%;
+          width: ${inverseScale * 100}%;
+          height: ${inverseScale * 100}%;
+          overflow-x: hidden;
+        }
+        body {
+          width: ${inverseScale * 100}% !important;
+          height: ${inverseScale * 100}% !important;
+          transform-origin: top left;
+          overflow-x: hidden;
+          overflow-y: auto;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        #root {
+          width: ${inverseScale * 100}% !important;
+          height: ${inverseScale * 100}% !important;
+          transform-origin: top left;
+        }
+        .linknest-app-container {
+          width: ${inverseScale * 100}%;
         }
       }
       

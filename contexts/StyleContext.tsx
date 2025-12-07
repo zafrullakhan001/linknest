@@ -58,6 +58,15 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
         const isDark = document.documentElement.classList.contains('dark');
         const css = styleService.generateCSS(styleData, isDark);
         styleTag.textContent = css;
+        
+        // Trigger zoom adjustment after styles are applied
+        // Use a custom event to notify the zoom adjustment effect
+        // Dispatch after a microtask to ensure CSS is processed
+        Promise.resolve().then(() => {
+          window.dispatchEvent(new CustomEvent('linknest-styles-applied', { 
+            detail: { pageZoom: styleData.pageZoom || 100 } 
+          }));
+        });
       } catch (error) {
         console.error('Error applying styles:', error);
       }
@@ -66,6 +75,12 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     // Apply synchronously on initial mount to prevent flash, otherwise use requestAnimationFrame
     if (synchronous) {
       apply();
+      // For synchronous, also trigger adjustment after styles are set
+      Promise.resolve().then(() => {
+        window.dispatchEvent(new CustomEvent('linknest-styles-applied', { 
+          detail: { pageZoom: styleData.pageZoom || 100 } 
+        }));
+      });
     } else {
       // For async application, prevent duplicate applications
       if (applyingStylesRef.current) {
@@ -168,6 +183,180 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     // Apply styles whenever the styles state changes
     applyStyles(styles, false);
   }, [styles, applyStyles]);
+
+  // Handle page zoom to eliminate white space (similar to browser zoom)
+  useEffect(() => {
+    const zoomValue = styles.pageZoom || 100;
+    const zoomScale = zoomValue / 100;
+
+    // Function to check if zoom CSS is actually applied
+    const isZoomApplied = (): boolean => {
+      const html = document.documentElement;
+      const computedStyle = window.getComputedStyle(html);
+      const zoom = computedStyle.zoom;
+      // Check if zoom is set (either as a number or via transform)
+      return zoom !== '1' && zoom !== 'normal' && zoom !== '';
+    };
+
+    // Function to adjust layout for zoom and remove white space
+    const adjustLayoutForZoom = (retryCount: number = 0) => {
+      const html = document.documentElement;
+      const body = document.body;
+      const root = document.getElementById('root');
+      const container = document.querySelector('.linknest-app-container') as HTMLElement;
+
+      // Wait for container to exist
+      if (!container && retryCount < 20) {
+        setTimeout(() => {
+          adjustLayoutForZoom(retryCount + 1);
+        }, 50);
+        return;
+      }
+
+      // If zoom should be applied but CSS isn't ready yet, retry
+      if (zoomValue !== 100 && !isZoomApplied() && retryCount < 20) {
+        // CSS zoom might not be applied yet, retry after a short delay
+        setTimeout(() => {
+          adjustLayoutForZoom(retryCount + 1);
+        }, 50);
+        return;
+      }
+
+      if (zoomValue !== 100 && container) {
+        // When zoomed, the viewport height needs to account for zoom
+        // CSS zoom scales the content, but 100vh still refers to original viewport
+        // We need to adjust the container's min-height to prevent white space
+        
+        // Get the actual viewport height
+        const viewportHeight = window.innerHeight;
+        
+        // When CSS zoom is applied, 100vh is still the original viewport height
+        // But visually, everything is scaled by zoomScale
+        // To fill the viewport without white space, we need: viewportHeight / zoomScale
+        // This gives us the height that, when zoomed, will exactly fill the viewport
+        const adjustedHeight = viewportHeight / zoomScale;
+        container.style.minHeight = `${adjustedHeight}px`;
+        
+        // Ensure html/body don't create extra space
+        if (html) {
+          html.style.height = '100%';
+          html.style.overflowY = 'auto';
+        }
+        
+        if (body) {
+          body.style.height = '100%';
+          body.style.overflowY = 'auto';
+        }
+      } else {
+        // Reset to default when zoom is 100%
+        if (container) {
+          container.style.minHeight = '';
+        }
+        if (html) {
+          html.style.height = '';
+          html.style.overflowY = '';
+        }
+        if (body) {
+          body.style.height = '';
+          body.style.overflowY = '';
+        }
+      }
+    };
+
+    // Adjust immediately, then retry if needed
+    // Use multiple strategies to ensure it runs consistently
+    let rafId: number;
+    const scheduleAdjustment = () => {
+      // First attempt: requestAnimationFrame
+      rafId = requestAnimationFrame(() => {
+        adjustLayoutForZoom();
+        
+        // Second attempt: after a short delay to catch late style applications
+        setTimeout(() => {
+          adjustLayoutForZoom();
+        }, 100);
+        
+        // Third attempt: after styles might be fully processed
+        setTimeout(() => {
+          adjustLayoutForZoom();
+        }, 300);
+      });
+    };
+
+    // Run immediately
+    scheduleAdjustment();
+    
+    // Also run when DOM is ready (if not already)
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', scheduleAdjustment);
+    } else {
+      // DOM is already ready, but run after a brief delay to ensure React has rendered
+      setTimeout(scheduleAdjustment, 0);
+    }
+
+    // Also adjust on window resize
+    const handleResize = () => {
+      adjustLayoutForZoom();
+    };
+
+    window.addEventListener('resize', handleResize);
+    
+    // Watch for style tag changes to ensure we adjust after CSS is applied
+    const styleTag = document.getElementById('linknest-custom-styles');
+    let styleObserver: MutationObserver | null = null;
+    
+    if (styleTag) {
+      styleObserver = new MutationObserver(() => {
+        // When style tag content changes, adjust layout
+        setTimeout(() => {
+          adjustLayoutForZoom();
+        }, 50);
+      });
+      styleObserver.observe(styleTag, {
+        childList: true,
+        characterData: true,
+        subtree: true
+      });
+    }
+    
+    // Also adjust when content changes (use ResizeObserver for container)
+    const container = document.querySelector('.linknest-app-container');
+    let resizeObserver: ResizeObserver | null = null;
+    
+    if (container && window.ResizeObserver) {
+      resizeObserver = new ResizeObserver(() => {
+        adjustLayoutForZoom();
+      });
+      resizeObserver.observe(container);
+    }
+
+    // Listen for when styles are applied - this ensures we adjust after CSS is injected
+    const handleStylesApplied = (event: CustomEvent) => {
+      const appliedZoom = event.detail?.pageZoom || zoomValue;
+      if (appliedZoom === zoomValue) {
+        // Styles with matching zoom were applied, adjust layout
+        setTimeout(() => {
+          adjustLayoutForZoom();
+        }, 50);
+      }
+    };
+
+    window.addEventListener('linknest-styles-applied', handleStylesApplied as EventListener);
+
+    return () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('linknest-styles-applied', handleStylesApplied as EventListener);
+      if (styleObserver) {
+        styleObserver.disconnect();
+      }
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
+    };
+  }, [styles.pageZoom]);
 
   // Reapply styles when dark mode changes
   useEffect(() => {
