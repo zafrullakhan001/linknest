@@ -157,6 +157,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [cloneFolderName, setCloneFolderName] = useState('');
   const [cloneSourcePath, setCloneSourcePath] = useState('');
   const [cloneTargetPath, setCloneTargetPath] = useState('');
+  const [cloneUrl, setCloneUrl] = useState('');
   const [cloneCopyAssets, setCloneCopyAssets] = useState(false);
   const [cloneCopyDatabase, setCloneCopyDatabase] = useState(false);
   const [cloneLoading, setCloneLoading] = useState(false);
@@ -188,6 +189,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       folderName: string;
       sourcePath: string;
       targetPath: string;
+      url: string;
       copyAssets: boolean;
       copyDatabase: boolean;
     } | null;
@@ -2783,6 +2785,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </p>
                   </div>
 
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Instance URL <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="url"
+                      value={cloneUrl}
+                      onChange={(e) => setCloneUrl(e.target.value)}
+                      placeholder="e.g., https://myspaces.example.com or http://localhost/myspaces"
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                    />
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Full URL where the cloned instance will be accessible (include protocol and path, e.g., https://myspaces.example.com or http://localhost/myspaces)
+                    </p>
+                  </div>
+
                   <div className="space-y-3">
                     <label className="flex items-center gap-3 cursor-pointer">
                       <input
@@ -2945,6 +2963,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 folderName: cloneFolderName.trim(),
                                 sourcePath: cloneSourcePath.trim() || undefined,
                                 targetPath: cloneTargetPath.trim() || undefined,
+                                url: cloneUrl.trim() || undefined,
                                 copyAssets: cloneCopyAssets,
                                 copyDatabase: cloneCopyDatabase,
                               }),
@@ -2964,6 +2983,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             setCloneFolderName('');
                             setCloneSourcePath('');
                             setCloneTargetPath('');
+                            setCloneUrl('');
                             setCloneCopyAssets(false);
                             setCloneCopyDatabase(false);
                             
@@ -2976,7 +2996,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             setCloneLoading(false);
                           }
                         }}
-                        disabled={cloneLoading || !cloneFolderName.trim() || (currentCloneId !== null)}
+                        disabled={cloneLoading || !cloneFolderName.trim() || !cloneUrl.trim() || (currentCloneId !== null)}
                         className="flex-1 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
                       >
                         {cloneLoading ? 'Starting Clone Process...' : (currentCloneId ? 'Clone in Progress...' : 'Start Clone')}
@@ -3172,6 +3192,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         folderName: clone.folderName,
                                         sourcePath: clone.sourcePath,
                                         targetPath: clone.targetPath,
+                                        url: clone.url || '',
                                         copyAssets: clone.copyAssets,
                                         copyDatabase: clone.copyDatabase
                                       }
@@ -3359,6 +3380,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 />
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Instance URL
+                </label>
+                <input
+                  type="url"
+                  value={editCloneModal.clone.url}
+                  onChange={(e) => setEditCloneModal({
+                    ...editCloneModal,
+                    clone: { ...editCloneModal.clone!, url: e.target.value }
+                  })}
+                  placeholder="e.g., https://myspaces.example.com or http://localhost/myspaces"
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                />
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Full URL where the cloned instance will be accessible
+                </p>
+              </div>
+
               <div className="space-y-3">
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input
@@ -3419,6 +3459,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           folderName: editCloneModal.clone.folderName,
                           sourcePath: editCloneModal.clone.sourcePath,
                           targetPath: editCloneModal.clone.targetPath,
+                          url: editCloneModal.clone.url.trim() || undefined,
                           copyAssets: editCloneModal.clone.copyAssets,
                           copyDatabase: editCloneModal.clone.copyDatabase,
                         }),

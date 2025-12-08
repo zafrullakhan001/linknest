@@ -137,6 +137,7 @@ function handleClone() {
         $targetPath = !empty($data['targetPath']) ? trim($data['targetPath']) : null;
         $copyAssets = isset($data['copyAssets']) && $data['copyAssets'] === true;
         $copyDatabase = isset($data['copyDatabase']) && $data['copyDatabase'] === true;
+        $customUrl = !empty($data['url']) ? trim($data['url']) : null;
         
         // Default to project root if source not specified
         if (!$sourcePath) {
@@ -167,15 +168,24 @@ function handleClone() {
         $user = getAuthenticatedUser();
         $createdBy = $user ? $user['id'] : null;
         
+        // Validate and set URL
+        if ($customUrl) {
+            // Validate URL format
+            if (!filter_var($customUrl, FILTER_VALIDATE_URL)) {
+                sendJSON(['error' => 'Invalid URL format'], 400);
+            }
+            // Ensure URL ends with /
+            $url = rtrim($customUrl, '/') . '/';
+        } else {
+            // Default to localhost with folder name if not provided
+            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+            $url = "$protocol://$host/$folderName/";
+        }
+        
         // Create clone record
         $db = getDB();
         $stmt = $db->prepare('INSERT INTO clones (folder_name, source_path, target_path, full_path, url, status, progress, copy_assets, copy_database, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        
-        // Build URL correctly - just use localhost with folder name
-        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-        // Remove any path components and just use the folder name
-        $url = "$protocol://$host/$folderName/";
         
         $stmt->execute([
             $folderName,
@@ -533,12 +543,24 @@ function handleUpdateClone($cloneId) {
         $params[] = $data['copyDatabase'] ? 1 : 0;
     }
     
+    if (isset($data['url'])) {
+        $customUrl = trim($data['url']);
+        // Validate URL format
+        if (!filter_var($customUrl, FILTER_VALIDATE_URL)) {
+            sendJSON(['error' => 'Invalid URL format'], 400);
+        }
+        // Ensure URL ends with /
+        $customUrl = rtrim($customUrl, '/') . '/';
+        $updates[] = 'url = ?';
+        $params[] = $customUrl;
+    }
+    
     if (empty($updates)) {
         sendJSON(['error' => 'No fields to update'], 400);
     }
     
-    // Update URL if folder name changed
-    if (isset($data['folderName'])) {
+    // Update URL if folder name changed (only if URL not explicitly provided)
+    if (isset($data['folderName']) && !isset($data['url'])) {
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
         $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
         $newUrl = "$protocol://$host/" . trim($data['folderName']) . "/";

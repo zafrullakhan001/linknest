@@ -63,6 +63,89 @@ class CloneService {
     }
     
     /**
+     * Get encryption key for a specific database path
+     * This allows us to decrypt/encrypt passwords for different database instances
+     */
+    private function getEncryptionKeyForDb($dbPath) {
+        $salt = 'linknest_ldap_encryption_salt_v1';
+        $keySource = $dbPath . $salt;
+        return hash('sha256', $keySource, true); // Returns 32 bytes for AES-256
+    }
+    
+    /**
+     * Decrypt a password using a specific database path's encryption key
+     */
+    private function decryptPasswordForDb($encryptedPassword, $dbPath) {
+        if (empty($encryptedPassword)) {
+            return '';
+        }
+        
+        // Handle plain text passwords (for backward compatibility)
+        if (strpos($encryptedPassword, '.') === false) {
+            return $encryptedPassword;
+        }
+        
+        $parts = explode('.', $encryptedPassword, 3);
+        if (count($parts) !== 3) {
+            throw new Exception('Invalid encrypted password format');
+        }
+        
+        $iv = base64_decode($parts[0], true);
+        $tag = base64_decode($parts[1], true);
+        $encrypted = base64_decode($parts[2], true);
+        
+        if ($iv === false || $tag === false || $encrypted === false) {
+            throw new Exception('Invalid base64 encoding in encrypted password');
+        }
+        
+        $key = $this->getEncryptionKeyForDb($dbPath);
+        $decrypted = openssl_decrypt(
+            $encrypted,
+            'aes-256-gcm',
+            $key,
+            OPENSSL_RAW_DATA,
+            $iv,
+            $tag
+        );
+        
+        if ($decrypted === false) {
+            throw new Exception('Decryption failed - invalid key or corrupted data');
+        }
+        
+        return $decrypted;
+    }
+    
+    /**
+     * Encrypt a password using a specific database path's encryption key
+     */
+    private function encryptPasswordForDb($password, $dbPath) {
+        if (empty($password)) {
+            return '';
+        }
+        
+        $key = $this->getEncryptionKeyForDb($dbPath);
+        $ivLength = openssl_cipher_iv_length('aes-256-gcm');
+        $iv = openssl_random_pseudo_bytes($ivLength);
+        
+        $tag = '';
+        $encrypted = openssl_encrypt(
+            $password,
+            'aes-256-gcm',
+            $key,
+            OPENSSL_RAW_DATA,
+            $iv,
+            $tag
+        );
+        
+        if ($encrypted === false) {
+            throw new Exception('Encryption failed');
+        }
+        
+        // Return: base64(iv) . '.' . base64(tag) . '.' . base64(encrypted)
+        return base64_encode($iv) . '.' . base64_encode($tag) . '.' . base64_encode($encrypted);
+    }
+    
+    /**
      * Update progress and log message
      */
     private function updateProgress($step, $progress, $message, $logs = []) {
@@ -198,6 +281,33 @@ class CloneService {
         $this->writeTraceLog("Parameters: folderName=$folderName, sourcePath=$sourcePath, targetPath=$targetPath", 'INFO');
         $this->writeTraceLog("Options: copyAssets=" . ($copyAssets ? 'true' : 'false') . ", copyDatabase=" . ($copyDatabase ? 'true' : 'false'), 'INFO');
         $this->writeTraceLog("Created by user ID: " . ($createdBy ?? 'null'), 'INFO');
+        
+        // Get URL from database early (use stored URL instead of generating)
+        $url = null;
+        if ($this->cloneId) {
+            $this->writeTraceLog("Retrieving URL from database", 'DEBUG');
+            try {
+                $stmt = $this->db->prepare('SELECT url FROM clones WHERE id = ?');
+                $stmt->execute([$this->cloneId]);
+                $result = $stmt->fetch(PDO::FETCH_ASSOC);
+                if ($result && !empty($result['url'])) {
+                    $url = $result['url'];
+                    $this->writeTraceLog("Retrieved URL from database: $url", 'INFO');
+                } else {
+                    $this->writeTraceLog("WARNING: No URL found in database, will generate default", 'WARNING');
+                }
+            } catch (PDOException $e) {
+                $this->writeTraceLog("ERROR: Failed to retrieve URL from database: " . $e->getMessage(), 'ERROR');
+            }
+        }
+        
+        // Fallback to default URL generation if not found
+        if (!$url) {
+            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+            $url = "$protocol://$host/$folderName/";
+            $this->writeTraceLog("Using generated default URL: $url", 'INFO');
+        }
         
         $logs = [];
         $logs = $this->addLog("Starting clone operation for: $folderName", $logs);
@@ -427,6 +537,43 @@ class CloneService {
                 if (file_exists($srcDb)) {
                     $dbSize = filesize($srcDb);
                     $this->writeTraceLog("Database file found, size: " . $this->formatBytes($dbSize), 'INFO');
+                    
+                    // Step 1: Extract and decrypt LDAP password from source database
+                    $plainLdapPassword = null;
+                    try {
+                        $this->writeTraceLog("Extracting LDAP password from source database...", 'INFO');
+                        $sourceDb = new PDO('sqlite:' . $srcDb);
+                        $sourceDb->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+                        
+                        $stmt = $sourceDb->prepare('SELECT value FROM settings WHERE key = ?');
+                        $stmt->execute(['ldap_bind_password']);
+                        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+                        
+                        if ($row && !empty($row['value'])) {
+                            $encryptedPassword = $row['value'];
+                            $this->writeTraceLog("Found LDAP password in source database", 'DEBUG');
+                            
+                            // Check if password is encrypted (contains dots in format: base64.base64.base64)
+                            $isEncrypted = (strpos($encryptedPassword, '.') !== false && substr_count($encryptedPassword, '.') === 2);
+                            
+                            if ($isEncrypted) {
+                                // Decrypt using source database's encryption key
+                                $plainLdapPassword = $this->decryptPasswordForDb($encryptedPassword, $srcDb);
+                                $this->writeTraceLog("LDAP password decrypted from source database", 'INFO');
+                            } else {
+                                // Password is plain text
+                                $plainLdapPassword = $encryptedPassword;
+                                $this->writeTraceLog("LDAP password is plain text in source database", 'DEBUG');
+                            }
+                        } else {
+                            $this->writeTraceLog("No LDAP password found in source database", 'DEBUG');
+                        }
+                        $sourceDb = null; // Close connection
+                    } catch (Exception $e) {
+                        $this->writeTraceLog("WARNING: Failed to extract LDAP password from source: " . $e->getMessage(), 'WARNING');
+                        $logs = $this->addLog("WARNING: Could not extract LDAP password from source database", $logs);
+                    }
+                    
                     $dbCopyStart = microtime(true);
                     if (copy($srcDb, $destDb)) {
                         $dbCopyTime = number_format(microtime(true) - $dbCopyStart, 2);
@@ -457,6 +604,35 @@ class CloneService {
                                 $this->writeTraceLog("Clones table not found in target database (skipping)", 'DEBUG');
                                 $logs = $this->addLog("Clones table not found in target database (skipping)", $logs);
                             }
+                            // Re-encrypt LDAP password with target database's encryption key
+                            if ($plainLdapPassword !== null) {
+                                try {
+                                    $this->writeTraceLog("Re-encrypting LDAP password for target database...", 'INFO');
+                                    $logs = $this->addLog("Re-encrypting LDAP password...", $logs);
+                                    
+                                    // Encrypt using target database's encryption key
+                                    $encryptedPassword = $this->encryptPasswordForDb($plainLdapPassword, $destDb);
+                                    
+                                    // Update the password in target database
+                                    $updateStmt = $targetDb->prepare('UPDATE settings SET value = ?, updated_at = ? WHERE key = ?');
+                                    $updateStmt->execute([$encryptedPassword, time(), 'ldap_bind_password']);
+                                    
+                                    if ($updateStmt->rowCount() > 0) {
+                                        $this->writeTraceLog("LDAP password re-encrypted successfully for target database", 'INFO');
+                                        $logs = $this->addLog("LDAP password re-encrypted successfully", $logs);
+                                    } else {
+                                        // Password might not exist in target, insert it
+                                        $insertStmt = $targetDb->prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+                                        $insertStmt->execute(['ldap_bind_password', $encryptedPassword, time()]);
+                                        $this->writeTraceLog("LDAP password inserted into target database", 'INFO');
+                                        $logs = $this->addLog("LDAP password inserted into target database", $logs);
+                                    }
+                                } catch (Exception $e) {
+                                    $this->writeTraceLog("ERROR: Failed to re-encrypt LDAP password: " . $e->getMessage(), 'ERROR');
+                                    $logs = $this->addLog("ERROR: Failed to re-encrypt LDAP password: " . $e->getMessage(), $logs);
+                                }
+                            }
+                            
                             $targetDb = null; // Close connection
                             $this->writeTraceLog("Database connection closed", 'DEBUG');
                         } catch (PDOException $e) {
@@ -468,35 +644,6 @@ class CloneService {
                             $this->writeTraceLog("WARNING: Exception removing clone records: " . $e->getMessage(), 'WARNING');
                             $this->writeTraceLog("Stack trace: " . $e->getTraceAsString(), 'WARNING');
                             $logs = $this->addLog("WARNING: Error removing clone records: " . $e->getMessage(), $logs);
-                        }
-                        
-                        // Encrypt LDAP passwords if script exists
-                        $encryptScript = $targetDir . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'encrypt_ldap_passwords.php';
-                        $this->writeTraceLog("Checking for LDAP password encryption script: $encryptScript", 'DEBUG');
-                        if (file_exists($encryptScript)) {
-                            $this->writeTraceLog("LDAP encryption script found, executing", 'INFO');
-                            $logs = $this->addLog("Encrypting LDAP passwords...", $logs);
-                            $encryptStart = microtime(true);
-                            $output = [];
-                            $returnVar = 0;
-                            $this->writeTraceLog("Executing: php " . escapeshellarg($encryptScript), 'DEBUG');
-                            exec('php ' . escapeshellarg($encryptScript) . ' 2>&1', $output, $returnVar);
-                            $encryptTime = number_format(microtime(true) - $encryptStart, 2);
-                            $this->writeTraceLog("LDAP encryption completed in {$encryptTime}s with exit code: $returnVar", 'INFO');
-                            if (count($output) > 0) {
-                                foreach ($output as $line) {
-                                    $this->writeTraceLog("  encrypt: $line", 'DEBUG');
-                                }
-                            }
-                            if ($returnVar === 0) {
-                                $this->writeTraceLog("LDAP passwords encrypted successfully", 'INFO');
-                                $logs = $this->addLog("LDAP passwords encrypted", $logs);
-                            } else {
-                                $this->writeTraceLog("WARNING: LDAP password encryption failed with exit code $returnVar", 'WARNING');
-                                $logs = $this->addLog("WARNING: Failed to encrypt LDAP passwords", $logs);
-                            }
-                        } else {
-                            $this->writeTraceLog("LDAP encryption script not found, skipping", 'DEBUG');
                         }
                     } else {
                         $error = error_get_last();
@@ -659,7 +806,7 @@ class CloneService {
             $readmeContent .= "This is a cloned instance of LinkNest deployed to /$folderName/\n\n";
             $readmeContent .= "## Quick Start\n\n";
             $readmeContent .= "1. The application has been built and is ready to use\n";
-            $readmeContent .= "2. Access it at: http://localhost/$folderName/\n";
+            $readmeContent .= "2. Access it at: $url\n";
             $readmeContent .= "3. Default admin credentials: admin / admin123\n\n";
             $readmeContent .= "## Database\n\n";
             $readmeContent .= "The database file will be created at: data/linknest.db\n\n";
@@ -678,16 +825,7 @@ class CloneService {
                 $this->writeTraceLog("DEPLOYMENT.md created successfully: $result bytes written", 'INFO');
             }
             
-            // Determine URL - simple format: http://localhost/folderName/
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-            // Just use localhost with folder name, no path components
-            $url = "$protocol://$host/$folderName/";
-            
-            $this->writeTraceLog("Determined clone URL: $url", 'INFO');
-            $this->writeTraceLog("Protocol: $protocol, Host: $host", 'DEBUG');
-            
-            // Update database with completion
+            // Update database with completion (preserve existing URL)
             if ($this->cloneId) {
                 $this->writeTraceLog("Updating database with completion status", 'DEBUG');
                 try {
