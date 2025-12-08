@@ -176,7 +176,23 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const { settings } = useSettings();
 
     // Tabs State (new structure)
-    const [editTabs, setEditTabs] = useState<Tab[]>(tile.tabs || []);
+    const [editTabs, setEditTabs] = useState<Tab[]>(() => {
+        const tabs = tile.tabs || [];
+        // Ensure all sections are sorted by position
+        return tabs.map(tab => ({
+            ...tab,
+            sections: tab.sections ? [...tab.sections]
+                .sort((a, b) => {
+                    const posA = a.position ?? 0;
+                    const posB = b.position ?? 0;
+                    return posA - posB;
+                })
+                .map((section, idx) => ({
+                    ...section,
+                    position: section.position ?? idx
+                })) : []
+        }));
+    });
     // Sections State (for backward compatibility)
     const [editSections, setEditSections] = useState<LinkSection[]>(tile.sections || []);
 
@@ -330,11 +346,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             // Deep clone tabs to ensure all properties including textColor and richTextContent are preserved
             const clonedTabs = tile.tabs.map(tab => ({
                 ...tab,
-                sections: tab.sections ? tab.sections.map(section => ({
-                    ...section,
-                    links: section.links ? section.links.map(link => ({ ...link })) : [],
-                    richTextContent: section.richTextContent ? section.richTextContent.map(rt => ({ ...rt })) : []
-                })) : []
+                sections: tab.sections ? [...tab.sections]
+                    .sort((a, b) => {
+                        const posA = a.position ?? 0;
+                        const posB = b.position ?? 0;
+                        return posA - posB;
+                    })
+                    .map((section, idx) => ({
+                        ...section,
+                        position: section.position ?? idx,
+                        links: section.links ? section.links.map(link => ({ ...link })) : [],
+                        richTextContent: section.richTextContent ? section.richTextContent.map(rt => ({ ...rt })) : []
+                    })) : []
             }));
 
             // Debug: Log richTextContent when loading
@@ -649,11 +672,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
 
         // Use tabs if we have them, otherwise use sections (backward compatibility)
-        // Deep clone editTabs to ensure richTextContent is included
+        // Deep clone editTabs to ensure richTextContent and positions are included
         const clonedTabs = editTabs.length > 0 ? editTabs.map(tab => ({
             ...tab,
             sections: tab.sections.map(section => ({
                 ...section,
+                position: section.position ?? 0, // Ensure position is included
                 links: section.links ? [...section.links] : [],
                 richTextContent: section.richTextContent ? section.richTextContent.map(rt => ({ ...rt })) : []
             }))
@@ -857,10 +881,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             title: `${tabToClone.title} (Copy)`,
             position: tabToClone.position + 1,
             textColor: tabToClone.textColor,
-            sections: tabToClone.sections.map(section => ({
+            sections: tabToClone.sections.map((section, index) => ({
                 id: generateId(),
                 title: section.title,
                 textColor: section.textColor,
+                position: section.position ?? index,
                 links: section.links.map(link => ({
                     id: generateId(),
                     label: link.label,
@@ -957,9 +982,23 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const handleAddSection = (tabId: string) => {
         setEditTabs(editTabs.map(tab => {
             if (tab.id === tabId) {
+                // Sort sections first to get accurate max position
+                const sortedSections = [...tab.sections].sort((a, b) => {
+                    const posA = a.position ?? 0;
+                    const posB = b.position ?? 0;
+                    return posA - posB;
+                });
+                const maxPosition = Math.max(...sortedSections.map(s => s.position ?? 0), -1);
+                const newSection = { id: generateId(), title: 'New Section', links: [], position: maxPosition + 1 };
+                // Add new section and keep sorted
+                const newSections = [...sortedSections, newSection].sort((a, b) => {
+                    const posA = a.position ?? 0;
+                    const posB = b.position ?? 0;
+                    return posA - posB;
+                });
                 return {
                     ...tab,
-                    sections: [...tab.sections, { id: generateId(), title: 'New Section', links: [] }]
+                    sections: newSections
                 };
             }
             return tab;
@@ -1013,11 +1052,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         const updatedTabs = editTabs.map(tab => {
             if (tab.id === tabId) {
                 const filteredSections = tab.sections.filter(s => s.id !== sectionId);
+                // Reorder positions after deletion
+                const reorderedSections = filteredSections.map((s, idx) => ({ ...s, position: idx }));
                 console.log('Tab', tabId, '- sections before:', tab.sections.length, 'after:', filteredSections.length);
                 console.log('Filtered sections:', filteredSections.map(s => ({ id: s.id, title: s.title })));
                 return {
                     ...tab,
-                    sections: filteredSections
+                    sections: reorderedSections
                 };
             }
             return tab;
@@ -1032,10 +1073,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             const result = prevTabs.map(tab => {
                 if (tab.id === tabId) {
                     const filtered = tab.sections.filter(s => s.id !== sectionId);
+                    // Reorder positions after deletion
+                    const reordered = filtered.map((s, idx) => ({ ...s, position: idx }));
                     console.log('Filtering sections for tab', tabId, '- before:', tab.sections.length, 'after:', filtered.length);
                     return {
                         ...tab,
-                        sections: filtered
+                        sections: reordered
                     };
                 }
                 return tab;
@@ -1114,14 +1157,28 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setEditTabs(editTabs.map(tab => {
             if (tab.id !== tabId) return tab;
 
-            const index = tab.sections.findIndex(s => s.id === sectionId);
+            // Sort sections by position first to ensure we're working with the correct order
+            const sortedSections = [...tab.sections].sort((a, b) => {
+                const posA = a.position ?? 0;
+                const posB = b.position ?? 0;
+                return posA - posB;
+            });
+
+            const index = sortedSections.findIndex(s => s.id === sectionId);
             if (index === -1) return tab;
 
             const newIndex = direction === 'up' ? index - 1 : index + 1;
-            if (newIndex < 0 || newIndex >= tab.sections.length) return tab;
+            if (newIndex < 0 || newIndex >= sortedSections.length) return tab;
 
-            const newSections = [...tab.sections];
+            // Swap sections
+            const newSections = [...sortedSections];
             [newSections[index], newSections[newIndex]] = [newSections[newIndex], newSections[index]];
+            
+            // Update positions after reordering
+            newSections.forEach((section, idx) => {
+                section.position = idx;
+            });
+            
             return { ...tab, sections: newSections };
         }));
     };
@@ -1138,6 +1195,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 id: generateId(),
                 title: `${sectionToClone.title} (Copy)`,
                 textColor: sectionToClone.textColor,
+                position: (sectionToClone.position ?? 0) + 1,
                 links: sectionToClone.links.map(link => ({
                     id: generateId(),
                     label: link.label,
@@ -1151,13 +1209,27 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 }))
             };
 
+            // Sort sections first to find correct index
+            const sortedSections = [...tab.sections].sort((a, b) => {
+                const posA = a.position ?? 0;
+                const posB = b.position ?? 0;
+                return posA - posB;
+            });
+            
+            const index = sortedSections.findIndex(s => s.id === sectionId);
+            if (index === -1) return tab;
+            
             // Insert cloned section after the original
-            const index = tab.sections.findIndex(s => s.id === sectionId);
             const newSections = [
-                ...tab.sections.slice(0, index + 1),
+                ...sortedSections.slice(0, index + 1),
                 clonedSection,
-                ...tab.sections.slice(index + 1)
+                ...sortedSections.slice(index + 1)
             ];
+            
+            // Reorder positions after insertion
+            newSections.forEach((section, idx) => {
+                section.position = idx;
+            });
 
             return { ...tab, sections: newSections };
         }));
@@ -2129,7 +2201,16 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
             if (tabIdToUse) {
                 const selectedTab = tile.tabs.find(tab => tab.id === tabIdToUse);
-                sectionsToFilter = selectedTab ? selectedTab.sections : [];
+                if (selectedTab && selectedTab.sections) {
+                    // Sort sections by position
+                    sectionsToFilter = [...selectedTab.sections].sort((a, b) => {
+                        const posA = a.position ?? 0;
+                        const posB = b.position ?? 0;
+                        return posA - posB;
+                    });
+                } else {
+                    sectionsToFilter = [];
+                }
             }
         } else {
             // Otherwise, get all sections (backward compatibility - no tabs)
@@ -3500,7 +3581,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     </button>
                                                 </div>
 
-                                                {tab.sections.map((section, sectionIndex) => {
+                                                {[...tab.sections].sort((a, b) => {
+                                                    const posA = a.position ?? 0;
+                                                    const posB = b.position ?? 0;
+                                                    return posA - posB;
+                                                }).map((section, sectionIndex) => {
                                                     // Generate a color for visual identification based on section index
                                                     const colorIndex = sectionIndex % 6;
                                                     const borderColors = [

@@ -46,6 +46,7 @@ export interface LinkSection {
   visibleFrom?: string; // ISO date string - section becomes visible from this date/time
   expiresAt?: string; // ISO date string - section expires at this date/time
   forceStackedView?: boolean; // Force stacked view for this section regardless of global view preference
+  position?: number; // Position in the tab (for sorting)
 }
 
 export interface Tab {

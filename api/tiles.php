@@ -672,7 +672,7 @@ function handleGetTile($tileId) {
         ];
         
         // Get sections for this tab
-        $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tab_id = ? ORDER BY id');
+        $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tab_id = ? ORDER BY position ASC, id ASC');
         $sectionStmt->execute([$tabRow['id']]);
         
         while ($sectionRow = $sectionStmt->fetch()) {
@@ -682,6 +682,7 @@ function handleGetTile($tileId) {
                 'visibleFrom' => $sectionRow['visible_from'] ?? null,
                 'expiresAt' => $sectionRow['expires_at'] ?? null,
                 'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
+                'position' => isset($sectionRow['position']) ? (int)$sectionRow['position'] : 0,
                 'links' => []
             ];
             
@@ -921,9 +922,10 @@ function handleCreateTile() {
             
             // Insert sections for this tab
             if (isset($tab['sections']) && is_array($tab['sections'])) {
-                foreach ($tab['sections'] as $section) {
+                foreach ($tab['sections'] as $sectionIndex => $section) {
                     $sectionId = $section['id'] ?? uniqid('section_', true);
-                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                    $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
+                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
                     $sectionStmt->execute([
                         $sectionId,
                         $tileId,
@@ -932,7 +934,8 @@ function handleCreateTile() {
                         $section['textColor'] ?? null,
                         $section['visibleFrom'] ?? null,
                         $section['expiresAt'] ?? null,
-                        isset($section['forceStackedView']) && $section['forceStackedView'] === true ? 1 : 0
+                        isset($section['forceStackedView']) && $section['forceStackedView'] === true ? 1 : 0,
+                        $sectionPosition
                     ]);
                     
                     // Insert links for this section
@@ -1020,16 +1023,18 @@ function handleCreateTile() {
             null
         ]);
         
-        foreach ($data['sections'] as $section) {
+        foreach ($data['sections'] as $sectionIndex => $section) {
             $sectionId = $section['id'] ?? uniqid('section_', true);
-            $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, force_stacked_view) VALUES (?, ?, ?, ?, ?, ?)');
+            $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
+            $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?)');
             $sectionStmt->execute([
                 $sectionId,
                 $tileId,
                 $defaultTabId,
                 $section['title'] ?? '',
                 $section['textColor'] ?? null,
-                isset($section['forceStackedView']) && $section['forceStackedView'] === true ? 1 : 0
+                isset($section['forceStackedView']) && $section['forceStackedView'] === true ? 1 : 0,
+                $sectionPosition
             ]);
             
             if (isset($section['links']) && is_array($section['links'])) {
@@ -1193,9 +1198,10 @@ function handleUpdateTile($tileId) {
                 
                 // Insert sections for this tab
                 if (isset($tab['sections']) && is_array($tab['sections'])) {
-                    foreach ($tab['sections'] as $section) {
+                    foreach ($tab['sections'] as $sectionIndex => $section) {
                         $sectionId = $section['id'] ?? uniqid('section_', true);
-                        $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                        $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
+                        $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
                         $sectionStmt->execute([
                             $sectionId,
                             $tileId,
@@ -1204,7 +1210,8 @@ function handleUpdateTile($tileId) {
                             $section['textColor'] ?? null,
                             $section['visibleFrom'] ?? null,
                             $section['expiresAt'] ?? null,
-                            isset($section['forceStackedView']) && $section['forceStackedView'] === true ? 1 : 0
+                            isset($section['forceStackedView']) && $section['forceStackedView'] === true ? 1 : 0,
+                            $sectionPosition
                         ]);
                         
                         // Insert links for this section
@@ -1268,16 +1275,18 @@ function handleUpdateTile($tileId) {
                 0
             ]);
             
-            foreach ($data['sections'] as $section) {
+            foreach ($data['sections'] as $sectionIndex => $section) {
                 $sectionId = $section['id'] ?? uniqid('section_', true);
-                $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, force_stacked_view) VALUES (?, ?, ?, ?, ?, ?)');
+                $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
+                $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?)');
                 $sectionStmt->execute([
                     $sectionId,
                     $tileId,
                     $defaultTabId,
                     $section['title'] ?? '',
                     $section['textColor'] ?? null,
-                    isset($section['forceStackedView']) && $section['forceStackedView'] === true ? 1 : 0
+                    isset($section['forceStackedView']) && $section['forceStackedView'] === true ? 1 : 0,
+                    $sectionPosition
                 ]);
                 
                 if (isset($section['links']) && is_array($section['links'])) {
@@ -1555,9 +1564,10 @@ function handleCloneTile($tileId) {
                 null
             ]);
             
-            foreach ($legacySections as $section) {
+            foreach ($legacySections as $sectionIndex => $section) {
                 $newSectionId = uniqid('section_', true);
-                $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
+                $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
                 $sectionInsertStmt->execute([
                     $newSectionId,
                     $newTileId,
@@ -1566,7 +1576,8 @@ function handleCloneTile($tileId) {
                     isset($section['text_color']) ? $section['text_color'] : null,
                     $section['visible_from'] ?? null,
                     $section['expires_at'] ?? null,
-                    isset($section['force_stacked_view']) && $section['force_stacked_view'] == 1 ? 1 : 0
+                    isset($section['force_stacked_view']) && $section['force_stacked_view'] == 1 ? 1 : 0,
+                    $sectionPosition
                 ]);
                 
                 // Clone links
@@ -1628,13 +1639,14 @@ function handleCloneTile($tileId) {
             ]);
             
             // Clone sections for this tab
-            $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tab_id = ? ORDER BY id');
+            $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tab_id = ? ORDER BY position ASC, id ASC');
             $sectionStmt->execute([$tab['id']]);
             $sections = $sectionStmt->fetchAll();
             
-            foreach ($sections as $section) {
+            foreach ($sections as $sectionIndex => $section) {
                 $newSectionId = uniqid('section_', true);
-                $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
+                $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
                 $sectionInsertStmt->execute([
                     $newSectionId,
                     $newTileId,
@@ -1643,7 +1655,8 @@ function handleCloneTile($tileId) {
                     isset($section['text_color']) ? $section['text_color'] : null,
                     $section['visible_from'] ?? null,
                     $section['expires_at'] ?? null,
-                    isset($section['force_stacked_view']) && $section['force_stacked_view'] == 1 ? 1 : 0
+                    isset($section['force_stacked_view']) && $section['force_stacked_view'] == 1 ? 1 : 0,
+                    $sectionPosition
                 ]);
                 
                 // Clone links
@@ -1854,9 +1867,10 @@ function handleCloneCategory($categoryName) {
                         0
                     ]);
                     
-                    foreach ($legacySections as $section) {
+                    foreach ($legacySections as $sectionIndex => $section) {
                         $newSectionId = uniqid('section_', true);
-                        $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                        $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
+                        $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
                         $sectionInsertStmt->execute([
                             $newSectionId,
                             $newTileId,
@@ -1865,7 +1879,8 @@ function handleCloneCategory($categoryName) {
                             isset($section['text_color']) ? $section['text_color'] : null,
                             $section['visible_from'] ?? null,
                             $section['expires_at'] ?? null,
-                            isset($section['force_stacked_view']) && $section['force_stacked_view'] == 1 ? 1 : 0
+                            isset($section['force_stacked_view']) && $section['force_stacked_view'] == 1 ? 1 : 0,
+                            $sectionPosition
                         ]);
                         
                         // Clone links
@@ -1910,13 +1925,14 @@ function handleCloneCategory($categoryName) {
                     ]);
                     
                     // Clone sections for this tab
-                    $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tab_id = ? ORDER BY id');
+                    $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tab_id = ? ORDER BY position ASC, id ASC');
                     $sectionStmt->execute([$tab['id']]);
                     $sections = $sectionStmt->fetchAll();
                     
-                    foreach ($sections as $section) {
+                    foreach ($sections as $sectionIndex => $section) {
                         $newSectionId = uniqid('section_', true);
-                        $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                        $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
+                        $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, visible_from, expires_at, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
                         $sectionInsertStmt->execute([
                             $newSectionId,
                             $newTileId,
@@ -1925,7 +1941,8 @@ function handleCloneCategory($categoryName) {
                             isset($section['text_color']) ? $section['text_color'] : null,
                             $section['visible_from'] ?? null,
                             $section['expires_at'] ?? null,
-                            isset($section['force_stacked_view']) && $section['force_stacked_view'] == 1 ? 1 : 0
+                            isset($section['force_stacked_view']) && $section['force_stacked_view'] == 1 ? 1 : 0,
+                            $sectionPosition
                         ]);
                         
                         // Clone links
@@ -2161,15 +2178,17 @@ function handleBulkImport() {
                 }
                 
                 // Insert sections and links
+                $sectionIndex = 0;
                 foreach ($tileData['sections'] as $sectionTitle => $links) {
                     $sectionId = uniqid('section_', true);
-                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, title, text_color, force_stacked_view) VALUES (?, ?, ?, ?, ?)');
+                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, title, text_color, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?)');
                     $sectionStmt->execute([
                         $sectionId,
                         $tileId,
                         $sectionTitle,
                         null,
-                        0
+                        0,
+                        $sectionIndex++
                     ]);
                     
                     foreach ($links as $link) {
@@ -2874,10 +2893,8 @@ function handleGetArchive() {
                     'sections' => []
                 ];
                 
-                // Note: the sections table does not have a position column in the current schema,
-                // so we safely order by id (consistent with other queries in this file).
-                // If a position column is added in the future, this query can be updated accordingly.
-                $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tab_id = ? ORDER BY id ASC');
+                // Get sections for this tab, ordered by position
+                $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tab_id = ? ORDER BY position ASC, id ASC');
                 $sectionStmt->execute([$tabRow['id']]);
                 
                 while ($sectionRow = $sectionStmt->fetch()) {
@@ -2887,6 +2904,7 @@ function handleGetArchive() {
                         'visibleFrom' => $sectionRow['visible_from'] ?? null,
                         'expiresAt' => $sectionRow['expires_at'] ?? null,
                         'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
+                        'position' => isset($sectionRow['position']) ? (int)$sectionRow['position'] : 0,
                         'links' => []
                     ];
                     

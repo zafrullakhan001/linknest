@@ -483,6 +483,28 @@ function initDatabase() {
             error_log('Sections force_stacked_view migration warning: ' . $e->getMessage());
         }
         
+        // Migrate existing sections table to add position column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(sections)")->fetchAll();
+            $hasPosition = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'position') {
+                    $hasPosition = true;
+                    break;
+                }
+            }
+            if (!$hasPosition) {
+                $db->exec('ALTER TABLE sections ADD COLUMN position INTEGER DEFAULT 0');
+                // Set initial positions based on current order (by id)
+                $db->exec('UPDATE sections SET position = (
+                    SELECT COUNT(*) FROM sections s2 
+                    WHERE s2.tab_id = sections.tab_id AND s2.id <= sections.id
+                ) - 1');
+            }
+        } catch (PDOException $e) {
+            error_log('Sections position migration warning: ' . $e->getMessage());
+        }
+        
         // Create links table
         $db->exec('CREATE TABLE IF NOT EXISTS links (
             id TEXT PRIMARY KEY,
