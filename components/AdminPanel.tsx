@@ -195,6 +195,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [editCloneLoading, setEditCloneLoading] = useState(false);
   const [deleteCloneLoading, setDeleteCloneLoading] = useState<number | null>(null);
   const [rerunCloneLoading, setRerunCloneLoading] = useState<number | null>(null);
+  
+  // Prechecks state
+  const [prechecksLoading, setPrechecksLoading] = useState(false);
+  const [prechecksResults, setPrechecksResults] = useState<{
+    allGood: boolean;
+    checks: Array<{
+      category: string;
+      items: Array<{
+        name: string;
+        value: string;
+        status: 'pass' | 'fail' | 'info';
+        message: string;
+        description: string;
+      }>;
+    }>;
+  } | null>(null);
+  const [showPrechecks, setShowPrechecks] = useState(false);
 
   const loadPendingUsers = async () => {
     try {
@@ -2869,68 +2886,191 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   )}
 
                   <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                    <button
-                      onClick={async () => {
-                        if (!cloneFolderName.trim()) {
-                          setError('Folder name is required');
-                          return;
-                        }
+                    <div className="flex gap-3">
+                      <button
+                        onClick={async () => {
+                          try {
+                            setPrechecksLoading(true);
+                            setError('');
+                            const apiBase = resolveApiBase();
+                            const response = await fetch(`${apiBase}/clone/prechecks`, {
+                              method: 'GET',
+                              headers: {
+                                'Content-Type': 'application/json',
+                              },
+                              credentials: 'include',
+                            });
 
-                        try {
-                          setCloneLoading(true);
-                          setError('');
-                          setCloneProgress(0);
-                          setCloneStatus('pending');
-                          setCloneLogs([]);
+                            const data = await response.json();
 
-                          const apiBase = resolveApiBase();
-                          const response = await fetch(`${apiBase}/clone`, {
-                            method: 'POST',
-                            headers: {
-                              'Content-Type': 'application/json',
-                            },
-                            credentials: 'include',
-                            body: JSON.stringify({
-                              folderName: cloneFolderName.trim(),
-                              sourcePath: cloneSourcePath.trim() || undefined,
-                              targetPath: cloneTargetPath.trim() || undefined,
-                              copyAssets: cloneCopyAssets,
-                              copyDatabase: cloneCopyDatabase,
-                            }),
-                          });
+                            if (!response.ok) {
+                              throw new Error(data.error || 'Failed to run prechecks');
+                            }
 
-                          const data = await response.json();
-
-                          if (!response.ok) {
-                            throw new Error(data.error || 'Failed to start clone process');
+                            setPrechecksResults(data);
+                            setShowPrechecks(true);
+                          } catch (err: any) {
+                            setError(err.message || 'Failed to run prechecks');
+                          } finally {
+                            setPrechecksLoading(false);
+                          }
+                        }}
+                        disabled={prechecksLoading}
+                        className="flex-1 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 dark:text-slate-300 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                      >
+                        {prechecksLoading ? 'Running Prechecks...' : 'Run Prechecks'}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!cloneFolderName.trim()) {
+                            setError('Folder name is required');
+                            return;
                           }
 
-                          // Set current clone ID and start polling
-                          setCurrentCloneId(data.cloneId);
-                          setCloneStatus('running');
-                          
-                          // Reset form
-                          setCloneFolderName('');
-                          setCloneSourcePath('');
-                          setCloneTargetPath('');
-                          setCloneCopyAssets(false);
-                          setCloneCopyDatabase(false);
-                          
-                          // Reload clones list
-                          loadClonesList();
-                        } catch (err: any) {
-                          setError(err.message || 'Failed to start clone process');
-                          setCloneStatus('error');
-                        } finally {
-                          setCloneLoading(false);
-                        }
-                      }}
-                      disabled={cloneLoading || !cloneFolderName.trim() || (currentCloneId !== null)}
-                      className="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
-                    >
-                      {cloneLoading ? 'Starting Clone Process...' : (currentCloneId ? 'Clone in Progress...' : 'Start Clone')}
-                    </button>
+                          try {
+                            setCloneLoading(true);
+                            setError('');
+                            setCloneProgress(0);
+                            setCloneStatus('pending');
+                            setCloneLogs([]);
+
+                            const apiBase = resolveApiBase();
+                            const response = await fetch(`${apiBase}/clone`, {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                              },
+                              credentials: 'include',
+                              body: JSON.stringify({
+                                folderName: cloneFolderName.trim(),
+                                sourcePath: cloneSourcePath.trim() || undefined,
+                                targetPath: cloneTargetPath.trim() || undefined,
+                                copyAssets: cloneCopyAssets,
+                                copyDatabase: cloneCopyDatabase,
+                              }),
+                            });
+
+                            const data = await response.json();
+
+                            if (!response.ok) {
+                              throw new Error(data.error || 'Failed to start clone process');
+                            }
+
+                            // Set current clone ID and start polling
+                            setCurrentCloneId(data.cloneId);
+                            setCloneStatus('running');
+                            
+                            // Reset form
+                            setCloneFolderName('');
+                            setCloneSourcePath('');
+                            setCloneTargetPath('');
+                            setCloneCopyAssets(false);
+                            setCloneCopyDatabase(false);
+                            
+                            // Reload clones list
+                            loadClonesList();
+                          } catch (err: any) {
+                            setError(err.message || 'Failed to start clone process');
+                            setCloneStatus('error');
+                          } finally {
+                            setCloneLoading(false);
+                          }
+                        }}
+                        disabled={cloneLoading || !cloneFolderName.trim() || (currentCloneId !== null)}
+                        className="flex-1 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                      >
+                        {cloneLoading ? 'Starting Clone Process...' : (currentCloneId ? 'Clone in Progress...' : 'Start Clone')}
+                      </button>
+                    </div>
                   </div>
+                  
+                  {/* Prechecks Results */}
+                  {showPrechecks && prechecksResults && (
+                    <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                      <div className="flex justify-between items-center mb-4">
+                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Prechecks Results</h4>
+                        <button
+                          onClick={() => setShowPrechecks(false)}
+                          className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                          </svg>
+                        </button>
+                      </div>
+                      
+                      <div className={`p-4 rounded-lg mb-4 ${
+                        prechecksResults.allGood 
+                          ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' 
+                          : 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
+                      }`}>
+                        <div className="flex items-center gap-2">
+                          {prechecksResults.allGood ? (
+                            <>
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-green-600 dark:text-green-400">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                              </svg>
+                              <span className="text-sm font-medium text-green-700 dark:text-green-400">All checks passed! Your system is ready for clone operations.</span>
+                            </>
+                          ) : (
+                            <>
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-yellow-600 dark:text-yellow-400">
+                                <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                              </svg>
+                              <span className="text-sm font-medium text-yellow-700 dark:text-yellow-400">Some checks failed. Please fix the issues below before running clone operations.</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-4 max-h-96 overflow-y-auto">
+                        {prechecksResults.checks.map((checkCategory, categoryIdx) => (
+                          <div key={categoryIdx} className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                            <h5 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">{checkCategory.category}</h5>
+                            <div className="space-y-2">
+                              {checkCategory.items.map((item, itemIdx) => (
+                                <div key={itemIdx} className="flex items-start gap-3 text-sm">
+                                  <div className="mt-0.5">
+                                    {item.status === 'pass' && (
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-green-600 dark:text-green-400">
+                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                                      </svg>
+                                    )}
+                                    {item.status === 'fail' && (
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-red-600 dark:text-red-400">
+                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                                      </svg>
+                                    )}
+                                    {item.status === 'info' && (
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-blue-600 dark:text-blue-400">
+                                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
+                                      </svg>
+                                    )}
+                                  </div>
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-medium text-slate-900 dark:text-white">{item.name}</span>
+                                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                        item.status === 'pass' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
+                                        item.status === 'fail' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' :
+                                        'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                                      }`}>
+                                        {item.message}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">{item.description}</p>
+                                    {item.value && item.value !== 'none' && item.value !== 'ok' && item.value !== 'yes' && item.value !== 'info' && (
+                                      <p className="text-xs text-slate-500 dark:text-slate-500 mt-1 font-mono">Value: {item.value}</p>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 

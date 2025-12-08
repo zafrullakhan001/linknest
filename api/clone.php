@@ -99,6 +99,8 @@ switch ($method) {
             handleGetCloneList();
         } elseif ($path === '/current-path' || $path === '/current-path/') {
             handleGetCurrentPath();
+        } elseif ($path === '/prechecks' || $path === '/prechecks/') {
+            handlePrechecks();
         } elseif (preg_match('#^/status/(\d+)$#', $path, $matches)) {
             handleGetCloneStatus($matches[1]);
         } elseif (preg_match('#^/(\d+)$#', $path, $matches)) {
@@ -776,6 +778,297 @@ function handleRerunClone($cloneId) {
         'message' => 'Clone process restarted',
         'cloneId' => $cloneId
     ]);
+}
+
+function handlePrechecks() {
+    requireAdmin();
+    
+    $results = [
+        'allGood' => true,
+        'checks' => []
+    ];
+    
+    // PHP Configuration
+    $phpConfig = [
+        'max_execution_time' => ini_get('max_execution_time'),
+        'memory_limit' => ini_get('memory_limit'),
+        'max_input_time' => ini_get('max_input_time')
+    ];
+    
+    $phpChecks = [];
+    $maxExecTime = $phpConfig['max_execution_time'];
+    $memoryLimit = $phpConfig['memory_limit'];
+    $maxInputTime = $phpConfig['max_input_time'];
+    
+    $phpChecks[] = [
+        'name' => 'max_execution_time',
+        'value' => $maxExecTime,
+        'status' => ($maxExecTime == 0 || $maxExecTime >= 1800) ? 'pass' : 'fail',
+        'message' => ($maxExecTime == 0 || $maxExecTime >= 1800) ? 'OK' : 'Should be 0 or >= 1800',
+        'description' => 'Maximum execution time for scripts'
+    ];
+    
+    if ($maxExecTime != 0 && $maxExecTime < 1800) {
+        $results['allGood'] = false;
+    }
+    
+    $phpChecks[] = [
+        'name' => 'memory_limit',
+        'value' => $memoryLimit,
+        'status' => (intval($memoryLimit) >= 256) ? 'pass' : 'fail',
+        'message' => (intval($memoryLimit) >= 256) ? 'OK' : 'Should be >= 256M',
+        'description' => 'Memory limit for PHP scripts'
+    ];
+    
+    if (intval($memoryLimit) < 256) {
+        $results['allGood'] = false;
+    }
+    
+    $phpChecks[] = [
+        'name' => 'max_input_time',
+        'value' => $maxInputTime,
+        'status' => (intval($maxInputTime) >= 300) ? 'pass' : 'fail',
+        'message' => (intval($maxInputTime) >= 300) ? 'OK' : 'Should be >= 300',
+        'description' => 'Maximum input time'
+    ];
+    
+    if (intval($maxInputTime) < 300) {
+        $results['allGood'] = false;
+    }
+    
+    $results['checks'][] = [
+        'category' => 'PHP Configuration',
+        'items' => $phpChecks
+    ];
+    
+    // Required Functions
+    $functions = [
+        'exec' => 'Execute system commands (npm install, npm build)',
+        'popen' => 'Start background processes (Windows)',
+        'pclose' => 'Close background processes',
+        'copy' => 'Copy files during clone',
+        'mkdir' => 'Create directories',
+        'scandir' => 'List directory contents',
+        'unlink' => 'Delete files',
+        'rmdir' => 'Delete directories',
+        'realpath' => 'Resolve file paths',
+        'file_exists' => 'Check file existence',
+        'is_dir' => 'Check if path is directory'
+    ];
+    
+    $functionChecks = [];
+    foreach ($functions as $func => $desc) {
+        $exists = function_exists($func);
+        $functionChecks[] = [
+            'name' => $func,
+            'value' => $exists ? 'enabled' : 'disabled',
+            'status' => $exists ? 'pass' : 'fail',
+            'message' => $exists ? 'ENABLED' : 'DISABLED',
+            'description' => $desc
+        ];
+        if (!$exists) {
+            $results['allGood'] = false;
+        }
+    }
+    
+    $results['checks'][] = [
+        'category' => 'Required PHP Functions',
+        'items' => $functionChecks
+    ];
+    
+    // Security Restrictions
+    $disableFunctions = ini_get('disable_functions');
+    $securityChecks = [];
+    if (!empty($disableFunctions)) {
+        $disabled = explode(',', $disableFunctions);
+        $disabled = array_map('trim', $disabled);
+        $critical = ['exec', 'popen', 'pclose', 'shell_exec', 'system'];
+        $found = array_intersect($critical, $disabled);
+        if (!empty($found)) {
+            $securityChecks[] = [
+                'name' => 'Critical Functions',
+                'value' => implode(', ', $found),
+                'status' => 'fail',
+                'message' => 'These functions are disabled: ' . implode(', ', $found),
+                'description' => 'Remove them from disable_functions in php.ini'
+            ];
+            $results['allGood'] = false;
+        } else {
+            $securityChecks[] = [
+                'name' => 'Critical Functions',
+                'value' => 'none',
+                'status' => 'pass',
+                'message' => 'No critical functions disabled',
+                'description' => 'All required functions are available'
+            ];
+        }
+    } else {
+        $securityChecks[] = [
+            'name' => 'Critical Functions',
+            'value' => 'none',
+            'status' => 'pass',
+            'message' => 'No functions disabled',
+            'description' => 'All required functions are available'
+        ];
+    }
+    
+    $results['checks'][] = [
+        'category' => 'Security Restrictions',
+        'items' => $securityChecks
+    ];
+    
+    // PHP Extensions
+    $extensions = [
+        'pdo_sqlite' => 'PDO SQLite support (database operations)',
+        'sqlite3' => 'SQLite3 support',
+        'json' => 'JSON encoding/decoding (status files)'
+    ];
+    
+    $extensionChecks = [];
+    foreach ($extensions as $ext => $desc) {
+        $loaded = extension_loaded($ext);
+        $extensionChecks[] = [
+            'name' => $ext,
+            'value' => $loaded ? 'loaded' : 'not loaded',
+            'status' => $loaded ? 'pass' : 'fail',
+            'message' => $loaded ? 'LOADED' : 'NOT LOADED',
+            'description' => $desc
+        ];
+        if (!$loaded) {
+            $results['allGood'] = false;
+        }
+    }
+    
+    $results['checks'][] = [
+        'category' => 'PHP Extensions',
+        'items' => $extensionChecks
+    ];
+    
+    // System Commands
+    $systemChecks = [];
+    exec('node --version 2>&1', $nodeOutput, $nodeReturn);
+    $nodeOk = ($nodeReturn === 0);
+    $systemChecks[] = [
+        'name' => 'Node.js',
+        'value' => $nodeOk ? implode(' ', $nodeOutput) : 'not found',
+        'status' => $nodeOk ? 'pass' : 'fail',
+        'message' => $nodeOk ? 'FOUND' : 'NOT FOUND',
+        'description' => 'Install Node.js and add to PATH'
+    ];
+    if (!$nodeOk) {
+        $results['allGood'] = false;
+    }
+    
+    exec('npm --version 2>&1', $npmOutput, $npmReturn);
+    $npmOk = ($npmReturn === 0);
+    $systemChecks[] = [
+        'name' => 'npm',
+        'value' => $npmOk ? implode(' ', $npmOutput) : 'not found',
+        'status' => $npmOk ? 'pass' : 'fail',
+        'message' => $npmOk ? 'FOUND' : 'NOT FOUND',
+        'description' => 'npm should come with Node.js installation'
+    ];
+    if (!$npmOk) {
+        $results['allGood'] = false;
+    }
+    
+    $results['checks'][] = [
+        'category' => 'System Commands',
+        'items' => $systemChecks
+    ];
+    
+    // File Permissions
+    $permissionChecks = [];
+    $testDir = __DIR__ . '/../test_write_' . time();
+    $writeOk = @mkdir($testDir, 0755, true);
+    if ($writeOk) {
+        @rmdir($testDir);
+        $permissionChecks[] = [
+            'name' => 'Write Permission',
+            'value' => 'ok',
+            'status' => 'pass',
+            'message' => 'OK',
+            'description' => 'Can create directories in project folder'
+        ];
+    } else {
+        $permissionChecks[] = [
+            'name' => 'Write Permission',
+            'value' => 'failed',
+            'status' => 'fail',
+            'message' => 'FAILED',
+            'description' => 'Check Apache user has write permissions to project directory'
+        ];
+        $results['allGood'] = false;
+    }
+    
+    // Check clone_worker.php
+    $workerPath = __DIR__ . '/clone_worker.php';
+    if (file_exists($workerPath)) {
+        $permissionChecks[] = [
+            'name' => 'clone_worker.php',
+            'value' => 'exists',
+            'status' => 'pass',
+            'message' => 'EXISTS',
+            'description' => 'Clone worker script found'
+        ];
+        if (is_readable($workerPath)) {
+            $permissionChecks[] = [
+                'name' => 'clone_worker.php readable',
+                'value' => 'yes',
+                'status' => 'pass',
+                'message' => 'OK',
+                'description' => 'Clone worker script is readable'
+            ];
+        } else {
+            $permissionChecks[] = [
+                'name' => 'clone_worker.php readable',
+                'value' => 'no',
+                'status' => 'fail',
+                'message' => 'FAILED',
+                'description' => 'Clone worker script is not readable'
+            ];
+            $results['allGood'] = false;
+        }
+    } else {
+        $permissionChecks[] = [
+            'name' => 'clone_worker.php',
+            'value' => 'not found',
+            'status' => 'fail',
+            'message' => 'NOT FOUND',
+            'description' => 'Clone worker script is missing'
+        ];
+        $results['allGood'] = false;
+    }
+    
+    $results['checks'][] = [
+        'category' => 'File Permissions',
+        'items' => $permissionChecks
+    ];
+    
+    // PHP CLI Check
+    $cliChecks = [];
+    $cliIni = shell_exec('php --ini 2>&1');
+    $cliChecks[] = [
+        'name' => 'PHP CLI',
+        'value' => php_sapi_name() === 'cli' ? 'CLI' : php_sapi_name(),
+        'status' => 'info',
+        'message' => php_sapi_name() === 'cli' ? 'Running via CLI' : 'Running via ' . php_sapi_name(),
+        'description' => php_sapi_name() === 'cli' ? 'OK' : 'Note: Clone worker runs via CLI, check CLI php.ini separately'
+    ];
+    $cliChecks[] = [
+        'name' => 'CLI php.ini',
+        'value' => 'info',
+        'status' => 'info',
+        'message' => 'See details below',
+        'description' => $cliIni ?: 'Could not determine CLI php.ini location'
+    ];
+    
+    $results['checks'][] = [
+        'category' => 'PHP CLI Configuration',
+        'items' => $cliChecks
+    ];
+    
+    sendJSON($results);
 }
 
 function deleteDirectory($dir) {
