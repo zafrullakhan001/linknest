@@ -233,7 +233,7 @@ function handleGetTiles() {
             ];
             
             // Get sections for this tab
-            $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tab_id = ? ORDER BY id');
+            $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tab_id = ? ORDER BY position ASC, id ASC');
             $sectionStmt->execute([$tabRow['id']]);
             
             while ($sectionRow = $sectionStmt->fetch()) {
@@ -244,6 +244,7 @@ function handleGetTiles() {
                     'visibleFrom' => $sectionRow['visible_from'] ?? null,
                     'expiresAt' => $sectionRow['expires_at'] ?? null,
                     'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
+                    'position' => isset($sectionRow['position']) ? (int)$sectionRow['position'] : 0,
                     'links' => []
                 ];
                 
