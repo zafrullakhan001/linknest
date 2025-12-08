@@ -129,10 +129,16 @@ function handleGetSettings() {
         if ($isEncrypted) {
             // Password is encrypted, decrypt it for display
             try {
-                $settings['ldap_bind_password'] = decryptPassword($password);
+                $decrypted = decryptPassword($password);
+                $settings['ldap_bind_password'] = $decrypted;
             } catch (Exception $e) {
-                // If decryption fails, assume it's plain text (backward compatibility)
-                // Keep the original value
+                // If decryption fails, log the error for debugging
+                error_log('Failed to decrypt LDAP bind password in settings: ' . $e->getMessage());
+                error_log('DB_PATH: ' . (defined('DB_PATH') ? DB_PATH : 'not defined'));
+                error_log('Password format: encrypted (length: ' . strlen($password) . ')');
+                // Keep the original encrypted value - don't show it in UI, show empty instead
+                // This prevents showing the long encrypted string to users
+                $settings['ldap_bind_password'] = '';
             }
         } else {
             // Password is plain text - encrypt it automatically and update the database

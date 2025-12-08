@@ -327,11 +327,21 @@ function handleLogin() {
             
             // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
             if (!empty($bindPass)) {
-                try {
-                    $bindPass = decryptPassword($bindPass);
-                } catch (Exception $e) {
-                    debug_log("LDAP: Failed to decrypt bind password: " . $e->getMessage());
-                    // If decryption fails, assume it's plain text (backward compatibility)
+                // Check if password is encrypted (contains dots in format: base64.base64.base64)
+                $isEncrypted = (strpos($bindPass, '.') !== false && substr_count($bindPass, '.') === 2);
+                if ($isEncrypted) {
+                    try {
+                        $bindPass = decryptPassword($bindPass);
+                        debug_log("LDAP: Password decrypted successfully");
+                    } catch (Exception $e) {
+                        debug_log("LDAP: Failed to decrypt bind password: " . $e->getMessage());
+                        debug_log("LDAP: DB_PATH: " . (defined('DB_PATH') ? DB_PATH : 'not defined'));
+                        debug_log("LDAP: Password length: " . strlen($bindPass));
+                        // If decryption fails, clear the password to prevent using corrupted data
+                        $bindPass = '';
+                    }
+                } else {
+                    debug_log("LDAP: Password is plain text (not encrypted)");
                 }
             }
             
@@ -1318,10 +1328,17 @@ function handleSearchLdapUsers() {
         
         // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
         if (!empty($bindPass)) {
-            try {
-                $bindPass = decryptPassword($bindPass);
-            } catch (Exception $e) {
-                // If decryption fails, assume it's plain text (backward compatibility)
+            // Check if password is encrypted (contains dots in format: base64.base64.base64)
+            $isEncrypted = (strpos($bindPass, '.') !== false && substr_count($bindPass, '.') === 2);
+            if ($isEncrypted) {
+                try {
+                    $bindPass = decryptPassword($bindPass);
+                } catch (Exception $e) {
+                    error_log("LDAP: Failed to decrypt bind password: " . $e->getMessage());
+                    error_log("LDAP: DB_PATH: " . (defined('DB_PATH') ? DB_PATH : 'not defined'));
+                    // If decryption fails, clear the password to prevent using corrupted data
+                    $bindPass = '';
+                }
             }
         }
         
@@ -1633,10 +1650,17 @@ function handleAddLdapUser() {
         
         // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
         if (!empty($bindPass)) {
-            try {
-                $bindPass = decryptPassword($bindPass);
-            } catch (Exception $e) {
-                // If decryption fails, assume it's plain text (backward compatibility)
+            // Check if password is encrypted (contains dots in format: base64.base64.base64)
+            $isEncrypted = (strpos($bindPass, '.') !== false && substr_count($bindPass, '.') === 2);
+            if ($isEncrypted) {
+                try {
+                    $bindPass = decryptPassword($bindPass);
+                } catch (Exception $e) {
+                    error_log("LDAP: Failed to decrypt bind password: " . $e->getMessage());
+                    error_log("LDAP: DB_PATH: " . (defined('DB_PATH') ? DB_PATH : 'not defined'));
+                    // If decryption fails, clear the password to prevent using corrupted data
+                    $bindPass = '';
+                }
             }
         }
         
@@ -1949,10 +1973,17 @@ function handleBulkImportLdapUsers() {
         
         // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
         if (!empty($bindPass)) {
-            try {
-                $bindPass = decryptPassword($bindPass);
-            } catch (Exception $e) {
-                // If decryption fails, assume it's plain text (backward compatibility)
+            // Check if password is encrypted (contains dots in format: base64.base64.base64)
+            $isEncrypted = (strpos($bindPass, '.') !== false && substr_count($bindPass, '.') === 2);
+            if ($isEncrypted) {
+                try {
+                    $bindPass = decryptPassword($bindPass);
+                } catch (Exception $e) {
+                    error_log("LDAP: Failed to decrypt bind password: " . $e->getMessage());
+                    error_log("LDAP: DB_PATH: " . (defined('DB_PATH') ? DB_PATH : 'not defined'));
+                    // If decryption fails, clear the password to prevent using corrupted data
+                    $bindPass = '';
+                }
             }
         }
         

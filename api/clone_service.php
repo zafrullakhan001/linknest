@@ -81,13 +81,15 @@ class CloneService {
         }
         
         // Handle plain text passwords (for backward compatibility)
-        if (strpos($encryptedPassword, '.') === false) {
+        // Encrypted passwords have exactly 2 dots in format: base64(iv).base64(tag).base64(encrypted)
+        if (strpos($encryptedPassword, '.') === false || substr_count($encryptedPassword, '.') !== 2) {
+            // This is plain text, return as-is
             return $encryptedPassword;
         }
         
         $parts = explode('.', $encryptedPassword, 3);
         if (count($parts) !== 3) {
-            throw new Exception('Invalid encrypted password format');
+            throw new Exception('Invalid encrypted password format - expected 3 parts separated by dots');
         }
         
         $iv = base64_decode($parts[0], true);
@@ -95,10 +97,18 @@ class CloneService {
         $encrypted = base64_decode($parts[2], true);
         
         if ($iv === false || $tag === false || $encrypted === false) {
-            throw new Exception('Invalid base64 encoding in encrypted password');
+            throw new Exception('Invalid base64 encoding in encrypted password parts');
+        }
+        
+        if (empty($iv) || empty($tag) || empty($encrypted)) {
+            throw new Exception('One or more encrypted password parts are empty after base64 decoding');
         }
         
         $key = $this->getEncryptionKeyForDb($dbPath);
+        if (empty($key) || strlen($key) !== 32) {
+            throw new Exception('Invalid encryption key generated (expected 32 bytes)');
+        }
+        
         $decrypted = openssl_decrypt(
             $encrypted,
             'aes-256-gcm',
@@ -109,7 +119,7 @@ class CloneService {
         );
         
         if ($decrypted === false) {
-            throw new Exception('Decryption failed - invalid key or corrupted data');
+            throw new Exception('Decryption failed - invalid key or corrupted data. Database path: ' . $dbPath);
         }
         
         return $decrypted;
@@ -545,33 +555,53 @@ class CloneService {
                         $sourceDb = new PDO('sqlite:' . $srcDb);
                         $sourceDb->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
                         
-                        $stmt = $sourceDb->prepare('SELECT value FROM settings WHERE key = ?');
-                        $stmt->execute(['ldap_bind_password']);
-                        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-                        
-                        if ($row && !empty($row['value'])) {
-                            $encryptedPassword = $row['value'];
-                            $this->writeTraceLog("Found LDAP password in source database", 'DEBUG');
-                            
-                            // Check if password is encrypted (contains dots in format: base64.base64.base64)
-                            $isEncrypted = (strpos($encryptedPassword, '.') !== false && substr_count($encryptedPassword, '.') === 2);
-                            
-                            if ($isEncrypted) {
-                                // Decrypt using source database's encryption key
-                                $plainLdapPassword = $this->decryptPasswordForDb($encryptedPassword, $srcDb);
-                                $this->writeTraceLog("LDAP password decrypted from source database", 'INFO');
-                            } else {
-                                // Password is plain text
-                                $plainLdapPassword = $encryptedPassword;
-                                $this->writeTraceLog("LDAP password is plain text in source database", 'DEBUG');
-                            }
+                        // Check if settings table exists
+                        $checkStmt = $sourceDb->query("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'");
+                        if (!$checkStmt || !$checkStmt->fetch()) {
+                            $this->writeTraceLog("Settings table not found in source database", 'WARNING');
+                            $sourceDb = null;
                         } else {
-                            $this->writeTraceLog("No LDAP password found in source database", 'DEBUG');
+                            $stmt = $sourceDb->prepare('SELECT value FROM settings WHERE key = ?');
+                            $stmt->execute(['ldap_bind_password']);
+                            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+                            
+                            if ($row && !empty($row['value'])) {
+                                $encryptedPassword = $row['value'];
+                                $this->writeTraceLog("Found LDAP password in source database (length: " . strlen($encryptedPassword) . ")", 'INFO');
+                                
+                                // Check if password is encrypted (contains dots in format: base64.base64.base64)
+                                $isEncrypted = (strpos($encryptedPassword, '.') !== false && substr_count($encryptedPassword, '.') === 2);
+                                
+                                if ($isEncrypted) {
+                                    try {
+                                        // Decrypt using source database's encryption key
+                                        $plainLdapPassword = $this->decryptPasswordForDb($encryptedPassword, $srcDb);
+                                        if (!empty($plainLdapPassword)) {
+                                            $this->writeTraceLog("LDAP password decrypted successfully from source database (length: " . strlen($plainLdapPassword) . ")", 'INFO');
+                                        } else {
+                                            $this->writeTraceLog("WARNING: Decrypted password is empty", 'WARNING');
+                                        }
+                                    } catch (Exception $decryptEx) {
+                                        $this->writeTraceLog("ERROR: Failed to decrypt password from source: " . $decryptEx->getMessage(), 'ERROR');
+                                        $this->writeTraceLog("Stack trace: " . $decryptEx->getTraceAsString(), 'ERROR');
+                                        // Try to use it as plain text if decryption fails (might be corrupted)
+                                        $plainLdapPassword = $encryptedPassword;
+                                        $this->writeTraceLog("WARNING: Using password as-is (decryption failed, may be corrupted)", 'WARNING');
+                                    }
+                                } else {
+                                    // Password is plain text
+                                    $plainLdapPassword = $encryptedPassword;
+                                    $this->writeTraceLog("LDAP password is plain text in source database (length: " . strlen($plainLdapPassword) . ")", 'INFO');
+                                }
+                            } else {
+                                $this->writeTraceLog("No LDAP password found in source database (empty or not set)", 'INFO');
+                            }
+                            $sourceDb = null; // Close connection
                         }
-                        $sourceDb = null; // Close connection
                     } catch (Exception $e) {
-                        $this->writeTraceLog("WARNING: Failed to extract LDAP password from source: " . $e->getMessage(), 'WARNING');
-                        $logs = $this->addLog("WARNING: Could not extract LDAP password from source database", $logs);
+                        $this->writeTraceLog("ERROR: Failed to extract LDAP password from source: " . $e->getMessage(), 'ERROR');
+                        $this->writeTraceLog("Stack trace: " . $e->getTraceAsString(), 'ERROR');
+                        $logs = $this->addLog("ERROR: Could not extract LDAP password from source database: " . $e->getMessage(), $logs);
                     }
                     
                     $dbCopyStart = microtime(true);
@@ -605,31 +635,93 @@ class CloneService {
                                 $logs = $this->addLog("Clones table not found in target database (skipping)", $logs);
                             }
                             // Re-encrypt LDAP password with target database's encryption key
-                            if ($plainLdapPassword !== null) {
+                            if ($plainLdapPassword !== null && !empty(trim($plainLdapPassword))) {
                                 try {
                                     $this->writeTraceLog("Re-encrypting LDAP password for target database...", 'INFO');
                                     $logs = $this->addLog("Re-encrypting LDAP password...", $logs);
                                     
+                                    // Ensure settings table exists
+                                    $checkSettingsStmt = $targetDb->query("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'");
+                                    if (!$checkSettingsStmt || !$checkSettingsStmt->fetch()) {
+                                        $this->writeTraceLog("Creating settings table in target database", 'INFO');
+                                        $targetDb->exec('CREATE TABLE IF NOT EXISTS settings (
+                                            key TEXT PRIMARY KEY,
+                                            value TEXT,
+                                            updated_at INTEGER
+                                        )');
+                                    }
+                                    
                                     // Encrypt using target database's encryption key
                                     $encryptedPassword = $this->encryptPasswordForDb($plainLdapPassword, $destDb);
+                                    $this->writeTraceLog("Password encrypted for target database (encrypted length: " . strlen($encryptedPassword) . ")", 'DEBUG');
                                     
                                     // Update the password in target database
                                     $updateStmt = $targetDb->prepare('UPDATE settings SET value = ?, updated_at = ? WHERE key = ?');
                                     $updateStmt->execute([$encryptedPassword, time(), 'ldap_bind_password']);
                                     
                                     if ($updateStmt->rowCount() > 0) {
-                                        $this->writeTraceLog("LDAP password re-encrypted successfully for target database", 'INFO');
+                                        $this->writeTraceLog("LDAP password updated successfully in target database", 'INFO');
                                         $logs = $this->addLog("LDAP password re-encrypted successfully", $logs);
+                                        
+                                        // Verify the password was saved correctly and can be decrypted
+                                        $verifyStmt = $targetDb->prepare('SELECT value FROM settings WHERE key = ?');
+                                        $verifyStmt->execute(['ldap_bind_password']);
+                                        $verifyRow = $verifyStmt->fetch(PDO::FETCH_ASSOC);
+                                        if ($verifyRow && $verifyRow['value'] === $encryptedPassword) {
+                                            $this->writeTraceLog("Password verification successful - password correctly stored", 'INFO');
+                                            // Try to decrypt it back to verify it works
+                                            try {
+                                                $decryptedTest = $this->decryptPasswordForDb($encryptedPassword, $destDb);
+                                                if ($decryptedTest === $plainLdapPassword) {
+                                                    $this->writeTraceLog("Password decryption test successful - encryption/decryption working correctly", 'INFO');
+                                                } else {
+                                                    $this->writeTraceLog("WARNING: Password decryption test failed - decrypted value doesn't match original", 'WARNING');
+                                                }
+                                            } catch (Exception $decryptTestEx) {
+                                                $this->writeTraceLog("ERROR: Password decryption test failed: " . $decryptTestEx->getMessage(), 'ERROR');
+                                            }
+                                        } else {
+                                            $this->writeTraceLog("WARNING: Password verification failed - stored value may be incorrect", 'WARNING');
+                                        }
                                     } else {
                                         // Password might not exist in target, insert it
+                                        $this->writeTraceLog("Password not found in target, inserting new record", 'INFO');
                                         $insertStmt = $targetDb->prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
                                         $insertStmt->execute(['ldap_bind_password', $encryptedPassword, time()]);
                                         $this->writeTraceLog("LDAP password inserted into target database", 'INFO');
                                         $logs = $this->addLog("LDAP password inserted into target database", $logs);
+                                        
+                                        // Verify the password was inserted correctly and can be decrypted
+                                        $verifyStmt = $targetDb->prepare('SELECT value FROM settings WHERE key = ?');
+                                        $verifyStmt->execute(['ldap_bind_password']);
+                                        $verifyRow = $verifyStmt->fetch(PDO::FETCH_ASSOC);
+                                        if ($verifyRow && $verifyRow['value'] === $encryptedPassword) {
+                                            $this->writeTraceLog("Password verification successful - password correctly stored", 'INFO');
+                                            // Try to decrypt it back to verify it works
+                                            try {
+                                                $decryptedTest = $this->decryptPasswordForDb($encryptedPassword, $destDb);
+                                                if ($decryptedTest === $plainLdapPassword) {
+                                                    $this->writeTraceLog("Password decryption test successful - encryption/decryption working correctly", 'INFO');
+                                                } else {
+                                                    $this->writeTraceLog("WARNING: Password decryption test failed - decrypted value doesn't match original", 'WARNING');
+                                                }
+                                            } catch (Exception $decryptTestEx) {
+                                                $this->writeTraceLog("ERROR: Password decryption test failed: " . $decryptTestEx->getMessage(), 'ERROR');
+                                            }
+                                        } else {
+                                            $this->writeTraceLog("WARNING: Password verification failed after insert", 'WARNING');
+                                        }
                                     }
                                 } catch (Exception $e) {
                                     $this->writeTraceLog("ERROR: Failed to re-encrypt LDAP password: " . $e->getMessage(), 'ERROR');
+                                    $this->writeTraceLog("Stack trace: " . $e->getTraceAsString(), 'ERROR');
                                     $logs = $this->addLog("ERROR: Failed to re-encrypt LDAP password: " . $e->getMessage(), $logs);
+                                }
+                            } else {
+                                if ($plainLdapPassword === null) {
+                                    $this->writeTraceLog("Skipping LDAP password migration - no password found in source database", 'INFO');
+                                } else {
+                                    $this->writeTraceLog("WARNING: Skipping LDAP password migration - password is empty", 'WARNING');
                                 }
                             }
                             
