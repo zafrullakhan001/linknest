@@ -386,20 +386,29 @@ function handleUpdateSettings() {
                 $value = preg_replace('#^/[^/]+/uploads/#', '/uploads/', $value);
             }
             
-            // Encrypt LDAP bind password if it's plain text (not already encrypted)
-            if ($key === 'ldap_bind_password' && !empty($value)) {
-                // Check if password is already encrypted (encrypted passwords contain dots)
-                // Plain text passwords won't have the encrypted format: base64(iv).base64(tag).base64(encrypted)
-                if (strpos($value, '.') === false || substr_count($value, '.') !== 2) {
-                    // Password is plain text, encrypt it
-                    try {
-                        $value = encryptPassword($value);
-                    } catch (Exception $e) {
-                        // If encryption fails, log error but continue (don't break the save)
-                        error_log('Failed to encrypt LDAP bind password: ' . $e->getMessage());
+            // Handle LDAP bind password - encrypt if provided, clear if empty
+            if ($key === 'ldap_bind_password') {
+                // Normalize empty values (null, empty string, whitespace-only)
+                $trimmedValue = is_string($value) ? trim($value) : '';
+                if (empty($value) || $trimmedValue === '') {
+                    // Password is empty - clear it from database (set to empty string)
+                    // This will remove the old encrypted password
+                    $value = '';
+                } else {
+                    // Password is provided - encrypt if it's plain text (not already encrypted)
+                    // Check if password is already encrypted (encrypted passwords contain dots)
+                    // Plain text passwords won't have the encrypted format: base64(iv).base64(tag).base64(encrypted)
+                    if (strpos($value, '.') === false || substr_count($value, '.') !== 2) {
+                        // Password is plain text, encrypt it
+                        try {
+                            $value = encryptPassword($value);
+                        } catch (Exception $e) {
+                            // If encryption fails, log error but continue (don't break the save)
+                            error_log('Failed to encrypt LDAP bind password: ' . $e->getMessage());
+                        }
                     }
+                    // If password already contains dots in the right format, assume it's already encrypted
                 }
-                // If password already contains dots in the right format, assume it's already encrypted
             }
             
             $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
