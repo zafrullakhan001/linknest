@@ -847,6 +847,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [isLoadingArchive, setIsLoadingArchive] = useState(false);
   const [favoriteLinks, setFavoriteLinks] = useState<FavoriteLink[]>([]);
   const [isLoadingFavoriteLinks, setIsLoadingFavoriteLinks] = useState(false);
+  const [favLinksSort, setFavLinksSort] = useState<'default' | 'asc'>('default');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // New Tile Form State
@@ -3582,6 +3583,26 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 <span className="text-sm text-slate-500 dark:text-slate-400">({favoriteLinks.length})</span>
               </div>
 
+            </div>
+
+            <div className="flex items-center gap-4">
+              {/* Sort Controls */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 dark:text-slate-400">Sort:</span>
+                <button
+                  onClick={() => setFavLinksSort(prev => prev === 'default' ? 'asc' : 'default')}
+                  className={`p-1.5 rounded-lg transition-all ${favLinksSort === 'asc'
+                    ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 ring-1 ring-brand-500/20'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                    }`}
+                  title={favLinksSort === 'asc' ? "Sorted alphabetically (Click to reset)" : "Sort alphabetically"}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path fillRule="evenodd" d="M2.24 6.8a.75.75 0 001.06-.04l1.95-2.1v8.59a.75.75 0 001.5 0V4.66l1.95 2.1a.75.75 0 101.1-1.02l-3.25-3.5a.75.75 0 00-1.1 0L2.2 5.74a.75.75 0 00.04 1.06zm8 4a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0-4a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0 8a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+
               {/* Reorder Controls */}
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500 dark:text-slate-400">Position:</span>
@@ -3615,103 +3636,110 @@ export const TileGrid: React.FC<TileGridProps> = ({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              {favoriteLinks.map((link) => {
-                // Resolve effective browser (Link specific > Tile default > System default)
-                const parentTile = tiles.find(t => t.id === link.tile.id);
-                const browserToUse = (link.browser && link.browser !== 'default')
-                  ? link.browser
-                  : (parentTile?.browser && parentTile.browser !== 'default' ? parentTile.browser : null);
+              {[...favoriteLinks]
+                .sort((a, b) => {
+                  if (favLinksSort === 'asc') {
+                    return a.label.localeCompare(b.label);
+                  }
+                  return 0;
+                })
+                .map((link) => {
+                  // Resolve effective browser (Link specific > Tile default > System default)
+                  const parentTile = tiles.find(t => t.id === link.tile.id);
+                  const browserToUse = (link.browser && link.browser !== 'default')
+                    ? link.browser
+                    : (parentTile?.browser && parentTile.browser !== 'default' ? parentTile.browser : null);
 
-                return (
-                  <div
-                    key={link.id}
-                    className="group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer"
-                    onClick={(e) => {
-                      // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
-                      if (e.ctrlKey || e.metaKey) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
-                        if (newWindow) newWindow.focus();
-                        return;
-                      }
+                  return (
+                    <div
+                      key={link.id}
+                      className="group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer"
+                      onClick={(e) => {
+                        // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
+                        if (e.ctrlKey || e.metaKey) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
+                          if (newWindow) newWindow.focus();
+                          return;
+                        }
 
-                      if (settings.browser_specific_links_enabled === '1' && browserToUse) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        openLinkInBrowser(link.url, browserToUse);
-                        return;
-                      }
+                        if (settings.browser_specific_links_enabled === '1' && browserToUse) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openLinkInBrowser(link.url, browserToUse);
+                          return;
+                        }
 
-                      // Default behavior
-                      window.open(link.url, '_blank');
-                    }}
-                  >
-                    {/* Health Status Indicator */}
-                    {link.health && (
-                      <div className="shrink-0">
-                        <div
-                          className={`w-2 h-2 rounded-full ${linkHealthService.getHealthColor(link.health.status)}`}
-                          title={`${linkHealthService.getHealthLabel(link.health.status)}${link.health.error ? `: ${link.health.error}` : ''}`}
-                        />
-                      </div>
-                    )}
-
-                    {/* Link Icon */}
-                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 text-lg border border-slate-200 dark:border-slate-700">
-                      {link.icon || '🔗'}
-                    </div>
-
-                    {/* Link Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-sm text-slate-900 dark:text-white truncate group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
-                        {link.label}
-                      </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                        {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
-                      </div>
-                      {/* Browser Indicator */}
-                      {settings.browser_specific_links_enabled === '1' && browserToUse && (
-                        <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors mt-0.5">
-                          ({formatBrowserName(browserToUse)} browser)
+                        // Default behavior
+                        window.open(link.url, '_blank');
+                      }}
+                    >
+                      {/* Health Status Indicator */}
+                      {link.health && (
+                        <div className="shrink-0">
+                          <div
+                            className={`w-2 h-2 rounded-full ${linkHealthService.getHealthColor(link.health.status)}`}
+                            title={`${linkHealthService.getHealthLabel(link.health.status)}${link.health.error ? `: ${link.health.error}` : ''}`}
+                          />
                         </div>
                       )}
-                      {/* Parent Tile Info */}
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <span className="text-xs">{link.tile.emoji}</span>
-                        <span className="text-xs text-slate-400 dark:text-slate-500 truncate">{link.tile.title}</span>
-                      </div>
-                    </div>
 
-                    {/* Unfavorite Button */}
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (isAuthenticated) {
-                          const { toggleLinkFavorite } = await import('../services/storageService');
-                          await toggleLinkFavorite(link.id);
-                          const links = await getFavoriteLinks();
-                          setFavoriteLinks(links);
-                        } else {
-                          togglePublicLinkFavorite(link.id);
-                          const favIds = getPublicLinkFavorites();
-                          const newLinks: FavoriteLink[] = [];
-                          tiles.forEach(t => t.sections?.forEach(s => s.links?.forEach(l => {
-                            if (favIds.includes(l.id)) newLinks.push({ id: l.id, label: l.label, url: l.url, icon: l.icon, textColor: l.textColor, visibility: l.visibility, notes: l.notes, tooltip: l.tooltip, browser: l.browser, isFavorite: true, health: l.health, tile: { id: t.id, title: t.title, emoji: t.emoji || '✨', themeColor: t.themeColor || 'blue' } });
-                          })));
-                          setFavoriteLinks(newLinks);
-                        }
-                      }}
-                      className="absolute top-2 right-2 p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all z-10"
-                      title="Remove from favorites"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                        <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
-                      </svg>
-                    </button>
-                  </div>
-                );
-              })}
+                      {/* Link Icon */}
+                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 text-lg border border-slate-200 dark:border-slate-700">
+                        {link.icon || '🔗'}
+                      </div>
+
+                      {/* Link Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm text-slate-900 dark:text-white truncate group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                          {link.label}
+                        </div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                          {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
+                        </div>
+                        {/* Browser Indicator */}
+                        {settings.browser_specific_links_enabled === '1' && browserToUse && (
+                          <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors mt-0.5">
+                            ({formatBrowserName(browserToUse)} browser)
+                          </div>
+                        )}
+                        {/* Parent Tile Info */}
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span className="text-xs">{link.tile.emoji}</span>
+                          <span className="text-xs text-slate-400 dark:text-slate-500 truncate">{link.tile.title}</span>
+                        </div>
+                      </div>
+
+                      {/* Unfavorite Button */}
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (isAuthenticated) {
+                            const { toggleLinkFavorite } = await import('../services/storageService');
+                            await toggleLinkFavorite(link.id);
+                            const links = await getFavoriteLinks();
+                            setFavoriteLinks(links);
+                          } else {
+                            togglePublicLinkFavorite(link.id);
+                            const favIds = getPublicLinkFavorites();
+                            const newLinks: FavoriteLink[] = [];
+                            tiles.forEach(t => t.sections?.forEach(s => s.links?.forEach(l => {
+                              if (favIds.includes(l.id)) newLinks.push({ id: l.id, label: l.label, url: l.url, icon: l.icon, textColor: l.textColor, visibility: l.visibility, notes: l.notes, tooltip: l.tooltip, browser: l.browser, isFavorite: true, health: l.health, tile: { id: t.id, title: t.title, emoji: t.emoji || '✨', themeColor: t.themeColor || 'blue' } });
+                            })));
+                            setFavoriteLinks(newLinks);
+                          }
+                        }}
+                        className="absolute top-2 right-2 p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all z-10"
+                        title="Remove from favorites"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
+                  );
+                })}
             </div>
           </div>
         );

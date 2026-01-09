@@ -63,6 +63,15 @@ if %ERRORLEVEL% NEQ 0 (
 echo ✅ Refresh complete!
 echo.
 
+REM 4. Cleanup
+echo 🧹 Step 4: Cleaning up intermediate build artifacts...
+echo    Removing dangling images...
+docker image prune -f
+echo    Removing unused build cache (frees space from --no-cache builds)...
+docker builder prune -f
+echo ✅ Cleanup complete.
+echo.
+
 echo 📍 LinkNest is running at:
 echo    HTTP:  http://localhost:8090
 echo    HTTPS: https://localhost:8443
