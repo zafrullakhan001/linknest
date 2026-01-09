@@ -4,156 +4,156 @@
     "message": "Clone completed successfully!",
     "logs": [
         {
-            "time": "2025-12-08 02:41:03",
+            "time": "2025-12-08 13:06:59",
             "message": "Starting clone operation for: arch"
         },
         {
-            "time": "2025-12-08 02:41:03",
+            "time": "2025-12-08 13:06:59",
             "message": "Source: C:\\xampp\\htdocs\\linknest"
         },
         {
-            "time": "2025-12-08 02:41:03",
+            "time": "2025-12-08 13:06:59",
             "message": "Target: C:\\xampp\\htdocs\\arch"
         },
         {
-            "time": "2025-12-08 02:41:03",
+            "time": "2025-12-08 13:06:59",
             "message": "Target directory created"
         },
         {
-            "time": "2025-12-08 02:41:03",
+            "time": "2025-12-08 13:06:59",
             "message": "Copying root files..."
         },
         {
-            "time": "2025-12-08 02:41:03",
+            "time": "2025-12-08 13:06:59",
             "message": "Copied 21 root files"
         },
         {
-            "time": "2025-12-08 02:41:03",
+            "time": "2025-12-08 13:06:59",
             "message": "Copying api directory..."
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:06:59",
             "message": "Copying components directory..."
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:06:59",
             "message": "Copying contexts directory..."
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:06:59",
             "message": "Copying services directory..."
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:06:59",
             "message": "Copying src directory..."
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:06:59",
             "message": "Copying docker directory..."
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:07:00",
             "message": "Copying docs directory..."
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:07:00",
             "message": "Copying land directory..."
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:07:00",
             "message": "Created data directory"
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:07:00",
             "message": "Created uploads directory"
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:07:00",
             "message": "Created scripts directory"
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:07:00",
             "message": "Copying scripts..."
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:07:00",
             "message": "Copied 27 script files"
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:07:00",
             "message": "Copying assets..."
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:07:00",
             "message": "Copied 4 asset files"
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:07:00",
             "message": "Copying database..."
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:07:00",
             "message": "Database copied successfully"
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:07:00",
             "message": "Removing clone records from target database..."
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:07:00",
             "message": "Removed 1 clone record(s) from target database"
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:07:00",
             "message": "Re-encrypting LDAP password..."
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:07:00",
             "message": "LDAP password re-encrypted successfully"
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:07:00",
             "message": "Creating .env file..."
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:07:00",
             "message": "Created .env with VITE_BASE_PATH=\/arch"
         },
         {
-            "time": "2025-12-08 02:41:04",
+            "time": "2025-12-08 13:07:00",
             "message": "Installing npm dependencies (this may take a few minutes)..."
         },
         {
-            "time": "2025-12-08 02:41:08",
+            "time": "2025-12-08 13:07:04",
             "message": "npm install completed successfully"
         },
         {
-            "time": "2025-12-08 02:41:08",
+            "time": "2025-12-08 13:07:04",
             "message": "Building application (this may take a few minutes)..."
         },
         {
-            "time": "2025-12-08 02:41:15",
+            "time": "2025-12-08 13:07:10",
             "message": "Build completed successfully"
         },
         {
-            "time": "2025-12-08 02:41:23",
+            "time": "2025-12-08 13:07:18",
             "message": "Cleaned up node_modules"
         },
         {
-            "time": "2025-12-08 02:41:23",
+            "time": "2025-12-08 13:07:18",
             "message": "Creating deployment README..."
         },
         {
-            "time": "2025-12-08 02:41:23",
+            "time": "2025-12-08 13:07:18",
             "message": "Clone completed successfully!"
         },
         {
-            "time": "2025-12-08 02:41:23",
+            "time": "2025-12-08 13:07:18",
             "message": "URL: http:\/\/localhost\/arch\/"
         }
     ],
-    "timestamp": 1765158083,
+    "timestamp": 1765195638,
     "memory_usage": "2 MB",
     "peak_memory": "2 MB",
-    "elapsed_time": "19.66"
+    "elapsed_time": "18.88"
 }
