@@ -14,6 +14,8 @@ switch ($method) {
     case 'GET':
         if ($path === '' || $path === '/') {
             handleGetTiles();
+        } elseif ($path === '/favorites/links' || $path === '/favorites/links/') {
+            handleGetFavoriteLinks();
         } elseif ($path === '/favorites') {
             handleGetFavorites();
         } elseif ($path === '/recycle-bin') {
@@ -40,6 +42,8 @@ switch ($method) {
             handleUnarchiveCategory(urldecode($matches[1]));
         } elseif (preg_match('#^/category/([^/]+)/favorite$#', $path, $matches)) {
             handleToggleCategoryFavorite($matches[1]);
+        } elseif (preg_match('#^/link/([^/]+)/favorite$#', $path, $matches)) {
+            handleToggleLinkFavorite($matches[1]);
         } elseif (preg_match('#^/([^/]+)/favorite$#', $path, $matches)) {
             handleToggleFavorite($matches[1]);
         } elseif (preg_match('#^/([^/]+)/clone$#', $path, $matches)) {
@@ -249,8 +253,14 @@ function handleGetTiles() {
                 ];
                 
                 // Get links for this section with visibility filtering
-                $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ? ORDER BY position ASC, id ASC');
-                $linkStmt->execute([$sectionRow['id']]);
+                $user = getAuthenticatedUser();
+                if ($user) {
+                    $linkStmt = $db->prepare('SELECT links.*, (SELECT 1 FROM user_link_favorites WHERE user_id = ? AND link_id = links.id) as is_favorite FROM links WHERE section_id = ? ORDER BY position ASC, id ASC');
+                    $linkStmt->execute([$user['id'], $sectionRow['id']]);
+                } else {
+                    $linkStmt = $db->prepare('SELECT *, 0 as is_favorite FROM links WHERE section_id = ? ORDER BY position ASC, id ASC');
+                    $linkStmt->execute([$sectionRow['id']]);
+                }
                 
                 while ($linkRow = $linkStmt->fetch()) {
                     // Filter links based on visibility
@@ -288,6 +298,7 @@ function handleGetTiles() {
                         'visibleFrom' => isset($linkRow['visible_from']) ? $linkRow['visible_from'] : null,
                         'expiresAt' => isset($linkRow['expires_at']) ? $linkRow['expires_at'] : null,
                         'browser' => isset($linkRow['browser']) ? $linkRow['browser'] : null,
+                        'isFavorite' => (bool)($linkRow['is_favorite'] ?? false),
                         'position' => (int)($linkRow['position'] ?? 0)
                     ];
                     
@@ -339,8 +350,14 @@ function handleGetTiles() {
                         'links' => []
                     ];
                     
-                    $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ? ORDER BY position ASC, id ASC');
-                    $linkStmt->execute([$sectionRow['id']]);
+                    $user = getAuthenticatedUser();
+                    if ($user) {
+                        $linkStmt = $db->prepare('SELECT links.*, (SELECT 1 FROM user_link_favorites WHERE user_id = ? AND link_id = links.id) as is_favorite FROM links WHERE section_id = ? ORDER BY position ASC, id ASC');
+                        $linkStmt->execute([$user['id'], $sectionRow['id']]);
+                    } else {
+                        $linkStmt = $db->prepare('SELECT *, 0 as is_favorite FROM links WHERE section_id = ? ORDER BY position ASC, id ASC');
+                        $linkStmt->execute([$sectionRow['id']]);
+                    }
                     
                     while ($linkRow = $linkStmt->fetch()) {
                         $visibility = $linkRow['visibility'] ?? 'public';
@@ -372,6 +389,7 @@ function handleGetTiles() {
                             'notes' => $linkRow['notes'] ?? null,
                             'tooltip' => $linkRow['tooltip'] ?? null,
                             'browser' => $linkRow['browser'] ?? null,
+                            'isFavorite' => (bool)($linkRow['is_favorite'] ?? false),
                             'position' => (int)($linkRow['position'] ?? 0)
                         ];
                         
@@ -689,8 +707,13 @@ function handleGetTile($tileId) {
             
             // Get links with visibility filtering
             $user = getAuthenticatedUser();
-            $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ? ORDER BY position ASC, id ASC');
-            $linkStmt->execute([$sectionRow['id']]);
+            if ($user) {
+                $linkStmt = $db->prepare('SELECT links.*, (SELECT 1 FROM user_link_favorites WHERE user_id = ? AND link_id = links.id) as is_favorite FROM links WHERE section_id = ? ORDER BY position ASC, id ASC');
+                $linkStmt->execute([$user['id'], $sectionRow['id']]);
+            } else {
+                $linkStmt = $db->prepare('SELECT *, 0 as is_favorite FROM links WHERE section_id = ? ORDER BY position ASC, id ASC');
+                $linkStmt->execute([$sectionRow['id']]);
+            }
             
             while ($linkRow = $linkStmt->fetch()) {
                 // Filter links based on visibility
@@ -727,6 +750,7 @@ function handleGetTile($tileId) {
                     'visibleFrom' => isset($linkRow['visible_from']) ? $linkRow['visible_from'] : null,
                     'expiresAt' => isset($linkRow['expires_at']) ? $linkRow['expires_at'] : null,
                     'browser' => isset($linkRow['browser']) ? $linkRow['browser'] : null,
+                    'isFavorite' => (bool)($linkRow['is_favorite'] ?? false),
                     'position' => (int)($linkRow['position'] ?? 0)
                 ];
                 
@@ -784,8 +808,14 @@ function handleGetTile($tileId) {
                 ];
                 
                 $user = getAuthenticatedUser();
-                $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ? ORDER BY position ASC, id ASC');
-                $linkStmt->execute([$sectionRow['id']]);
+                $user = getAuthenticatedUser();
+                if ($user) {
+                    $linkStmt = $db->prepare('SELECT links.*, (SELECT 1 FROM user_link_favorites WHERE user_id = ? AND link_id = links.id) as is_favorite FROM links WHERE section_id = ? ORDER BY position ASC, id ASC');
+                    $linkStmt->execute([$user['id'], $sectionRow['id']]);
+                } else {
+                    $linkStmt = $db->prepare('SELECT *, 0 as is_favorite FROM links WHERE section_id = ? ORDER BY position ASC, id ASC');
+                    $linkStmt->execute([$sectionRow['id']]);
+                }
                 
                 while ($linkRow = $linkStmt->fetch()) {
                     $visibility = $linkRow['visibility'] ?? 'public';
@@ -2269,6 +2299,38 @@ function handleToggleFavorite($tileId) {
     }
 }
 
+function handleToggleLinkFavorite($linkId) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Verify link exists
+    $checkStmt = $db->prepare('SELECT id FROM links WHERE id = ?');
+    $checkStmt->execute([$linkId]);
+    $link = $checkStmt->fetch();
+    
+    if (!$link) {
+        sendJSON(['error' => 'Link not found'], 404);
+        return;
+    }
+    
+    // Check if already favorited
+    $favStmt = $db->prepare('SELECT 1 FROM user_link_favorites WHERE user_id = ? AND link_id = ?');
+    $favStmt->execute([$user['id'], $linkId]);
+    $isFavorite = $favStmt->fetch() !== false;
+    
+    if ($isFavorite) {
+        // Remove from favorites
+        $deleteStmt = $db->prepare('DELETE FROM user_link_favorites WHERE user_id = ? AND link_id = ?');
+        $deleteStmt->execute([$user['id'], $linkId]);
+        sendJSON(['success' => true, 'isFavorite' => false]);
+    } else {
+        // Add to favorites
+        $insertStmt = $db->prepare('INSERT INTO user_link_favorites (user_id, link_id, created_at) VALUES (?, ?, ?)');
+        $insertStmt->execute([$user['id'], $linkId, time()]);
+        sendJSON(['success' => true, 'isFavorite' => true]);
+    }
+}
+
 function handleArchiveCategory($categoryName) {
     $user = requireAuth();
     $db = getDB();
@@ -2484,6 +2546,7 @@ function handleToggleCategoryFavorite($categoryName) {
     }
 }
 
+
 function handleGetFavorites() {
     $user = requireAuth();
     $db = getDB();
@@ -2496,8 +2559,79 @@ function handleGetFavorites() {
         $favoriteTileIds[] = $row['tile_id'];
     }
     
-    sendJSON(['favoriteTileIds' => $favoriteTileIds]);
+    // Get all favorited link IDs for this user
+    $stmt = $db->prepare('SELECT link_id FROM user_link_favorites WHERE user_id = ? ORDER BY created_at DESC');
+    $stmt->execute([$user['id']]);
+    $favoriteLinkIds = [];
+    while ($row = $stmt->fetch()) {
+        $favoriteLinkIds[] = $row['link_id'];
+    }
+    
+    sendJSON([
+        'favoriteTileIds' => $favoriteTileIds,
+        'favoriteLinkIds' => $favoriteLinkIds
+    ]);
 }
+
+function handleGetFavoriteLinks() {
+    try {
+        $user = requireAuth();
+        $db = getDB();
+        
+        // Get all favorited links with their parent tile information
+        $stmt = $db->prepare('
+            SELECT 
+                l.*,
+                t.id as tile_id,
+                t.title as tile_title,
+                t.emoji as tile_emoji,
+                t.theme_color as tile_theme_color,
+                s.id as section_id
+            FROM user_link_favorites ulf
+            INNER JOIN links l ON l.id = ulf.link_id
+            LEFT JOIN sections s ON l.section_id = s.id
+            LEFT JOIN tiles t ON s.tile_id = t.id
+            WHERE ulf.user_id = ?
+            AND (t.deleted_at IS NULL OR t.id IS NULL)
+            AND (t.archived_at IS NULL OR t.id IS NULL)
+            ORDER BY ulf.created_at DESC
+        ');
+        $stmt->execute([$user['id']]);
+        
+        $favoriteLinks = [];
+        while ($row = $stmt->fetch()) {
+            // Skip if tile is missing (orphaned link)
+            if (!$row['tile_id']) {
+                continue;
+            }
+            
+            $favoriteLinks[] = [
+                'id' => $row['id'],
+                'label' => $row['label'],
+                'url' => $row['url'],
+                'icon' => $row['icon'] ?? null,
+                'textColor' => $row['text_color'] ?? null,
+                'visibility' => $row['visibility'] ?? 'public',
+                'notes' => $row['notes'] ?? null,
+                'tooltip' => $row['tooltip'] ?? null,
+                'browser' => $row['browser'] ?? null,
+                'isFavorite' => true,
+                'tile' => [
+                    'id' => $row['tile_id'],
+                    'title' => $row['tile_title'] ?? 'Untitled',
+                    'emoji' => $row['tile_emoji'] ?? '✨',
+                    'themeColor' => $row['tile_theme_color'] ?? 'blue'
+                ]
+            ];
+        }
+        
+        sendJSON($favoriteLinks);
+    } catch (Exception $e) {
+        error_log('Error in handleGetFavoriteLinks: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to fetch favorite links', 'details' => $e->getMessage()], 500);
+    }
+}
+
 
 function handleGetRecycleBin() {
     try {

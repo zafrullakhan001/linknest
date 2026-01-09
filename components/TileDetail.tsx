@@ -4,11 +4,12 @@ import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STY
 import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
 import { authService, UserListItem } from '../services/authService';
 import { exportTileToFile } from '../services/spaceTransferService';
-import { cloneTile, getTiles, saveTile } from '../services/storageService';
+import { cloneTile, getTiles, saveTile, toggleLinkFavorite } from '../services/storageService';
 import { useSettings } from '../contexts/SettingsContext';
 import { RichTextEditor } from './RichTextEditor';
 import { RichTextContentItem } from './RichTextContentItem';
 import { RichTextContent } from '../types';
+import { isPublicLinkFavorite, togglePublicLinkFavorite } from '../services/publicFavoritesService';
 
 interface TileDetailProps {
     tile: Tile;
@@ -979,6 +980,59 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 }
                 : tab
         ));
+    };
+
+    const handleToggleLinkFavorite = async (linkId: string) => {
+        if (!isAuthenticated) {
+            onAuthRequired?.();
+            return;
+        }
+
+        try {
+            const { isFavorite } = await toggleLinkFavorite(linkId);
+
+            const updateLinkInTabs = (tabs: Tab[]): Tab[] => {
+                return tabs.map(tab => ({
+                    ...tab,
+                    sections: tab.sections.map(section => ({
+                        ...section,
+                        links: (section.links || []).map(link =>
+                            link.id === linkId ? { ...link, isFavorite } : link
+                        )
+                    }))
+                }));
+            };
+
+            const updateLinkInSections = (sections: LinkSection[]): LinkSection[] => {
+                return sections.map(section => ({
+                    ...section,
+                    links: (section.links || []).map(link =>
+                        link.id === linkId ? { ...link, isFavorite } : link
+                    )
+                }));
+            };
+
+            // Update local edit state if needed
+            if (editTabs.length > 0) {
+                setEditTabs(updateLinkInTabs(editTabs));
+            }
+            if (editSections.length > 0) {
+                setEditSections(updateLinkInSections(editSections));
+            }
+
+            // Create updated tile to notify parent
+            const updatedTile: Tile = {
+                ...tile,
+                tabs: tile.tabs ? updateLinkInTabs(tile.tabs) : undefined,
+                sections: tile.sections ? updateLinkInSections(tile.sections) : undefined
+            };
+
+            const updatedTiles = allTiles.map(t => t.id === tile.id ? updatedTile : t);
+            onUpdateTiles(updatedTiles, true); // skipReload: true to prevent UI flash
+
+        } catch (error) {
+            console.error('Failed to toggle link favorite:', error);
+        }
     };
 
     // Section Management (within tabs)
@@ -2970,6 +3024,39 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             )}
 
                                                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 px-1">
+                                                                {/* Favorite button - available for all users */}
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        if (isAuthenticated) {
+                                                                            handleToggleLinkFavorite(link.id);
+                                                                        } else {
+                                                                            // For guest users, use localStorage
+                                                                            togglePublicLinkFavorite(link.id);
+                                                                            // Force re-render by updating parent
+                                                                            onUpdateTiles([...allTiles], true);
+                                                                        }
+                                                                    }}
+                                                                    className={`p-2 rounded-lg transition-all ${isAuthenticated
+                                                                        ? (link.isFavorite
+                                                                            ? 'text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                                                                            : 'text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-700')
+                                                                        : (isPublicLinkFavorite(link.id)
+                                                                            ? 'text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                                                                            : 'text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-700')
+                                                                        }`}
+                                                                    title={
+                                                                        isAuthenticated
+                                                                            ? (link.isFavorite ? "Unfavorite" : "Favorite")
+                                                                            : (isPublicLinkFavorite(link.id) ? "Unfavorite" : "Favorite")
+                                                                    }
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                        <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
+                                                                    </svg>
+                                                                </button>
+
                                                                 {/* Re-check button */}
                                                                 <button
                                                                     onClick={(e) => {
@@ -4489,6 +4576,21 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         })()}
                                                                                     </div>
                                                                                     <div className="flex gap-1">
+                                                                                        {/* Favorite button (in edit mode list) */}
+                                                                                        {isAuthenticated && (
+                                                                                            <button
+                                                                                                onClick={() => handleToggleLinkFavorite(link.id)}
+                                                                                                className={`p-1.5 rounded transition-all ${link.isFavorite
+                                                                                                    ? 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'
+                                                                                                    : 'text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-800'
+                                                                                                    }`}
+                                                                                                title={link.isFavorite ? "Unfavorite" : "Favorite"}
+                                                                                            >
+                                                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                                                    <path d="M9.653 16.915l-.005-.003-.019-.01a20.759 20.759 0 01-1.162-.682 22.045 22.045 0 01-2.582-1.9c-2.436-2.147-4.134-4.194-4.134-6.32 0-2.205 1.795-4 4-4a4.002 4.002 0 013.235 1.643 4.002 4.002 0 013.235-1.643 4 4 0 014 4c0 2.126-1.698 4.173-4.134 6.32a22.037 22.037 0 01-2.582 1.9 20.271 20.271 0 01-1.162.682l-.019.01-.005.003h-.002a.739.739 0 01-.69.001l-.002-.001z" />
+                                                                                                </svg>
+                                                                                            </button>
+                                                                                        )}
                                                                                         <button
                                                                                             onClick={() => handleStartEditLink(link)}
                                                                                             className="p-1.5 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"

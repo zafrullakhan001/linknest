@@ -717,6 +717,16 @@ function initDatabase() {
             FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
         )');
         
+        // Create user_link_favorites table for storing user bookmarked links
+        $db->exec('CREATE TABLE IF NOT EXISTS user_link_favorites (
+            user_id INTEGER NOT NULL,
+            link_id TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, link_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE
+        )');
+        
         // Create user_tile_permissions table for managing tile access permissions
         $db->exec('CREATE TABLE IF NOT EXISTS user_tile_permissions (
             user_id INTEGER NOT NULL,

@@ -253,6 +253,82 @@ export const toggleFavorite = async (tileId: string): Promise<{ isFavorite: bool
   }
 };
 
+export const getFavorites = async (): Promise<{ favoriteTileIds: string[]; favoriteLinkIds: string[] }> => {
+  try {
+    const response = await fetch(`${API_BASE}/tiles/favorites`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch favorites');
+    }
+
+    return await response.json();
+  } catch (e) {
+    console.error("Failed to fetch favorites", e);
+    return { favoriteTileIds: [], favoriteLinkIds: [] };
+  }
+};
+
+export const toggleLinkFavorite = async (linkId: string): Promise<{ isFavorite: boolean }> => {
+  try {
+    const response = await fetch(`${API_BASE}/tiles/link/${linkId}/favorite`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Failed to toggle link favorite' }));
+      throw new Error(errorData.error || 'Failed to toggle link favorite');
+    }
+
+    return await response.json();
+  } catch (e) {
+    console.error("Failed to toggle link favorite", e);
+    throw e;
+  }
+};
+
+export interface FavoriteLink {
+  id: string;
+  label: string;
+  url: string;
+  icon?: string;
+  textColor?: string;
+  visibility?: string;
+  notes?: string;
+  tooltip?: string;
+  browser?: string;
+  isFavorite: boolean;
+  tile: {
+    id: string;
+    title: string;
+    emoji: string;
+    themeColor: string;
+  };
+}
+
+export const getFavoriteLinks = async (): Promise<FavoriteLink[]> => {
+  try {
+    const response = await fetch(`${API_BASE}/tiles/favorites/links`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      console.error('API Error Response:', errorData);
+      throw new Error('Failed to fetch favorite links');
+    }
+
+    return await response.json();
+  } catch (e) {
+    console.error("Failed to fetch favorite links", e);
+    return [];
+  }
+};
+
 export const cloneTile = async (tileId: string): Promise<Tile> => {
   try {
     const response = await fetch(`${API_BASE}/tiles/${tileId}/clone`, {
@@ -269,7 +345,7 @@ export const cloneTile = async (tileId: string): Promise<Tile> => {
     if (!data.success || !data.id) {
       throw new Error(data.error || 'Failed to clone tile');
     }
-    
+
     // Fetch the cloned tile to get full data
     const tiles = await getTiles();
     const cloned = tiles.find(t => t.id === data.id);
