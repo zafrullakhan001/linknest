@@ -1247,6 +1247,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                   tooltip: link.tooltip,
                   browser: link.browser,
                   isFavorite: true,
+                  health: link.health,
                   tile: {
                     id: tile.id,
                     title: tile.title,
@@ -3282,16 +3283,19 @@ export const TileGrid: React.FC<TileGridProps> = ({
                   className="group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer"
                   onClick={() => window.open(link.url, '_blank')}
                 >
-                  {/* Link Icon */}
-                  <div className="relative w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 text-lg border border-slate-200 dark:border-slate-700">
-                    {link.icon || '🔗'}
-                    {/* Health Status Indicator */}
-                    {link.health && (
+                  {/* Health Status Indicator */}
+                  {link.health && (
+                    <div className="shrink-0">
                       <div
-                        className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-white dark:border-slate-800 ${linkHealthService.getHealthColor(link.health.status)}`}
+                        className={`w-2 h-2 rounded-full ${linkHealthService.getHealthColor(link.health.status)}`}
                         title={`${linkHealthService.getHealthLabel(link.health.status)}${link.health.error ? `: ${link.health.error}` : ''}`}
                       />
-                    )}
+                    </div>
+                  )}
+
+                  {/* Link Icon */}
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 text-lg border border-slate-200 dark:border-slate-700">
+                    {link.icon || '🔗'}
                   </div>
 
                   {/* Link Info */}
@@ -3323,7 +3327,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         const favIds = getPublicLinkFavorites();
                         const newLinks: FavoriteLink[] = [];
                         tiles.forEach(t => t.sections?.forEach(s => s.links?.forEach(l => {
-                          if (favIds.includes(l.id)) newLinks.push({ id: l.id, label: l.label, url: l.url, icon: l.icon, textColor: l.textColor, visibility: l.visibility, notes: l.notes, tooltip: l.tooltip, browser: l.browser, isFavorite: true, tile: { id: t.id, title: t.title, emoji: t.emoji || '✨', themeColor: t.themeColor || 'blue' } });
+                          if (favIds.includes(l.id)) newLinks.push({ id: l.id, label: l.label, url: l.url, icon: l.icon, textColor: l.textColor, visibility: l.visibility, notes: l.notes, tooltip: l.tooltip, browser: l.browser, isFavorite: true, health: l.health, tile: { id: t.id, title: t.title, emoji: t.emoji || '✨', themeColor: t.themeColor || 'blue' } });
                         })));
                         setFavoriteLinks(newLinks);
                       }
@@ -3511,16 +3515,19 @@ export const TileGrid: React.FC<TileGridProps> = ({
                   className="group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer"
                   onClick={() => window.open(link.url, '_blank')}
                 >
-                  {/* Link Icon */}
-                  <div className="relative w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 text-lg border border-slate-200 dark:border-slate-700">
-                    {link.icon || '🔗'}
-                    {/* Health Status Indicator */}
-                    {link.health && (
+                  {/* Health Status Indicator */}
+                  {link.health && (
+                    <div className="shrink-0">
                       <div
-                        className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-white dark:border-slate-800 ${linkHealthService.getHealthColor(link.health.status)}`}
+                        className={`w-2 h-2 rounded-full ${linkHealthService.getHealthColor(link.health.status)}`}
                         title={`${linkHealthService.getHealthLabel(link.health.status)}${link.health.error ? `: ${link.health.error}` : ''}`}
                       />
-                    )}
+                    </div>
+                  )}
+
+                  {/* Link Icon */}
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 text-lg border border-slate-200 dark:border-slate-700">
+                    {link.icon || '🔗'}
                   </div>
 
                   {/* Link Info */}
@@ -3552,7 +3559,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         const favIds = getPublicLinkFavorites();
                         const newLinks: FavoriteLink[] = [];
                         tiles.forEach(t => t.sections?.forEach(s => s.links?.forEach(l => {
-                          if (favIds.includes(l.id)) newLinks.push({ id: l.id, label: l.label, url: l.url, icon: l.icon, textColor: l.textColor, visibility: l.visibility, notes: l.notes, tooltip: l.tooltip, browser: l.browser, isFavorite: true, tile: { id: t.id, title: t.title, emoji: t.emoji || '✨', themeColor: t.themeColor || 'blue' } });
+                          if (favIds.includes(l.id)) newLinks.push({ id: l.id, label: l.label, url: l.url, icon: l.icon, textColor: l.textColor, visibility: l.visibility, notes: l.notes, tooltip: l.tooltip, browser: l.browser, isFavorite: true, health: l.health, tile: { id: t.id, title: t.title, emoji: t.emoji || '✨', themeColor: t.themeColor || 'blue' } });
                         })));
                         setFavoriteLinks(newLinks);
                       }
