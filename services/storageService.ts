@@ -301,6 +301,12 @@ export interface FavoriteLink {
   tooltip?: string;
   browser?: string;
   isFavorite: boolean;
+  health?: {
+    status: 'unknown' | 'healthy' | 'broken' | 'timeout' | 'checking' | 'restricted';
+    httpCode?: number | null;
+    error?: string | null;
+    checkedAt?: number | null;
+  };
   tile: {
     id: string;
     title: string;

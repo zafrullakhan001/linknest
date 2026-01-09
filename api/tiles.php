@@ -2605,6 +2605,17 @@ function handleGetFavoriteLinks() {
                 continue;
             }
             
+            // Parse health data if available
+            $health = null;
+            if ($row['health_status']) {
+                $health = [
+                    'status' => $row['health_status'],
+                    'httpCode' => $row['health_http_code'] ?? null,
+                    'error' => $row['health_error'] ?? null,
+                    'checkedAt' => $row['health_checked_at'] ?? null
+                ];
+            }
+            
             $favoriteLinks[] = [
                 'id' => $row['id'],
                 'label' => $row['label'],
@@ -2616,6 +2627,7 @@ function handleGetFavoriteLinks() {
                 'tooltip' => $row['tooltip'] ?? null,
                 'browser' => $row['browser'] ?? null,
                 'isFavorite' => true,
+                'health' => $health,
                 'tile' => [
                     'id' => $row['tile_id'],
                     'title' => $row['tile_title'] ?? 'Untitled',
