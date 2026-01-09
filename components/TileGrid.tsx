@@ -1720,8 +1720,81 @@ export const TileGrid: React.FC<TileGridProps> = ({
     return groups;
   }, [tiles, searchTerm, categoryOrder, categoryMetadata, activeTab, isAuthenticated, user, recycleBinTiles, archiveTiles, publicFavorites]);
 
+  // Helper function to format browser name for display
+  const formatBrowserName = (browserId: string | null | undefined): string => {
+    if (!browserId || browserId === 'default') return '';
+    return browserId
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, (l) => l.toUpperCase())
+      .replace('Wsl', '(WSL)')
+      .trim();
+  };
+
+  // Helper function to normalize browser ID
+  const normalizeBrowserId = (browserId: string): string => {
+    if (!browserId) return browserId;
+    const normalized = browserId.toLowerCase().trim();
+    const shortAliases: Record<string, string> = {
+      'edge': 'edge-stable-local',
+      'chrome': 'chrome-stable-local'
+    };
+    if (shortAliases[normalized]) {
+      return shortAliases[normalized];
+    }
+    return browserId;
+  };
+
+  // Function to open link in a specific browser
+  const openLinkInBrowser = (url: string, browserId: string) => {
+    if (typeof window !== 'undefined' && (window as any).BrowserLauncher) {
+      const BrowserLauncher = (window as any).BrowserLauncher;
+      if (settings.browser_extension_id) {
+        BrowserLauncher.setExtensionId(settings.browser_extension_id);
+      }
+      const normalizedBrowserId = normalizeBrowserId(browserId);
+      BrowserLauncher.open(url, normalizedBrowserId, { fallback: true }, (response: any) => {
+        if (response && response.success !== false) {
+          // Success
+        } else {
+          console.warn('BrowserLauncher failed, falling back to default behavior');
+          window.open(url, '_blank', 'noopener,noreferrer');
+        }
+      });
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
   // State for favorite links section position (true = above tiles, false = below tiles)
-  const [favoriteLinksAbove, setFavoriteLinksAbove] = useState(true);
+  const [favoriteLinksAbove, setFavoriteLinksAbove] = useState<boolean>(() => {
+    // Initialize from localStorage for public users
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('favoriteLinksAbove');
+      return saved !== null ? saved === 'true' : true;
+    }
+    return true;
+  });
+
+  // Load preference for authenticated user
+  useEffect(() => {
+    if (isAuthenticated) {
+      userPreferencesService.getPreference('favoriteLinksAbove').then(val => {
+        if (val !== null) {
+          // Handle both string "true"/"false" and boolean values
+          setFavoriteLinksAbove(String(val) === 'true');
+        }
+      });
+    }
+  }, [isAuthenticated]);
+
+  const handleSetFavoriteLinksAbove = (above: boolean) => {
+    setFavoriteLinksAbove(above);
+    if (isAuthenticated) {
+      userPreferencesService.updatePreference('favoriteLinksAbove', above);
+    } else {
+      localStorage.setItem('favoriteLinksAbove', String(above));
+    }
+  };
 
   const handleCreateTile = async () => {
     if (!newTitle.trim()) return;
@@ -3249,7 +3322,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 <span className="text-xs text-slate-500 dark:text-slate-400">Position:</span>
                 <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
                   <button
-                    onClick={() => setFavoriteLinksAbove(true)}
+                    onClick={() => handleSetFavoriteLinksAbove(true)}
                     className={`px-2 py-1 text-xs rounded transition-all ${favoriteLinksAbove
                       ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
@@ -3261,7 +3334,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                     </svg>
                   </button>
                   <button
-                    onClick={() => setFavoriteLinksAbove(false)}
+                    onClick={() => handleSetFavoriteLinksAbove(false)}
                     className={`px-2 py-1 text-xs rounded transition-all ${!favoriteLinksAbove
                       ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
@@ -3281,7 +3354,31 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 <div
                   key={link.id}
                   className="group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer"
-                  onClick={() => window.open(link.url, '_blank')}
+                  onClick={(e) => {
+                    // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
+                    if (e.ctrlKey || e.metaKey) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
+                      if (newWindow) newWindow.focus();
+                      return;
+                    }
+
+                    if (settings.browser_specific_links_enabled === '1') {
+                      // Priority: link-specific browser only (for now, as tile browser fallback needs more data)
+                      const browserToUse = link.browser && link.browser !== 'default' ? link.browser : null;
+
+                      if (browserToUse) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openLinkInBrowser(link.url, browserToUse);
+                        return;
+                      }
+                    }
+
+                    // Default behavior
+                    window.open(link.url, '_blank');
+                  }}
                 >
                   {/* Health Status Indicator */}
                   {link.health && (
@@ -3306,6 +3403,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
                     <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
                       {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
                     </div>
+                    {/* Browser Indicator */}
+                    {settings.browser_specific_links_enabled === '1' && link.browser && link.browser !== 'default' && (
+                      <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors mt-0.5">
+                        ({formatBrowserName(link.browser)} browser)
+                      </div>
+                    )}
                     {/* Parent Tile Info */}
                     <div className="flex items-center gap-1.5 mt-1">
                       <span className="text-xs">{link.tile.emoji}</span>
@@ -3481,7 +3584,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 <span className="text-xs text-slate-500 dark:text-slate-400">Position:</span>
                 <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
                   <button
-                    onClick={() => setFavoriteLinksAbove(true)}
+                    onClick={() => handleSetFavoriteLinksAbove(true)}
                     className={`px-2 py-1 text-xs rounded transition-all ${favoriteLinksAbove
                       ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
@@ -3493,7 +3596,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                     </svg>
                   </button>
                   <button
-                    onClick={() => setFavoriteLinksAbove(false)}
+                    onClick={() => handleSetFavoriteLinksAbove(false)}
                     className={`px-2 py-1 text-xs rounded transition-all ${!favoriteLinksAbove
                       ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
@@ -3513,7 +3616,31 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 <div
                   key={link.id}
                   className="group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer"
-                  onClick={() => window.open(link.url, '_blank')}
+                  onClick={(e) => {
+                    // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
+                    if (e.ctrlKey || e.metaKey) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
+                      if (newWindow) newWindow.focus();
+                      return;
+                    }
+
+                    if (settings.browser_specific_links_enabled === '1') {
+                      // Priority: link-specific browser only (for now, as tile browser fallback needs more data)
+                      const browserToUse = link.browser && link.browser !== 'default' ? link.browser : null;
+
+                      if (browserToUse) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openLinkInBrowser(link.url, browserToUse);
+                        return;
+                      }
+                    }
+
+                    // Default behavior
+                    window.open(link.url, '_blank');
+                  }}
                 >
                   {/* Health Status Indicator */}
                   {link.health && (
@@ -3538,6 +3665,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
                     <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
                       {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
                     </div>
+                    {/* Browser Indicator */}
+                    {settings.browser_specific_links_enabled === '1' && link.browser && link.browser !== 'default' && (
+                      <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors mt-0.5">
+                        ({formatBrowserName(link.browser)} browser)
+                      </div>
+                    )}
                     {/* Parent Tile Info */}
                     <div className="flex items-center gap-1.5 mt-1">
                       <span className="text-xs">{link.tile.emoji}</span>
