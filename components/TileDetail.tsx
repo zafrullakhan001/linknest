@@ -199,6 +199,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     // Temporary State for Adding Links (keyed by section ID)
     const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], notes: string, tooltip: string, browser: string }>>({});
 
+    // Selection State for Bulk Actions
+    const [selectedLinkIds, setSelectedLinkIds] = useState<string[]>([]);
+
     // State for Editing Links (keyed by link ID)
     const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
     const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], notes: string, tooltip: string, browser: string }>>({});
@@ -1173,12 +1176,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             // Swap sections
             const newSections = [...sortedSections];
             [newSections[index], newSections[newIndex]] = [newSections[newIndex], newSections[index]];
-            
+
             // Update positions after reordering
             newSections.forEach((section, idx) => {
                 section.position = idx;
             });
-            
+
             return { ...tab, sections: newSections };
         }));
     };
@@ -1215,17 +1218,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 const posB = b.position ?? 0;
                 return posA - posB;
             });
-            
+
             const index = sortedSections.findIndex(s => s.id === sectionId);
             if (index === -1) return tab;
-            
+
             // Insert cloned section after the original
             const newSections = [
                 ...sortedSections.slice(0, index + 1),
                 clonedSection,
                 ...sortedSections.slice(index + 1)
             ];
-            
+
             // Reorder positions after insertion
             newSections.forEach((section, idx) => {
                 section.position = idx;
@@ -1763,6 +1766,164 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     const handleMoveRichText = (tabId: string, sectionId: string, richTextId: string, direction: 'up' | 'down') => {
         handleMoveItem(tabId, sectionId, richTextId, direction);
+    };
+
+    const toggleLinkSelection = (linkId: string) => {
+        setSelectedLinkIds(prev =>
+            prev.includes(linkId)
+                ? prev.filter(id => id !== linkId)
+                : [...prev, linkId]
+        );
+    };
+
+    const toggleAllLinksInSectionSelection = (section: LinkSection) => {
+        const sectionLinkIds = (section.links || []).map(l => l.id);
+        const allSelected = sectionLinkIds.length > 0 && sectionLinkIds.every(id => selectedLinkIds.includes(id));
+
+        if (allSelected) {
+            setSelectedLinkIds(prev => prev.filter(id => !sectionLinkIds.includes(id)));
+        } else {
+            setSelectedLinkIds(prev => [...new Set([...prev, ...sectionLinkIds])]);
+        }
+    };
+
+    const handleBulkMove = (targetTabId: string, targetSectionId: string) => {
+        if (selectedLinkIds.length === 0) return;
+
+        // 1. Find and extract all selected links from the appropriate source
+        const selectedLinks: Link[] = [];
+
+        const processSection = (section: LinkSection) => {
+            const preservedLinks: Link[] = [];
+            (section.links || []).forEach(link => {
+                if (selectedLinkIds.includes(link.id)) {
+                    selectedLinks.push({ ...link });
+                } else {
+                    preservedLinks.push(link);
+                }
+            });
+
+            return {
+                ...section,
+                links: preservedLinks
+            };
+        };
+
+        // 2. Define finalization logic for a section
+        const finalizeSection = (section: LinkSection) => {
+            if (section.id !== targetSectionId) {
+                // Just re-index to ensure no gaps
+                const items = getSortedItems(section);
+                items.forEach((item, idx) => { item.position = idx; });
+                return {
+                    ...section,
+                    links: items.filter(i => i.type === 'link').map(({ type, ...rest }) => rest as Link),
+                    richTextContent: items.filter(i => i.type === 'rich-text').map(({ type, ...rest }) => rest as RichTextContent)
+                };
+            }
+
+            // Target section: add links to the end
+            const currentItems = getSortedItems(section);
+            const nextPos = currentItems.length;
+            const linksToAdd = selectedLinks.map((link, idx) => ({
+                ...link,
+                position: nextPos + idx
+            }));
+
+            const finalItems = [...currentItems, ...linksToAdd.map(l => ({ ...l, type: 'link' as const }))];
+            // Ensure strict positions
+            finalItems.forEach((item, idx) => { item.position = idx; });
+
+            return {
+                ...section,
+                links: finalItems.filter(i => i.type === 'link').map(({ type, ...rest }) => rest as Link),
+                richTextContent: finalItems.filter(i => i.type === 'rich-text').map(({ type, ...rest }) => rest as RichTextContent)
+            };
+        };
+
+        // 3. Apply changes to the relevant state
+        if (editTabs.length > 0) {
+            // First pass: remove links
+            const updatedTabs = editTabs.map(tab => ({
+                ...tab,
+                sections: tab.sections.map(processSection)
+            }));
+
+            if (selectedLinks.length === 0) return;
+
+            // Second pass: add to target
+            setEditTabs(updatedTabs.map(tab => ({
+                ...tab,
+                sections: tab.sections.map(finalizeSection)
+            })));
+        } else if (editSections.length > 0) {
+            // First pass: remove links
+            const updatedSections = editSections.map(processSection);
+
+            if (selectedLinks.length === 0) return;
+
+            // Second pass: add to target
+            setEditSections(updatedSections.map(finalizeSection));
+        }
+
+        setSelectedLinkIds([]);
+    };
+
+    const handleBulkCopy = (targetTabId: string, targetSectionId: string) => {
+        if (selectedLinkIds.length === 0) return;
+
+        // 1. Find all selected links (don't remove them)
+        const linksToCopy: Link[] = [];
+        const allSections = editTabs.length > 0
+            ? editTabs.flatMap(t => t.sections)
+            : editSections;
+
+        allSections.forEach(section => {
+            (section.links || []).forEach(link => {
+                if (selectedLinkIds.includes(link.id)) {
+                    linksToCopy.push({
+                        ...link,
+                        id: generateId(),
+                        label: `${link.label} (Copy)`
+                    });
+                }
+            });
+        });
+
+        if (linksToCopy.length === 0) return;
+
+        // 2. Add copies to target section
+        const addToSection = (section: LinkSection) => {
+            if (section.id !== targetSectionId) return section;
+
+            const currentItems = getSortedItems(section);
+            const nextPos = currentItems.length;
+
+            const newLinks = linksToCopy.map((link, idx) => ({
+                ...link,
+                position: nextPos + idx
+            }));
+
+            const finalItems = [...currentItems, ...newLinks.map(l => ({ ...l, type: 'link' as const }))];
+            finalItems.forEach((item, idx) => { item.position = idx; });
+
+            return {
+                ...section,
+                links: finalItems.filter(i => i.type === 'link').map(({ type, ...rest }) => rest as Link),
+                richTextContent: finalItems.filter(i => i.type === 'rich-text').map(({ type, ...rest }) => rest as RichTextContent)
+            };
+        };
+
+        if (editTabs.length > 0) {
+            setEditTabs(editTabs.map(tab => ({
+                ...tab,
+                sections: tab.sections.map(addToSection)
+            })));
+        } else {
+            setEditSections(editSections.map(addToSection));
+        }
+
+        setSelectedLinkIds([]);
     };
 
     const handleCloneLink = (tabId: string, sectionId: string, linkId: string) => {
@@ -2514,397 +2675,397 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             <p className="text-slate-500 font-medium">No links found</p>
                         </div>
                     ) : (
-                        <div 
+                        <div
                             className={viewLayout === 'stacked' ? 'space-y-8' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'}
                             data-view-layout={viewLayout}
                         >
                             {filteredSections.map((section, sectionIndex) => {
                                 // Check if this section should force stacked view for its content (links/rich text)
                                 const shouldForceStacked = section.forceStackedView === true;
-                                
+
                                 return (
-                                <div 
-                                    key={section.id} 
-                                    className="linknest-content-section animate-in fade-in slide-in-from-bottom-2 bg-white/80 dark:bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-200/80 dark:border-slate-700/50 p-6 shadow-sm"
-                                >
-                                    {/* Section Title */}
-                                    {section.title && (
-                                        <h3
-                                            className={`linknest-content-section-title text-lg font-bold mb-5 flex items-center gap-3 ${!section.textColor ? 'text-slate-800 dark:text-white' : ''}`}
-                                            style={section.textColor ? { color: section.textColor } : undefined}
-                                        >
-                                            <span className={`w-1.5 h-7 rounded-full ${styles.base} shadow-sm`}></span>
-                                            {section.title}
-                                        </h3>
-                                    )}
+                                    <div
+                                        key={section.id}
+                                        className="linknest-content-section animate-in fade-in slide-in-from-bottom-2 bg-white/80 dark:bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-200/80 dark:border-slate-700/50 p-6 shadow-sm"
+                                    >
+                                        {/* Section Title */}
+                                        {section.title && (
+                                            <h3
+                                                className={`linknest-content-section-title text-lg font-bold mb-5 flex items-center gap-3 ${!section.textColor ? 'text-slate-800 dark:text-white' : ''}`}
+                                                style={section.textColor ? { color: section.textColor } : undefined}
+                                            >
+                                                <span className={`w-1.5 h-7 rounded-full ${styles.base} shadow-sm`}></span>
+                                                {section.title}
+                                            </h3>
+                                        )}
 
-                                    {/* Links and Rich Text - Force stacked if checkbox is checked, otherwise use grid layout (side-by-side) */}
-                                    <div className={shouldForceStacked ? 'space-y-4' : 'linknest-content-link-grid'}>
-                                        {(() => {
-                                            // Merge links and rich text, sort by position
-                                            const sortedItems = [
-                                                ...(section.links || []).map(l => ({ ...l, itemType: 'link' as const })),
-                                                ...(section.richTextContent || []).map(rt => ({ ...rt, itemType: 'rich-text' as const }))
-                                            ].sort((a, b) => {
-                                                const posA = a.position ?? 0;
-                                                const posB = b.position ?? 0;
-                                                return posA - posB;
-                                            });
+                                        {/* Links and Rich Text - Force stacked if checkbox is checked, otherwise use grid layout (side-by-side) */}
+                                        <div className={shouldForceStacked ? 'space-y-4' : 'linknest-content-link-grid'}>
+                                            {(() => {
+                                                // Merge links and rich text, sort by position
+                                                const sortedItems = [
+                                                    ...(section.links || []).map(l => ({ ...l, itemType: 'link' as const })),
+                                                    ...(section.richTextContent || []).map(rt => ({ ...rt, itemType: 'rich-text' as const }))
+                                                ].sort((a, b) => {
+                                                    const posA = a.position ?? 0;
+                                                    const posB = b.position ?? 0;
+                                                    return posA - posB;
+                                                });
 
-                                            return sortedItems.map((item, itemIndex) => {
-                                                const animationDelay = (sectionIndex * 100) + (itemIndex * 30);
+                                                return sortedItems.map((item, itemIndex) => {
+                                                    const animationDelay = (sectionIndex * 100) + (itemIndex * 30);
 
-                                                // Render rich text content
-                                                if (item.itemType === 'rich-text') {
+                                                    // Render rich text content
+                                                    if (item.itemType === 'rich-text') {
+                                                        return (
+                                                            <div
+                                                                key={item.id}
+                                                                style={{ animationDelay: `${animationDelay}ms` }}
+                                                                className="linknest-content-rich-text rich-text-content-item animate-in fade-in slide-in-from-bottom-2"
+                                                            >
+                                                                <div
+                                                                    className="rich-text-content prose prose-sm max-w-none dark:prose-invert prose-p:text-slate-600 dark:prose-p:text-slate-400 prose-a:text-brand-500 dark:prose-a:text-brand-400 prose-headings:text-slate-800 dark:prose-headings:text-slate-200"
+                                                                    dangerouslySetInnerHTML={{ __html: item.content || '' }}
+                                                                />
+                                                            </div>
+                                                        );
+                                                    }
+
+                                                    // Render link (itemType === 'link')
+                                                    const link = item as Link;
+                                                    const health = linkHealth[link.id];
+                                                    const isBroken = health?.status === 'broken';
+
                                                     return (
                                                         <div
-                                                            key={item.id}
+                                                            key={link.id}
                                                             style={{ animationDelay: `${animationDelay}ms` }}
-                                                            className="linknest-content-rich-text rich-text-content-item animate-in fade-in slide-in-from-bottom-2"
-                                                        >
-                                                            <div
-                                                                className="rich-text-content prose prose-sm max-w-none dark:prose-invert prose-p:text-slate-600 dark:prose-p:text-slate-400 prose-a:text-brand-500 dark:prose-a:text-brand-400 prose-headings:text-slate-800 dark:prose-headings:text-slate-200"
-                                                                dangerouslySetInnerHTML={{ __html: item.content || '' }}
-                                                            />
-                                                        </div>
-                                                    );
-                                                }
-
-                                                // Render link (itemType === 'link')
-                                                const link = item as Link;
-                                                const health = linkHealth[link.id];
-                                                const isBroken = health?.status === 'broken';
-
-                                                return (
-                                                    <div
-                                                        key={link.id}
-                                                        style={{ animationDelay: `${animationDelay}ms` }}
-                                                        className={`
+                                                            className={`
                                                     linknest-content-link group relative flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60
                                                     hover:border-brand-300 dark:hover:border-brand-500/50 transition-all duration-300 shadow-sm
                                                     ${isBroken ? 'border-red-300 dark:border-red-500/50 bg-red-50/50 dark:bg-red-900/10' : ''}
                                                 `}
-                                                        title={link.tooltip || link.label}
-                                                    >
-                                                    {/* Health Indicator */}
-                                                    <div className="linknest-content-link-health flex flex-col items-center gap-1 shrink-0">
-                                                        {getHealthIndicator(link.id)}
-                                                    </div>
-
-                                                    <div className={`linknest-content-link-icon w-11 h-11 rounded-xl ${styles.iconBg} flex items-center justify-center shrink-0 text-lg select-none shadow-sm border border-white/20`}>
-                                                        {link.icon || '🔗'}
-                                                    </div>
-
-                                                    <a
-                                                        href={link.url}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="flex-1 min-w-0 block focus:outline-none"
-                                                        onClick={(e) => {
-                                                            // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
-                                                            if (e.ctrlKey || e.metaKey) {
-                                                                // Explicitly open in new tab and focus it using window.open
-                                                                e.preventDefault();
-                                                                e.stopPropagation();
-                                                                const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
-                                                                // Focus the new window/tab if it was successfully opened
-                                                                if (newWindow) {
-                                                                    newWindow.focus();
-                                                                }
-                                                                return;
-                                                            }
-
-                                                            // If browser extension is enabled, check for browser configuration
-                                                            if (settings.browser_specific_links_enabled === '1') {
-                                                                // Priority: link-specific browser > tile default browser > default browser
-                                                                const browserToUse = link.browser && link.browser !== 'default'
-                                                                    ? link.browser
-                                                                    : (tile.browser && tile.browser !== 'default' ? tile.browser : null);
-
-                                                                if (browserToUse && typeof window !== 'undefined' && (window as any).BrowserLauncher) {
-                                                                    e.preventDefault();
-                                                                    e.stopPropagation();
-                                                                    openLinkInBrowser(link.url, browserToUse);
-                                                                    return;
-                                                                }
-                                                                // If BrowserLauncher is not available, allow default behavior
-                                                            }
-                                                            // If no browser is set or set to default, allow normal link behavior (opens in default browser)
-                                                            // Menu will only appear when clicking the browser button
-                                                        }}
-                                                    >
-                                                        <h4
-                                                            className={`linknest-content-link-title text-sm font-semibold ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}
-                                                            style={link.textColor ? {
-                                                                color: link.textColor,
-                                                                // Add text shadow for better visibility
-                                                                textShadow: '0 1px 2px rgba(0,0,0,0.15)',
-                                                                fontWeight: '700'
-                                                            } : undefined}
-                                                            dangerouslySetInnerHTML={{ __html: link.label || '' }}
-                                                        />
-                                                        <div className="flex flex-col gap-0.5 mt-0.5">
-                                                            <div className="linknest-content-link-domain flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors">
-                                                                <span className="break-words">
-                                                                    {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
-                                                                </span>
-                                                                {link.visibility && link.visibility !== 'public' && (
-                                                                    <span
-                                                                        className={`text-xs px-1.5 py-0.5 rounded-md font-medium ${link.visibility === 'authenticated'
-                                                                            ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400'
-                                                                            : 'bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400'
-                                                                            }`}
-                                                                        title={link.visibility === 'authenticated' ? 'Authenticated users only' : 'Private - specific users only'}
-                                                                    >
-                                                                        {link.visibility === 'authenticated' ? '🔒' : '🔐'}
-                                                                    </span>
-                                                                )}
-                                                                {isBroken && (
-                                                                    <span className="text-red-500 text-xs font-medium flex items-center gap-1">
-                                                                        <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                                                                        Broken
-                                                                    </span>
-                                                                )}
+                                                            title={link.tooltip || link.label}
+                                                        >
+                                                            {/* Health Indicator */}
+                                                            <div className="linknest-content-link-health flex flex-col items-center gap-1 shrink-0">
+                                                                {getHealthIndicator(link.id)}
                                                             </div>
-                                                            {settings.browser_specific_links_enabled === '1' && (() => {
-                                                                // Determine which browser is being used for this link
-                                                                // Priority: link-specific browser > tile default browser > system default
-                                                                const browserToUse = link.browser && link.browser !== 'default'
-                                                                    ? link.browser
-                                                                    : (tile.browser && tile.browser !== 'default' ? tile.browser : null);
 
-                                                                // Only show browser indicator if it's not the system default
-                                                                if (browserToUse) {
-                                                                    return (
-                                                                        <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors">
-                                                                            ({formatBrowserName(browserToUse)} browser)
-                                                                        </div>
-                                                                    );
-                                                                }
-                                                                return null;
-                                                            })()}
-                                                        </div>
-                                                    </a>
+                                                            <div className={`linknest-content-link-icon w-11 h-11 rounded-xl ${styles.iconBg} flex items-center justify-center shrink-0 text-lg select-none shadow-sm border border-white/20`}>
+                                                                {link.icon || '🔗'}
+                                                            </div>
 
-                                                    {/* Browser Selection Menu - Rendered via Portal */}
-                                                    {showBrowserMenu[link.id] && settings.browser_specific_links_enabled === '1' && typeof document !== 'undefined' && createPortal(
-                                                        <>
-                                                            <div
-                                                                className="fixed inset-0 z-[99998] bg-transparent"
-                                                                onClick={() => {
-                                                                    setShowBrowserMenu(prev => ({ ...prev, [link.id]: false }));
-                                                                    setSaveBrowserForLink(prev => ({ ...prev, [link.id]: false }));
-                                                                    setSelectedBrowserForLink(prev => ({ ...prev, [link.id]: '' }));
-                                                                }}
-                                                                style={{ pointerEvents: 'auto' }}
-                                                            ></div>
-                                                            <div
-                                                                className="fixed z-[99999] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl max-h-[300px] overflow-y-auto"
-                                                                style={{
-                                                                    top: `${browserMenuPosition[link.id]?.y || 0}px`,
-                                                                    left: `${browserMenuPosition[link.id]?.x || 0}px`,
-                                                                    width: '180px',
-                                                                    maxWidth: '180px',
-                                                                    pointerEvents: 'auto',
-                                                                    position: 'fixed'
+                                                            <a
+                                                                href={link.url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="flex-1 min-w-0 block focus:outline-none"
+                                                                onClick={(e) => {
+                                                                    // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
+                                                                    if (e.ctrlKey || e.metaKey) {
+                                                                        // Explicitly open in new tab and focus it using window.open
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
+                                                                        // Focus the new window/tab if it was successfully opened
+                                                                        if (newWindow) {
+                                                                            newWindow.focus();
+                                                                        }
+                                                                        return;
+                                                                    }
+
+                                                                    // If browser extension is enabled, check for browser configuration
+                                                                    if (settings.browser_specific_links_enabled === '1') {
+                                                                        // Priority: link-specific browser > tile default browser > default browser
+                                                                        const browserToUse = link.browser && link.browser !== 'default'
+                                                                            ? link.browser
+                                                                            : (tile.browser && tile.browser !== 'default' ? tile.browser : null);
+
+                                                                        if (browserToUse && typeof window !== 'undefined' && (window as any).BrowserLauncher) {
+                                                                            e.preventDefault();
+                                                                            e.stopPropagation();
+                                                                            openLinkInBrowser(link.url, browserToUse);
+                                                                            return;
+                                                                        }
+                                                                        // If BrowserLauncher is not available, allow default behavior
+                                                                    }
+                                                                    // If no browser is set or set to default, allow normal link behavior (opens in default browser)
+                                                                    // Menu will only appear when clicking the browser button
                                                                 }}
                                                             >
-                                                                <div className="py-1">
-                                                                    <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-2 py-1.5 mb-0.5">
-                                                                        Open in Browser
+                                                                <h4
+                                                                    className={`linknest-content-link-title text-sm font-semibold ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}
+                                                                    style={link.textColor ? {
+                                                                        color: link.textColor,
+                                                                        // Add text shadow for better visibility
+                                                                        textShadow: '0 1px 2px rgba(0,0,0,0.15)',
+                                                                        fontWeight: '700'
+                                                                    } : undefined}
+                                                                    dangerouslySetInnerHTML={{ __html: link.label || '' }}
+                                                                />
+                                                                <div className="flex flex-col gap-0.5 mt-0.5">
+                                                                    <div className="linknest-content-link-domain flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors">
+                                                                        <span className="break-words">
+                                                                            {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
+                                                                        </span>
+                                                                        {link.visibility && link.visibility !== 'public' && (
+                                                                            <span
+                                                                                className={`text-xs px-1.5 py-0.5 rounded-md font-medium ${link.visibility === 'authenticated'
+                                                                                    ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400'
+                                                                                    : 'bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400'
+                                                                                    }`}
+                                                                                title={link.visibility === 'authenticated' ? 'Authenticated users only' : 'Private - specific users only'}
+                                                                            >
+                                                                                {link.visibility === 'authenticated' ? '🔒' : '🔐'}
+                                                                            </span>
+                                                                        )}
+                                                                        {isBroken && (
+                                                                            <span className="text-red-500 text-xs font-medium flex items-center gap-1">
+                                                                                <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                                                                                Broken
+                                                                            </span>
+                                                                        )}
                                                                     </div>
+                                                                    {settings.browser_specific_links_enabled === '1' && (() => {
+                                                                        // Determine which browser is being used for this link
+                                                                        // Priority: link-specific browser > tile default browser > system default
+                                                                        const browserToUse = link.browser && link.browser !== 'default'
+                                                                            ? link.browser
+                                                                            : (tile.browser && tile.browser !== 'default' ? tile.browser : null);
+
+                                                                        // Only show browser indicator if it's not the system default
+                                                                        if (browserToUse) {
+                                                                            return (
+                                                                                <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors">
+                                                                                    ({formatBrowserName(browserToUse)} browser)
+                                                                                </div>
+                                                                            );
+                                                                        }
+                                                                        return null;
+                                                                    })()}
+                                                                </div>
+                                                            </a>
+
+                                                            {/* Browser Selection Menu - Rendered via Portal */}
+                                                            {showBrowserMenu[link.id] && settings.browser_specific_links_enabled === '1' && typeof document !== 'undefined' && createPortal(
+                                                                <>
+                                                                    <div
+                                                                        className="fixed inset-0 z-[99998] bg-transparent"
+                                                                        onClick={() => {
+                                                                            setShowBrowserMenu(prev => ({ ...prev, [link.id]: false }));
+                                                                            setSaveBrowserForLink(prev => ({ ...prev, [link.id]: false }));
+                                                                            setSelectedBrowserForLink(prev => ({ ...prev, [link.id]: '' }));
+                                                                        }}
+                                                                        style={{ pointerEvents: 'auto' }}
+                                                                    ></div>
+                                                                    <div
+                                                                        className="fixed z-[99999] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl max-h-[300px] overflow-y-auto"
+                                                                        style={{
+                                                                            top: `${browserMenuPosition[link.id]?.y || 0}px`,
+                                                                            left: `${browserMenuPosition[link.id]?.x || 0}px`,
+                                                                            width: '180px',
+                                                                            maxWidth: '180px',
+                                                                            pointerEvents: 'auto',
+                                                                            position: 'fixed'
+                                                                        }}
+                                                                    >
+                                                                        <div className="py-1">
+                                                                            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-2 py-1.5 mb-0.5">
+                                                                                Open in Browser
+                                                                            </div>
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.preventDefault();
+                                                                                    e.stopPropagation();
+                                                                                    setSelectedBrowserForLink(prev => ({ ...prev, [link.id]: 'default' }));
+                                                                                    if (!saveBrowserForLink[link.id]) {
+                                                                                        // If not saving, just open the link
+                                                                                        setShowBrowserMenu(prev => ({ ...prev, [link.id]: false }));
+                                                                                        window.open(link.url, '_blank', 'noopener,noreferrer');
+                                                                                    }
+                                                                                }}
+                                                                                className={`w-full text-left px-2 py-1 text-xs rounded transition-colors flex items-center gap-1.5 ${(!link.browser || link.browser === 'default') && !selectedBrowserForLink[link.id]
+                                                                                    ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 font-medium'
+                                                                                    : selectedBrowserForLink[link.id] === 'default'
+                                                                                        ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 font-medium'
+                                                                                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                                                                    }`}
+                                                                            >
+                                                                                <span className="text-xs">🌐</span>
+                                                                                <span>Default Browser</span>
+                                                                            </button>
+                                                                            {availableBrowsers.length > 0 ? (
+                                                                                availableBrowsers.map((browserId) => {
+                                                                                    const displayName = formatBrowserName(browserId);
+                                                                                    const isSelected = link.browser === browserId;
+                                                                                    const isCurrentlySelected = selectedBrowserForLink[link.id] === browserId || (!selectedBrowserForLink[link.id] && isSelected);
+                                                                                    return (
+                                                                                        <button
+                                                                                            key={browserId}
+                                                                                            onClick={(e) => {
+                                                                                                e.preventDefault();
+                                                                                                e.stopPropagation();
+                                                                                                setSelectedBrowserForLink(prev => ({ ...prev, [link.id]: browserId }));
+                                                                                                if (!saveBrowserForLink[link.id]) {
+                                                                                                    // If not saving, just open the link
+                                                                                                    setShowBrowserMenu(prev => ({ ...prev, [link.id]: false }));
+                                                                                                    openLinkInBrowser(link.url, browserId);
+                                                                                                }
+                                                                                            }}
+                                                                                            className={`w-full text-left px-2 py-1 text-xs rounded transition-colors flex items-center gap-1.5 ${isCurrentlySelected
+                                                                                                ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 font-medium'
+                                                                                                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                                                                                }`}
+                                                                                        >
+                                                                                            <span className="text-xs">{isCurrentlySelected ? '✓' : '○'}</span>
+                                                                                            <span className="truncate">{displayName || browserId}</span>
+                                                                                        </button>
+                                                                                    );
+                                                                                })
+                                                                            ) : (
+                                                                                <div className="px-2 py-1 text-[10px] text-slate-500 dark:text-slate-400">
+                                                                                    No browsers available
+                                                                                </div>
+                                                                            )}
+                                                                            {/* Admin controls */}
+                                                                            {isAuthenticated && tile.canEdit && (
+                                                                                <>
+                                                                                    <div className="border-t border-slate-200 dark:border-slate-700 my-1"></div>
+                                                                                    <label className="flex items-center gap-2 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-300 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded">
+                                                                                        <input
+                                                                                            type="checkbox"
+                                                                                            checked={saveBrowserForLink[link.id] || false}
+                                                                                            onChange={(e) => {
+                                                                                                setSaveBrowserForLink(prev => ({ ...prev, [link.id]: e.target.checked }));
+                                                                                                if (!e.target.checked) {
+                                                                                                    setSelectedBrowserForLink(prev => ({ ...prev, [link.id]: '' }));
+                                                                                                } else {
+                                                                                                    setSelectedBrowserForLink(prev => ({ ...prev, [link.id]: link.browser || 'default' }));
+                                                                                                }
+                                                                                            }}
+                                                                                            className="w-3 h-3 text-brand-600 rounded focus:ring-brand-500"
+                                                                                        />
+                                                                                        <span>Save as default</span>
+                                                                                    </label>
+                                                                                    {saveBrowserForLink[link.id] && (
+                                                                                        <button
+                                                                                            onClick={(e) => {
+                                                                                                e.preventDefault();
+                                                                                                e.stopPropagation();
+                                                                                                const browserToSave = selectedBrowserForLink[link.id] || link.browser || 'default';
+                                                                                                handleUpdateLinkBrowser(link.id, browserToSave);
+                                                                                            }}
+                                                                                            className="w-full mx-2 mb-1 px-2 py-1.5 text-xs font-medium text-white bg-brand-600 hover:bg-brand-700 rounded transition-colors"
+                                                                                        >
+                                                                                            Save
+                                                                                        </button>
+                                                                                    )}
+                                                                                </>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                </>,
+                                                                document.body
+                                                            )}
+
+                                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 px-1">
+                                                                {/* Re-check button */}
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        handleCheckSingleLink(link.id);
+                                                                    }}
+                                                                    disabled={checkingLinkId === link.id}
+                                                                    className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all"
+                                                                    title="Check link health"
+                                                                >
+                                                                    {checkingLinkId === link.id ? (
+                                                                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                                        </svg>
+                                                                    ) : (
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                            <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
+                                                                        </svg>
+                                                                    )}
+                                                                </button>
+
+                                                                {/* Copy button */}
+                                                                <button
+                                                                    onClick={(e) => handleCopy(e, link.url, link.id)}
+                                                                    className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all relative"
+                                                                    title="Copy URL"
+                                                                >
+                                                                    {copiedId === link.id ? (
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-emerald-500">
+                                                                            <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                                                                        </svg>
+                                                                    ) : (
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                            <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                                                                            <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
+                                                                        </svg>
+                                                                    )}
+                                                                </button>
+
+                                                                {/* Browser selection button - only show when extension is enabled and user is authenticated */}
+                                                                {settings.browser_specific_links_enabled === '1' && isAuthenticated && typeof window !== 'undefined' && (window as any).BrowserLauncher && (
                                                                     <button
                                                                         onClick={(e) => {
                                                                             e.preventDefault();
                                                                             e.stopPropagation();
-                                                                            setSelectedBrowserForLink(prev => ({ ...prev, [link.id]: 'default' }));
-                                                                            if (!saveBrowserForLink[link.id]) {
-                                                                                // If not saving, just open the link
-                                                                                setShowBrowserMenu(prev => ({ ...prev, [link.id]: false }));
-                                                                                window.open(link.url, '_blank', 'noopener,noreferrer');
+
+                                                                            // Show browser selection menu with smart positioning
+                                                                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                                                            const menuWidth = 180;
+                                                                            const menuHeight = Math.min(300, (availableBrowsers.length + 1) * 28 + 40);
+                                                                            const spaceBelow = window.innerHeight - rect.bottom;
+                                                                            const spaceAbove = rect.top;
+                                                                            const spaceRight = window.innerWidth - rect.right;
+                                                                            const spaceLeft = rect.left;
+
+                                                                            // Calculate vertical position - align with button top
+                                                                            let menuY = rect.top;
+                                                                            // If not enough space below, align with button bottom
+                                                                            if (spaceBelow < menuHeight && spaceAbove > spaceBelow) {
+                                                                                menuY = rect.bottom - menuHeight;
                                                                             }
+                                                                            menuY = Math.max(10, Math.min(menuY, window.innerHeight - menuHeight - 10));
+
+                                                                            // Calculate horizontal position - prefer right side of button, fallback to left
+                                                                            let menuX = rect.right + 8;
+                                                                            if (spaceRight < menuWidth && spaceLeft > spaceRight) {
+                                                                                menuX = rect.left - menuWidth - 8;
+                                                                            }
+                                                                            menuX = Math.max(10, Math.min(menuX, window.innerWidth - menuWidth - 10));
+
+                                                                            setBrowserMenuPosition(prev => ({
+                                                                                ...prev,
+                                                                                [link.id]: {
+                                                                                    x: menuX,
+                                                                                    y: menuY
+                                                                                }
+                                                                            }));
+                                                                            setShowBrowserMenu(prev => ({ ...prev, [link.id]: true }));
                                                                         }}
-                                                                        className={`w-full text-left px-2 py-1 text-xs rounded transition-colors flex items-center gap-1.5 ${(!link.browser || link.browser === 'default') && !selectedBrowserForLink[link.id]
-                                                                            ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 font-medium'
-                                                                            : selectedBrowserForLink[link.id] === 'default'
-                                                                                ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 font-medium'
-                                                                                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-                                                                            }`}
+                                                                        className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all"
+                                                                        title="Open in browser"
                                                                     >
-                                                                        <span className="text-xs">🌐</span>
-                                                                        <span>Default Browser</span>
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                            <path fillRule="evenodd" d="M4.25 2A2.25 2.25 0 002 4.25v11.5A2.25 2.25 0 004.25 18h11.5A2.25 2.25 0 0018 15.75V4.25A2.25 2.25 0 0015.75 2H4.25zM9 8a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1zm3 0a1 1 0 011-1h.01a1 1 0 110 2H13a1 1 0 01-1-1zm-3 4a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1zm3 0a1 1 0 011-1h.01a1 1 0 110 2H13a1 1 0 01-1-1z" clipRule="evenodd" />
+                                                                        </svg>
                                                                     </button>
-                                                                    {availableBrowsers.length > 0 ? (
-                                                                        availableBrowsers.map((browserId) => {
-                                                                            const displayName = formatBrowserName(browserId);
-                                                                            const isSelected = link.browser === browserId;
-                                                                            const isCurrentlySelected = selectedBrowserForLink[link.id] === browserId || (!selectedBrowserForLink[link.id] && isSelected);
-                                                                            return (
-                                                                                <button
-                                                                                    key={browserId}
-                                                                                    onClick={(e) => {
-                                                                                        e.preventDefault();
-                                                                                        e.stopPropagation();
-                                                                                        setSelectedBrowserForLink(prev => ({ ...prev, [link.id]: browserId }));
-                                                                                        if (!saveBrowserForLink[link.id]) {
-                                                                                            // If not saving, just open the link
-                                                                                            setShowBrowserMenu(prev => ({ ...prev, [link.id]: false }));
-                                                                                            openLinkInBrowser(link.url, browserId);
-                                                                                        }
-                                                                                    }}
-                                                                                    className={`w-full text-left px-2 py-1 text-xs rounded transition-colors flex items-center gap-1.5 ${isCurrentlySelected
-                                                                                        ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 font-medium'
-                                                                                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-                                                                                        }`}
-                                                                                >
-                                                                                    <span className="text-xs">{isCurrentlySelected ? '✓' : '○'}</span>
-                                                                                    <span className="truncate">{displayName || browserId}</span>
-                                                                                </button>
-                                                                            );
-                                                                        })
-                                                                    ) : (
-                                                                        <div className="px-2 py-1 text-[10px] text-slate-500 dark:text-slate-400">
-                                                                            No browsers available
-                                                                        </div>
-                                                                    )}
-                                                                    {/* Admin controls */}
-                                                                    {isAuthenticated && tile.canEdit && (
-                                                                        <>
-                                                                            <div className="border-t border-slate-200 dark:border-slate-700 my-1"></div>
-                                                                            <label className="flex items-center gap-2 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-300 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded">
-                                                                                <input
-                                                                                    type="checkbox"
-                                                                                    checked={saveBrowserForLink[link.id] || false}
-                                                                                    onChange={(e) => {
-                                                                                        setSaveBrowserForLink(prev => ({ ...prev, [link.id]: e.target.checked }));
-                                                                                        if (!e.target.checked) {
-                                                                                            setSelectedBrowserForLink(prev => ({ ...prev, [link.id]: '' }));
-                                                                                        } else {
-                                                                                            setSelectedBrowserForLink(prev => ({ ...prev, [link.id]: link.browser || 'default' }));
-                                                                                        }
-                                                                                    }}
-                                                                                    className="w-3 h-3 text-brand-600 rounded focus:ring-brand-500"
-                                                                                />
-                                                                                <span>Save as default</span>
-                                                                            </label>
-                                                                            {saveBrowserForLink[link.id] && (
-                                                                                <button
-                                                                                    onClick={(e) => {
-                                                                                        e.preventDefault();
-                                                                                        e.stopPropagation();
-                                                                                        const browserToSave = selectedBrowserForLink[link.id] || link.browser || 'default';
-                                                                                        handleUpdateLinkBrowser(link.id, browserToSave);
-                                                                                    }}
-                                                                                    className="w-full mx-2 mb-1 px-2 py-1.5 text-xs font-medium text-white bg-brand-600 hover:bg-brand-700 rounded transition-colors"
-                                                                                >
-                                                                                    Save
-                                                                                </button>
-                                                                            )}
-                                                                        </>
-                                                                    )}
-                                                                </div>
+                                                                )}
                                                             </div>
-                                                        </>,
-                                                        document.body
-                                                    )}
-
-                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 px-1">
-                                                        {/* Re-check button */}
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.preventDefault();
-                                                                e.stopPropagation();
-                                                                handleCheckSingleLink(link.id);
-                                                            }}
-                                                            disabled={checkingLinkId === link.id}
-                                                            className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all"
-                                                            title="Check link health"
-                                                        >
-                                                            {checkingLinkId === link.id ? (
-                                                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                                </svg>
-                                                            ) : (
-                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                                    <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
-                                                                </svg>
-                                                            )}
-                                                        </button>
-
-                                                        {/* Copy button */}
-                                                        <button
-                                                            onClick={(e) => handleCopy(e, link.url, link.id)}
-                                                            className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all relative"
-                                                            title="Copy URL"
-                                                        >
-                                                            {copiedId === link.id ? (
-                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-emerald-500">
-                                                                    <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                                                                </svg>
-                                                            ) : (
-                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                                    <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
-                                                                    <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
-                                                                </svg>
-                                                            )}
-                                                        </button>
-
-                                                        {/* Browser selection button - only show when extension is enabled and user is authenticated */}
-                                                        {settings.browser_specific_links_enabled === '1' && isAuthenticated && typeof window !== 'undefined' && (window as any).BrowserLauncher && (
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.preventDefault();
-                                                                    e.stopPropagation();
-
-                                                                    // Show browser selection menu with smart positioning
-                                                                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                                                    const menuWidth = 180;
-                                                                    const menuHeight = Math.min(300, (availableBrowsers.length + 1) * 28 + 40);
-                                                                    const spaceBelow = window.innerHeight - rect.bottom;
-                                                                    const spaceAbove = rect.top;
-                                                                    const spaceRight = window.innerWidth - rect.right;
-                                                                    const spaceLeft = rect.left;
-
-                                                                    // Calculate vertical position - align with button top
-                                                                    let menuY = rect.top;
-                                                                    // If not enough space below, align with button bottom
-                                                                    if (spaceBelow < menuHeight && spaceAbove > spaceBelow) {
-                                                                        menuY = rect.bottom - menuHeight;
-                                                                    }
-                                                                    menuY = Math.max(10, Math.min(menuY, window.innerHeight - menuHeight - 10));
-
-                                                                    // Calculate horizontal position - prefer right side of button, fallback to left
-                                                                    let menuX = rect.right + 8;
-                                                                    if (spaceRight < menuWidth && spaceLeft > spaceRight) {
-                                                                        menuX = rect.left - menuWidth - 8;
-                                                                    }
-                                                                    menuX = Math.max(10, Math.min(menuX, window.innerWidth - menuWidth - 10));
-
-                                                                    setBrowserMenuPosition(prev => ({
-                                                                        ...prev,
-                                                                        [link.id]: {
-                                                                            x: menuX,
-                                                                            y: menuY
-                                                                        }
-                                                                    }));
-                                                                    setShowBrowserMenu(prev => ({ ...prev, [link.id]: true }));
-                                                                }}
-                                                                className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all"
-                                                                title="Open in browser"
-                                                            >
-                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                                    <path fillRule="evenodd" d="M4.25 2A2.25 2.25 0 002 4.25v11.5A2.25 2.25 0 004.25 18h11.5A2.25 2.25 0 0018 15.75V4.25A2.25 2.25 0 0015.75 2H4.25zM9 8a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1zm3 0a1 1 0 011-1h.01a1 1 0 110 2H13a1 1 0 01-1-1zm-3 4a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1zm3 0a1 1 0 011-1h.01a1 1 0 110 2H13a1 1 0 01-1-1z" clipRule="evenodd" />
-                                                                </svg>
-                                                            </button>
-                                                        )}
                                                         </div>
-                                                    </div>
-                                                );
-                                            });
-                                        })()}
+                                                    );
+                                                });
+                                            })()}
+                                        </div>
                                     </div>
-                                </div>
                                 );
                             })}
                         </div>
@@ -3388,8 +3549,31 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             link.label.toLowerCase().includes(linkSearchTerm.toLowerCase()) ||
                                             link.url.toLowerCase().includes(linkSearchTerm.toLowerCase())
                                         );
-                                        return `${matchedLinks.length} link${matchedLinks.length !== 1 ? 's' : ''} found`;
+                                        return (
+                                            <>
+                                                {matchedLinks.length} link{matchedLinks.length !== 1 ? 's' : ''} found
+                                                {selectedLinkIds.length > 0 && (
+                                                    <button
+                                                        onClick={() => setSelectedLinkIds([])}
+                                                        className="text-xs text-red-500 hover:text-red-600 font-semibold underline underline-offset-2 transition-colors ml-4"
+                                                    >
+                                                        Clear selection ({selectedLinkIds.length})
+                                                    </button>
+                                                )}
+                                            </>
+                                        );
                                     })()}
+                                </div>
+                            )}
+                            {!linkSearchTerm && selectedLinkIds.length > 0 && (
+                                <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                                    {selectedLinkIds.length} link{selectedLinkIds.length !== 1 ? 's' : ''} selected
+                                    <button
+                                        onClick={() => setSelectedLinkIds([])}
+                                        className="text-xs text-red-500 hover:text-red-600 font-semibold underline underline-offset-2 transition-colors ml-4"
+                                    >
+                                        Clear selection
+                                    </button>
                                 </div>
                             )}
                         </div>
@@ -3635,6 +3819,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     </button>
                                                                 </div>
                                                                 <div className="text-slate-400 dark:text-slate-500 font-mono text-xs">#{sectionIndex + 1}</div>
+                                                                {/* Select All Checkbox */}
+                                                                <div className="flex items-center px-1" title="Select all links in this section">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={(section.links || []).length > 0 && (section.links || []).every(l => selectedLinkIds.includes(l.id))}
+                                                                        onChange={() => toggleAllLinksInSectionSelection(section)}
+                                                                        className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 cursor-pointer"
+                                                                    />
+                                                                </div>
                                                                 <input
                                                                     type="text"
                                                                     value={section.title}
@@ -3642,6 +3835,31 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     placeholder="Section Header (e.g. Resources)"
                                                                     className="flex-1 bg-transparent border-none text-slate-900 dark:text-white font-semibold focus:ring-0 placeholder-slate-400"
                                                                 />
+                                                                {/* Bulk Action Buttons */}
+                                                                {selectedLinkIds.length > 0 && (
+                                                                    <div className="flex gap-1.5 animate-in fade-in slide-in-from-right-2">
+                                                                        <button
+                                                                            onClick={() => handleBulkMove(tab.id, section.id)}
+                                                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-[10px] font-bold rounded-lg shadow-sm hover:shadow-md transition-all active:scale-95 whitespace-nowrap"
+                                                                            title="Move selected links to this section"
+                                                                        >
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3 h-3">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+                                                                            </svg>
+                                                                            MOVE ({selectedLinkIds.length})
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handleBulkCopy(tab.id, section.id)}
+                                                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded-lg shadow-sm hover:shadow-md transition-all active:scale-95 whitespace-nowrap"
+                                                                            title="Copy selected links to this section"
+                                                                        >
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3 h-3">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v2.25a2.25 2.25 0 0 1-2.25 2.25H4.5A2.25 2.25 0 0 1 2.25 19.5V6.25a2.25 2.25 0 0 1 2.25-2.25h9a2.25 2.25 0 0 1 2.25 2.25v2.25m-6.75 2.25h13.5m-3 0-3 3m3-3-3-3" />
+                                                                            </svg>
+                                                                            COPY
+                                                                        </button>
+                                                                    </div>
+                                                                )}
                                                                 {/* Color Picker for Section Title */}
                                                                 <div className="flex items-center gap-1">
                                                                     <label
@@ -4188,7 +4406,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     {/* Link Reorder Buttons */}
                                                                                     <div className="flex flex-col gap-0.5">
                                                                                         <button
-                                                                                            onClick={() => handleMoveItem(tab.id, section.id, link.id, 'up')}
+                                                                                            onClick={(e) => { e.stopPropagation(); handleMoveItem(tab.id, section.id, link.id, 'up'); }}
                                                                                             disabled={isFirst}
                                                                                             className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-0.5"
                                                                                             title="Move Up"
@@ -4198,7 +4416,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             </svg>
                                                                                         </button>
                                                                                         <button
-                                                                                            onClick={() => handleMoveItem(tab.id, section.id, link.id, 'down')}
+                                                                                            onClick={(e) => { e.stopPropagation(); handleMoveItem(tab.id, section.id, link.id, 'down'); }}
                                                                                             disabled={isLast}
                                                                                             className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed p-0.5"
                                                                                             title="Move Down"
@@ -4207,6 +4425,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
                                                                                             </svg>
                                                                                         </button>
+                                                                                    </div>
+                                                                                    {/* Selection Checkbox */}
+                                                                                    <div className="flex items-center px-1" onClick={(e) => e.stopPropagation()}>
+                                                                                        <input
+                                                                                            type="checkbox"
+                                                                                            checked={selectedLinkIds.includes(link.id)}
+                                                                                            onChange={() => toggleLinkSelection(link.id)}
+                                                                                            className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 cursor-pointer"
+                                                                                        />
                                                                                     </div>
                                                                                     <div className="w-8 h-8 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sm">🔗</div>
                                                                                     <div className="flex-1 min-w-0">
