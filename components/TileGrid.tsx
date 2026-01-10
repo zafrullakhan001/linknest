@@ -3433,23 +3433,23 @@ export const TileGrid: React.FC<TileGridProps> = ({
                     </div>
 
                     {/* Link Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-sm text-slate-900 dark:text-white truncate group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                    <div className="flex-1 min-w-0 overflow-hidden">
+                      <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                         {link.label}
                       </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                      <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                         {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
                       </div>
                       {/* Browser Indicator */}
                       {settings.browser_specific_links_enabled === '1' && browserToUse && (
-                        <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors mt-0.5">
+                        <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                           ({formatBrowserName(browserToUse)} browser)
                         </div>
                       )}
                       {/* Parent Tile Info */}
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <span className="text-xs">{link.tile.emoji}</span>
-                        <span className="text-xs text-slate-400 dark:text-slate-500 truncate">{link.tile.title}</span>
+                      <div className="flex items-center gap-1.5 mt-1 overflow-hidden">
+                        <span className="text-xs shrink-0">{link.tile.emoji}</span>
+                        <span className="text-xs text-slate-400 dark:text-slate-500 line-clamp-1" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{link.tile.title}</span>
                       </div>
                     </div>
 
@@ -3723,23 +3723,23 @@ export const TileGrid: React.FC<TileGridProps> = ({
                       </div>
 
                       {/* Link Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-sm text-slate-900 dark:text-white truncate group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
+                      <div className="flex-1 min-w-0 overflow-hidden pr-10">
+                        <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                           {link.label}
                         </div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                        <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                           {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
                         </div>
                         {/* Browser Indicator */}
                         {settings.browser_specific_links_enabled === '1' && browserToUse && (
-                          <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors mt-0.5">
+                          <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                             ({formatBrowserName(browserToUse)} browser)
                           </div>
                         )}
                         {/* Parent Tile Info */}
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <span className="text-xs">{link.tile.emoji}</span>
-                          <span className="text-xs text-slate-400 dark:text-slate-500 truncate">{link.tile.title}</span>
+                        <div className="flex items-center gap-1.5 mt-1 overflow-hidden">
+                          <span className="text-xs shrink-0">{link.tile.emoji}</span>
+                          <span className="text-xs text-slate-400 dark:text-slate-500 line-clamp-1" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{link.tile.title}</span>
                         </div>
                       </div>
 
@@ -3910,7 +3910,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         </div>
 
                         {/* Link Info */}
-                        <div className="flex-1 min-w-0">
+                        <div className="flex-1 min-w-0 pr-10">
                           <div className="font-semibold text-sm text-slate-900 dark:text-white truncate group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
                             {link.label}
                           </div>

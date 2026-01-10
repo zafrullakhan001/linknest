@@ -2813,7 +2813,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 href={link.url}
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
-                                                                className="flex-1 min-w-0 block focus:outline-none pr-24"
+                                                                className="flex-1 min-w-0 block focus:outline-none pr-32 overflow-hidden"
                                                                 onClick={(e) => {
                                                                     // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                                                                     if (e.ctrlKey || e.metaKey) {
@@ -2848,17 +2848,21 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 }}
                                                             >
                                                                 <h4
-                                                                    className={`linknest-content-link-title text-sm font-semibold ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}
-                                                                    style={link.textColor ? {
-                                                                        color: link.textColor,
-                                                                        // Add text shadow for better visibility
-                                                                        textShadow: '0 1px 2px rgba(0,0,0,0.15)',
-                                                                        fontWeight: '700'
-                                                                    } : undefined}
+                                                                    className={`linknest-content-link-title text-sm font-semibold break-words ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}
+                                                                    style={{
+                                                                        wordBreak: 'break-word',
+                                                                        overflowWrap: 'anywhere',
+                                                                        ...(link.textColor ? {
+                                                                            color: link.textColor,
+                                                                            // Add text shadow for better visibility
+                                                                            textShadow: '0 1px 2px rgba(0,0,0,0.15)',
+                                                                            fontWeight: '700'
+                                                                        } : {})
+                                                                    }}
                                                                     dangerouslySetInnerHTML={{ __html: link.label || '' }}
                                                                 />
-                                                                <div className="flex flex-col gap-0.5 mt-0.5">
-                                                                    <div className="linknest-content-link-domain flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors">
+                                                                <div className="flex flex-col gap-0.5 mt-0.5 overflow-hidden">
+                                                                    <div className="linknest-content-link-domain flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors overflow-hidden">
                                                                         <span className="break-words">
                                                                             {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
                                                                         </span>
@@ -2890,7 +2894,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         // Only show browser indicator if it's not the system default
                                                                         if (browserToUse) {
                                                                             return (
-                                                                                <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors">
+                                                                                <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                                                                                     ({formatBrowserName(browserToUse)} browser)
                                                                                 </div>
                                                                             );
@@ -4566,7 +4570,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             // Only show browser indicator if it's not the system default
                                                                                             if (browserToUse) {
                                                                                                 return (
-                                                                                                    <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors">
+                                                                                                    <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                                                                                                         ({formatBrowserName(browserToUse)} browser)
                                                                                                     </div>
                                                                                                 );
@@ -5701,3 +5705,5 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     // (useEffect will handle resetting isEditing state)
     return null;
 };
+
+
