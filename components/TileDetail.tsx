@@ -2815,7 +2815,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 href={link.url}
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
-                                                                className="flex-1 min-w-0 block focus:outline-none"
+                                                                className="flex-1 min-w-0 block focus:outline-none pr-24"
                                                                 onClick={(e) => {
                                                                     // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                                                                     if (e.ctrlKey || e.metaKey) {
@@ -2866,7 +2866,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         </span>
                                                                         {link.visibility && link.visibility !== 'public' && (
                                                                             <span
-                                                                                className={`text-xs px-1.5 py-0.5 rounded-md font-medium ${link.visibility === 'authenticated'
+                                                                                className={`text-xs px-1.5 py-0.5 rounded-md font-medium shrink-0 ${link.visibility === 'authenticated'
                                                                                     ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400'
                                                                                     : 'bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400'
                                                                                     }`}
@@ -2876,7 +2876,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             </span>
                                                                         )}
                                                                         {isBroken && (
-                                                                            <span className="text-red-500 text-xs font-medium flex items-center gap-1">
+                                                                            <span className="text-red-500 text-xs font-medium flex items-center gap-1 shrink-0">
                                                                                 <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
                                                                                 Broken
                                                                             </span>
@@ -3024,7 +3024,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 document.body
                                                             )}
 
-                                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 px-1">
+                                                            <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-200 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm p-0.5 rounded-lg shadow-xl border border-slate-200/50 dark:border-slate-700/50 z-20 pointer-events-none group-hover:pointer-events-auto">
                                                                 {/* Favorite button - available for all users */}
                                                                 <button
                                                                     onClick={(e) => {
@@ -3039,7 +3039,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             onUpdateTiles([...allTiles], true);
                                                                         }
                                                                     }}
-                                                                    className={`p-2 rounded-lg transition-all ${isAuthenticated
+                                                                    className={`p-1 rounded-md transition-all ${isAuthenticated
                                                                         ? (link.isFavorite
                                                                             ? 'text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20'
                                                                             : 'text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-700')
@@ -3066,7 +3066,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         handleCheckSingleLink(link.id);
                                                                     }}
                                                                     disabled={checkingLinkId === link.id}
-                                                                    className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all"
+                                                                    className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all"
                                                                     title="Check link health"
                                                                 >
                                                                     {checkingLinkId === link.id ? (
@@ -3084,7 +3084,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 {/* Copy button */}
                                                                 <button
                                                                     onClick={(e) => handleCopy(e, link.url, link.id)}
-                                                                    className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all relative"
+                                                                    className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all relative"
                                                                     title="Copy URL"
                                                                 >
                                                                     {copiedId === link.id ? (
@@ -3139,7 +3139,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             }));
                                                                             setShowBrowserMenu(prev => ({ ...prev, [link.id]: true }));
                                                                         }}
-                                                                        className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all"
+                                                                        className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all"
                                                                         title="Open in browser"
                                                                     >
                                                                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">

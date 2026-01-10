@@ -11,7 +11,7 @@ function resolveApiBase(): string {
   // This automatically uses the same protocol (HTTP/HTTPS) as the page
   if (typeof window !== 'undefined') {
     const path = window.location.pathname || '';
-    
+
     // Extract base path (everything before the last segment or root)
     // Examples:
     // /myapp/ -> /myapp/api
@@ -85,7 +85,7 @@ export interface SpaceStyles {
   tileFontSize: number;
   tileFontWeight: string;
   tileFontStyle: string;
-  
+
   // Tile description text styling
   tileDescriptionTextColor: string;
   tileDescriptionDarkTextColor: string; // Dark mode text color
@@ -463,7 +463,7 @@ export const styleService = {
     try {
       const cached = localStorage.getItem(STYLES_CACHE_KEY);
       const timestamp = localStorage.getItem(STYLES_CACHE_TIMESTAMP_KEY);
-      
+
       if (cached && timestamp) {
         const age = Date.now() - parseInt(timestamp, 10);
         if (age < CACHE_DURATION) {
@@ -557,7 +557,7 @@ export const styleService = {
   async resetStyles(): Promise<void> {
     // Clear cache when resetting
     this.clearCache();
-    
+
     const response = await fetch(`${API_BASE}/styles`, {
       method: 'DELETE',
       credentials: 'include'
@@ -671,13 +671,13 @@ export const styleService = {
         ...(styles.contentGridColumns || {})
       }
     };
-    
+
     const exportData: any = {
       version: '1.2', // Updated version to include rich text hover effect 'none' option and border color picker
       exportedAt: new Date().toISOString(),
       styles: completeStyles
     };
-    
+
     // Include profiles if requested
     if (includeProfiles) {
       try {
@@ -716,7 +716,7 @@ export const styleService = {
         // Continue with export even if profiles fail
       }
     }
-    
+
     const dataStr = JSON.stringify(exportData, null, 2);
     const dataBlob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(dataBlob);
@@ -802,13 +802,13 @@ export const styleService = {
                     ...(profile.styles.contentGridColumns || {})
                   }
                 };
-                
+
                 // Validate richTextHoverEffect for profile styles
                 const validRichTextHoverEffects: Array<'lift' | 'glow' | 'scale' | 'slide' | 'none'> = ['lift', 'glow', 'scale', 'slide', 'none'];
                 if (mergedProfileStyles.richTextHoverEffect && !validRichTextHoverEffects.includes(mergedProfileStyles.richTextHoverEffect as any)) {
                   mergedProfileStyles.richTextHoverEffect = DEFAULT_STYLES.richTextHoverEffect;
                 }
-                
+
                 return {
                   ...profile,
                   styles: mergedProfileStyles
@@ -817,7 +817,7 @@ export const styleService = {
               return profile;
             });
           }
-          
+
           resolve({ styles, profiles: profilesData });
         } catch (error) {
           reject(new Error('Invalid style file format'));
@@ -862,8 +862,8 @@ export const styleService = {
     }
 
     // Build background with effects - adapt for dark mode
-    let bgColor = styles.useGradient 
-      ? gradientCSS 
+    let bgColor = styles.useGradient
+      ? gradientCSS
       : (isDark ? (styles.tileDarkBackgroundColor || '#1e293b') : styles.tileBackgroundColor);
 
     // Metallic effect
@@ -1737,7 +1737,7 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
   let richTextBackground = '';
   let richTextBorder = '';
   let richTextShadow = '';
-  
+
   // Check if no-border is enabled first
   if (styles.richTextNoBorder) {
     richTextBorder = 'none';
@@ -1793,7 +1793,7 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
   // Rich Text hover effects
   let richTextHoverTransform = '';
   let richTextHoverShadow = '';
-  
+
   switch (styles.richTextHoverEffect) {
     case 'lift':
       richTextHoverTransform = 'translateY(-4px)';
@@ -1821,7 +1821,7 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
   let linkBackground = '';
   let linkBorder = '';
   let linkShadow = '';
-  
+
   // Check if no-border is enabled first
   if (styles.contentLinkNoBorder) {
     linkBorder = 'none';
@@ -2067,8 +2067,8 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       box-shadow: ${richTextHoverShadow} !important;
       ${styles.richTextStyle === 'button' ? `
         background: ${isDark
-        ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(139, 92, 246, 0.3))'
-        : `linear-gradient(135deg, ${styles.contentHeaderGradientStart}20, ${styles.contentHeaderGradientEnd}20)`} !important;
+          ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(139, 92, 246, 0.3))'
+          : `linear-gradient(135deg, ${styles.contentHeaderGradientStart}20, ${styles.contentHeaderGradientEnd}20)`} !important;
       ` : ''}
     }
     ` : ''}
@@ -2105,7 +2105,7 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       display: grid !important;
       width: 100% !important;
       /* Default: auto-fit for side-by-side view */
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)) !important;
+      grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)) !important;
     }
     
     .linknest-content-link-grid > * {
@@ -2125,7 +2125,7 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       }
       /* Side-by-side view: adjust minmax for better fit */
       [data-view-layout="side-by-side"] .linknest-content-link-grid {
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)) !important;
+        grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)) !important;
       }
     }
     
@@ -2134,7 +2134,7 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
         grid-template-columns: repeat(${styles.contentGridColumns.md || 2}, minmax(0, 1fr)) !important;
       }
       [data-view-layout="side-by-side"] .linknest-content-link-grid {
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important;
+        grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)) !important;
       }
     }
     
@@ -2143,7 +2143,7 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
         grid-template-columns: repeat(${styles.contentGridColumns.lg || 3}, minmax(0, 1fr)) !important;
       }
       [data-view-layout="side-by-side"] .linknest-content-link-grid {
-        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)) !important;
+        grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)) !important;
       }
     }
     
@@ -2152,7 +2152,7 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
         grid-template-columns: repeat(${styles.contentGridColumns.xl || 4}, minmax(0, 1fr)) !important;
       }
       [data-view-layout="side-by-side"] .linknest-content-link-grid {
-        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)) !important;
+        grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)) !important;
       }
     }
   `;
