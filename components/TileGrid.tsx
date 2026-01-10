@@ -4113,7 +4113,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 </div>
               </div>
 
-              {/* Sub-row for Sort and Position Controls */}
+              {/* Sub-row for Sort, Position, and Monitoring Controls */}
               <div className="flex items-center gap-4 mb-4">
                 {/* Sort Controls */}
                 <div className="flex items-center gap-2">
@@ -4162,6 +4162,51 @@ export const TileGrid: React.FC<TileGridProps> = ({
                     </button>
                   </div>
                 </div>
+
+                {/* Monitoring Controls */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleExportStats}
+                    className="flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg transition-all shadow-sm hover:shadow-md"
+                    title="Export stats to CSV"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-emerald-500">
+                      <path fillRule="evenodd" d="M3 4.5A1.5 1.5 0 014.5 3h11A1.5 1.5 0 0117 4.5v11a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 013 15.5v-11zM4.5 4.5v11h11v-11h-11z" clipRule="evenodd" />
+                      <path fillRule="evenodd" d="M10 13a.75.75 0 01-.75-.75V7.56l-1.72 1.72a.75.75 0 01-1.06-1.06l3-3a.75.75 0 011.06 0l3 3a.75.75 0 11-1.06 1.06l-1.72-1.72v4.69A.75.75 0 0110 13z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+
+                  <button
+                    onClick={handleForceRefresh}
+                    disabled={isCheckingHealth}
+                    className={`flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg transition-all shadow-sm hover:shadow-md disabled:opacity-50 ${isCheckingHealth ? 'animate-spin' : ''}`}
+                    title="Force refresh now"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-blue-500">
+                      <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                      <path d="M21 3v5h-5" />
+                    </svg>
+                  </button>
+
+                  <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-1 shadow-sm">
+                    <div className="relative w-8 h-8 flex items-center justify-center">
+                      <svg className="w-6 h-6 rotate-[-90deg]">
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="transparent" className="text-slate-100 dark:text-slate-700" />
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="transparent" strokeDasharray={2 * Math.PI * 10} strokeDashoffset={isAutoRefreshEnabled ? (2 * Math.PI * 10) * (1 - refreshCountdown / autoRefreshInterval) : (2 * Math.PI * 10)} className={`${isAutoRefreshEnabled ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'} transition-all duration-1000 ease-linear`} strokeLinecap="round" />
+                      </svg>
+                      <button onClick={() => setIsAutoRefreshEnabled(!isAutoRefreshEnabled)} className="absolute inset-0 flex items-center justify-center" title={isAutoRefreshEnabled ? "Disable auto-refresh" : "Enable auto-refresh"}>
+                        <div className={`w-1.5 h-1.5 rounded-full ${isAutoRefreshEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-600'}`}></div>
+                      </button>
+                    </div>
+                    <select value={autoRefreshInterval} onChange={(e) => setAutoRefreshInterval(Number(e.target.value))} disabled={!isAutoRefreshEnabled} className="bg-transparent text-[10px] font-medium text-slate-600 dark:text-slate-400 border-none focus:ring-0 cursor-pointer disabled:opacity-50 pr-2 pl-0">
+                      <option value={10}>10s</option>
+                      <option value={30}>30s</option>
+                      <option value={60}>1m</option>
+                      <option value={180}>3m</option>
+                      <option value={300}>5m</option>
+                    </select>
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
@@ -4184,10 +4229,16 @@ export const TileGrid: React.FC<TileGridProps> = ({
                     const fullAnimationClass = `${animationClass} ${decorationClass}`.trim();
                     const animationDelay = (linkIndex * 50);
 
+                    // Get health check result for this link
+                    const healthResult = linkHealthResults.get(link.id);
+                    const healthStatus = healthResult?.health.status || 'unknown';
+                    const latency = healthResult?.latency;
+                    const httpCode = healthResult?.health.httpCode;
+
                     return (
                       <div
                         key={link.id}
-                        className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} linknest-tile-animated`}
+                        className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} linknest-tile-animated overflow-hidden`}
                         style={{ animationDelay: `${animationDelay}ms` }}
                         onClick={(e) => {
                           // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
@@ -4210,12 +4261,19 @@ export const TileGrid: React.FC<TileGridProps> = ({
                           window.open(link.url, '_blank');
                         }}
                       >
-                        {/* Health Status Indicator */}
-                        {link.health && (
-                          <div className="shrink-0">
+                        {/* Shark Fin Health Indicator - Top Left Corner */}
+                        {healthResult && (
+                          <div
+                            className="absolute -top-[1px] -left-[1px] w-4 h-4 z-20 pointer-events-none overflow-hidden"
+                            title={`Server Status: ${healthStatus.toUpperCase()}${latency ? `\nLatency: ${favoriteLinkHealthService.formatLatency(latency)} (Roundtrip from your browser)` : ''}`}
+                          >
                             <div
-                              className={`w-2 h-2 rounded-full ${linkHealthService.getHealthColor(link.health.status)}`}
-                              title={`${linkHealthService.getHealthLabel(link.health.status)}${link.health.error ? `: ${link.health.error}` : ''}`}
+                              className="absolute -top-2 -left-2 w-5 h-5 rotate-45"
+                              style={{
+                                backgroundColor: healthStatus === 'healthy' ? '#10b981' :
+                                  healthStatus === 'timeout' ? '#f97316' :
+                                    healthStatus === 'broken' ? '#ef4444' : '#94a3b8'
+                              }}
                             />
                           </div>
                         )}
@@ -4226,25 +4284,37 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         </div>
 
                         {/* Link Info */}
-                        <div className="flex-1 min-w-0 pr-10">
-                          <div className="font-semibold text-sm text-slate-900 dark:text-white truncate group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                        <div className="flex-1 min-w-0 overflow-hidden">
+                          <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                             {link.label}
                           </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                          <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                             {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
                           </div>
                           {/* Browser Indicator */}
                           {settings.browser_specific_links_enabled === '1' && browserToUse && (
-                            <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors mt-0.5">
+                            <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                               ({formatBrowserName(browserToUse)} browser)
                             </div>
                           )}
                           {/* Parent Tile Info */}
-                          <div className="flex items-center gap-1.5 mt-1">
-                            <span className="text-xs">{link.tile.emoji}</span>
-                            <span className="text-xs text-slate-400 dark:text-slate-500 truncate">{link.tile.title}</span>
+                          <div className="flex items-center gap-1.5 mt-1 overflow-hidden">
+                            <span className="text-xs shrink-0">{link.tile.emoji}</span>
+                            <span className="text-xs text-slate-400 dark:text-slate-500 line-clamp-1" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{link.tile.title}</span>
                           </div>
                         </div>
+
+                        {/* Latency and Status Code - Bottom Right Corner */}
+                        {healthResult && (latency || httpCode) && (
+                          <div
+                            className="absolute bottom-1 right-1 text-[10px] text-slate-400 dark:text-slate-500 opacity-60 font-mono cursor-help"
+                            title={`Server Status: ${healthStatus.toUpperCase()}${httpCode ? ` (${httpCode})` : ''}${latency ? `\nLatency: ${favoriteLinkHealthService.formatLatency(latency)} (Roundtrip from your browser)` : ''}`}
+                          >
+                            {latency && <span>{favoriteLinkHealthService.formatLatency(latency)}</span>}
+                            {latency && httpCode && <span className="mx-0.5">·</span>}
+                            {httpCode && <span>{httpCode}</span>}
+                          </div>
+                        )}
 
                         {/* Unfavorite Button */}
                         <button
