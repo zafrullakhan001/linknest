@@ -898,7 +898,6 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
   const modalPositionRef = useRef({ x: 0, y: 0 });
   const modalSizeRef = useRef({ width: 0, height: 0 });
-  const animationFrameRef = useRef<number | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
 
   // Initialize modal size when it opens
@@ -965,40 +964,19 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const handleDrag = useCallback((e: MouseEvent) => {
     if (!isDragging || !modalRef.current) return;
 
-    // Cancel any pending animation frame
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-    }
+    const newX = e.clientX - dragStartRef.current.x;
+    const newY = e.clientY - dragStartRef.current.y;
 
-    // Use requestAnimationFrame for smooth updates
-    animationFrameRef.current = requestAnimationFrame(() => {
-      if (!modalRef.current) return;
+    // Update ref immediately
+    modalPositionRef.current = { x: newX, y: newY };
 
-      const newX = e.clientX - dragStartRef.current.x;
-      const newY = e.clientY - dragStartRef.current.y;
-
-      // Constrain to viewport
-      const maxX = window.innerWidth - modalSizeRef.current.width;
-      const maxY = window.innerHeight - modalSizeRef.current.height;
-
-      const constrainedX = Math.max(0, Math.min(newX, maxX));
-      const constrainedY = Math.max(0, Math.min(newY, maxY));
-
-      // Update ref immediately for next frame
-      modalPositionRef.current = { x: constrainedX, y: constrainedY };
-
-      // Update DOM directly for smooth performance
-      modalRef.current.style.left = `${constrainedX}px`;
-      modalRef.current.style.top = `${constrainedY}px`;
-      modalRef.current.style.position = 'absolute';
-    });
+    // Update DOM directly for smooth performance
+    modalRef.current.style.left = `${newX}px`;
+    modalRef.current.style.top = `${newY}px`;
+    modalRef.current.style.position = 'absolute';
   }, [isDragging]);
 
   const handleDragEnd = useCallback(() => {
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
     // Update state with final position
     setModalPosition(modalPositionRef.current);
     setIsDragging(false);
@@ -1024,40 +1002,26 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const handleResize = useCallback((e: MouseEvent) => {
     if (!isResizing || !modalRef.current) return;
 
-    // Cancel any pending animation frame
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-    }
+    const deltaX = e.clientX - resizeStartRef.current.x;
+    const deltaY = e.clientY - resizeStartRef.current.y;
 
-    // Use requestAnimationFrame for smooth updates
-    animationFrameRef.current = requestAnimationFrame(() => {
-      if (!modalRef.current) return;
+    const minWidth = 400;
+    const minHeight = 300;
+    const maxWidth = window.innerWidth - modalPositionRef.current.x;
+    const maxHeight = window.innerHeight - modalPositionRef.current.y;
 
-      const deltaX = e.clientX - resizeStartRef.current.x;
-      const deltaY = e.clientY - resizeStartRef.current.y;
+    const newWidth = Math.max(minWidth, Math.min(resizeStartRef.current.width + deltaX, maxWidth));
+    const newHeight = Math.max(minHeight, Math.min(resizeStartRef.current.height + deltaY, maxHeight));
 
-      const minWidth = 400;
-      const minHeight = 300;
-      const maxWidth = window.innerWidth - modalPositionRef.current.x;
-      const maxHeight = window.innerHeight - modalPositionRef.current.y;
+    // Update ref immediately
+    modalSizeRef.current = { width: newWidth, height: newHeight };
 
-      const newWidth = Math.max(minWidth, Math.min(resizeStartRef.current.width + deltaX, maxWidth));
-      const newHeight = Math.max(minHeight, Math.min(resizeStartRef.current.height + deltaY, maxHeight));
-
-      // Update ref immediately
-      modalSizeRef.current = { width: newWidth, height: newHeight };
-
-      // Update DOM directly for smooth performance
-      modalRef.current.style.width = `${newWidth}px`;
-      modalRef.current.style.height = `${newHeight}px`;
-    });
+    // Update DOM directly for smooth performance
+    modalRef.current.style.width = `${newWidth}px`;
+    modalRef.current.style.height = `${newHeight}px`;
   }, [isResizing]);
 
   const handleResizeEnd = useCallback(() => {
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
     // Update state with final size
     setModalSize(modalSizeRef.current);
     setIsResizing(false);
@@ -1080,15 +1044,6 @@ export const TileGrid: React.FC<TileGridProps> = ({
       };
     }
   }, [isDragging, isResizing, handleDrag, handleResize, handleDragEnd, handleResizeEnd]);
-
-  // Cleanup animation frames on unmount or modal close
-  useEffect(() => {
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, []);
 
   // Category order state
   const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
