@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 
 export type TileAnimation =
@@ -101,10 +101,44 @@ export type TileAnimation =
     | 'squish'
     | 'slide-tilt'
     | 'swirl-in'
-    | 'blur-perspective';
+    | 'blur-perspective'
+    | 'liquid-in' | 'smoke-in' | 'fire-in' | 'pixel-in' | 'mosaic-in' | 'shatter-in' | 'crack-in' | 'dissolve-in' | 'evaporate-in' | 'crystallize-in'
+    | 'gravity-in' | 'magnet-in' | 'vortex-in' | 'black-hole-in' | 'warp-in' | 'hyper-jump-in' | 'time-warp-in' | 'dimension-shift-in' | 'phase-in' | 'ghost-fade-in'
+    | 'neon-flicker-3' | 'cyber-scan-in' | 'code-reveal-in' | 'binary-in' | 'matrix-in' | 'data-stream-in' | 'circuit-in' | 'pulse-glow-in' | 'hologram-in' | 'static-in'
+    | 'bounce-elastic-up' | 'bounce-elastic-down' | 'bounce-elastic-left' | 'bounce-elastic-right' | 'spring-in-up' | 'spring-in-down' | 'spring-in-left' | 'spring-in-right' | 'rubber-band-2' | 'bungee-in'
+    | 'slide-rotate-in-tl' | 'slide-rotate-in-tr' | 'slide-rotate-in-bl' | 'slide-rotate-in-br' | 'zoom-rotate-in' | 'flip-rotate-in' | 'swing-rotate-in' | 'bounce-rotate-in' | 'roll-rotate-in' | 'twirl-rotate-in'
+    | 'split-v-in' | 'split-h-in' | 'blind-v-in' | 'blind-h-in' | 'checker-in' | 'diagonal-in' | 'diamond-in' | 'circle-in' | 'square-in' | 'star-reveal-in'
+    | 'pop-out-in-2' | 'expand-in' | 'contract-reveal-in' | 'bounce-scale-in' | 'elastic-scale-in' | 'swing-scale-in' | 'roll-scale-in' | 'twirl-scale-in' | 'spiral-scale-in' | 'wave-scale-in'
+    | 'blur-swipe-up' | 'blur-swipe-down' | 'blur-swipe-left' | 'blur-swipe-right' | 'focus-swipe-in' | 'glow-swipe-in' | 'color-swipe-in' | 'mask-swipe-in' | 'gradient-swipe-in' | 'texture-swipe-in'
+    | 'skid-up' | 'skid-down' | 'skid-left' | 'skid-right' | 'drift-in' | 'brake-in' | 'accelerate-in' | 'cruise-in' | 'jump-in' | 'dive-in'
+    | 'heartbeat-2' | 'breathing-in' | 'flutter-in' | 'vibrate-fast' | 'jiggle-in' | 'wiggle-in' | 'tremble-in' | 'throb-in' | 'pulse-burst-in' | 'finale-mega-in';
+
+export type TileDecoration =
+    | 'none'
+    | 'christmas'
+    | 'thanksgiving'
+    | 'veterans'
+    | 'halloween'
+    | 'new-year'
+    | 'valentine'
+    | 'st-patrick'
+    | 'easter'
+    | 'birthday'
+    | 'party'
+    | 'snow'
+    | 'autumn'
+    | 'spring'
+    | 'summer';
 
 interface AnimationOption {
     id: TileAnimation;
+    name: string;
+    description: string;
+    icon: string;
+}
+
+interface DecorationOption {
+    id: TileDecoration;
     name: string;
     description: string;
     icon: string;
@@ -211,28 +245,157 @@ const ANIMATION_OPTIONS: AnimationOption[] = [
     { id: 'slide-tilt', name: 'Slide Tilt', description: 'Tilt while sliding', icon: '📐' },
     { id: 'swirl-in', name: 'Swirl In', description: 'Swirling reveal', icon: '🍭' },
     { id: 'blur-perspective', name: 'Blur Perspective', description: '3D blur reveal', icon: '🔭' },
+    { id: 'liquid-in', name: 'Liquid In', description: 'Fluent entrance', icon: '💧' },
+    { id: 'smoke-in', name: 'Smoke In', description: 'Misty appearance', icon: '🌫️' },
+    { id: 'fire-in', name: 'Fire In', description: 'Burn in effect', icon: '🔥' },
+    { id: 'pixel-in', name: 'Pixel In', description: 'Digital pixelation', icon: '👾' },
+    { id: 'mosaic-in', name: 'Mosaic In', description: 'Tiles assembly', icon: '🧱' },
+    { id: 'shatter-in', name: 'Shatter In', description: 'Fragment assembly', icon: '💎' },
+    { id: 'crack-in', name: 'Crack In', description: 'Break into place', icon: '🔨' },
+    { id: 'dissolve-in', name: 'Dissolve In', description: 'Particle transition', icon: '🌫️' },
+    { id: 'evaporate-in', name: 'Evaporate In', description: 'Steam reveal', icon: '♨️' },
+    { id: 'crystallize-in', name: 'Crystallize', description: 'Crystal growth', icon: '❄️' },
+    { id: 'gravity-in', name: 'Gravity In', description: 'Heavy drop', icon: '🌌' },
+    { id: 'magnet-in', name: 'Magnet In', description: 'Magnetic pull', icon: '🧲' },
+    { id: 'vortex-in', name: 'Vortex In', description: 'Whirlpool effect', icon: '🌀' },
+    { id: 'black-hole-in', name: 'Black Hole', description: 'Spacial distortion', icon: '⚫' },
+    { id: 'warp-in', name: 'Warp In', description: 'Space warp', icon: '🚀' },
+    { id: 'hyper-jump-in', name: 'Hyper Jump', description: 'Light speed jump', icon: '🌌' },
+    { id: 'time-warp-in', name: 'Time Warp', description: 'Chrono distortion', icon: '⏳' },
+    { id: 'dimension-shift-in', name: 'Dimensions', description: 'Phase shift', icon: '🌌' },
+    { id: 'phase-in', name: 'Phase In', description: 'Quantum phase', icon: '🔬' },
+    { id: 'ghost-fade-in', name: 'Ghost Fade', description: 'Spectral reveal', icon: '👻' },
+    { id: 'neon-flicker-3', name: 'Neon Fast', description: 'Cyber flicker', icon: '💡' },
+    { id: 'cyber-scan-in', name: 'Cyber Scan', description: 'Laser scanning', icon: '📡' },
+    { id: 'code-reveal-in', name: 'Code Reveal', description: 'Terminal style', icon: '💻' },
+    { id: 'binary-in', name: 'Binary In', description: 'Bitstream reveal', icon: '🔢' },
+    { id: 'matrix-in', name: 'Matrix In', description: 'Digital rain', icon: '🟢' },
+    { id: 'data-stream-in', name: 'Data Stream', description: 'Packet assembly', icon: '📦' },
+    { id: 'circuit-in', name: 'Circuit In', description: 'PCB path reveal', icon: '🔌' },
+    { id: 'pulse-glow-in', name: 'Pulse Glow', description: 'Radiant pulse', icon: '🌟' },
+    { id: 'hologram-in', name: 'Hologram', description: 'Projected reveal', icon: '📡' },
+    { id: 'static-in', name: 'Static In', description: 'TV static effect', icon: '📺' },
+    { id: 'bounce-elastic-up', name: 'Bounce El. U', description: 'Elastic bounce up', icon: '⬆️' },
+    { id: 'bounce-elastic-down', name: 'Bounce El. D', description: 'Elastic bounce down', icon: '⬇️' },
+    { id: 'bounce-elastic-left', name: 'Bounce El. L', description: 'Elastic bounce left', icon: '⬅️' },
+    { id: 'bounce-elastic-right', name: 'Bounce El. R', description: 'Elastic bounce right', icon: '➡️' },
+    { id: 'spring-in-up', name: 'Spring Up', description: 'Spring from bottom', icon: '🌱' },
+    { id: 'spring-in-down', name: 'Spring Down', description: 'Spring from top', icon: '🌱' },
+    { id: 'spring-in-left', name: 'Spring Left', description: 'Spring from right', icon: '🌱' },
+    { id: 'spring-in-right', name: 'Spring Right', description: 'Spring from left', icon: '🌱' },
+    { id: 'rubber-band-2', name: 'Rubber 2', description: 'Vibrant stretch', icon: '🪁' },
+    { id: 'bungee-in', name: 'Bungee In', description: 'Bungee jump reveal', icon: '🪂' },
+    { id: 'slide-rotate-in-tl', name: 'Slide Rot TL', description: 'Corner rotate in', icon: '↖️' },
+    { id: 'slide-rotate-in-tr', name: 'Slide Rot TR', description: 'Corner rotate in', icon: '↗️' },
+    { id: 'slide-rotate-in-bl', name: 'Slide Rot BL', description: 'Corner rotate in', icon: '↙️' },
+    { id: 'slide-rotate-in-br', name: 'Slide Rot BR', description: 'Corner rotate in', icon: '↘️' },
+    { id: 'zoom-rotate-in', name: 'Zoom Rotate', description: 'Scale & spin', icon: '🌀' },
+    { id: 'flip-rotate-in', name: 'Flip Rotate', description: '3D spin reveal', icon: '🔄' },
+    { id: 'swing-rotate-in', name: 'Swing Rotate', description: 'Pendulum spin', icon: '🎠' },
+    { id: 'bounce-rotate-in', name: 'Bounce Rot', description: 'Bouncy spin', icon: '🏀' },
+    { id: 'roll-rotate-in', name: 'Roll Rotate', description: 'Rolling spin', icon: '🗞️' },
+    { id: 'twirl-rotate-in', name: 'Twirl Rot', description: 'Vortex spin', icon: '🌪️' },
+    { id: 'split-v-in', name: 'Split V', description: 'Vertical split', icon: '↕️' },
+    { id: 'split-h-in', name: 'Split H', description: 'Horizontal split', icon: '↔️' },
+    { id: 'blind-v-in', name: 'Blind V', description: 'Vertical blinds', icon: '🚪' },
+    { id: 'blind-h-in', name: 'Blind H', description: 'Horizontal blinds', icon: '🚪' },
+    { id: 'checker-in', name: 'Checker In', description: 'Pattern assembly', icon: '🏁' },
+    { id: 'diagonal-in', name: 'Diagonal In', description: 'Corner sweep', icon: '📐' },
+    { id: 'diamond-in', name: 'Diamond In', description: 'Diamond shape', icon: '💎' },
+    { id: 'circle-in', name: 'Circle In', description: 'Radial reveal', icon: '⭕' },
+    { id: 'square-in', name: 'Square In', description: 'Box reveal', icon: '⬜' },
+    { id: 'star-reveal-in', name: 'Star Reveal', description: 'Star shape', icon: '⭐' },
+    { id: 'pop-out-in-2', name: 'Pop 2', description: 'Explosive pop', icon: '💥' },
+    { id: 'expand-in', name: 'Expand In', description: 'Sudden growth', icon: '📈' },
+    { id: 'contract-reveal-in', name: 'Contract In', description: 'Focus scale', icon: '📉' },
+    { id: 'bounce-scale-in', name: 'Bounce Scale', description: 'Bouncy growth', icon: '🔝' },
+    { id: 'elastic-scale-in', name: 'Elastic Scale', description: 'Spring growth', icon: '🏹' },
+    { id: 'swing-scale-in', name: 'Swing Scale', description: 'Pendulum growth', icon: '🎠' },
+    { id: 'roll-scale-in', name: 'Roll Scale', description: 'Rolling growth', icon: '🗞️' },
+    { id: 'twirl-scale-in', name: 'Twirl Scale', description: 'Spinning growth', icon: '🌪️' },
+    { id: 'spiral-scale-in', name: 'Spiral Scale', description: 'Vortex growth', icon: '🌀' },
+    { id: 'wave-scale-in', name: 'Wave Scale', description: 'Fluctuating growth', icon: '🌊' },
+    { id: 'blur-swipe-up', name: 'Blur Swi U', description: 'Blurred sweep up', icon: '⬆️' },
+    { id: 'blur-swipe-down', name: 'Blur Swi D', description: 'Blurred sweep down', icon: '⬇️' },
+    { id: 'blur-swipe-left', name: 'Blur Swi L', description: 'Blurred sweep left', icon: '⬅️' },
+    { id: 'blur-swipe-right', name: 'Blur Swi R', description: 'Blurred sweep right', icon: '➡️' },
+    { id: 'focus-swipe-in', name: 'Focus Swipe', description: 'Sharp sweep', icon: '👁️' },
+    { id: 'glow-swipe-in', name: 'Glow Swipe', description: 'Radiant sweep', icon: '🌟' },
+    { id: 'color-swipe-in', name: 'Color Swipe', description: 'Vivid sweep', icon: '🌈' },
+    { id: 'mask-swipe-in', name: 'Mask Swipe', description: 'Shape sweep', icon: '🎭' },
+    { id: 'gradient-swipe-in', name: 'Grad. Swipe', description: 'Smooth sweep', icon: '🎨' },
+    { id: 'texture-swipe-in', name: 'Text. Swipe', description: 'Detailed sweep', icon: '🧱' },
+    { id: 'skid-up', name: 'Skid Up', description: 'Brake from bottom', icon: '🚀' },
+    { id: 'skid-down', name: 'Skid Down', description: 'Brake from top', icon: '🚀' },
+    { id: 'skid-left', name: 'Skid Left', description: 'Brake from right', icon: '🚀' },
+    { id: 'skid-right', name: 'Skid Right', description: 'Brake from left', icon: '🚀' },
+    { id: 'drift-in', name: 'Drift In', description: 'Smooth slide', icon: '🏎️' },
+    { id: 'brake-in', name: 'Brake In', description: 'Hard stop', icon: '🛑' },
+    { id: 'accelerate-in', name: 'Accelerate', description: 'Fast start', icon: '💨' },
+    { id: 'cruise-in', name: 'Cruise In', description: 'Steady entry', icon: '🚢' },
+    { id: 'jump-in', name: 'Jump In', description: 'Sudden leap', icon: '🦘' },
+    { id: 'dive-in', name: 'Dive In', description: 'Deep entry', icon: '🤿' },
+    { id: 'heartbeat-2', name: 'Heart 2', description: 'Fast beat', icon: '💓' },
+    { id: 'breathing-in', name: 'Breathing', description: 'Natural pulse', icon: '🫁' },
+    { id: 'flutter-in', name: 'Flutter In', description: 'Quick vibration', icon: '🦋' },
+    { id: 'vibrate-fast', name: 'Vib. Fast', description: 'Hyper shake', icon: '📳' },
+    { id: 'jiggle-in', name: 'Jiggle In', description: 'Soft wobble', icon: '🍮' },
+    { id: 'wiggle-in', name: 'Wiggle In', description: 'Happy entry', icon: '🐕' },
+    { id: 'tremble-in', name: 'Tremble In', description: 'Fine shake', icon: '🥶' },
+    { id: 'throb-in', name: 'Throb In', description: 'Strong pulse', icon: '💓' },
+    { id: 'pulse-burst-in', name: 'Pulse Burst', description: 'Explosive pulse', icon: '💥' },
+    { id: 'finale-mega-in', name: 'Grand Finale', description: 'Ultimate reveal', icon: '🏆' },
 ];
 
-const STORAGE_KEY = 'linknest_tile_animation';
+const DECORATION_OPTIONS: DecorationOption[] = [
+    { id: 'none', name: 'None', description: 'No decoration', icon: '⭕' },
+    { id: 'christmas', name: 'Christmas', description: 'Santa hat decoration', icon: '🎅' },
+    { id: 'thanksgiving', name: 'Thanksgiving', description: 'Turkey decoration', icon: '🦃' },
+    { id: 'veterans', name: 'Veterans Day', description: 'Badge decoration', icon: '🎖️' },
+    { id: 'halloween', name: 'Halloween', description: 'Pumpkin decoration', icon: '🎃' },
+    { id: 'new-year', name: 'New Year', description: 'Fireworks decoration', icon: '🎆' },
+    { id: 'valentine', name: 'Valentine', description: 'Heart decoration', icon: '💖' },
+    { id: 'st-patrick', name: 'St. Patrick', description: 'Clover decoration', icon: '🍀' },
+    { id: 'easter', name: 'Easter', description: 'Easter egg decoration', icon: '🥚' },
+    { id: 'birthday', name: 'Birthday', description: 'Cake decoration', icon: '🎂' },
+    { id: 'party', name: 'Party', description: 'Confetti decoration', icon: '🎉' },
+    { id: 'snow', name: 'Winter', description: 'Snowflake decoration', icon: '❄️' },
+    { id: 'autumn', name: 'Autumn', description: 'Maple leaf decoration', icon: '🍁' },
+    { id: 'spring', name: 'Spring', description: 'Flower decoration', icon: '🌸' },
+    { id: 'summer', name: 'Summer', description: 'Sun decoration', icon: '☀️' },
+];
+
+const ANIMATION_STORAGE_KEY = 'linknest_tile_animation';
+const DECORATION_STORAGE_KEY = 'linknest_tile_decoration';
 
 interface TileAnimationSelectorProps {
     onAnimationChange?: (animation: TileAnimation) => void;
+    onDecorationChange?: (decoration: TileDecoration) => void;
 }
 
-export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ onAnimationChange }) => {
+export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ onAnimationChange, onDecorationChange }) => {
     const [selectedAnimation, setSelectedAnimation] = useState<TileAnimation>('fade-in');
+    const [selectedDecoration, setSelectedDecoration] = useState<TileDecoration>('none');
+    const [activeTab, setActiveTab] = useState<'animations' | 'decorations'>('animations');
     const [isOpen, setIsOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
     const buttonRef = useRef<HTMLButtonElement>(null);
     const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
 
-    // Load animation preference from localStorage on mount
+    // Load preferences from localStorage on mount
     useEffect(() => {
-        const savedAnimation = localStorage.getItem(STORAGE_KEY) as TileAnimation | null;
+        const savedAnimation = localStorage.getItem(ANIMATION_STORAGE_KEY) as TileAnimation | null;
         if (savedAnimation && ANIMATION_OPTIONS.find(opt => opt.id === savedAnimation)) {
             setSelectedAnimation(savedAnimation);
             onAnimationChange?.(savedAnimation);
         }
-    }, [onAnimationChange]);
+
+        const savedDecoration = localStorage.getItem(DECORATION_STORAGE_KEY) as TileDecoration | null;
+        if (savedDecoration && DECORATION_OPTIONS.find(opt => opt.id === savedDecoration)) {
+            setSelectedDecoration(savedDecoration);
+            onDecorationChange?.(savedDecoration);
+        }
+    }, [onAnimationChange, onDecorationChange]);
 
     // Update dropdown position when opened
     useEffect(() => {
@@ -247,39 +410,66 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ on
 
     const handleAnimationSelect = (animation: TileAnimation) => {
         setSelectedAnimation(animation);
-        localStorage.setItem(STORAGE_KEY, animation);
+        localStorage.setItem(ANIMATION_STORAGE_KEY, animation);
         onAnimationChange?.(animation);
     };
 
-    const selectedOption = ANIMATION_OPTIONS.find(opt => opt.id === selectedAnimation) || ANIMATION_OPTIONS[0];
+    const handleDecorationSelect = (decoration: TileDecoration) => {
+        setSelectedDecoration(decoration);
+        localStorage.setItem(DECORATION_STORAGE_KEY, decoration);
+        onDecorationChange?.(decoration);
+    };
+
+    const filteredAnimations = useMemo(() => {
+        const query = searchQuery.toLowerCase();
+        return ANIMATION_OPTIONS.map((opt, index) => ({ ...opt, index: index + 1 })).filter(opt =>
+            opt.name.toLowerCase().includes(query) ||
+            opt.description.toLowerCase().includes(query) ||
+            opt.index.toString() === query
+        );
+    }, [searchQuery]);
+
+    const filteredDecorations = useMemo(() => {
+        const query = searchQuery.toLowerCase();
+        return DECORATION_OPTIONS.map((opt, index) => ({ ...opt, index: index + 1 })).filter(opt =>
+            opt.name.toLowerCase().includes(query) ||
+            opt.description.toLowerCase().includes(query) ||
+            opt.index.toString() === query
+        );
+    }, [searchQuery]);
+
+    const selectedAnimationOption = ANIMATION_OPTIONS.find(opt => opt.id === selectedAnimation) || ANIMATION_OPTIONS[0];
+    const selectedDecorationOption = DECORATION_OPTIONS.find(opt => opt.id === selectedDecoration) || DECORATION_OPTIONS[0];
 
     return (
         <>
             {/* Trigger Button */}
-            <button
-                ref={buttonRef}
-                onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 transition-all shadow-sm hover:shadow-md"
-                title="Select tile animation"
-            >
-                <span className="text-lg">{selectedOption.icon}</span>
-                <div className="flex flex-col items-start">
-                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                        Animation
-                    </span>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">
-                        {selectedOption.name}
-                    </span>
-                </div>
-                <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+            <div className="flex items-center gap-2">
+                <button
+                    ref={buttonRef}
+                    onClick={() => setIsOpen(!isOpen)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 transition-all shadow-sm hover:shadow-md"
+                    title="Select tile animation and decoration"
                 >
-                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
-                </svg>
-            </button>
+                    <span className="text-lg">{selectedAnimationOption.icon}</span>
+                    <div className="flex flex-col items-start">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Style
+                        </span>
+                        <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                            {selectedAnimationOption.name} {selectedDecoration !== 'none' && `+ ${selectedDecorationOption.icon}`}
+                        </span>
+                    </div>
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                    >
+                        <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                    </svg>
+                </button>
+            </div>
 
             {/* Dropdown Menu - Rendered via Portal */}
             {isOpen && createPortal(
@@ -290,82 +480,137 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ on
                         onClick={() => setIsOpen(false)}
                     />
 
-                    {/* Animation Options Grid */}
+                    {/* Options Panel */}
                     <div
-                        className="fixed w-80 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[10000] overflow-hidden"
+                        className="fixed w-[360px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[10000] overflow-hidden"
                         style={{
                             top: `${dropdownPosition.top}px`,
                             left: `${dropdownPosition.left}px`,
                         }}
                     >
-                        <div className="p-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                                        Choose Tile Animation
-                                    </h3>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                        Select how tiles appear on the page
-                                    </p>
-                                </div>
-                                <span className="px-2 py-0.5 rounded-full bg-brand-100 dark:bg-brand-500/20 text-brand-600 dark:text-brand-400 text-[10px] font-bold">
-                                    {ANIMATION_OPTIONS.length} Total
-                                </span>
+                        {/* Tabs */}
+                        <div className="flex border-b border-slate-200 dark:border-slate-700">
+                            <button
+                                onClick={() => setActiveTab('animations')}
+                                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${activeTab === 'animations'
+                                    ? 'text-brand-600 border-b-2 border-brand-500 bg-brand-50/50 dark:bg-brand-500/5'
+                                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900'
+                                    }`}
+                            >
+                                ✨ Animations ({ANIMATION_OPTIONS.length})
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('decorations')}
+                                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${activeTab === 'decorations'
+                                    ? 'text-brand-600 border-b-2 border-brand-500 bg-brand-50/50 dark:bg-brand-500/5'
+                                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900'
+                                    }`}
+                            >
+                                🎄 Festive ({DECORATION_OPTIONS.length})
+                            </button>
+                        </div>
+
+                        {/* Search & Header */}
+                        <div className="p-3 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    placeholder={`Search ${activeTab === 'animations' ? 'animations' : 'decorations'}...`}
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="w-full px-3 py-1.5 pl-8 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-brand-500"
+                                    autoFocus
+                                />
+                                <svg
+                                    className="absolute left-2.5 top-2 w-3.5 h-3.5 text-slate-400"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
                             </div>
                         </div>
 
+                        {/* Options Grid */}
                         <div className="max-h-96 overflow-y-auto p-2">
-                            <div className="grid grid-cols-2 gap-2">
-                                {ANIMATION_OPTIONS.map((option) => (
-                                    <button
-                                        key={option.id}
-                                        onClick={() => handleAnimationSelect(option.id)}
-                                        className={`
-                      p-3 rounded-lg text-left transition-all
-                      ${selectedAnimation === option.id
-                                                ? 'bg-brand-50 dark:bg-brand-500/10 border-2 border-brand-500 shadow-sm'
-                                                : 'bg-slate-50 dark:bg-slate-900 border-2 border-transparent hover:border-slate-300 dark:hover:border-slate-600'
-                                            }
-                    `}
-                                    >
-                                        <div className="flex items-start gap-2">
-                                            <span className="text-2xl">{option.icon}</span>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="font-medium text-sm text-slate-700 dark:text-slate-300 truncate">
-                                                    {option.name}
-                                                </div>
-                                                <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                                    {option.description}
+                            {activeTab === 'animations' ? (
+                                <div className="grid grid-cols-2 gap-2">
+                                    {filteredAnimations.map((option) => (
+                                        <button
+                                            key={option.id}
+                                            onClick={() => handleAnimationSelect(option.id)}
+                                            className={`
+                        p-3 rounded-lg text-left transition-all relative
+                        ${selectedAnimation === option.id
+                                                    ? 'bg-brand-50 dark:bg-brand-500/10 border-2 border-brand-500 shadow-sm'
+                                                    : 'bg-slate-50 dark:bg-slate-900 border-2 border-transparent hover:border-slate-300 dark:hover:border-slate-600'
+                                                }
+                      `}
+                                        >
+                                            <span className="absolute top-1 right-1 text-[9px] font-bold text-slate-400">#{option.index}</span>
+                                            <div className="flex items-start gap-2">
+                                                <span className="text-2xl">{option.icon}</span>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="font-medium text-sm text-slate-700 dark:text-slate-300 truncate">
+                                                        {option.name}
+                                                    </div>
+                                                    <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
+                                                        {option.description}
+                                                    </div>
                                                 </div>
                                             </div>
-                                            {selectedAnimation === option.id && (
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-500 flex-shrink-0">
-                                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                                                </svg>
-                                            )}
-                                        </div>
-                                    </button>
-                                ))}
-                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-2 gap-2">
+                                    {filteredDecorations.map((option) => (
+                                        <button
+                                            key={option.id}
+                                            onClick={() => handleDecorationSelect(option.id)}
+                                            className={`
+                        p-3 rounded-lg text-left transition-all relative
+                        ${selectedDecoration === option.id
+                                                    ? 'bg-indigo-50 dark:bg-indigo-500/10 border-2 border-indigo-500 shadow-sm'
+                                                    : 'bg-slate-50 dark:bg-slate-900 border-2 border-transparent hover:border-slate-300 dark:hover:border-slate-600'
+                                                }
+                      `}
+                                        >
+                                            <span className="absolute top-1 right-1 text-[9px] font-bold text-slate-400">#{option.index}</span>
+                                            <div className="flex items-start gap-2">
+                                                <span className="text-2xl">{option.icon}</span>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="font-medium text-sm text-slate-700 dark:text-slate-300 truncate">
+                                                        {option.name}
+                                                    </div>
+                                                    <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
+                                                        {option.description}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
-                        {/* Preview Section */}
+                        {/* Footer / Actions */}
                         <div className="p-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
                             <div className="flex items-center justify-between">
-                                <span className="text-xs text-slate-500 dark:text-slate-400">
-                                    Preview on page load
-                                </span>
+                                <div className="flex flex-col">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Preview Active</span>
+                                    <span className="text-[10px] text-slate-500">#{selectedAnimationOption.name} + {selectedDecorationOption.name}</span>
+                                </div>
                                 <div className="flex items-center gap-2">
                                     <button
                                         onClick={() => {
-                                            // Trigger a re-render by toggling the animation class
                                             const tiles = document.querySelectorAll('.linknest-tile-animated');
                                             tiles.forEach((tile) => {
                                                 const element = tile as HTMLElement;
+                                                const currentAnim = element.style.animation;
                                                 element.style.animation = 'none';
-                                                setTimeout(() => {
-                                                    element.style.animation = '';
-                                                }, 10);
+                                                setTimeout(() => { element.style.animation = ''; }, 10);
                                             });
                                         }}
                                         className="px-3 py-1.5 text-xs font-medium text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-500/10 rounded-md transition-colors"
@@ -374,7 +619,7 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ on
                                     </button>
                                     <button
                                         onClick={() => setIsOpen(false)}
-                                        className="px-3 py-1.5 text-xs font-medium bg-brand-600 text-white hover:bg-brand-700 rounded-md transition-colors shadow-sm"
+                                        className="px-4 py-1.5 text-xs font-bold bg-brand-600 text-white hover:bg-brand-700 rounded-md transition-colors shadow-sm"
                                     >
                                         Done
                                     </button>
@@ -389,22 +634,40 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ on
     );
 };
 
-// Hook to get the current animation preference
-export const useTileAnimation = (): TileAnimation => {
+// Hook to get the current animation and decoration
+export const useTileAnimation = () => {
     const [animation, setAnimation] = useState<TileAnimation>('fade-in');
+    const [decoration, setDecoration] = useState<TileDecoration>('none');
 
     useEffect(() => {
-        const savedAnimation = localStorage.getItem(STORAGE_KEY) as TileAnimation | null;
-        if (savedAnimation && ANIMATION_OPTIONS.find(opt => opt.id === savedAnimation)) {
-            setAnimation(savedAnimation);
-        }
+        const savedAnim = localStorage.getItem(ANIMATION_STORAGE_KEY) as TileAnimation | null;
+        if (savedAnim) setAnimation(savedAnim);
+
+        const savedDec = localStorage.getItem(DECORATION_STORAGE_KEY) as TileDecoration | null;
+        if (savedDec) setDecoration(savedDec);
+
+        // Listen for storage changes
+        const handleStorageChange = () => {
+            const a = localStorage.getItem(ANIMATION_STORAGE_KEY) as TileAnimation | null;
+            const d = localStorage.getItem(DECORATION_STORAGE_KEY) as TileDecoration | null;
+            if (a) setAnimation(a);
+            if (d) setDecoration(d);
+        };
+
+        window.addEventListener('storage', handleStorageChange);
+        return () => window.removeEventListener('storage', handleStorageChange);
     }, []);
 
-    return animation;
+    return { animation, decoration };
 };
 
-// Helper function to get animation class name
+// Helper functions for class names
 export const getTileAnimationClass = (animation: TileAnimation): string => {
     if (animation === 'none') return '';
     return `tile-anim-${animation}`;
+};
+
+export const getTileDecorationClass = (decoration: TileDecoration): string => {
+    if (decoration === 'none') return '';
+    return `tile-decor-${decoration}`;
 };

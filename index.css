@@ -2386,17 +2386,2069 @@ body {
 .linknest-tile-animated.tile-anim-vibrate,
 .linknest-tile-animated.tile-anim-bounce-top,
 .linknest-tile-animated.tile-anim-bounce-bottom,
-.linknest-tile-animated.tile-anim-bounce-left,
+.linknest-tile-animated.tile-anim-bounce-left {
+  opacity: 1;
+}
+
+@keyframes tileAnimLiquid {
+  0% {
+    opacity: 0;
+    transform: scale(0.5) skew(30deg);
+  }
+
+  50% {
+    transform: scale(1.1) skew(-10deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) skew(0);
+  }
+}
+
+.tile-anim-liquid-in {
+  animation: tileAnimLiquid 0.8s forwards;
+}
+
+@keyframes tileAnimSmoke {
+  0% {
+    opacity: 0;
+    filter: blur(20px);
+    transform: translateY(20px) scale(1.2);
+  }
+
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0) scale(1);
+  }
+}
+
+.tile-anim-smoke-in {
+  animation: tileAnimSmoke 0.9s forwards;
+}
+
+@keyframes tileAnimFire {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+    filter: brightness(3) hue-rotate(45deg);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+    filter: brightness(1.5);
+  }
+
+  100% {
+    transform: scale(1);
+    filter: none;
+    opacity: 1;
+  }
+}
+
+.tile-anim-fire-in {
+  animation: tileAnimFire 0.7s forwards;
+}
+
+@keyframes tileAnimPixel {
+  0% {
+    opacity: 0;
+    clip-path: inset(45% 45% 45% 45%);
+  }
+
+  100% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.tile-anim-pixel-in {
+  animation: tileAnimPixel 0.6s steps(5) forwards;
+}
+
+@keyframes tileAnimMosaic {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+    filter: contrast(5);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: none;
+  }
+}
+
+.tile-anim-mosaic-in {
+  animation: tileAnimMosaic 0.7s forwards;
+}
+
+@keyframes tileAnimShatter {
+  0% {
+    opacity: 0;
+    transform: scale(1.5) rotate(10deg);
+    filter: blur(10px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+    filter: none;
+  }
+}
+
+.tile-anim-shatter-in {
+  animation: tileAnimShatter 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes tileAnimCrack {
+  0% {
+    opacity: 0;
+    transform: scale(0.9) rotate(-5deg);
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  }
+
+  50% {
+    opacity: 1;
+    clip-path: polygon(10% 10%, 90% 10%, 90% 90%, 10% 90%);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  }
+}
+
+.tile-anim-crack-in {
+  animation: tileAnimCrack 0.6s forwards;
+}
+
+@keyframes tileAnimDissolve {
+  0% {
+    opacity: 0;
+    filter: contrast(0) brightness(2);
+  }
+
+  100% {
+    opacity: 1;
+    filter: none;
+  }
+}
+
+.tile-anim-dissolve-in {
+  animation: tileAnimDissolve 0.8s forwards;
+}
+
+@keyframes tileAnimEvaporate {
+  0% {
+    opacity: 0;
+    transform: translateY(30px) scaleY(1.5);
+    filter: blur(10px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+    filter: none;
+  }
+}
+
+.tile-anim-evaporate-in {
+  animation: tileAnimEvaporate 0.8s forwards;
+}
+
+@keyframes tileAnimCrystallize {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+    filter: saturate(0) min-blend-mode(screen);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: none;
+  }
+}
+
+.tile-anim-crystallize-in {
+  animation: tileAnimCrystallize 0.8s forwards;
+}
+
+@keyframes tileAnimGravity {
+  0% {
+    opacity: 0;
+    transform: translateY(-500px) rotate(15deg);
+  }
+
+  60% {
+    transform: translateY(0) rotate(-5deg);
+  }
+
+  80% {
+    transform: translateY(-20px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) rotate(0);
+  }
+}
+
+.tile-anim-gravity-in {
+  animation: tileAnimGravity 0.8s forwards;
+}
+
+@keyframes tileAnimMagnet {
+  0% {
+    opacity: 0;
+    transform: scale(2);
+    filter: blur(5px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: none;
+  }
+}
+
+.tile-anim-magnet-in {
+  animation: tileAnimMagnet 0.6s cubic-bezier(0.6, -0.28, 0.735, 0.045) forwards;
+}
+
+@keyframes tileAnimVortex {
+  0% {
+    opacity: 0;
+    transform: rotate(-1080deg) scale(0);
+  }
+
+  100% {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+  }
+}
+
+.tile-anim-vortex-in {
+  animation: tileAnimVortex 0.9s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes tileAnimBlackHole {
+  0% {
+    opacity: 0;
+    transform: scale(0) rotate(360deg);
+    filter: contrast(5) brightness(0);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+    filter: none;
+  }
+}
+
+.tile-anim-black-hole-in {
+  animation: tileAnimBlackHole 0.8s forwards;
+}
+
+@keyframes tileAnimWarp {
+  0% {
+    opacity: 0;
+    transform: scaleX(2) scaleY(0.1);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-warp-in {
+  animation: tileAnimWarp 0.6s forwards;
+}
+
+@keyframes tileAnimHyperJump {
+  0% {
+    opacity: 0;
+    transform: scaleX(0.1) scaleY(5);
+    filter: blur(20px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: none;
+  }
+}
+
+.tile-anim-hyper-jump-in {
+  animation: tileAnimHyperJump 0.5s forwards;
+}
+
+@keyframes tileAnimTimeWarp {
+  0% {
+    opacity: 0;
+    filter: hue-rotate(360deg);
+    transform: scale(0.5);
+  }
+
+  100% {
+    opacity: 1;
+    filter: none;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-time-warp-in {
+  animation: tileAnimTimeWarp 0.8s forwards;
+}
+
+@keyframes tileAnimDimensionShift {
+  0% {
+    opacity: 0;
+    transform: perspective(1000px) rotateY(90deg) translateZ(100px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: perspective(1000px) rotateY(0) translateZ(0);
+  }
+}
+
+.tile-anim-dimension-shift-in {
+  animation: tileAnimDimensionShift 0.8s forwards;
+}
+
+@keyframes tileAnimPhase {
+  0% {
+    opacity: 0;
+    filter: grayscale(1) opacity(0.5);
+    transform: skewX(20deg);
+  }
+
+  100% {
+    opacity: 1;
+    filter: none;
+    transform: skewX(0);
+  }
+}
+
+.tile-anim-phase-in {
+  animation: tileAnimPhase 0.7s forwards;
+}
+
+@keyframes tileAnimGhostFade {
+  0% {
+    opacity: 0;
+    transform: scale(1.1);
+    filter: blur(15px) opacity(0);
+  }
+
+  50% {
+    opacity: 0.5;
+    filter: blur(5px) opacity(0.5);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: none;
+  }
+}
+
+.tile-anim-ghost-fade-in {
+  animation: tileAnimGhostFade 1s forwards;
+}
+
+@keyframes tileAnimNeonFlicker3 {
+
+  0%,
+  2%,
+  4%,
+  10%,
+  14%,
+  18%,
+  20%,
+  50%,
+  54%,
+  56%,
+  100% {
+    opacity: 1;
+  }
+
+  1%,
+  3%,
+  12%,
+  16%,
+  19%,
+  52%,
+  55% {
+    opacity: 0;
+  }
+
+  0% {
+    opacity: 0;
+  }
+}
+
+.tile-anim-neon-flicker-3 {
+  animation: tileAnimNeonFlicker3 0.6s forwards;
+}
+
+@keyframes tileAnimCyberScan {
+  0% {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+    border-top: 2px solid cyan;
+  }
+
+  100% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    border-top: none;
+  }
+}
+
+.tile-anim-cyber-scan-in {
+  animation: tileAnimCyberScan 0.8s forwards;
+}
+
+@keyframes tileAnimCodeReveal {
+  0% {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tile-anim-code-reveal-in {
+  animation: tileAnimCodeReveal 0.5s steps(10) forwards;
+}
+
+@keyframes tileAnimBinary {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+    filter: brightness(0);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: none;
+  }
+}
+
+.tile-anim-binary-in {
+  animation: tileAnimBinary 0.7s forwards;
+}
+
+@keyframes tileAnimMatrix {
+  0% {
+    opacity: 0;
+    transform: translateY(-20px);
+    filter: contrast(2) brightness(0.5);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: none;
+  }
+}
+
+.tile-anim-matrix-in {
+  animation: tileAnimMatrix 0.7s forwards;
+}
+
+@keyframes tileAnimDataStream {
+  0% {
+    opacity: 0;
+    transform: scaleX(0);
+    transform-origin: left;
+  }
+
+  100% {
+    opacity: 1;
+    transform: scaleX(1);
+    transform-origin: left;
+  }
+}
+
+.tile-anim-data-stream-in {
+  animation: tileAnimDataStream 0.6s forwards;
+}
+
+@keyframes tileAnimCircuit {
+  0% {
+    opacity: 0;
+    clip-path: polygon(0 45%, 100% 45%, 100% 55%, 0 55%);
+  }
+
+  100% {
+    opacity: 1;
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  }
+}
+
+.tile-anim-circuit-in {
+  animation: tileAnimCircuit 0.7s forwards;
+}
+
+@keyframes tileAnimPulseGlow {
+  0% {
+    opacity: 0;
+    box-shadow: 0 0 0 rgba(255, 255, 255, 0);
+  }
+
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 30px rgba(255, 255, 255, 0.8);
+  }
+
+  100% {
+    opacity: 1;
+    box-shadow: none;
+  }
+}
+
+.tile-anim-pulse-glow-in {
+  animation: tileAnimPulseGlow 0.8s forwards;
+}
+
+@keyframes tileAnimHologram {
+  0% {
+    opacity: 0;
+    transform: scaleY(0);
+    filter: hue-rotate(90deg) brightness(2);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scaleY(1);
+    filter: none;
+  }
+}
+
+.tile-anim-hologram-in {
+  animation: tileAnimHologram 0.6s forwards;
+}
+
+@keyframes tileAnimStatic {
+  0% {
+    opacity: 0;
+    transform: scale(1.05);
+    filter: contrast(3) brightness(2) grayscale(1);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: none;
+  }
+}
+
+.tile-anim-static-in {
+  animation: tileAnimStatic 0.5s forwards;
+}
+
+@keyframes tileAnimBounceElasticUp {
+  0% {
+    opacity: 0;
+    transform: translateY(100px);
+  }
+
+  30% {
+    transform: translateY(-20px);
+  }
+
+  50% {
+    transform: translateY(10px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-anim-bounce-elastic-up {
+  animation: tileAnimBounceElasticUp 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+}
+
+@keyframes tileAnimBounceElasticDown {
+  0% {
+    opacity: 0;
+    transform: translateY(-100px);
+  }
+
+  30% {
+    transform: translateY(20px);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-anim-bounce-elastic-down {
+  animation: tileAnimBounceElasticDown 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+}
+
+@keyframes tileAnimBounceElasticLeft {
+  0% {
+    opacity: 0;
+    transform: translateX(100px);
+  }
+
+  30% {
+    transform: translateX(-20px);
+  }
+
+  50% {
+    transform: translateX(10px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tile-anim-bounce-elastic-left {
+  animation: tileAnimBounceElasticLeft 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+}
+
+@keyframes tileAnimBounceElasticRight {
+  0% {
+    opacity: 0;
+    transform: translateX(-100px);
+  }
+
+  30% {
+    transform: translateX(20px);
+  }
+
+  50% {
+    transform: translateX(-10px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tile-anim-bounce-elastic-right {
+  animation: tileAnimBounceElasticRight 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+}
+
+@keyframes tileAnimSpringUp {
+  0% {
+    opacity: 0;
+    transform: translateY(200px) scaleY(2);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+.tile-anim-spring-in-up {
+  animation: tileAnimSpringUp 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes tileAnimSpringDown {
+  0% {
+    opacity: 0;
+    transform: translateY(-200px) scaleY(2);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+.tile-anim-spring-in-down {
+  animation: tileAnimSpringDown 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes tileAnimSpringLeft {
+  0% {
+    opacity: 0;
+    transform: translateX(200px) scaleX(2);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0) scaleX(1);
+  }
+}
+
+.tile-anim-spring-in-left {
+  animation: tileAnimSpringLeft 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes tileAnimSpringRight {
+  0% {
+    opacity: 0;
+    transform: translateX(-200px) scaleX(2);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0) scaleX(1);
+  }
+}
+
+.tile-anim-spring-in-right {
+  animation: tileAnimSpringRight 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes tileAnimRubberBand2 {
+  0% {
+    opacity: 0;
+    transform: scale(1);
+  }
+
+  30% {
+    transform: scale(1.25, 0.75);
+    opacity: 1;
+  }
+
+  40% {
+    transform: scale(0.75, 1.25);
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.tile-anim-rubber-band-2 {
+  animation: tileAnimRubberBand2 0.8s forwards;
+}
+
+@keyframes tileAnimBungee {
+  0% {
+    opacity: 0;
+    transform: translateY(-300px) scaleY(2);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+.tile-anim-bungee-in {
+  animation: tileAnimBungee 1s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes tileAnimSlideRotateTL {
+  0% {
+    opacity: 0;
+    transform: translate(-100%, -100%) rotate(-90deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0);
+  }
+}
+
+.tile-anim-slide-rotate-in-tl {
+  animation: tileAnimSlideRotateTL 0.7s forwards;
+}
+
+@keyframes tileAnimSlideRotateTR {
+  0% {
+    opacity: 0;
+    transform: translate(100%, -100%) rotate(90deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0);
+  }
+}
+
+.tile-anim-slide-rotate-in-tr {
+  animation: tileAnimSlideRotateTR 0.7s forwards;
+}
+
+@keyframes tileAnimSlideRotateBL {
+  0% {
+    opacity: 0;
+    transform: translate(-100%, 100%) rotate(90deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0);
+  }
+}
+
+.tile-anim-slide-rotate-in-bl {
+  animation: tileAnimSlideRotateBL 0.7s forwards;
+}
+
+@keyframes tileAnimSlideRotateBR {
+  0% {
+    opacity: 0;
+    transform: translate(100%, 100%) rotate(-90deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0);
+  }
+}
+
+.tile-anim-slide-rotate-in-br {
+  animation: tileAnimSlideRotateBR 0.7s forwards;
+}
+
+@keyframes tileAnimZoomRotate {
+  0% {
+    opacity: 0;
+    transform: scale(0) rotate(360deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+  }
+}
+
+.tile-anim-zoom-rotate-in {
+  animation: tileAnimZoomRotate 0.8s forwards;
+}
+
+@keyframes tileAnimFlipRotate {
+  0% {
+    opacity: 0;
+    transform: perspective(1000px) rotateX(90deg) rotateY(90deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: perspective(1000px) rotateX(0) rotateY(0);
+  }
+}
+
+.tile-anim-flip-rotate-in {
+  animation: tileAnimFlipRotate 0.8s forwards;
+}
+
+@keyframes tileAnimSwingRotate {
+  0% {
+    opacity: 0;
+    transform: rotateX(90deg) rotateZ(90deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: rotateX(0) rotateZ(0);
+  }
+}
+
+.tile-anim-swing-rotate-in {
+  animation: tileAnimSwingRotate 0.8s forwards;
+}
+
+@keyframes tileAnimBounceRotate {
+  0% {
+    opacity: 0;
+    transform: scale(0) rotate(180deg);
+  }
+
+  60% {
+    transform: scale(1.1) rotate(-20deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+  }
+}
+
+.tile-anim-bounce-rotate-in {
+  animation: tileAnimBounceRotate 0.8s forwards;
+}
+
+@keyframes tileAnimRollRotate {
+  0% {
+    opacity: 0;
+    transform: translateX(-100%) rotate(-360deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0) rotate(0);
+  }
+}
+
+.tile-anim-roll-rotate-in {
+  animation: tileAnimRollRotate 0.7s forwards;
+}
+
+@keyframes tileAnimTwirlRotate {
+  0% {
+    opacity: 0;
+    transform: rotate(540deg) scale(0);
+    filter: blur(5px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+    filter: none;
+  }
+}
+
+.tile-anim-twirl-rotate-in {
+  animation: tileAnimTwirlRotate 0.8s forwards;
+}
+
+@keyframes tileAnimSplitV {
+  0% {
+    opacity: 0;
+    clip-path: inset(0 50% 0 50%);
+  }
+
+  100% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.tile-anim-split-v-in {
+  animation: tileAnimSplitV 0.7s forwards;
+}
+
+@keyframes tileAnimSplitH {
+  0% {
+    opacity: 0;
+    clip-path: inset(50% 0 50% 0);
+  }
+
+  100% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.tile-anim-split-h-in {
+  animation: tileAnimSplitH 0.7s forwards;
+}
+
+@keyframes tileAnimBlindV {
+  0% {
+    opacity: 0;
+    transform: scaleY(0);
+    transform-origin: top;
+  }
+
+  100% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+.tile-anim-blind-v-in {
+  animation: tileAnimBlindV 0.6s forwards;
+}
+
+@keyframes tileAnimBlindH {
+  0% {
+    opacity: 0;
+    transform: scaleX(0);
+    transform-origin: left;
+  }
+
+  100% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+.tile-anim-blind-h-in {
+  animation: tileAnimBlindH 0.6s forwards;
+}
+
+@keyframes tileAnimChecker {
+  0% {
+    opacity: 0;
+    filter: contrast(5) grayscale(1);
+  }
+
+  100% {
+    opacity: 1;
+    filter: none;
+  }
+}
+
+.tile-anim-checker-in {
+  animation: tileAnimChecker 0.7s forwards;
+}
+
+@keyframes tileAnimDiagonal {
+  0% {
+    opacity: 0;
+    clip-path: polygon(0 0, 0 0, 0 0);
+  }
+
+  100% {
+    opacity: 1;
+    clip-path: polygon(0 0, 200% 0, 0 200%);
+  }
+}
+
+.tile-anim-diagonal-in {
+  animation: tileAnimDiagonal 0.8s forwards;
+}
+
+@keyframes tileAnimDiamond {
+  0% {
+    opacity: 0;
+    clip-path: polygon(50% 50%, 50% 50%, 50% 50%, 50% 50%);
+  }
+
+  100% {
+    opacity: 1;
+    clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  }
+}
+
+.tile-anim-diamond-in {
+  animation: tileAnimDiamond 0.7s forwards;
+}
+
+@keyframes tileAnimCircleReveal {
+  0% {
+    opacity: 0;
+    clip-path: circle(0% at 50% 50%);
+  }
+
+  100% {
+    opacity: 1;
+    clip-path: circle(100% at 50% 50%);
+  }
+}
+
+.tile-anim-circle-in {
+  animation: tileAnimCircleReveal 0.8s forwards;
+}
+
+@keyframes tileAnimSquareReveal {
+  0% {
+    opacity: 0;
+    clip-path: inset(50% 50% 50% 50%);
+  }
+
+  100% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.tile-anim-square-in {
+  animation: tileAnimSquareReveal 0.7s forwards;
+}
+
+@keyframes tileAnimStarReveal {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+    clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  }
+}
+
+.tile-anim-star-reveal-in {
+  animation: tileAnimStarReveal 0.8s forwards;
+}
+
+@keyframes tileAnimPopOutIn2 {
+  0% {
+    opacity: 0;
+    transform: scale(2);
+  }
+
+  50% {
+    transform: scale(0.8);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-pop-out-in-2 {
+  animation: tileAnimPopOutIn2 0.6s forwards;
+}
+
+@keyframes tileAnimExpandIn {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-expand-in {
+  animation: tileAnimExpandIn 0.5s ease-out forwards;
+}
+
+@keyframes tileAnimContractReveal {
+  0% {
+    opacity: 0;
+    transform: scale(1.5);
+    filter: blur(10px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: none;
+  }
+}
+
+.tile-anim-contract-reveal-in {
+  animation: tileAnimContractReveal 0.7s ease-out forwards;
+}
+
+@keyframes tileAnimBounceScale {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+
+  60% {
+    transform: scale(1.1);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-bounce-scale-in {
+  animation: tileAnimBounceScale 0.7s forwards;
+}
+
+@keyframes tileAnimElasticScale {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+  }
+
+  70% {
+    transform: scale(1.2);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-elastic-scale-in {
+  animation: tileAnimElasticScale 0.8s forwards;
+}
+
+@keyframes tileAnimSwingScale {
+  0% {
+    opacity: 0;
+    transform: scale(0.5) rotate(-10deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+  }
+}
+
+.tile-anim-swing-scale-in {
+  animation: tileAnimSwingScale 0.7s forwards;
+}
+
+@keyframes tileAnimRollScale {
+  0% {
+    opacity: 0;
+    transform: scale(0) translateX(-50px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) translateX(0);
+  }
+}
+
+.tile-anim-roll-scale-in {
+  animation: tileAnimRollScale 0.7s forwards;
+}
+
+@keyframes tileAnimTwirlScale {
+  0% {
+    opacity: 0;
+    transform: scale(0) rotate(180deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+  }
+}
+
+.tile-anim-twirl-scale-in {
+  animation: tileAnimTwirlScale 0.7s forwards;
+}
+
+@keyframes tileAnimSpiralScale {
+  0% {
+    opacity: 0;
+    transform: scale(0) rotate(-360deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+  }
+}
+
+.tile-anim-spiral-scale-in {
+  animation: tileAnimSpiralScale 0.8s forwards;
+}
+
+@keyframes tileAnimWaveScale {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+
+  50% {
+    transform: scale(1.1);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-wave-scale-in {
+  animation: tileAnimWaveScale 0.8s forwards;
+}
+
+@keyframes tileAnimBlurSwipeU {
+  from {
+    opacity: 0;
+    transform: translateY(50px);
+    filter: blur(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: none;
+  }
+}
+
+.tile-anim-blur-swipe-up {
+  animation: tileAnimBlurSwipeU 0.6s forwards;
+}
+
+@keyframes tileAnimBlurSwipeD {
+  from {
+    opacity: 0;
+    transform: translateY(-50px);
+    filter: blur(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: none;
+  }
+}
+
+.tile-anim-blur-swipe-down {
+  animation: tileAnimBlurSwipeD 0.6s forwards;
+}
+
+@keyframes tileAnimBlurSwipeL {
+  from {
+    opacity: 0;
+    transform: translateX(50px);
+    filter: blur(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+    filter: none;
+  }
+}
+
+.tile-anim-blur-swipe-left {
+  animation: tileAnimBlurSwipeL 0.6s forwards;
+}
+
+@keyframes tileAnimBlurSwipeR {
+  from {
+    opacity: 0;
+    transform: translateX(-50px);
+    filter: blur(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+    filter: none;
+  }
+}
+
+.tile-anim-blur-swipe-right {
+  animation: tileAnimBlurSwipeR 0.6s forwards;
+}
+
+@keyframes tileAnimFocusSwipe {
+  0% {
+    opacity: 0;
+    filter: blur(20px);
+    transform: scale(0.9);
+  }
+
+  100% {
+    opacity: 1;
+    filter: none;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-focus-swipe-in {
+  animation: tileAnimFocusSwipe 0.7s forwards;
+}
+
+@keyframes tileAnimGlowSwipe {
+  0% {
+    opacity: 0;
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0);
+  }
+
+  100% {
+    opacity: 1;
+    box-shadow: none;
+  }
+}
+
+.tile-anim-glow-swipe-in {
+  animation: tileAnimGlowSwipe 0.7s forwards, tileAnimFadeIn 0.7s forwards;
+}
+
+@keyframes tileAnimColorSwipe {
+  0% {
+    opacity: 0;
+    filter: hue-rotate(180deg);
+  }
+
+  100% {
+    opacity: 1;
+    filter: none;
+  }
+}
+
+.tile-anim-color-swipe-in {
+  animation: tileAnimColorSwipe 0.8s forwards, tileAnimFadeIn 0.8s forwards;
+}
+
+@keyframes tileAnimMaskSwipe {
+  0% {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+
+  100% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.tile-anim-mask-swipe-in {
+  animation: tileAnimMaskSwipe 0.7s forwards;
+}
+
+@keyframes tileAnimGradientSwipe {
+  0% {
+    opacity: 0;
+    mask-image: linear-gradient(to right, transparent, black);
+  }
+
+  100% {
+    opacity: 1;
+    mask-image: none;
+  }
+}
+
+.tile-anim-gradient-swipe-in {
+  animation: tileAnimGradientSwipe 0.8s forwards, tileAnimFadeIn 0.8s forwards;
+}
+
+@keyframes tileAnimTextureSwipe {
+  0% {
+    opacity: 0;
+    filter: contrast(2);
+  }
+
+  100% {
+    opacity: 1;
+    filter: none;
+  }
+}
+
+.tile-anim-texture-swipe-in {
+  animation: tileAnimTextureSwipe 0.8s forwards, tileAnimFadeIn 0.8s forwards;
+}
+
+@keyframes tileAnimSkidUp {
+  0% {
+    opacity: 0;
+    transform: translateY(100px) skewY(10deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) skewY(0);
+  }
+}
+
+.tile-anim-skid-up {
+  animation: tileAnimSkidUp 0.6s forwards;
+}
+
+@keyframes tileAnimSkidDown {
+  0% {
+    opacity: 0;
+    transform: translateY(-100px) skewY(-10deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) skewY(0);
+  }
+}
+
+.tile-anim-skid-down {
+  animation: tileAnimSkidDown 0.6s forwards;
+}
+
+@keyframes tileAnimSkidLeft {
+  0% {
+    opacity: 0;
+    transform: translateX(100px) skewX(10deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0) skewX(0);
+  }
+}
+
+.tile-anim-skid-left {
+  animation: tileAnimSkidLeft 0.6s forwards;
+}
+
+@keyframes tileAnimSkidRight {
+  0% {
+    opacity: 0;
+    transform: translateX(-100px) skewX(-10deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0) skewX(0);
+  }
+}
+
+.tile-anim-skid-right {
+  animation: tileAnimSkidRight 0.6s forwards;
+}
+
+@keyframes tileAnimDrift {
+  0% {
+    opacity: 0;
+    transform: translateX(-50px) rotate(-5deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0) rotate(0);
+  }
+}
+
+.tile-anim-drift-in {
+  animation: tileAnimDrift 0.8s forwards;
+}
+
+@keyframes tileAnimBrake {
+  0% {
+    opacity: 0;
+    transform: scale(1.2) translateY(-20px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.tile-anim-brake-in {
+  animation: tileAnimBrake 0.5s cubic-bezier(0, 0, 0, 1) forwards;
+}
+
+@keyframes tileAnimAccelerate {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateX(-100px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) translateX(0);
+  }
+}
+
+.tile-anim-accelerate-in {
+  animation: tileAnimAccelerate 0.5s cubic-bezier(1, 0, 1, 1) forwards;
+}
+
+@keyframes tileAnimCruise {
+  0% {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tile-anim-cruise-in {
+  animation: tileAnimCruise 1s linear forwards;
+}
+
+@keyframes tileAnimJump {
+  0% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-30px);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-jump-in {
+  animation: tileAnimJump 0.6s forwards;
+}
+
+@keyframes tileAnimDive {
+  0% {
+    opacity: 0;
+    transform: translateY(-50px) rotateX(45deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) rotateX(0);
+  }
+}
+
+.tile-anim-dive-in {
+  animation: tileAnimDive 0.7s forwards;
+}
+
+@keyframes tileAnimHeart2 {
+  0% {
+    transform: scale(1);
+    opacity: 0;
+  }
+
+  10% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+
+  20% {
+    transform: scale(0.9);
+  }
+
+  30% {
+    transform: scale(1.1);
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.tile-anim-heartbeat-2 {
+  animation: tileAnimHeart2 0.6s forwards;
+}
+
+@keyframes tileAnimBreathing {
+  0% {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+
+  50% {
+    transform: scale(1.05);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.tile-anim-breathing-in {
+  animation: tileAnimBreathing 1.2s ease-in-out forwards;
+}
+
+@keyframes tileAnimFlutter {
+  0% {
+    transform: rotateY(0);
+    opacity: 0;
+  }
+
+  50% {
+    transform: rotateY(90deg);
+    opacity: 1;
+  }
+
+  100% {
+    transform: rotateY(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-flutter-in {
+  animation: tileAnimFlutter 0.4s 3 forwards;
+}
+
+@keyframes tileAnimVibrateFast {
+  0% {
+    transform: translate(0);
+    opacity: 0;
+  }
+
+  10% {
+    transform: translate(-2px, 2px);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translate(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-vibrate-fast {
+  animation: tileAnimVibrateFast 0.05s infinite, tileAnimFadeIn 0.3s forwards;
+}
+
+@keyframes tileAnimJiggle {
+  0% {
+    transform: scale(1);
+    opacity: 0;
+  }
+
+  25% {
+    transform: scale(1.1, 0.9);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(0.9, 1.1);
+  }
+
+  75% {
+    transform: scale(1.05, 0.95);
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.tile-anim-jiggle-in {
+  animation: tileAnimJiggle 0.7s forwards;
+}
+
+@keyframes tileAnimWiggle {
+  0% {
+    transform: rotate(0);
+    opacity: 0;
+  }
+
+  25% {
+    transform: rotate(5deg);
+    opacity: 1;
+  }
+
+  50% {
+    transform: rotate(-5deg);
+  }
+
+  75% {
+    transform: rotate(2deg);
+  }
+
+  100% {
+    transform: rotate(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-wiggle-in {
+  animation: tileAnimWiggle 0.6s forwards;
+}
+
+@keyframes tileAnimTremble {
+  0% {
+    transform: translate(0);
+    opacity: 0;
+  }
+
+  20% {
+    transform: translate(-1px, 1px);
+    opacity: 1;
+  }
+
+  40% {
+    transform: translate(-1px, -1px);
+  }
+
+  60% {
+    transform: translate(1px, 1px);
+  }
+
+  80% {
+    transform: translate(1px, -1px);
+  }
+
+  100% {
+    transform: translate(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-tremble-in {
+  animation: tileAnimTremble 0.4s infinite, tileAnimFadeIn 0.5s forwards;
+}
+
+@keyframes tileAnimThrob {
+  0% {
+    transform: scale(1);
+    opacity: 0;
+  }
+
+  50% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.tile-anim-throb-in {
+  animation: tileAnimThrob 0.5s 2 forwards;
+}
+
+@keyframes tileAnimPulseBurst {
+  0% {
+    transform: scale(1);
+    opacity: 0;
+    filter: brightness(1);
+  }
+
+  50% {
+    transform: scale(1.5);
+    opacity: 1;
+    filter: brightness(5);
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+    filter: none;
+  }
+}
+
+.tile-anim-pulse-burst-in {
+  animation: tileAnimPulseBurst 0.6s forwards;
+}
+
+@keyframes tileAnimFinaleMega {
+  0% {
+    transform: scale(0) rotate(720deg);
+    filter: blur(20px) hue-rotate(360deg);
+    opacity: 0;
+  }
+
+  50% {
+    transform: scale(1.5) rotate(0);
+    filter: blur(5px);
+  }
+
+  100% {
+    transform: scale(1) rotate(0);
+    filter: none;
+    opacity: 1;
+  }
+}
+
+.tile-anim-finale-mega-in {
+  animation: tileAnimFinaleMega 1.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+
+
 .linknest-tile-animated.tile-anim-bounce-right,
 .linknest-tile-animated.tile-anim-squish,
 .linknest-tile-animated.tile-anim-slide-tilt,
 .linknest-tile-animated.tile-anim-swirl-in,
-.linknest-tile-animated.tile-anim-blur-perspective {
-  opacity: 0;
+.linknest-tile-animated.tile-anim-blur-perspective,
+.linknest-tile-animated.tile-anim-liquid-in,
+.linknest-tile-animated.tile-anim-smoke-in,
+.linknest-tile-animated.tile-anim-fire-in,
+.linknest-tile-animated.tile-anim-pixel-in,
+.linknest-tile-animated.tile-anim-mosaic-in,
+.linknest-tile-animated.tile-anim-shatter-in,
+.linknest-tile-animated.tile-anim-crack-in,
+.linknest-tile-animated.tile-anim-dissolve-in,
+.linknest-tile-animated.tile-anim-evaporate-in,
+.linknest-tile-animated.tile-anim-crystallize-in,
+.linknest-tile-animated.tile-anim-gravity-in,
+.linknest-tile-animated.tile-anim-magnet-in,
+.linknest-tile-animated.tile-anim-vortex-in,
+.linknest-tile-animated.tile-anim-black-hole-in,
+.linknest-tile-animated.tile-anim-warp-in,
+.linknest-tile-animated.tile-anim-hyper-jump-in,
+.linknest-tile-animated.tile-anim-time-warp-in,
+.linknest-tile-animated.tile-anim-dimension-shift-in,
+.linknest-tile-animated.tile-anim-phase-in,
+.linknest-tile-animated.tile-anim-ghost-fade-in,
+.linknest-tile-animated.tile-anim-neon-flicker-3,
+.linknest-tile-animated.tile-anim-cyber-scan-in,
+.linknest-tile-animated.tile-anim-code-reveal-in,
+.linknest-tile-animated.tile-anim-binary-in,
+.linknest-tile-animated.tile-anim-matrix-in,
+.linknest-tile-animated.tile-anim-data-stream-in,
+.linknest-tile-animated.tile-anim-circuit-in,
+.linknest-tile-animated.tile-anim-pulse-glow-in,
+.linknest-tile-animated.tile-anim-hologram-in,
+.linknest-tile-animated.tile-anim-static-in,
+.linknest-tile-animated.tile-anim-bounce-elastic-up,
+.linknest-tile-animated.tile-anim-bounce-elastic-down,
+.linknest-tile-animated.tile-anim-bounce-elastic-left,
+.linknest-tile-animated.tile-anim-bounce-elastic-right,
+.linknest-tile-animated.tile-anim-spring-in-up,
+.linknest-tile-animated.tile-anim-spring-in-down,
+.linknest-tile-animated.tile-anim-spring-in-left,
+.linknest-tile-animated.tile-anim-spring-in-right,
+.linknest-tile-animated.tile-anim-rubber-band-2,
+.linknest-tile-animated.tile-anim-bungee-in,
+.linknest-tile-animated.tile-anim-slide-rotate-in-tl,
+.linknest-tile-animated.tile-anim-slide-rotate-in-tr,
+.linknest-tile-animated.tile-anim-slide-rotate-in-bl,
+.linknest-tile-animated.tile-anim-slide-rotate-in-br,
+.linknest-tile-animated.tile-anim-zoom-rotate-in,
+.linknest-tile-animated.tile-anim-flip-rotate-in,
+.linknest-tile-animated.tile-anim-swing-rotate-in,
+.linknest-tile-animated.tile-anim-bounce-rotate-in,
+.linknest-tile-animated.tile-anim-roll-rotate-in,
+.linknest-tile-animated.tile-anim-twirl-rotate-in,
+.linknest-tile-animated.tile-anim-split-v-in,
+.linknest-tile-animated.tile-anim-split-h-in,
+.linknest-tile-animated.tile-anim-blind-v-in,
+.linknest-tile-animated.tile-anim-blind-h-in,
+.linknest-tile-animated.tile-anim-checker-in,
+.linknest-tile-animated.tile-anim-diagonal-in,
+.linknest-tile-animated.tile-anim-diamond-in,
+.linknest-tile-animated.tile-anim-circle-in,
+.linknest-tile-animated.tile-anim-square-in,
+.linknest-tile-animated.tile-anim-star-reveal-in,
+.linknest-tile-animated.tile-anim-pop-out-in-2,
+.linknest-tile-animated.tile-anim-expand-in,
+.linknest-tile-animated.tile-anim-contract-reveal-in,
+.linknest-tile-animated.tile-anim-bounce-scale-in,
+.linknest-tile-animated.tile-anim-elastic-scale-in,
+.linknest-tile-animated.tile-anim-swing-scale-in,
+.linknest-tile-animated.tile-anim-roll-scale-in,
+.linknest-tile-animated.tile-anim-twirl-scale-in,
+.linknest-tile-animated.tile-anim-spiral-scale-in,
+.linknest-tile-animated.tile-anim-wave-scale-in,
+.linknest-tile-animated.tile-anim-blur-swipe-up,
+.linknest-tile-animated.tile-anim-blur-swipe-down,
+.linknest-tile-animated.tile-anim-blur-swipe-left,
+.linknest-tile-animated.tile-anim-blur-swipe-right,
+.linknest-tile-animated.tile-anim-focus-swipe-in,
+.linknest-tile-animated.tile-anim-glow-swipe-in,
+.linknest-tile-animated.tile-anim-color-swipe-in,
+.linknest-tile-animated.tile-anim-mask-swipe-in,
+.linknest-tile-animated.tile-anim-gradient-swipe-in,
+.linknest-tile-animated.tile-anim-texture-swipe-in,
+.linknest-tile-animated.tile-anim-skid-up,
+.linknest-tile-animated.tile-anim-skid-down,
+.linknest-tile-animated.tile-anim-skid-left,
+.linknest-tile-animated.tile-anim-skid-right,
+.linknest-tile-animated.tile-anim-drift-in,
+.linknest-tile-animated.tile-anim-brake-in,
+.linknest-tile-animated.tile-anim-accelerate-in,
+.linknest-tile-animated.tile-anim-cruise-in,
+.linknest-tile-animated.tile-anim-jump-in,
+.linknest-tile-animated.tile-anim-dive-in,
+.linknest-tile-animated.tile-anim-heartbeat-2,
+.linknest-tile-animated.tile-anim-breathing-in,
+.linknest-tile-animated.tile-anim-flutter-in,
+.linknest-tile-animated.tile-anim-vibrate-fast,
+.linknest-tile-animated.tile-anim-jiggle-in,
+.linknest-tile-animated.tile-anim-wiggle-in,
+.linknest-tile-animated.tile-anim-tremble-in,
+.linknest-tile-animated.tile-anim-throb-in,
+.linknest-tile-animated.tile-anim-pulse-burst-in,
+.linknest-tile-animated.tile-anim-finale-mega-in {
+  opacity: 1;
 }
 
 /* Category animations */
 .linknest-category-animated {
   opacity: 0;
   animation: fadeInUp 0.5s ease-out forwards;
+}
+
+/* Tile Decorations */
+.linknest-tile {
+  position: relative;
+}
+
+.linknest-tile[class*="tile-decor-"]::before {
+  content: '';
+  position: absolute;
+  top: -12px;
+  left: -12px;
+  width: 32px;
+  height: 32px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+  transition: transform 0.2s ease;
+}
+
+.group:hover .linknest-tile[class*="tile-decor-"]::before {
+  transform: scale(1.1) rotate(-5deg);
+}
+
+.tile-decor-christmas::before {
+  content: '🎅';
+}
+
+.tile-decor-thanksgiving::before {
+  content: '🦃';
+}
+
+.tile-decor-veterans::before {
+  content: '🎖️';
+}
+
+.tile-decor-halloween::before {
+  content: '🎃';
+}
+
+.tile-decor-new-year::before {
+  content: '🎆';
+}
+
+.tile-decor-valentine::before {
+  content: '💖';
+}
+
+.tile-decor-st-patrick::before {
+  content: '🍀';
+}
+
+.tile-decor-easter::before {
+  content: '🥚';
+}
+
+.tile-decor-birthday::before {
+  content: '🎂';
+}
+
+.tile-decor-party::before {
+  content: '🎉';
+}
+
+.tile-decor-snow::before {
+  content: '❄️';
+}
+
+.tile-decor-autumn::before {
+  content: '🍁';
+}
+
+.tile-decor-spring::before {
+  content: '🌸';
+}
+
+.tile-decor-summer::before {
+  content: '☀️';
 }

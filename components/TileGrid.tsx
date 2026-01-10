@@ -14,7 +14,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { userPreferencesService } from '../services/userPreferencesService';
 import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite } from '../services/publicFavoritesService';
 import { linkHealthService } from '../services/linkHealthService';
-import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, TileAnimation } from './TileAnimationSelector';
+import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, getTileDecorationClass, TileAnimation, TileDecoration } from './TileAnimationSelector';
 
 interface TileGridProps {
   tiles: Tile[];
@@ -877,9 +877,16 @@ export const TileGrid: React.FC<TileGridProps> = ({
   // Emoji Picker State
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
-  // Tile Animation State
-  const tileAnimation = useTileAnimation();
-  const [currentAnimation, setCurrentAnimation] = useState<TileAnimation>(tileAnimation);
+  // Tile Animation & Decoration State
+  const { animation: initialAnimation, decoration: initialDecoration } = useTileAnimation();
+  const [currentAnimation, setCurrentAnimation] = useState<TileAnimation>(initialAnimation);
+  const [currentDecoration, setCurrentDecoration] = useState<TileDecoration>(initialDecoration);
+
+  // Sync with initial values when they load
+  useEffect(() => {
+    setCurrentAnimation(initialAnimation);
+    setCurrentDecoration(initialDecoration);
+  }, [initialAnimation, initialDecoration]);
 
 
   // Modal drag and resize state
@@ -3031,6 +3038,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               {/* Tile Animation Selector - Available for all users */}
               <TileAnimationSelector
                 onAnimationChange={(animation) => setCurrentAnimation(animation)}
+                onDecorationChange={(decoration) => setCurrentDecoration(decoration)}
               />
 
               {isAuthenticated && (
@@ -3374,12 +3382,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
                   : (parentTile?.browser && parentTile.browser !== 'default' ? parentTile.browser : null);
 
                 const animationClass = getTileAnimationClass(currentAnimation);
+                const decorationClass = getTileDecorationClass(currentDecoration);
+                const fullAnimationClass = `${animationClass} ${decorationClass}`.trim();
                 const animationDelay = (linkIndex * 50);
 
                 return (
                   <div
                     key={link.id}
-                    className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${animationClass} linknest-tile-animated`}
+                    className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} linknest-tile-animated`}
                     style={{ animationDelay: `${animationDelay}ms` }}
                     onClick={(e) => {
                       // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
@@ -3509,7 +3519,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               onToggleCategoryFavorite={handleToggleCategoryFavorite}
               isCategoryFavorited={isCategoryFavorited(groupName)}
               onScheduleCategory={handleOpenCategorySchedule}
-              animationClass={getTileAnimationClass(currentAnimation)}
+              animationClass={`${getTileAnimationClass(currentAnimation)} ${getTileDecorationClass(currentDecoration)}`.trim()}
             >
               {/* Grid with wider tiles */}
               {groupTiles.length > 0 ? (
@@ -3543,7 +3553,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         availableCategories={allCategories}
                         groupIndex={groupIndex}
                         tileIndex={tileIndex}
-                        animationClass={getTileAnimationClass(currentAnimation)}
+                        animationClass={`${getTileAnimationClass(currentAnimation)} ${getTileDecorationClass(currentDecoration)}`.trim()}
                       />
                     );
                   })}
@@ -3592,264 +3602,84 @@ export const TileGrid: React.FC<TileGridProps> = ({
       </div>
 
       {/* Matching Links Section - Shown when searching */}
-      {searchTerm.trim() && (() => {
-        const searchLower = searchTerm.toLowerCase();
-        const matchingLinks: Array<{
-          id: string;
-          label: string;
-          url: string;
-          icon?: string;
-          browser?: string | null;
-          health?: any;
-          tile: {
+      {
+        searchTerm.trim() && (() => {
+          const searchLower = searchTerm.toLowerCase();
+          const matchingLinks: Array<{
             id: string;
-            title: string;
-            emoji: string;
-            themeColor: string;
+            label: string;
+            url: string;
+            icon?: string;
             browser?: string | null;
-          };
-        }> = [];
+            health?: any;
+            tile: {
+              id: string;
+              title: string;
+              emoji: string;
+              themeColor: string;
+              browser?: string | null;
+            };
+          }> = [];
 
-        // Collect all links that match the search term
-        Object.values(groupedTiles).forEach((groupTiles: Tile[]) => {
-          groupTiles.forEach(tile => {
-            tile.sections?.forEach(section => {
-              section.links?.forEach(link => {
-                if (
-                  link.label.toLowerCase().includes(searchLower) ||
-                  link.url.toLowerCase().includes(searchLower)
-                ) {
-                  matchingLinks.push({
-                    id: link.id,
-                    label: link.label,
-                    url: link.url,
-                    icon: link.icon,
-                    browser: link.browser,
-                    health: link.health,
-                    tile: {
-                      id: tile.id,
-                      title: tile.title,
-                      emoji: tile.emoji || '✨',
-                      themeColor: tile.themeColor || 'blue',
-                      browser: tile.browser
-                    }
-                  });
-                }
+          // Collect all links that match the search term
+          Object.values(groupedTiles).forEach((groupTiles: Tile[]) => {
+            groupTiles.forEach(tile => {
+              tile.sections?.forEach(section => {
+                section.links?.forEach(link => {
+                  if (
+                    link.label.toLowerCase().includes(searchLower) ||
+                    link.url.toLowerCase().includes(searchLower)
+                  ) {
+                    matchingLinks.push({
+                      id: link.id,
+                      label: link.label,
+                      url: link.url,
+                      icon: link.icon,
+                      browser: link.browser,
+                      health: link.health,
+                      tile: {
+                        id: tile.id,
+                        title: tile.title,
+                        emoji: tile.emoji || '✨',
+                        themeColor: tile.themeColor || 'blue',
+                        browser: tile.browser
+                      }
+                    });
+                  }
+                });
               });
             });
           });
-        });
 
-        if (matchingLinks.length === 0) return null;
+          if (matchingLinks.length === 0) return null;
 
-        return (
-          <div className="mb-8">
-            <div className="flex items-center gap-2 mb-4">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-500">
-                <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
-                <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01-.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
-              </svg>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Matching Links</h2>
-              <span className="text-sm text-slate-500 dark:text-slate-400">({matchingLinks.length})</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              {matchingLinks.map((link, linkIndex) => {
-                // Resolve effective browser (Link specific > Tile default > System default)
-                const browserToUse = (link.browser && link.browser !== 'default')
-                  ? link.browser
-                  : (link.tile.browser && link.tile.browser !== 'default' ? link.tile.browser : null);
-
-                const animationClass = getTileAnimationClass(currentAnimation);
-                const animationDelay = (linkIndex * 50);
-
-                return (
-                  <div
-                    key={link.id}
-                    className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-brand-300 dark:hover:border-brand-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${animationClass} linknest-tile-animated`}
-                    style={{ animationDelay: `${animationDelay}ms` }}
-                    onClick={(e) => {
-                      // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
-                      if (e.ctrlKey || e.metaKey) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
-                        if (newWindow) newWindow.focus();
-                        return;
-                      }
-
-                      if (settings.browser_specific_links_enabled === '1' && browserToUse) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        openLinkInBrowser(link.url, browserToUse);
-                        return;
-                      }
-
-                      // Default behavior
-                      window.open(link.url, '_blank');
-                    }}
-                  >
-                    {/* Health Status Indicator */}
-                    {link.health && (
-                      <div className="shrink-0">
-                        <div
-                          className={`w-2 h-2 rounded-full ${linkHealthService.getHealthColor(link.health.status)}`}
-                          title={`${linkHealthService.getHealthLabel(link.health.status)}${link.health.error ? `: ${link.health.error}` : ''}`}
-                        />
-                      </div>
-                    )}
-
-                    {/* Link Icon */}
-                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 text-lg border border-slate-200 dark:border-slate-700">
-                      {link.icon || '🔗'}
-                    </div>
-
-                    {/* Link Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-sm text-slate-900 dark:text-white truncate group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
-                        {link.label}
-                      </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                        {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
-                      </div>
-                      {/* Browser Indicator */}
-                      {settings.browser_specific_links_enabled === '1' && browserToUse && (
-                        <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors mt-0.5">
-                          ({formatBrowserName(browserToUse)} browser)
-                        </div>
-                      )}
-                      {/* Parent Tile Info */}
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <span className="text-xs">{link.tile.emoji}</span>
-                        <span className="text-xs text-slate-400 dark:text-slate-500 truncate">{link.tile.title}</span>
-                      </div>
-                    </div>
-
-                    {/* Favorite Button */}
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (isAuthenticated) {
-                          const { toggleLinkFavorite } = await import('../services/storageService');
-                          await toggleLinkFavorite(link.id);
-                          // Reload favorite links
-                          const links = await getFavoriteLinks();
-                          setFavoriteLinks(links);
-                        } else {
-                          togglePublicLinkFavorite(link.id);
-                          const favIds = getPublicLinkFavorites();
-                          const newLinks: FavoriteLink[] = [];
-                          tiles.forEach(t => t.sections?.forEach(s => s.links?.forEach(l => {
-                            if (favIds.includes(l.id)) newLinks.push({ id: l.id, label: l.label, url: l.url, icon: l.icon, textColor: l.textColor, visibility: l.visibility, notes: l.notes, tooltip: l.tooltip, browser: l.browser, isFavorite: true, health: l.health, tile: { id: t.id, title: t.title, emoji: t.emoji || '✨', themeColor: t.themeColor || 'blue' } });
-                          })));
-                          setFavoriteLinks(newLinks);
-                        }
-                      }}
-                      className={`absolute top-2 right-2 p-1.5 rounded-lg transition-all z-10 ${(isAuthenticated ? favoriteLinks.some(fl => fl.id === link.id) : getPublicLinkFavorites().includes(link.id))
-                        ? 'text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20'
-                        : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20'
-                        }`}
-                      title={(isAuthenticated ? favoriteLinks.some(fl => fl.id === link.id) : getPublicLinkFavorites().includes(link.id)) ? 'Remove from favorites' : 'Add to favorites'}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill={(isAuthenticated ? favoriteLinks.some(fl => fl.id === link.id) : getPublicLinkFavorites().includes(link.id)) ? 'currentColor' : 'none'} stroke="currentColor" className="w-4 h-4">
-                        <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
-                      </svg>
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* Favorite Links Section - Shown below tiles if favoriteLinksAbove is false */}
-      {(() => {
-        const favoriteLinksSection = (activeTab === 'favorites' || activeTab === 'public-favorites') && (
-          <div className="mb-8">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-500">
-                  <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
+          return (
+            <div className="mb-8">
+              <div className="flex items-center gap-2 mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-500">
+                  <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
+                  <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01-.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
                 </svg>
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Favorite Links</h2>
-                <span className="text-sm text-slate-500 dark:text-slate-400">({favoriteLinks.length})</span>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Matching Links</h2>
+                <span className="text-sm text-slate-500 dark:text-slate-400">({matchingLinks.length})</span>
               </div>
 
-            </div>
-
-            <div className="flex items-center gap-4">
-              {/* Sort Controls */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500 dark:text-slate-400">Sort:</span>
-                <button
-                  onClick={() => setFavLinksSort(prev => prev === 'default' ? 'asc' : 'default')}
-                  className={`p-1.5 rounded-lg transition-all ${favLinksSort === 'asc'
-                    ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 ring-1 ring-brand-500/20'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-                    }`}
-                  title={favLinksSort === 'asc' ? "Sorted alphabetically (Click to reset)" : "Sort alphabetically"}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                    <path fillRule="evenodd" d="M2.24 6.8a.75.75 0 001.06-.04l1.95-2.1v8.59a.75.75 0 001.5 0V4.66l1.95 2.1a.75.75 0 101.1-1.02l-3.25-3.5a.75.75 0 00-1.1 0L2.2 5.74a.75.75 0 00.04 1.06zm8 4a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0-4a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0 8a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5z" clipRule="evenodd" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Reorder Controls */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500 dark:text-slate-400">Position:</span>
-                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
-                  <button
-                    onClick={() => handleSetFavoriteLinksAbove(true)}
-                    className={`px-2 py-1 text-xs rounded transition-all ${favoriteLinksAbove
-                      ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                      }`}
-                    title="Show links above tiles"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                      <path fillRule="evenodd" d="M10 17a.75.75 0 01-.75-.75V5.612L5.29 9.77a.75.75 0 01-1.08-1.04l5.25-5.5a.75.75 0 011.08 0l5.25 5.5a.75.75 0 11-1.08 1.04l-3.96-4.158V16.25A.75.75 0 0110 17z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => handleSetFavoriteLinksAbove(false)}
-                    className={`px-2 py-1 text-xs rounded transition-all ${!favoriteLinksAbove
-                      ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                      }`}
-                    title="Show links below tiles"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                      <path fillRule="evenodd" d="M10 3a.75.75 0 01.75.75v10.638l3.96-4.158a.75.75 0 111.08 1.04l-5.25 5.5a.75.75 0 01-1.08 0l-5.25-5.5a.75.75 0 111.08-1.04l3.96 4.158V3.75A.75.75 0 0110 3z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              {[...favoriteLinks]
-                .sort((a, b) => {
-                  if (favLinksSort === 'asc') {
-                    return a.label.localeCompare(b.label);
-                  }
-                  return 0;
-                })
-                .map((link, linkIndex) => {
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {matchingLinks.map((link, linkIndex) => {
                   // Resolve effective browser (Link specific > Tile default > System default)
-                  const parentTile = tiles.find(t => t.id === link.tile.id);
                   const browserToUse = (link.browser && link.browser !== 'default')
                     ? link.browser
-                    : (parentTile?.browser && parentTile.browser !== 'default' ? parentTile.browser : null);
+                    : (link.tile.browser && link.tile.browser !== 'default' ? link.tile.browser : null);
 
                   const animationClass = getTileAnimationClass(currentAnimation);
+                  const decorationClass = getTileDecorationClass(currentDecoration);
+                  const fullAnimationClass = `${animationClass} ${decorationClass}`.trim();
                   const animationDelay = (linkIndex * 50);
 
                   return (
                     <div
                       key={link.id}
-                      className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${animationClass} linknest-tile-animated`}
+                      className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-brand-300 dark:hover:border-brand-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} linknest-tile-animated`}
                       style={{ animationDelay: `${animationDelay}ms` }}
                       onClick={(e) => {
                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
@@ -3889,7 +3719,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
                       {/* Link Info */}
                       <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-sm text-slate-900 dark:text-white truncate group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                        <div className="font-semibold text-sm text-slate-900 dark:text-white truncate group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
                           {link.label}
                         </div>
                         <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
@@ -3908,13 +3738,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         </div>
                       </div>
 
-                      {/* Unfavorite Button */}
+                      {/* Favorite Button */}
                       <button
                         onClick={async (e) => {
                           e.stopPropagation();
                           if (isAuthenticated) {
                             const { toggleLinkFavorite } = await import('../services/storageService');
                             await toggleLinkFavorite(link.id);
+                            // Reload favorite links
                             const links = await getFavoriteLinks();
                             setFavoriteLinks(links);
                           } else {
@@ -3927,132 +3758,442 @@ export const TileGrid: React.FC<TileGridProps> = ({
                             setFavoriteLinks(newLinks);
                           }
                         }}
-                        className="absolute top-2 right-2 p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all z-10"
-                        title="Remove from favorites"
+                        className={`absolute top-2 right-2 p-1.5 rounded-lg transition-all z-10 ${(isAuthenticated ? favoriteLinks.some(fl => fl.id === link.id) : getPublicLinkFavorites().includes(link.id))
+                          ? 'text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                          : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                          }`}
+                        title={(isAuthenticated ? favoriteLinks.some(fl => fl.id === link.id) : getPublicLinkFavorites().includes(link.id)) ? 'Remove from favorites' : 'Add to favorites'}
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill={(isAuthenticated ? favoriteLinks.some(fl => fl.id === link.id) : getPublicLinkFavorites().includes(link.id)) ? 'currentColor' : 'none'} stroke="currentColor" className="w-4 h-4">
                           <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
                         </svg>
                       </button>
                     </div>
                   );
                 })}
-            </div>
-          </div>
-        );
-
-        // Render favorite links below if favoriteLinksAbove is false
-        return !favoriteLinksAbove ? favoriteLinksSection : null;
-      })()}
-
-      {/* Compact Add Tile Modal */}
-      {isModalOpen && createPortal(
-        <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 99999 }}>
-          <div className="absolute inset-0 bg-transparent" style={{ zIndex: 99998 }} onClick={() => setIsModalOpen(false)}></div>
-          <div
-            ref={modalRef}
-            className={`bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 overflow-hidden flex flex-col ${isDragging ? 'cursor-move' : ''} ${isDragging || isResizing ? 'will-change-transform' : ''}`}
-            style={{
-              zIndex: 99999,
-              width: modalSize.width > 0 ? `${modalSize.width}px` : '600px',
-              maxWidth: '90vw',
-              minWidth: '400px',
-              height: modalSize.height > 0 ? `${modalSize.height}px` : '700px',
-              maxHeight: '90vh',
-              minHeight: '300px',
-              left: modalPosition.x > 0 ? `${modalPosition.x}px` : 'auto',
-              top: modalPosition.y > 0 ? `${modalPosition.y}px` : 'auto',
-              position: modalPosition.x > 0 || modalPosition.y > 0 ? 'absolute' : 'relative',
-              transition: isDragging || isResizing ? 'none' : undefined
-            }}
-          >
-            <div
-              className="flex items-center justify-between mb-6 cursor-move select-none"
-              onMouseDown={handleDragStart}
-            >
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">Create New Space</h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Organize your links</p>
               </div>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer relative"
-                style={{ zIndex: 100000 }}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                  <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                </svg>
-              </button>
             </div>
+          );
+        })()
+      }
 
-            <div className="flex-1 overflow-y-auto pr-2 -mr-2">
-              <div className="space-y-4 pr-2">
-                {/* Title */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Title</label>
-                  <input
-                    type="text"
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    placeholder="e.g., Design Resources"
-                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
-                  />
+      {/* Favorite Links Section - Shown below tiles if favoriteLinksAbove is false */}
+      {
+        (() => {
+          const favoriteLinksSection = (activeTab === 'favorites' || activeTab === 'public-favorites') && (
+            <div className="mb-8">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-500">
+                    <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
+                  </svg>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">Favorite Links</h2>
+                  <span className="text-sm text-slate-500 dark:text-slate-400">({favoriteLinks.length})</span>
                 </div>
 
-                {/* Type Selection */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Type</label>
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="tileType"
-                        value="space"
-                        checked={tileType === 'space'}
-                        onChange={(e) => {
-                          setTileType(e.target.value as 'space' | 'hyperlink');
-                          if (e.target.value === 'space') {
-                            setNewEmoji('📁'); // Reset to folder for space
-                          }
-                        }}
-                        className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                      />
-                      <span className="text-sm text-slate-700 dark:text-slate-300">Space - Create a new space with links and sections</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="tileType"
-                        value="hyperlink"
-                        checked={tileType === 'hyperlink'}
-                        onChange={(e) => {
-                          setTileType(e.target.value as 'space' | 'hyperlink');
-                          if (e.target.value === 'hyperlink') {
-                            setNewEmoji('🔗'); // Set default link emoji
-                          } else {
-                            setNewEmoji('📁'); // Reset to folder for space
-                          }
-                        }}
-                        className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                      />
-                      <span className="text-sm text-slate-700 dark:text-slate-300">Hyperlink - Direct link to a URL</span>
-                    </label>
+              </div>
+
+              <div className="flex items-center gap-4">
+                {/* Sort Controls */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Sort:</span>
+                  <button
+                    onClick={() => setFavLinksSort(prev => prev === 'default' ? 'asc' : 'default')}
+                    className={`p-1.5 rounded-lg transition-all ${favLinksSort === 'asc'
+                      ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 ring-1 ring-brand-500/20'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                      }`}
+                    title={favLinksSort === 'asc' ? "Sorted alphabetically (Click to reset)" : "Sort alphabetically"}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                      <path fillRule="evenodd" d="M2.24 6.8a.75.75 0 001.06-.04l1.95-2.1v8.59a.75.75 0 001.5 0V4.66l1.95 2.1a.75.75 0 101.1-1.02l-3.25-3.5a.75.75 0 00-1.1 0L2.2 5.74a.75.75 0 00.04 1.06zm8 4a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0-4a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0 8a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+
+                {/* Reorder Controls */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Position:</span>
+                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
+                    <button
+                      onClick={() => handleSetFavoriteLinksAbove(true)}
+                      className={`px-2 py-1 text-xs rounded transition-all ${favoriteLinksAbove
+                        ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                        }`}
+                      title="Show links above tiles"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                        <path fillRule="evenodd" d="M10 17a.75.75 0 01-.75-.75V5.612L5.29 9.77a.75.75 0 01-1.08-1.04l5.25-5.5a.75.75 0 011.08 0l5.25 5.5a.75.75 0 11-1.08 1.04l-3.96-4.158V16.25A.75.75 0 0110 17z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handleSetFavoriteLinksAbove(false)}
+                      className={`px-2 py-1 text-xs rounded transition-all ${!favoriteLinksAbove
+                        ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                        }`}
+                      title="Show links below tiles"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                        <path fillRule="evenodd" d="M10 3a.75.75 0 01.75.75v10.638l3.96-4.158a.75.75 0 111.08 1.04l-5.25 5.5a.75.75 0 01-1.08 0l-5.25-5.5a.75.75 0 111.08-1.04l3.96 4.158V3.75A.75.75 0 0110 3z" clipRule="evenodd" />
+                      </svg>
+                    </button>
                   </div>
                 </div>
+              </div>
 
-                {/* Hyperlink URL - Only shown when type is hyperlink */}
-                {tileType === 'hyperlink' && (
-                  <>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">URL</label>
-                      <input
-                        type="url"
-                        value={hyperlinkUrl}
-                        onChange={(e) => setHyperlinkUrl(e.target.value)}
-                        placeholder="https://example.com"
-                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
-                      />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {[...favoriteLinks]
+                  .sort((a, b) => {
+                    if (favLinksSort === 'asc') {
+                      return a.label.localeCompare(b.label);
+                    }
+                    return 0;
+                  })
+                  .map((link, linkIndex) => {
+                    // Resolve effective browser (Link specific > Tile default > System default)
+                    const parentTile = tiles.find(t => t.id === link.tile.id);
+                    const browserToUse = (link.browser && link.browser !== 'default')
+                      ? link.browser
+                      : (parentTile?.browser && parentTile.browser !== 'default' ? parentTile.browser : null);
+
+                    const animationClass = getTileAnimationClass(currentAnimation);
+                    const decorationClass = getTileDecorationClass(currentDecoration);
+                    const fullAnimationClass = `${animationClass} ${decorationClass}`.trim();
+                    const animationDelay = (linkIndex * 50);
+
+                    return (
+                      <div
+                        key={link.id}
+                        className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} linknest-tile-animated`}
+                        style={{ animationDelay: `${animationDelay}ms` }}
+                        onClick={(e) => {
+                          // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
+                          if (e.ctrlKey || e.metaKey) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
+                            if (newWindow) newWindow.focus();
+                            return;
+                          }
+
+                          if (settings.browser_specific_links_enabled === '1' && browserToUse) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            openLinkInBrowser(link.url, browserToUse);
+                            return;
+                          }
+
+                          // Default behavior
+                          window.open(link.url, '_blank');
+                        }}
+                      >
+                        {/* Health Status Indicator */}
+                        {link.health && (
+                          <div className="shrink-0">
+                            <div
+                              className={`w-2 h-2 rounded-full ${linkHealthService.getHealthColor(link.health.status)}`}
+                              title={`${linkHealthService.getHealthLabel(link.health.status)}${link.health.error ? `: ${link.health.error}` : ''}`}
+                            />
+                          </div>
+                        )}
+
+                        {/* Link Icon */}
+                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 text-lg border border-slate-200 dark:border-slate-700">
+                          {link.icon || '🔗'}
+                        </div>
+
+                        {/* Link Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-sm text-slate-900 dark:text-white truncate group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                            {link.label}
+                          </div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                            {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
+                          </div>
+                          {/* Browser Indicator */}
+                          {settings.browser_specific_links_enabled === '1' && browserToUse && (
+                            <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors mt-0.5">
+                              ({formatBrowserName(browserToUse)} browser)
+                            </div>
+                          )}
+                          {/* Parent Tile Info */}
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <span className="text-xs">{link.tile.emoji}</span>
+                            <span className="text-xs text-slate-400 dark:text-slate-500 truncate">{link.tile.title}</span>
+                          </div>
+                        </div>
+
+                        {/* Unfavorite Button */}
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (isAuthenticated) {
+                              const { toggleLinkFavorite } = await import('../services/storageService');
+                              await toggleLinkFavorite(link.id);
+                              const links = await getFavoriteLinks();
+                              setFavoriteLinks(links);
+                            } else {
+                              togglePublicLinkFavorite(link.id);
+                              const favIds = getPublicLinkFavorites();
+                              const newLinks: FavoriteLink[] = [];
+                              tiles.forEach(t => t.sections?.forEach(s => s.links?.forEach(l => {
+                                if (favIds.includes(l.id)) newLinks.push({ id: l.id, label: l.label, url: l.url, icon: l.icon, textColor: l.textColor, visibility: l.visibility, notes: l.notes, tooltip: l.tooltip, browser: l.browser, isFavorite: true, health: l.health, tile: { id: t.id, title: t.title, emoji: t.emoji || '✨', themeColor: t.themeColor || 'blue' } });
+                              })));
+                              setFavoriteLinks(newLinks);
+                            }
+                          }}
+                          className="absolute top-2 right-2 p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all z-10"
+                          title="Remove from favorites"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
+                          </svg>
+                        </button>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          );
+
+          // Render favorite links below if favoriteLinksAbove is false
+          return !favoriteLinksAbove ? favoriteLinksSection : null;
+        })()
+      }
+
+      {/* Compact Add Tile Modal */}
+      {
+        isModalOpen && createPortal(
+          <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 99999 }}>
+            <div className="absolute inset-0 bg-transparent" style={{ zIndex: 99998 }} onClick={() => setIsModalOpen(false)}></div>
+            <div
+              ref={modalRef}
+              className={`bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 overflow-hidden flex flex-col ${isDragging ? 'cursor-move' : ''} ${isDragging || isResizing ? 'will-change-transform' : ''}`}
+              style={{
+                zIndex: 99999,
+                width: modalSize.width > 0 ? `${modalSize.width}px` : '600px',
+                maxWidth: '90vw',
+                minWidth: '400px',
+                height: modalSize.height > 0 ? `${modalSize.height}px` : '700px',
+                maxHeight: '90vh',
+                minHeight: '300px',
+                left: modalPosition.x > 0 ? `${modalPosition.x}px` : 'auto',
+                top: modalPosition.y > 0 ? `${modalPosition.y}px` : 'auto',
+                position: modalPosition.x > 0 || modalPosition.y > 0 ? 'absolute' : 'relative',
+                transition: isDragging || isResizing ? 'none' : undefined
+              }}
+            >
+              <div
+                className="flex items-center justify-between mb-6 cursor-move select-none"
+                onMouseDown={handleDragStart}
+              >
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">Create New Space</h2>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Organize your links</p>
+                </div>
+                <button
+                  onClick={() => setIsModalOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer relative"
+                  style={{ zIndex: 100000 }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                    <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto pr-2 -mr-2">
+                <div className="space-y-4 pr-2">
+                  {/* Title */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Title</label>
+                    <input
+                      type="text"
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
+                      placeholder="e.g., Design Resources"
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                    />
+                  </div>
+
+                  {/* Type Selection */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Type</label>
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="tileType"
+                          value="space"
+                          checked={tileType === 'space'}
+                          onChange={(e) => {
+                            setTileType(e.target.value as 'space' | 'hyperlink');
+                            if (e.target.value === 'space') {
+                              setNewEmoji('📁'); // Reset to folder for space
+                            }
+                          }}
+                          className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                        />
+                        <span className="text-sm text-slate-700 dark:text-slate-300">Space - Create a new space with links and sections</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="tileType"
+                          value="hyperlink"
+                          checked={tileType === 'hyperlink'}
+                          onChange={(e) => {
+                            setTileType(e.target.value as 'space' | 'hyperlink');
+                            if (e.target.value === 'hyperlink') {
+                              setNewEmoji('🔗'); // Set default link emoji
+                            } else {
+                              setNewEmoji('📁'); // Reset to folder for space
+                            }
+                          }}
+                          className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                        />
+                        <span className="text-sm text-slate-700 dark:text-slate-300">Hyperlink - Direct link to a URL</span>
+                      </label>
                     </div>
+                  </div>
+
+                  {/* Hyperlink URL - Only shown when type is hyperlink */}
+                  {tileType === 'hyperlink' && (
+                    <>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">URL</label>
+                        <input
+                          type="url"
+                          value={hyperlinkUrl}
+                          onChange={(e) => setHyperlinkUrl(e.target.value)}
+                          placeholder="https://example.com"
+                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Description</label>
+                        <textarea
+                          value={newDesc}
+                          onChange={(e) => setNewDesc(e.target.value)}
+                          placeholder="Short description..."
+                          rows={2}
+                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-none placeholder-slate-400 transition-all"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Open Link</label>
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="openInNewTab"
+                              value="new"
+                              checked={openInNewTab === true}
+                              onChange={() => setOpenInNewTab(true)}
+                              className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300">Open in new tab</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="openInNewTab"
+                              value="same"
+                              checked={openInNewTab === false}
+                              onChange={() => setOpenInNewTab(false)}
+                              className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300">Open in same tab</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Emoji & Theme - Also shown for hyperlinks */}
+                      <div className="flex gap-3">
+                        <div className="w-24 relative">
+                          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Icon</label>
+                          <button
+                            type="button"
+                            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                            className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50"
+                          >
+                            {newEmoji || (tileType === 'hyperlink' ? '🔗' : '📁')}
+                          </button>
+
+                          {/* Emoji Picker Popover */}
+                          {showEmojiPicker && (
+                            <>
+                              <div className="fixed inset-0" style={{ zIndex: 100001 }} onClick={() => setShowEmojiPicker(false)}></div>
+                              <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl flex flex-col overflow-hidden" style={{ zIndex: 100002 }}>
+                                <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                                  <input
+                                    type="text"
+                                    value={newEmoji}
+                                    onChange={(e) => setNewEmoji(e.target.value)}
+                                    placeholder="Type emoji..."
+                                    className="w-full text-sm px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/50 text-slate-900 dark:text-white"
+                                    autoFocus
+                                  />
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-2 grid grid-cols-8 gap-1">
+                                  {POPULAR_EMOJIS.map((emoji) => (
+                                    <button
+                                      key={emoji}
+                                      onClick={() => { setNewEmoji(emoji); setShowEmojiPicker(false); }}
+                                      className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                                    >
+                                      {emoji}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+
+                        <div className="flex-1">
+                          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Theme</label>
+                          <div className="grid grid-cols-9 gap-1.5">
+                            {THEME_COLORS.map(c => (
+                              <button
+                                key={c}
+                                onClick={() => setNewColor(c)}
+                                className={`
+                              w-8 h-8 rounded-lg border-2 transition-all relative overflow-hidden
+                              ${newColor === c ? 'border-brand-500 scale-110 shadow-md shadow-brand-500/30' : 'border-slate-200 dark:border-slate-700 hover:scale-105'} 
+                            `}
+                                title={c}
+                              >
+                                <div className={`absolute inset-0 ${COLOR_STYLES[c].base} rounded-md`}></div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Category - Also shown for hyperlinks */}
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Category</label>
+                        <input
+                          type="text"
+                          value={newGroup}
+                          onChange={(e) => setNewGroup(e.target.value)}
+                          placeholder="Select or create a category (e.g., Work, Personal)"
+                          list="category-suggestions-hyperlink"
+                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                        />
+                        <datalist id="category-suggestions-hyperlink">
+                          {allCategories.map(cat => <option key={cat} value={cat} />)}
+                        </datalist>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Select an existing category or type a new name to create one</p>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Description - Only shown when type is space */}
+                  {tileType === 'space' && (
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Description</label>
                       <textarea
@@ -4063,35 +4204,10 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-none placeholder-slate-400 transition-all"
                       />
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Open Link</label>
-                      <div className="space-y-2">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="openInNewTab"
-                            value="new"
-                            checked={openInNewTab === true}
-                            onChange={() => setOpenInNewTab(true)}
-                            className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                          />
-                          <span className="text-sm text-slate-700 dark:text-slate-300">Open in new tab</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="openInNewTab"
-                            value="same"
-                            checked={openInNewTab === false}
-                            onChange={() => setOpenInNewTab(false)}
-                            className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                          />
-                          <span className="text-sm text-slate-700 dark:text-slate-300">Open in same tab</span>
-                        </label>
-                      </div>
-                    </div>
+                  )}
 
-                    {/* Emoji & Theme - Also shown for hyperlinks */}
+                  {/* Emoji & Theme - Only shown when type is space */}
+                  {tileType === 'space' && (
                     <div className="flex gap-3">
                       <div className="w-24 relative">
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Icon</label>
@@ -4100,14 +4216,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
                           onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                           className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50"
                         >
-                          {newEmoji || (tileType === 'hyperlink' ? '🔗' : '📁')}
+                          {newEmoji || '✨'}
                         </button>
 
                         {/* Emoji Picker Popover */}
                         {showEmojiPicker && (
                           <>
-                            <div className="fixed inset-0" style={{ zIndex: 100001 }} onClick={() => setShowEmojiPicker(false)}></div>
-                            <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl flex flex-col overflow-hidden" style={{ zIndex: 100002 }}>
+                            <div className="fixed inset-0 z-[10001]" onClick={() => setShowEmojiPicker(false)}></div>
+                            <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[10002] flex flex-col overflow-hidden">
                               <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
                                 <input
                                   type="text"
@@ -4142,9 +4258,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
                               key={c}
                               onClick={() => setNewColor(c)}
                               className={`
-                              w-8 h-8 rounded-lg border-2 transition-all relative overflow-hidden
-                              ${newColor === c ? 'border-brand-500 scale-110 shadow-md shadow-brand-500/30' : 'border-slate-200 dark:border-slate-700 hover:scale-105'} 
-                            `}
+                          w-8 h-8 rounded-lg border-2 transition-all relative overflow-hidden
+                          ${newColor === c ? 'border-brand-500 scale-110 shadow-md shadow-brand-500/30' : 'border-slate-200 dark:border-slate-700 hover:scale-105'} 
+                        `}
                               title={c}
                             >
                               <div className={`absolute inset-0 ${COLOR_STYLES[c].base} rounded-md`}></div>
@@ -4153,8 +4269,10 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         </div>
                       </div>
                     </div>
+                  )}
 
-                    {/* Category - Also shown for hyperlinks */}
+                  {/* Category - Only shown when type is space */}
+                  {tileType === 'space' && (
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Category</label>
                       <input
@@ -4162,116 +4280,278 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         value={newGroup}
                         onChange={(e) => setNewGroup(e.target.value)}
                         placeholder="Select or create a category (e.g., Work, Personal)"
-                        list="category-suggestions-hyperlink"
+                        list="category-suggestions-space"
                         className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
                       />
-                      <datalist id="category-suggestions-hyperlink">
+                      <datalist id="category-suggestions-space">
                         {allCategories.map(cat => <option key={cat} value={cat} />)}
                       </datalist>
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Select an existing category or type a new name to create one</p>
                     </div>
-                  </>
-                )}
+                  )}
 
-                {/* Description - Only shown when type is space */}
-                {tileType === 'space' && (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Description</label>
-                    <textarea
-                      value={newDesc}
-                      onChange={(e) => setNewDesc(e.target.value)}
-                      placeholder="Short description..."
-                      rows={2}
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-none placeholder-slate-400 transition-all"
-                    />
-                  </div>
-                )}
+                  {/* Visibility Settings - Only shown when type is space */}
+                  {tileType === 'space' && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Visibility</label>
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="visibility"
+                            value="public"
+                            checked={newVisibility === 'public'}
+                            onChange={(e) => {
+                              setNewVisibility(e.target.value as TileVisibility);
+                              setShowUserSelector(false);
+                            }}
+                            className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                          />
+                          <span className="text-sm text-slate-700 dark:text-slate-300">Public - Available for everyone (guests and logged in users)</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="visibility"
+                            value="authenticated"
+                            checked={newVisibility === 'authenticated'}
+                            onChange={(e) => {
+                              setNewVisibility(e.target.value as TileVisibility);
+                              setShowUserSelector(false);
+                            }}
+                            className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                          />
+                          <span className="text-sm text-slate-700 dark:text-slate-300">Authenticated - Available for logged in users only</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="visibility"
+                            value="private"
+                            checked={newVisibility === 'private'}
+                            onChange={(e) => {
+                              setNewVisibility(e.target.value as TileVisibility);
+                              setShowUserSelector(true);
+                            }}
+                            className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                          />
+                          <span className="text-sm text-slate-700 dark:text-slate-300">Private - Available for specific users only</span>
+                        </label>
+                      </div>
 
-                {/* Emoji & Theme - Only shown when type is space */}
-                {tileType === 'space' && (
-                  <div className="flex gap-3">
-                    <div className="w-24 relative">
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Icon</label>
-                      <button
-                        type="button"
-                        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                        className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50"
-                      >
-                        {newEmoji || '✨'}
-                      </button>
-
-                      {/* Emoji Picker Popover */}
-                      {showEmojiPicker && (
-                        <>
-                          <div className="fixed inset-0 z-[10001]" onClick={() => setShowEmojiPicker(false)}></div>
-                          <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[10002] flex flex-col overflow-hidden">
-                            <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
-                              <input
-                                type="text"
-                                value={newEmoji}
-                                onChange={(e) => setNewEmoji(e.target.value)}
-                                placeholder="Type emoji..."
-                                className="w-full text-sm px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/50 text-slate-900 dark:text-white"
-                                autoFocus
-                              />
+                      {/* User Selector for Private Visibility */}
+                      {newVisibility === 'private' && isAuthenticated && (
+                        <div className="mt-3">
+                          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Select Users</label>
+                          {isLoadingUsers ? (
+                            <div className="text-sm text-slate-500 dark:text-slate-400">Loading users...</div>
+                          ) : (
+                            <div className="max-h-32 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-slate-50 dark:bg-slate-900/50">
+                              {availableUsers.length === 0 ? (
+                                <div className="text-sm text-slate-500 dark:text-slate-400">No users available</div>
+                              ) : (
+                                <div className="space-y-1.5">
+                                  {availableUsers.map(user => (
+                                    <label key={user.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 p-1.5 rounded">
+                                      <input
+                                        type="checkbox"
+                                        checked={newAllowedUsers.includes(user.id)}
+                                        onChange={(e) => {
+                                          if (e.target.checked) {
+                                            setNewAllowedUsers([...newAllowedUsers, user.id]);
+                                          } else {
+                                            setNewAllowedUsers(newAllowedUsers.filter(id => id !== user.id));
+                                          }
+                                        }}
+                                        className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
+                                      />
+                                      <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
+                                      {user.auth_source && user.auth_source !== 'local' && (
+                                        <span className="text-xs text-slate-500 dark:text-slate-400">({user.auth_source})</span>
+                                      )}
+                                    </label>
+                                  ))}
+                                </div>
+                              )}
                             </div>
-                            <div className="flex-1 overflow-y-auto p-2 grid grid-cols-8 gap-1">
-                              {POPULAR_EMOJIS.map((emoji) => (
-                                <button
-                                  key={emoji}
-                                  onClick={() => { setNewEmoji(emoji); setShowEmojiPicker(false); }}
-                                  className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                                >
-                                  {emoji}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        </>
+                          )}
+                          {newVisibility === 'private' && newAllowedUsers.length === 0 && (
+                            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Please select at least one user for private spaces</p>
+                          )}
+                        </div>
                       )}
                     </div>
+                  )}
 
-                    <div className="flex-1">
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Theme</label>
-                      <div className="grid grid-cols-9 gap-1.5">
-                        {THEME_COLORS.map(c => (
-                          <button
-                            key={c}
-                            onClick={() => setNewColor(c)}
-                            className={`
-                          w-8 h-8 rounded-lg border-2 transition-all relative overflow-hidden
-                          ${newColor === c ? 'border-brand-500 scale-110 shadow-md shadow-brand-500/30' : 'border-slate-200 dark:border-slate-700 hover:scale-105'} 
-                        `}
-                            title={c}
-                          >
-                            <div className={`absolute inset-0 ${COLOR_STYLES[c].base} rounded-md`}></div>
-                          </button>
-                        ))}
+                  {/* Scheduling - Only shown when type is space */}
+                  {tileType === 'space' && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Scheduling</label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Available From (optional)</label>
+                          <input
+                            type="datetime-local"
+                            value={visibleFrom}
+                            onChange={(e) => setVisibleFrom(e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                          />
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for immediate availability</p>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Expires At (optional)</label>
+                          <input
+                            type="datetime-local"
+                            value={expiresAt}
+                            onChange={(e) => setExpiresAt(e.target.value)}
+                            min={visibleFrom || undefined}
+                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                          />
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for no expiry</p>
+                        </div>
                       </div>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="pt-3 flex justify-end gap-2 border-t border-slate-200 dark:border-slate-700">
+                    <button
+                      onClick={() => setIsModalOpen(false)}
+                      className="px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleCreateTile}
+                      disabled={
+                        !newTitle.trim() ||
+                        (tileType === 'space' && newVisibility === 'private' && newAllowedUsers.length === 0) ||
+                        (tileType === 'hyperlink' && !hyperlinkUrl.trim())
+                      }
+                      className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-brand-500/20 hover:shadow-lg hover:shadow-brand-500/30 hover:scale-105 active:scale-95"
+                    >
+                      {tileType === 'hyperlink' ? 'Create Hyperlink' : 'Create Space'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              {/* Resize Handle */}
+              <div
+                onMouseDown={handleResizeStart}
+                className={`absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize flex items-end justify-end ${isResizing ? 'bg-brand-500/20' : 'hover:bg-slate-200/50 dark:hover:bg-slate-700/50'}`}
+                style={{ zIndex: 100000 }}
+              >
+                <div className="w-4 h-4 relative">
+                  <div className="absolute bottom-0 right-0 w-3 h-3 border-r-2 border-b-2 border-slate-400 dark:border-slate-500 rounded-br-lg"></div>
+                  <div className="absolute bottom-1 right-1 w-2 h-2 border-r border-b border-slate-400 dark:border-slate-500 rounded-br"></div>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )
+      }
+
+      {/* Edit Tile Modal */}
+      {
+        isEditModalOpen && editingTile && createPortal(
+          <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 99999 }}>
+            <div className="absolute inset-0 bg-transparent" style={{ zIndex: 99998 }} onClick={() => {
+              setIsEditModalOpen(false);
+              setEditingTile(null);
+              resetForm();
+            }}></div>
+            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto" style={{ zIndex: 99999 }}>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">
+                    {tileType === 'hyperlink' ? 'Edit Hyperlink' : 'Edit Space'}
+                  </h2>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    {tileType === 'hyperlink' ? 'Update your hyperlink settings' : 'Update your space settings'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                    <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Title */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Title</label>
+                  <input
+                    type="text"
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    placeholder="e.g., Design Resources"
+                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                  />
+                </div>
+
+                {/* URL - Only for hyperlinks */}
+                {tileType === 'hyperlink' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">URL</label>
+                    <input
+                      type="url"
+                      value={hyperlinkUrl}
+                      onChange={(e) => setHyperlinkUrl(e.target.value)}
+                      placeholder="https://example.com"
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                    />
+                  </div>
+                )}
+
+                {/* Description */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Description</label>
+                  <textarea
+                    value={newDesc}
+                    onChange={(e) => setNewDesc(e.target.value)}
+                    placeholder="Short description..."
+                    rows={2}
+                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-none placeholder-slate-400 transition-all"
+                  />
+                </div>
+
+                {/* Open Link - Only for hyperlinks */}
+                {tileType === 'hyperlink' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Open Link</label>
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="editOpenInNewTab"
+                          value="new"
+                          checked={openInNewTab === true}
+                          onChange={() => setOpenInNewTab(true)}
+                          className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                        />
+                        <span className="text-sm text-slate-700 dark:text-slate-300">Open in new tab</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="editOpenInNewTab"
+                          value="same"
+                          checked={openInNewTab === false}
+                          onChange={() => setOpenInNewTab(false)}
+                          className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                        />
+                        <span className="text-sm text-slate-700 dark:text-slate-300">Open in same tab</span>
+                      </label>
                     </div>
                   </div>
                 )}
 
-                {/* Category - Only shown when type is space */}
-                {tileType === 'space' && (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Category</label>
-                    <input
-                      type="text"
-                      value={newGroup}
-                      onChange={(e) => setNewGroup(e.target.value)}
-                      placeholder="Select or create a category (e.g., Work, Personal)"
-                      list="category-suggestions-space"
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
-                    />
-                    <datalist id="category-suggestions-space">
-                      {allCategories.map(cat => <option key={cat} value={cat} />)}
-                    </datalist>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Select an existing category or type a new name to create one</p>
-                  </div>
-                )}
-
-                {/* Visibility Settings - Only shown when type is space */}
+                {/* Visibility Settings - Only for regular spaces */}
                 {tileType === 'space' && (
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Visibility</label>
@@ -4279,7 +4559,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="radio"
-                          name="visibility"
+                          name="editVisibility"
                           value="public"
                           checked={newVisibility === 'public'}
                           onChange={(e) => {
@@ -4293,7 +4573,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="radio"
-                          name="visibility"
+                          name="editVisibility"
                           value="authenticated"
                           checked={newVisibility === 'authenticated'}
                           onChange={(e) => {
@@ -4307,7 +4587,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="radio"
-                          name="visibility"
+                          name="editVisibility"
                           value="private"
                           checked={newVisibility === 'private'}
                           onChange={(e) => {
@@ -4364,6 +4644,86 @@ export const TileGrid: React.FC<TileGridProps> = ({
                   </div>
                 )}
 
+                {/* Emoji & Theme */}
+                <div className="flex gap-3">
+                  <div className="w-24 relative">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Icon</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                      className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50"
+                    >
+                      {newEmoji || (tileType === 'hyperlink' ? '🔗' : '📁')}
+                    </button>
+
+                    {/* Emoji Picker Popover */}
+                    {showEmojiPicker && (
+                      <>
+                        <div className="fixed inset-0 z-[10001]" onClick={() => setShowEmojiPicker(false)}></div>
+                        <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[10002] flex flex-col overflow-hidden">
+                          <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                            <input
+                              type="text"
+                              value={newEmoji}
+                              onChange={(e) => setNewEmoji(e.target.value)}
+                              placeholder="Type emoji..."
+                              className="w-full text-sm px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/50 text-slate-900 dark:text-white"
+                              autoFocus
+                            />
+                          </div>
+                          <div className="flex-1 overflow-y-auto p-2 grid grid-cols-8 gap-1">
+                            {POPULAR_EMOJIS.map((emoji) => (
+                              <button
+                                key={emoji}
+                                onClick={() => { setNewEmoji(emoji); setShowEmojiPicker(false); }}
+                                className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex-1">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Theme</label>
+                    <div className="grid grid-cols-9 gap-1.5">
+                      {THEME_COLORS.map(c => (
+                        <button
+                          key={c}
+                          onClick={() => setNewColor(c)}
+                          className={`
+                          w-8 h-8 rounded-lg border-2 transition-all relative overflow-hidden
+                          ${newColor === c ? 'border-brand-500 scale-110 shadow-md shadow-brand-500/30' : 'border-slate-200 dark:border-slate-700 hover:scale-105'} 
+                        `}
+                          title={c}
+                        >
+                          <div className={`absolute inset-0 ${COLOR_STYLES[c].base} rounded-md`}></div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Category */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Category</label>
+                  <input
+                    type="text"
+                    value={newGroup}
+                    onChange={(e) => setNewGroup(e.target.value)}
+                    placeholder="Select or create a category (e.g., Work, Personal)"
+                    list="category-suggestions-edit"
+                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                  />
+                  <datalist id="category-suggestions-edit">
+                    {allCategories.map(cat => <option key={cat} value={cat} />)}
+                  </datalist>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Select an existing category or type a new name to create one</p>
+                </div>
+
                 {/* Scheduling - Only shown when type is space */}
                 {tileType === 'space' && (
                   <div>
@@ -4397,314 +4757,64 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 {/* Actions */}
                 <div className="pt-3 flex justify-end gap-2 border-t border-slate-200 dark:border-slate-700">
                   <button
-                    onClick={() => setIsModalOpen(false)}
+                    onClick={() => {
+                      setIsEditModalOpen(false);
+                      setEditingTile(null);
+                      resetForm();
+                    }}
                     className="px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"
                   >
                     Cancel
                   </button>
                   <button
-                    onClick={handleCreateTile}
+                    onClick={handleUpdateTile}
                     disabled={
                       !newTitle.trim() ||
-                      (tileType === 'space' && newVisibility === 'private' && newAllowedUsers.length === 0) ||
-                      (tileType === 'hyperlink' && !hyperlinkUrl.trim())
+                      (tileType === 'hyperlink' && !hyperlinkUrl.trim()) ||
+                      (tileType === 'space' && newVisibility === 'private' && newAllowedUsers.length === 0)
                     }
                     className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-brand-500/20 hover:shadow-lg hover:shadow-brand-500/30 hover:scale-105 active:scale-95"
                   >
-                    {tileType === 'hyperlink' ? 'Create Hyperlink' : 'Create Space'}
+                    {tileType === 'hyperlink' ? 'Update Hyperlink' : 'Update Space'}
                   </button>
                 </div>
               </div>
             </div>
-            {/* Resize Handle */}
-            <div
-              onMouseDown={handleResizeStart}
-              className={`absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize flex items-end justify-end ${isResizing ? 'bg-brand-500/20' : 'hover:bg-slate-200/50 dark:hover:bg-slate-700/50'}`}
-              style={{ zIndex: 100000 }}
-            >
-              <div className="w-4 h-4 relative">
-                <div className="absolute bottom-0 right-0 w-3 h-3 border-r-2 border-b-2 border-slate-400 dark:border-slate-500 rounded-br-lg"></div>
-                <div className="absolute bottom-1 right-1 w-2 h-2 border-r border-b border-slate-400 dark:border-slate-500 rounded-br"></div>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+          </div>,
+          document.body
+        )
+      }
 
-      {/* Edit Tile Modal */}
-      {isEditModalOpen && editingTile && createPortal(
-        <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 99999 }}>
-          <div className="absolute inset-0 bg-transparent" style={{ zIndex: 99998 }} onClick={() => {
-            setIsEditModalOpen(false);
-            setEditingTile(null);
-            resetForm();
-          }}></div>
-          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto" style={{ zIndex: 99999 }}>
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">
-                  {tileType === 'hyperlink' ? 'Edit Hyperlink' : 'Edit Space'}
-                </h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  {tileType === 'hyperlink' ? 'Update your hyperlink settings' : 'Update your space settings'}
-                </p>
-              </div>
-              <button
-                onClick={() => setIsEditModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                  <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              {/* Title */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Title</label>
-                <input
-                  type="text"
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  placeholder="e.g., Design Resources"
-                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
-                />
-              </div>
-
-              {/* URL - Only for hyperlinks */}
-              {tileType === 'hyperlink' && (
+      {/* Category Scheduling Modal */}
+      {
+        editingCategorySchedule && createPortal(
+          <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 99999 }}>
+            <div className="absolute inset-0 bg-transparent" style={{ zIndex: 99998 }} onClick={() => {
+              setEditingCategorySchedule(null);
+              setCategoryVisibleFrom('');
+              setCategoryExpiresAt('');
+            }}></div>
+            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-md p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200" style={{ zIndex: 99999 }}>
+              <div className="flex items-center justify-between mb-6">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">URL</label>
-                  <input
-                    type="url"
-                    value={hyperlinkUrl}
-                    onChange={(e) => setHyperlinkUrl(e.target.value)}
-                    placeholder="https://example.com"
-                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
-                  />
+                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">Schedule Category</h2>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">{editingCategorySchedule}</p>
                 </div>
-              )}
-
-              {/* Description */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Description</label>
-                <textarea
-                  value={newDesc}
-                  onChange={(e) => setNewDesc(e.target.value)}
-                  placeholder="Short description..."
-                  rows={2}
-                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-none placeholder-slate-400 transition-all"
-                />
+                <button
+                  onClick={() => {
+                    setEditingCategorySchedule(null);
+                    setCategoryVisibleFrom('');
+                    setCategoryExpiresAt('');
+                  }}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                    <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                  </svg>
+                </button>
               </div>
 
-              {/* Open Link - Only for hyperlinks */}
-              {tileType === 'hyperlink' && (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Open Link</label>
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="editOpenInNewTab"
-                        value="new"
-                        checked={openInNewTab === true}
-                        onChange={() => setOpenInNewTab(true)}
-                        className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                      />
-                      <span className="text-sm text-slate-700 dark:text-slate-300">Open in new tab</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="editOpenInNewTab"
-                        value="same"
-                        checked={openInNewTab === false}
-                        onChange={() => setOpenInNewTab(false)}
-                        className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                      />
-                      <span className="text-sm text-slate-700 dark:text-slate-300">Open in same tab</span>
-                    </label>
-                  </div>
-                </div>
-              )}
-
-              {/* Visibility Settings - Only for regular spaces */}
-              {tileType === 'space' && (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Visibility</label>
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="editVisibility"
-                        value="public"
-                        checked={newVisibility === 'public'}
-                        onChange={(e) => {
-                          setNewVisibility(e.target.value as TileVisibility);
-                          setShowUserSelector(false);
-                        }}
-                        className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                      />
-                      <span className="text-sm text-slate-700 dark:text-slate-300">Public - Available for everyone (guests and logged in users)</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="editVisibility"
-                        value="authenticated"
-                        checked={newVisibility === 'authenticated'}
-                        onChange={(e) => {
-                          setNewVisibility(e.target.value as TileVisibility);
-                          setShowUserSelector(false);
-                        }}
-                        className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                      />
-                      <span className="text-sm text-slate-700 dark:text-slate-300">Authenticated - Available for logged in users only</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="editVisibility"
-                        value="private"
-                        checked={newVisibility === 'private'}
-                        onChange={(e) => {
-                          setNewVisibility(e.target.value as TileVisibility);
-                          setShowUserSelector(true);
-                        }}
-                        className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                      />
-                      <span className="text-sm text-slate-700 dark:text-slate-300">Private - Available for specific users only</span>
-                    </label>
-                  </div>
-
-                  {/* User Selector for Private Visibility */}
-                  {newVisibility === 'private' && isAuthenticated && (
-                    <div className="mt-3">
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Select Users</label>
-                      {isLoadingUsers ? (
-                        <div className="text-sm text-slate-500 dark:text-slate-400">Loading users...</div>
-                      ) : (
-                        <div className="max-h-32 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-slate-50 dark:bg-slate-900/50">
-                          {availableUsers.length === 0 ? (
-                            <div className="text-sm text-slate-500 dark:text-slate-400">No users available</div>
-                          ) : (
-                            <div className="space-y-1.5">
-                              {availableUsers.map(user => (
-                                <label key={user.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 p-1.5 rounded">
-                                  <input
-                                    type="checkbox"
-                                    checked={newAllowedUsers.includes(user.id)}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setNewAllowedUsers([...newAllowedUsers, user.id]);
-                                      } else {
-                                        setNewAllowedUsers(newAllowedUsers.filter(id => id !== user.id));
-                                      }
-                                    }}
-                                    className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
-                                  />
-                                  <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
-                                  {user.auth_source && user.auth_source !== 'local' && (
-                                    <span className="text-xs text-slate-500 dark:text-slate-400">({user.auth_source})</span>
-                                  )}
-                                </label>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      {newVisibility === 'private' && newAllowedUsers.length === 0 && (
-                        <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Please select at least one user for private spaces</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Emoji & Theme */}
-              <div className="flex gap-3">
-                <div className="w-24 relative">
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Icon</label>
-                  <button
-                    type="button"
-                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                    className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50"
-                  >
-                    {newEmoji || (tileType === 'hyperlink' ? '🔗' : '📁')}
-                  </button>
-
-                  {/* Emoji Picker Popover */}
-                  {showEmojiPicker && (
-                    <>
-                      <div className="fixed inset-0 z-[10001]" onClick={() => setShowEmojiPicker(false)}></div>
-                      <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[10002] flex flex-col overflow-hidden">
-                        <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
-                          <input
-                            type="text"
-                            value={newEmoji}
-                            onChange={(e) => setNewEmoji(e.target.value)}
-                            placeholder="Type emoji..."
-                            className="w-full text-sm px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/50 text-slate-900 dark:text-white"
-                            autoFocus
-                          />
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-2 grid grid-cols-8 gap-1">
-                          {POPULAR_EMOJIS.map((emoji) => (
-                            <button
-                              key={emoji}
-                              onClick={() => { setNewEmoji(emoji); setShowEmojiPicker(false); }}
-                              className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                            >
-                              {emoji}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                <div className="flex-1">
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Theme</label>
-                  <div className="grid grid-cols-9 gap-1.5">
-                    {THEME_COLORS.map(c => (
-                      <button
-                        key={c}
-                        onClick={() => setNewColor(c)}
-                        className={`
-                          w-8 h-8 rounded-lg border-2 transition-all relative overflow-hidden
-                          ${newColor === c ? 'border-brand-500 scale-110 shadow-md shadow-brand-500/30' : 'border-slate-200 dark:border-slate-700 hover:scale-105'} 
-                        `}
-                        title={c}
-                      >
-                        <div className={`absolute inset-0 ${COLOR_STYLES[c].base} rounded-md`}></div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Category */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Category</label>
-                <input
-                  type="text"
-                  value={newGroup}
-                  onChange={(e) => setNewGroup(e.target.value)}
-                  placeholder="Select or create a category (e.g., Work, Personal)"
-                  list="category-suggestions-edit"
-                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
-                />
-                <datalist id="category-suggestions-edit">
-                  {allCategories.map(cat => <option key={cat} value={cat} />)}
-                </datalist>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Select an existing category or type a new name to create one</p>
-              </div>
-
-              {/* Scheduling - Only shown when type is space */}
-              {tileType === 'space' && (
+              <div className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Scheduling</label>
                   <div className="grid grid-cols-2 gap-3">
@@ -4712,8 +4822,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                       <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Available From (optional)</label>
                       <input
                         type="datetime-local"
-                        value={visibleFrom}
-                        onChange={(e) => setVisibleFrom(e.target.value)}
+                        value={categoryVisibleFrom}
+                        onChange={(e) => setCategoryVisibleFrom(e.target.value)}
                         className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
                       />
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for immediate availability</p>
@@ -4722,126 +4832,40 @@ export const TileGrid: React.FC<TileGridProps> = ({
                       <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Expires At (optional)</label>
                       <input
                         type="datetime-local"
-                        value={expiresAt}
-                        onChange={(e) => setExpiresAt(e.target.value)}
-                        min={visibleFrom || undefined}
+                        value={categoryExpiresAt}
+                        onChange={(e) => setCategoryExpiresAt(e.target.value)}
+                        min={categoryVisibleFrom || undefined}
                         className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
                       />
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for no expiry</p>
                     </div>
                   </div>
                 </div>
-              )}
 
-              {/* Actions */}
-              <div className="pt-3 flex justify-end gap-2 border-t border-slate-200 dark:border-slate-700">
-                <button
-                  onClick={() => {
-                    setIsEditModalOpen(false);
-                    setEditingTile(null);
-                    resetForm();
-                  }}
-                  className="px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleUpdateTile}
-                  disabled={
-                    !newTitle.trim() ||
-                    (tileType === 'hyperlink' && !hyperlinkUrl.trim()) ||
-                    (tileType === 'space' && newVisibility === 'private' && newAllowedUsers.length === 0)
-                  }
-                  className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-brand-500/20 hover:shadow-lg hover:shadow-brand-500/30 hover:scale-105 active:scale-95"
-                >
-                  {tileType === 'hyperlink' ? 'Update Hyperlink' : 'Update Space'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Category Scheduling Modal */}
-      {editingCategorySchedule && createPortal(
-        <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 99999 }}>
-          <div className="absolute inset-0 bg-transparent" style={{ zIndex: 99998 }} onClick={() => {
-            setEditingCategorySchedule(null);
-            setCategoryVisibleFrom('');
-            setCategoryExpiresAt('');
-          }}></div>
-          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-md p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200" style={{ zIndex: 99999 }}>
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">Schedule Category</h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400">{editingCategorySchedule}</p>
-              </div>
-              <button
-                onClick={() => {
-                  setEditingCategorySchedule(null);
-                  setCategoryVisibleFrom('');
-                  setCategoryExpiresAt('');
-                }}
-                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                  <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Scheduling</label>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Available From (optional)</label>
-                    <input
-                      type="datetime-local"
-                      value={categoryVisibleFrom}
-                      onChange={(e) => setCategoryVisibleFrom(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
-                    />
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for immediate availability</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Expires At (optional)</label>
-                    <input
-                      type="datetime-local"
-                      value={categoryExpiresAt}
-                      onChange={(e) => setCategoryExpiresAt(e.target.value)}
-                      min={categoryVisibleFrom || undefined}
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
-                    />
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for no expiry</p>
-                  </div>
+                <div className="pt-3 flex justify-end gap-2 border-t border-slate-200 dark:border-slate-700">
+                  <button
+                    onClick={() => {
+                      setEditingCategorySchedule(null);
+                      setCategoryVisibleFrom('');
+                      setCategoryExpiresAt('');
+                    }}
+                    className="px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveCategorySchedule}
+                    className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-brand-500/20 hover:shadow-lg hover:shadow-brand-500/30 hover:scale-105 active:scale-95"
+                  >
+                    Save Schedule
+                  </button>
                 </div>
               </div>
-
-              <div className="pt-3 flex justify-end gap-2 border-t border-slate-200 dark:border-slate-700">
-                <button
-                  onClick={() => {
-                    setEditingCategorySchedule(null);
-                    setCategoryVisibleFrom('');
-                    setCategoryExpiresAt('');
-                  }}
-                  className="px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveCategorySchedule}
-                  className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-brand-500/20 hover:shadow-lg hover:shadow-brand-500/30 hover:scale-105 active:scale-95"
-                >
-                  Save Schedule
-                </button>
-              </div>
             </div>
-          </div>
-        </div>,
-        document.body
-      )}
-    </div>
+          </div>,
+          document.body
+        )
+      }
+    </div >
   );
 };
