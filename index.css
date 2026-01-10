@@ -153,6 +153,7 @@ body {
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
@@ -168,6 +169,7 @@ body {
     opacity: 0;
     transform: translateY(30px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -184,6 +186,7 @@ body {
     opacity: 0;
     transform: translateY(-30px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -200,6 +203,7 @@ body {
     opacity: 0;
     transform: translateX(30px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -216,6 +220,7 @@ body {
     opacity: 0;
     transform: translateX(-30px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -232,6 +237,7 @@ body {
     opacity: 0;
     transform: scale(0.8);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -248,6 +254,7 @@ body {
     opacity: 0;
     transform: scale(1.2);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -264,6 +271,7 @@ body {
     opacity: 0;
     transform: perspective(800px) rotateY(-90deg);
   }
+
   to {
     opacity: 1;
     transform: perspective(800px) rotateY(0);
@@ -280,6 +288,7 @@ body {
     opacity: 0;
     transform: perspective(800px) rotateX(-90deg);
   }
+
   to {
     opacity: 1;
     transform: perspective(800px) rotateX(0);
@@ -296,14 +305,17 @@ body {
     opacity: 0;
     transform: translateY(-50px);
   }
+
   60% {
     opacity: 1;
     transform: translateY(10px);
   }
+
   80% {
     opacity: 1;
     transform: translateY(-5px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -320,6 +332,7 @@ body {
     opacity: 0;
     transform: rotate(-180deg) scale(0.5);
   }
+
   to {
     opacity: 1;
     transform: rotate(0) scale(1);
@@ -336,22 +349,27 @@ body {
     opacity: 0;
     transform: rotate(-10deg);
   }
+
   20% {
     opacity: 1;
     transform: rotate(10deg);
   }
+
   40% {
     opacity: 1;
     transform: rotate(-8deg);
   }
+
   60% {
     opacity: 1;
     transform: rotate(6deg);
   }
+
   80% {
     opacity: 1;
     transform: rotate(-4deg);
   }
+
   100% {
     opacity: 1;
     transform: rotate(0);
@@ -369,10 +387,12 @@ body {
     opacity: 0;
     transform: scale(0.9);
   }
+
   50% {
     opacity: 1;
     transform: scale(1.05);
   }
+
   100% {
     opacity: 1;
     transform: scale(1);
@@ -389,34 +409,44 @@ body {
     opacity: 0;
     transform: translateX(0);
   }
+
   10% {
     opacity: 1;
     transform: translateX(-10px);
   }
+
   20% {
     transform: translateX(10px);
   }
+
   30% {
     transform: translateX(-10px);
   }
+
   40% {
     transform: translateX(10px);
   }
+
   50% {
     transform: translateX(-10px);
   }
+
   60% {
     transform: translateX(10px);
   }
+
   70% {
     transform: translateX(-5px);
   }
+
   80% {
     transform: translateX(5px);
   }
+
   90% {
     transform: translateX(-2px);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0);
@@ -426,6 +456,1836 @@ body {
 .tile-anim-shake {
   animation: tileAnimShake 0.8s ease-in-out forwards;
 }
+
+/* Blur In Animation */
+@keyframes tileAnimBlurIn {
+  from {
+    opacity: 0;
+    filter: blur(10px);
+    transform: scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+  }
+}
+
+.tile-anim-blur-in {
+  animation: tileAnimBlurIn 0.8s ease-out forwards;
+}
+
+/* Roll In Animation */
+@keyframes tileAnimRollIn {
+  from {
+    opacity: 0;
+    transform: translateX(-100%) rotate(-120deg);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0) rotate(0deg);
+  }
+}
+
+.tile-anim-roll-in {
+  animation: tileAnimRollIn 0.6s ease-out forwards;
+}
+
+/* Jack In The Box Animation */
+@keyframes tileAnimJackInTheBox {
+  0% {
+    opacity: 0;
+    transform: scale(0.1) rotate(30deg);
+    transform-origin: center bottom;
+  }
+
+  50% {
+    transform: rotate(-10deg);
+  }
+
+  70% {
+    transform: rotate(3deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-jack-in-the-box {
+  animation: tileAnimJackInTheBox 0.7s ease-in-out forwards;
+}
+
+/* Back In Down Animation */
+@keyframes tileAnimBackInDown {
+  0% {
+    opacity: 0;
+    transform: translateY(-800px) scale(0.7);
+  }
+
+  80% {
+    opacity: 0.7;
+    transform: translateY(0px) scale(0.7);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-back-in-down {
+  animation: tileAnimBackInDown 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* Back In Up Animation */
+@keyframes tileAnimBackInUp {
+  0% {
+    opacity: 0;
+    transform: translateY(800px) scale(0.7);
+  }
+
+  80% {
+    opacity: 0.7;
+    transform: translateY(0px) scale(0.7);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-back-in-up {
+  animation: tileAnimBackInUp 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* Reveal Animation */
+@keyframes tileAnimReveal {
+  from {
+    opacity: 0;
+    clip-path: inset(0 50% 0 50%);
+  }
+
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.tile-anim-reveal {
+  animation: tileAnimReveal 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Jello Animation */
+@keyframes tileAnimJello {
+  0% {
+    opacity: 0;
+    transform: scale3d(1, 1, 1);
+  }
+
+  11.1% {
+    opacity: 1;
+    transform: skewX(-12.5deg) skewY(-12.5deg);
+  }
+
+  22.2% {
+    transform: skewX(6.25deg) skewY(6.25deg);
+  }
+
+  33.3% {
+    transform: skewX(-3.125deg) skewY(-3.125deg);
+  }
+
+  44.4% {
+    transform: skewX(1.5625deg) skewY(1.5625deg);
+  }
+
+  55.5% {
+    transform: skewX(-0.78125deg) skewY(-0.78125deg);
+  }
+
+  66.6% {
+    transform: skewX(0.390625deg) skewY(0.390625deg);
+  }
+
+  77.7% {
+    transform: skewX(-0.1953125deg) skewY(-0.1953125deg);
+  }
+
+  88.8% {
+    transform: skewX(0.09765625deg) skewY(0.09765625deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale3d(1, 1, 1);
+  }
+}
+
+.tile-anim-jello {
+  animation: tileAnimJello 0.8s ease-in-out forwards;
+  transform-origin: center;
+}
+
+/* Rubber Band Animation */
+@keyframes tileAnimRubberBand {
+  0% {
+    opacity: 0;
+    transform: scale3d(1, 1, 1);
+  }
+
+  30% {
+    opacity: 1;
+    transform: scale3d(1.25, 0.75, 1);
+  }
+
+  40% {
+    transform: scale3d(0.75, 1.25, 1);
+  }
+
+  50% {
+    transform: scale3d(1.15, 0.85, 1);
+  }
+
+  65% {
+    transform: scale3d(0.95, 1.05, 1);
+  }
+
+  75% {
+    transform: scale3d(1.05, 0.95, 1);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale3d(1, 1, 1);
+  }
+}
+
+.tile-anim-rubber-band {
+  animation: tileAnimRubberBand 0.8s ease-in-out forwards;
+}
+
+/* Tada Animation */
+@keyframes tileAnimTada {
+  0% {
+    opacity: 0;
+    transform: scale3d(1, 1, 1);
+  }
+
+  10%,
+  20% {
+    opacity: 1;
+    transform: scale3d(0.9, 0.9, 0.9) rotate3d(0, 0, 1, -3deg);
+  }
+
+  30%,
+  50%,
+  70%,
+  90% {
+    transform: scale3d(1.1, 1.1, 1.1) rotate3d(0, 0, 1, 3deg);
+  }
+
+  40%,
+  60%,
+  80% {
+    transform: scale3d(1.1, 1.1, 1.1) rotate3d(0, 0, 1, -3deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale3d(1, 1, 1);
+  }
+}
+
+.tile-anim-tada {
+  animation: tileAnimTada 0.8s ease-in-out forwards;
+}
+
+/* Flash Animation */
+@keyframes tileAnimFlash {
+
+  0%,
+  50%,
+  100% {
+    opacity: 1;
+  }
+
+  25%,
+  75% {
+    opacity: 0;
+  }
+}
+
+.tile-anim-flash {
+  animation: tileAnimFlash 0.8s ease-in-out forwards;
+}
+
+/* Zoom In Up Animation */
+@keyframes tileAnimZoomInUp {
+  0% {
+    opacity: 0;
+    transform: scale3d(0.1, 0.1, 0.1) translateY(1000px);
+    animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);
+  }
+
+  60% {
+    opacity: 1;
+    transform: scale3d(0.475, 0.475, 0.475) translateY(-60px);
+    animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale3d(1, 1, 1) translateY(0);
+  }
+}
+
+.tile-anim-zoom-in-up {
+  animation: tileAnimZoomInUp 0.7s forwards;
+}
+
+/* Zoom In Down Animation */
+@keyframes tileAnimZoomInDown {
+  0% {
+    opacity: 0;
+    transform: scale3d(0.1, 0.1, 0.1) translateY(-1000px);
+    animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);
+  }
+
+  60% {
+    opacity: 1;
+    transform: scale3d(0.475, 0.475, 0.475) translateY(60px);
+    animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale3d(1, 1, 1) translateY(0);
+  }
+}
+
+.tile-anim-zoom-in-down {
+  animation: tileAnimZoomInDown 0.7s forwards;
+}
+
+/* Wave Animation */
+@keyframes tileAnimWave {
+  0% {
+    opacity: 0;
+    transform: translateY(20px) rotate(-5deg);
+  }
+
+  50% {
+    opacity: 0.5;
+    transform: translateY(-10px) rotate(5deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) rotate(0);
+  }
+}
+
+.tile-anim-wave {
+  animation: tileAnimWave 0.7s ease-in-out forwards;
+}
+
+/* Glitch Animation */
+@keyframes tileAnimGlitch {
+  0% {
+    opacity: 0;
+    transform: translate(5px, -5px);
+    clip-path: inset(10% 0 10% 0);
+  }
+
+  20% {
+    opacity: 1;
+    transform: translate(-5px, 5px);
+    clip-path: inset(30% 0 20% 0);
+  }
+
+  40% {
+    transform: translate(2px, -2px);
+    clip-path: inset(50% 0 5% 0);
+  }
+
+  60% {
+    transform: translate(-2px, 2px);
+    clip-path: inset(15% 0 35% 0);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(0);
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.tile-anim-glitch {
+  animation: tileAnimGlitch 0.5s steps(2, end) forwards;
+}
+
+/* Twirl Animation */
+@keyframes tileAnimTwirl {
+  from {
+    opacity: 0;
+    transform: rotate(-540deg) scale(0);
+  }
+
+  to {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+  }
+}
+
+.tile-anim-twirl {
+  animation: tileAnimTwirl 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Skid Animation */
+@keyframes tileAnimSkid {
+  0% {
+    opacity: 0;
+    transform: translateX(-100%) skewX(20deg);
+  }
+
+  70% {
+    transform: translateX(10%) skewX(-10deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0) skewX(0);
+  }
+}
+
+.tile-anim-skid {
+  animation: tileAnimSkid 0.6s ease-out forwards;
+}
+
+/* Spiral Animation */
+@keyframes tileAnimSpiral {
+  from {
+    opacity: 0;
+    transform: rotate(720deg) scale(0) translate(-200px, -200px);
+  }
+
+  to {
+    opacity: 1;
+    transform: rotate(0) scale(1) translate(0, 0);
+  }
+}
+
+.tile-anim-spiral {
+  animation: tileAnimSpiral 0.8s cubic-bezier(0.175, 0.885, 0.32, 1) forwards;
+}
+
+/* Bounce In Right */
+@keyframes tileAnimBounceInRight {
+  0% {
+    opacity: 0;
+    transform: translateX(2000px);
+  }
+
+  60% {
+    opacity: 1;
+    transform: translateX(-30px);
+  }
+
+  80% {
+    transform: translateX(10px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tile-anim-bounce-in-right {
+  animation: tileAnimBounceInRight 0.8s forwards;
+}
+
+/* Bounce In Left */
+@keyframes tileAnimBounceInLeft {
+  0% {
+    opacity: 0;
+    transform: translateX(-2000px);
+  }
+
+  60% {
+    opacity: 1;
+    transform: translateX(30px);
+  }
+
+  80% {
+    transform: translateX(-10px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tile-anim-bounce-in-left {
+  animation: tileAnimBounceInLeft 0.8s forwards;
+}
+
+/* Flip 3D Animation */
+@keyframes tileAnimFlip3D {
+  from {
+    opacity: 0;
+    transform: perspective(1000px) rotateX(-90deg) rotateY(-90deg) scale(0.5);
+  }
+
+  to {
+    opacity: 1;
+    transform: perspective(1000px) rotateX(0) rotateY(0) scale(1);
+  }
+}
+
+.tile-anim-flip-3d {
+  animation: tileAnimFlip3D 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* Wobble Animation */
+@keyframes tileAnimWobble {
+  0% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+
+  15% {
+    opacity: 1;
+    transform: translateX(-25%) rotate(-5deg);
+  }
+
+  30% {
+    transform: translateX(20%) rotate(3deg);
+  }
+
+  45% {
+    transform: translateX(-15%) rotate(-3deg);
+  }
+
+  60% {
+    transform: translateX(10%) rotate(2deg);
+  }
+
+  75% {
+    transform: translateX(-5%) rotate(-1deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tile-anim-wobble {
+  animation: tileAnimWobble 0.8s forwards;
+}
+
+/* Heartbeat Animation */
+@keyframes tileAnimHeartbeat {
+  0% {
+    opacity: 0;
+    transform: scale(1);
+  }
+
+  14% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+
+  28% {
+    transform: scale(1);
+  }
+
+  42% {
+    transform: scale(1.1);
+  }
+
+  70%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-heartbeat {
+  animation: tileAnimHeartbeat 0.8s ease-in-out forwards;
+}
+
+/* Puff In Animation */
+@keyframes tileAnimPuffIn {
+  0% {
+    opacity: 0;
+    transform: scale(2);
+    filter: blur(4px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+.tile-anim-puff-in {
+  animation: tileAnimPuffIn 0.6s cubic-bezier(0.470, 0.000, 0.745, 0.715) forwards;
+}
+
+/* Drop Animation */
+@keyframes tileAnimDrop {
+  0% {
+    opacity: 0;
+    transform: translateY(-500px);
+    animation-timing-function: ease-in;
+  }
+
+  60% {
+    opacity: 1;
+    transform: translateY(0);
+    animation-timing-function: ease-out;
+  }
+
+  80% {
+    transform: translateY(-30px);
+    animation-timing-function: ease-in;
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    animation-timing-function: ease-out;
+  }
+}
+
+.tile-anim-drop {
+  animation: tileAnimDrop 0.8s forwards;
+}
+
+/* Swing In Animation */
+@keyframes tileAnimSwingIn {
+  0% {
+    opacity: 0;
+    transform: rotateX(-100deg);
+    transform-origin: top;
+  }
+
+  100% {
+    opacity: 1;
+    transform: rotateX(0deg);
+    transform-origin: top;
+  }
+}
+
+.tile-anim-swing-in {
+  animation: tileAnimSwingIn 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* Blur Slide Left */
+@keyframes tileAnimBlurSlideLeft {
+  from {
+    opacity: 0;
+    transform: translateX(100px);
+    filter: blur(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+    filter: blur(0);
+  }
+}
+
+.tile-anim-blur-slide-left {
+  animation: tileAnimBlurSlideLeft 0.7s ease-out forwards;
+}
+
+/* Blur Slide Right */
+@keyframes tileAnimBlurSlideRight {
+  from {
+    opacity: 0;
+    transform: translateX(-100px);
+    filter: blur(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+    filter: blur(0);
+  }
+}
+
+.tile-anim-blur-slide-right {
+  animation: tileAnimBlurSlideRight 0.7s ease-out forwards;
+}
+
+/* Neon Flicker */
+@keyframes tileAnimNeon {
+
+  0%,
+  19%,
+  21%,
+  23%,
+  25%,
+  54%,
+  56%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+  }
+
+  20%,
+  22%,
+  24%,
+  55% {
+    opacity: 0.5;
+    box-shadow: none;
+  }
+
+  0% {
+    opacity: 0;
+  }
+}
+
+.tile-anim-neon-flicker {
+  animation: tileAnimNeon 1s ease-out forwards;
+}
+
+/* Focus Reveal */
+@keyframes tileAnimFocus {
+  0% {
+    opacity: 0;
+    filter: blur(40px);
+    transform: scale(0.9);
+  }
+
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+  }
+}
+
+.tile-anim-focus-reveal {
+  animation: tileAnimFocus 0.8s ease-out forwards;
+}
+
+/* Perspective In */
+@keyframes tileAnimPerspective {
+  from {
+    opacity: 0;
+    transform: perspective(1000px) rotateX(30deg) translateY(50px) translateZ(-200px);
+  }
+
+  to {
+    opacity: 1;
+    transform: perspective(1000px) rotateX(0) translateY(0) translateZ(0);
+  }
+}
+
+.tile-anim-perspective-in {
+  animation: tileAnimPerspective 0.8s ease-out forwards;
+}
+
+/* Blink Animation */
+@keyframes tileAnimBlink {
+  0% {
+    opacity: 0;
+  }
+
+  50%,
+  100% {
+    opacity: 1;
+  }
+
+  25%,
+  75% {
+    opacity: 0.2;
+  }
+}
+
+.tile-anim-blink {
+  animation: tileAnimBlink 0.6s ease-in-out forwards;
+}
+
+/* Elastic Animation */
+@keyframes tileAnimElastic {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.2) rotate(10deg);
+  }
+
+  70% {
+    transform: scale(0.9) rotate(-5deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+  }
+}
+
+.tile-anim-elastic {
+  animation: tileAnimElastic 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+}
+
+/* 53 More Animations */
+
+/* Zoom In Directions */
+@keyframes tileAnimZoomInLeft {
+  from {
+    opacity: 0;
+    transform: scale3d(0.1, 0.1, 0.1) translateX(-1000px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale3d(1, 1, 1) translateX(0);
+  }
+}
+
+.tile-anim-zoom-in-left {
+  animation: tileAnimZoomInLeft 0.7s forwards;
+}
+
+@keyframes tileAnimZoomInRight {
+  from {
+    opacity: 0;
+    transform: scale3d(0.1, 0.1, 0.1) translateX(1000px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale3d(1, 1, 1) translateX(0);
+  }
+}
+
+.tile-anim-zoom-in-right {
+  animation: tileAnimZoomInRight 0.7s forwards;
+}
+
+/* Slide In Corners */
+@keyframes tileAnimSlideInDownLeft {
+  from {
+    opacity: 0;
+    transform: translate3d(-100%, -100%, 0);
+    visibility: visible;
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.tile-anim-slide-in-down-left {
+  animation: tileAnimSlideInDownLeft 0.7s forwards;
+}
+
+@keyframes tileAnimSlideInDownRight {
+  from {
+    opacity: 0;
+    transform: translate3d(100%, -100%, 0);
+    visibility: visible;
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.tile-anim-slide-in-down-right {
+  animation: tileAnimSlideInDownRight 0.7s forwards;
+}
+
+@keyframes tileAnimSlideInUpLeft {
+  from {
+    opacity: 0;
+    transform: translate3d(-100%, 100%, 0);
+    visibility: visible;
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.tile-anim-slide-in-up-left {
+  animation: tileAnimSlideInUpLeft 0.7s forwards;
+}
+
+@keyframes tileAnimSlideInUpRight {
+  from {
+    opacity: 0;
+    transform: translate3d(100%, 100%, 0);
+    visibility: visible;
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.tile-anim-slide-in-up-right {
+  animation: tileAnimSlideInUpRight 0.7s forwards;
+}
+
+/* Rotate In Corners */
+@keyframes tileAnimRotateInDownLeft {
+  from {
+    transform-origin: left bottom;
+    transform: rotate3d(0, 0, 1, -45deg);
+    opacity: 0;
+  }
+
+  to {
+    transform-origin: left bottom;
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-rotate-in-down-left {
+  animation: tileAnimRotateInDownLeft 0.7s forwards;
+}
+
+@keyframes tileAnimRotateInDownRight {
+  from {
+    transform-origin: right bottom;
+    transform: rotate3d(0, 0, 1, 45deg);
+    opacity: 0;
+  }
+
+  to {
+    transform-origin: right bottom;
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-rotate-in-down-right {
+  animation: tileAnimRotateInDownRight 0.7s forwards;
+}
+
+@keyframes tileAnimRotateInUpLeft {
+  from {
+    transform-origin: left bottom;
+    transform: rotate3d(0, 0, 1, 45deg);
+    opacity: 0;
+  }
+
+  to {
+    transform-origin: left bottom;
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-rotate-in-up-left {
+  animation: tileAnimRotateInUpLeft 0.7s forwards;
+}
+
+@keyframes tileAnimRotateInUpRight {
+  from {
+    transform-origin: right bottom;
+    transform: rotate3d(0, 0, 1, -45deg);
+    opacity: 0;
+  }
+
+  to {
+    transform-origin: right bottom;
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-rotate-in-up-right {
+  animation: tileAnimRotateInUpRight 0.7s forwards;
+}
+
+/* LightSpeed */
+@keyframes tileAnimLightSpeedInRight {
+  from {
+    transform: translate3d(100%, 0, 0) skewX(-30deg);
+    opacity: 0;
+  }
+
+  60% {
+    transform: skewX(20deg);
+    opacity: 1;
+  }
+
+  80% {
+    transform: skewX(-5deg);
+  }
+
+  to {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-light-speed-in-right {
+  animation: tileAnimLightSpeedInRight 0.7s ease-out forwards;
+}
+
+@keyframes tileAnimLightSpeedInLeft {
+  from {
+    transform: translate3d(-100%, 0, 0) skewX(30deg);
+    opacity: 0;
+  }
+
+  60% {
+    transform: skewX(-20deg);
+    opacity: 1;
+  }
+
+  80% {
+    transform: skewX(5deg);
+  }
+
+  to {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-light-speed-in-left {
+  animation: tileAnimLightSpeedInLeft 0.7s ease-out forwards;
+}
+
+/* Swing Sides */
+@keyframes tileAnimSwingInLeft {
+  from {
+    transform: rotateY(-100deg);
+    opacity: 0;
+  }
+
+  to {
+    transform: rotateY(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-swing-in-left {
+  animation: tileAnimSwingInLeft 0.7s forwards;
+  transform-origin: left;
+}
+
+@keyframes tileAnimSwingInRight {
+  from {
+    transform: rotateY(100deg);
+    opacity: 0;
+  }
+
+  to {
+    transform: rotateY(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-swing-in-right {
+  animation: tileAnimSwingInRight 0.7s forwards;
+  transform-origin: right;
+}
+
+/* Roll Directions */
+@keyframes tileAnimRollInBottom {
+  from {
+    transform: translateY(100%) rotate(120deg);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0) rotate(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-roll-in-bottom {
+  animation: tileAnimRollInBottom 0.7s forwards;
+}
+
+@keyframes tileAnimRollInTop {
+  from {
+    transform: translateY(-100%) rotate(-120deg);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0) rotate(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-roll-in-top {
+  animation: tileAnimRollInTop 0.7s forwards;
+}
+
+/* Back In Left/Right */
+@keyframes tileAnimBackInLeft {
+  0% {
+    opacity: 0;
+    transform: translateX(-800px) scale(0.7);
+  }
+
+  80% {
+    opacity: 0.7;
+    transform: translateX(0px) scale(0.7);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-back-in-left {
+  animation: tileAnimBackInLeft 0.7s forwards;
+}
+
+@keyframes tileAnimBackInRight {
+  0% {
+    opacity: 0;
+    transform: translateX(800px) scale(0.7);
+  }
+
+  80% {
+    opacity: 0.7;
+    transform: translateX(0px) scale(0.7);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-back-in-right {
+  animation: tileAnimBackInRight 0.7s forwards;
+}
+
+/* Stretch */
+@keyframes tileAnimStretchInHor {
+  from {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+
+  to {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+}
+
+.tile-anim-stretch-in-hor {
+  animation: tileAnimStretchInHor 0.7s forwards;
+}
+
+@keyframes tileAnimStretchInVer {
+  from {
+    transform: scaleY(0);
+    opacity: 0;
+  }
+
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+.tile-anim-stretch-in-ver {
+  animation: tileAnimStretchInVer 0.7s forwards;
+}
+
+/* Bounce Up/Down */
+@keyframes tileAnimBounceInUp {
+  0% {
+    opacity: 0;
+    transform: translateY(2000px);
+  }
+
+  60% {
+    opacity: 1;
+    transform: translateY(-20px);
+  }
+
+  80% {
+    transform: translateY(10px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-anim-bounce-in-up {
+  animation: tileAnimBounceInUp 0.7s forwards;
+}
+
+@keyframes tileAnimBounceInDown {
+  0% {
+    opacity: 0;
+    transform: translateY(-2000px);
+  }
+
+  60% {
+    opacity: 1;
+    transform: translateY(20px);
+  }
+
+  80% {
+    transform: translateY(-10px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-anim-bounce-in-down {
+  animation: tileAnimBounceInDown 0.7s forwards;
+}
+
+/* Jelly */
+@keyframes tileAnimJelly {
+  from {
+    transform: scale(0.1);
+    opacity: 0;
+  }
+
+  30% {
+    transform: scale(1.25, 0.75);
+    opacity: 1;
+  }
+
+  40% {
+    transform: scale(0.75, 1.25);
+  }
+
+  50% {
+    transform: scale(1.15, 0.85);
+  }
+
+  65% {
+    transform: scale(0.95, 1.05);
+  }
+
+  75% {
+    transform: scale(1.05, 0.95);
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.tile-anim-jelly {
+  animation: tileAnimJelly 0.8s forwards;
+}
+
+/* Effects */
+@keyframes tileAnimStarIn {
+  from {
+    transform: rotate(720deg) scale(0);
+    opacity: 0;
+  }
+
+  to {
+    transform: rotate(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.tile-anim-star-in {
+  animation: tileAnimStarIn 0.8s forwards;
+}
+
+@keyframes tileAnimFlareIn {
+  from {
+    opacity: 0;
+    filter: brightness(5) blur(10px);
+    transform: scale(1.2);
+  }
+
+  to {
+    opacity: 1;
+    filter: brightness(1) blur(0);
+    transform: scale(1);
+  }
+}
+
+.tile-anim-flare-in {
+  animation: tileAnimFlareIn 0.7s forwards;
+}
+
+@keyframes tileAnimBeamIn {
+  from {
+    opacity: 0;
+    clip-path: inset(0 50% 0 50%);
+    filter: contrast(2);
+  }
+
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    filter: contrast(1);
+  }
+}
+
+.tile-anim-beam-in {
+  animation: tileAnimBeamIn 0.8s forwards;
+}
+
+@keyframes tileAnimTeleport {
+  0% {
+    opacity: 0;
+    filter: contrast(10) brightness(10);
+    transform: scaleX(5);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scaleX(0.1);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scaleX(1);
+    filter: none;
+  }
+}
+
+.tile-anim-teleport {
+  animation: tileAnimTeleport 0.5s forwards;
+}
+
+@keyframes tileAnimShimmerIn {
+  0% {
+    opacity: 0;
+    background: linear-gradient(90deg, transparent, white, transparent);
+    background-size: 200% 100%;
+  }
+
+  100% {
+    opacity: 1;
+    background: none;
+  }
+}
+
+.tile-anim-shimmer-in {
+  animation: tileAnimShimmerIn 0.8s forwards, tileAnimFadeIn 0.8s forwards;
+}
+
+@keyframes tileAnimTiltIn {
+  from {
+    transform: perspective(1000px) rotateY(-30deg) translateZ(-100px);
+    opacity: 0;
+  }
+
+  to {
+    transform: perspective(1000px) rotateY(0) translateZ(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-tilt-in {
+  animation: tileAnimTiltIn 0.7s forwards;
+}
+
+@keyframes tileAnimMagnify {
+  from {
+    transform: scale(0);
+    opacity: 0;
+    filter: drop-shadow(0 0 20px white);
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+    filter: none;
+  }
+}
+
+.tile-anim-magnify {
+  animation: tileAnimMagnify 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes tileAnimBlurInUp {
+  from {
+    transform: translateY(50px);
+    filter: blur(20px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    filter: blur(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-blur-in-up {
+  animation: tileAnimBlurInUp 0.7s forwards;
+}
+
+@keyframes tileAnimBlurInDown {
+  from {
+    transform: translateY(-50px);
+    filter: blur(20px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    filter: blur(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-blur-in-down {
+  animation: tileAnimBlurInDown 0.7s forwards;
+}
+
+@keyframes tileAnimPopIn {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+
+  70% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.tile-anim-pop-in {
+  animation: tileAnimPopIn 0.5s forwards;
+}
+
+@keyframes tileAnimUnfoldIn {
+  from {
+    transform: rotateX(-90deg);
+    opacity: 0;
+  }
+
+  to {
+    transform: rotateX(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-unfold-in {
+  animation: tileAnimUnfoldIn 0.7s forwards;
+  transform-origin: top;
+}
+
+@keyframes tileAnimFoldIn {
+  from {
+    transform: rotateY(-90deg);
+    opacity: 0;
+  }
+
+  to {
+    transform: rotateY(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-fold-in {
+  animation: tileAnimFoldIn 0.7s forwards;
+  transform-origin: left;
+}
+
+@keyframes tileAnimSlotIn {
+  from {
+    transform: translateY(-100%) skewY(10deg);
+    opacity: 0;
+  }
+
+  60% {
+    transform: translateY(10%);
+  }
+
+  to {
+    transform: translateY(0) skewY(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-slot-in {
+  animation: tileAnimSlotIn 0.6s forwards;
+}
+
+@keyframes tileAnimNewspaper {
+  from {
+    transform: rotate(720deg) scale(0);
+    opacity: 0;
+  }
+
+  to {
+    transform: rotate(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.tile-anim-newspaper {
+  animation: tileAnimNewspaper 0.8s forwards;
+}
+
+@keyframes tileAnimCarouselIn {
+  from {
+    transform: rotateY(-180deg) translateZ(-500px);
+    opacity: 0;
+  }
+
+  to {
+    transform: rotateY(0) translateZ(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-carousel-in {
+  animation: tileAnimCarouselIn 0.8s forwards;
+}
+
+@keyframes tileAnimCubeIn {
+  from {
+    transform: rotateX(-90deg) translateZ(-100px);
+    opacity: 0;
+  }
+
+  to {
+    transform: rotateX(0) translateZ(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-cube-in {
+  animation: tileAnimCubeIn 0.8s forwards;
+  transform-origin: center bottom;
+}
+
+@keyframes tileAnimStackIn {
+  from {
+    transform: scale(1.5) translateZ(200px);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1) translateZ(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-stack-in {
+  animation: tileAnimStackIn 0.7s forwards;
+}
+
+@keyframes tileAnimDoorIn {
+  from {
+    transform: perspective(1000px) rotateY(-90deg);
+    opacity: 0;
+  }
+
+  to {
+    transform: perspective(1000px) rotateY(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-door-in {
+  animation: tileAnimDoorIn 0.7s forwards;
+  transform-origin: left;
+}
+
+@keyframes tileAnimGhostIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+    filter: blur(20px);
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+.tile-anim-ghost-in {
+  animation: tileAnimGhostIn 1s forwards;
+}
+
+@keyframes tileAnimGlitch2 {
+  0% {
+    transform: translate(0);
+    opacity: 0;
+  }
+
+  10% {
+    transform: translate(-2px, 2px);
+    opacity: 1;
+  }
+
+  20% {
+    transform: translate(2px, -2px);
+  }
+
+  100% {
+    transform: translate(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-glitch-2 {
+  animation: tileAnimGlitch2 0.3s forwards;
+}
+
+@keyframes tileAnimNeonPulse {
+  0% {
+    box-shadow: 0 0 0 rgba(99, 102, 241, 0);
+    opacity: 0;
+  }
+
+  50% {
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.8);
+    opacity: 1;
+  }
+
+  100% {
+    box-shadow: 0 0 5px rgba(99, 102, 241, 0.4);
+    opacity: 1;
+  }
+}
+
+.tile-anim-neon-pulse {
+  animation: tileAnimNeonPulse 1s forwards, tileAnimFadeIn 1s forwards;
+}
+
+@keyframes tileAnimVibrate {
+  0% {
+    transform: translate(0);
+    opacity: 0;
+  }
+
+  10% {
+    transform: translate(-1px, 1px);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translate(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-vibrate {
+  animation: tileAnimVibrate 0.1s infinite, tileAnimFadeIn 0.5s forwards;
+}
+
+@keyframes tileAnimBounceTop {
+  0% {
+    transform: translateY(-30px);
+    opacity: 0;
+  }
+
+  50% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  70% {
+    transform: translateY(-10px);
+  }
+
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-bounce-top {
+  animation: tileAnimBounceTop 0.6s forwards;
+}
+
+@keyframes tileAnimBounceBottom {
+  0% {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+
+  50% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  70% {
+    transform: translateY(10px);
+  }
+
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-bounce-bottom {
+  animation: tileAnimBounceBottom 0.6s forwards;
+}
+
+@keyframes tileAnimBounceLeft {
+  0% {
+    transform: translateX(-30px);
+    opacity: 0;
+  }
+
+  50% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+
+  70% {
+    transform: translateX(-10px);
+  }
+
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-bounce-left {
+  animation: tileAnimBounceLeft 0.6s forwards;
+}
+
+@keyframes tileAnimBounceRight {
+  0% {
+    transform: translateX(30px);
+    opacity: 0;
+  }
+
+  50% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+
+  70% {
+    transform: translateX(10px);
+  }
+
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-bounce-right {
+  animation: tileAnimBounceRight 0.6s forwards;
+}
+
+@keyframes tileAnimSquish {
+  0% {
+    transform: scale(1.5, 0.5);
+    opacity: 0;
+  }
+
+  50% {
+    transform: scale(0.8, 1.2);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.tile-anim-squish {
+  animation: tileAnimSquish 0.6s forwards;
+}
+
+@keyframes tileAnimSlideTilt {
+  from {
+    transform: translateX(-50px) rotate(-10deg);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0) rotate(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-slide-tilt {
+  animation: tileAnimSlideTilt 0.7s forwards;
+}
+
+@keyframes tileAnimSwirlIn {
+  from {
+    transform: rotate(-540deg) scale(0);
+    filter: blur(10px);
+    opacity: 0;
+  }
+
+  to {
+    transform: rotate(0) scale(1);
+    filter: blur(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-swirl-in {
+  animation: tileAnimSwirlIn 0.8s forwards;
+}
+
+@keyframes tileAnimBlurPerspective {
+  from {
+    transform: perspective(1000px) rotateX(45deg) translateZ(-200px);
+    filter: blur(20px);
+    opacity: 0;
+  }
+
+  to {
+    transform: perspective(1000px) rotateX(0) translateZ(0);
+    filter: blur(0);
+    opacity: 1;
+  }
+}
+
+.tile-anim-blur-perspective {
+  animation: tileAnimBlurPerspective 0.8s forwards;
+}
+
 
 /* Initial state for animated tiles */
 .linknest-tile-animated {
@@ -446,7 +2306,92 @@ body {
 .linknest-tile-animated.tile-anim-rotate-in,
 .linknest-tile-animated.tile-anim-swing,
 .linknest-tile-animated.tile-anim-pulse,
-.linknest-tile-animated.tile-anim-shake {
+.linknest-tile-animated.tile-anim-shake,
+.linknest-tile-animated.tile-anim-blur-in,
+.linknest-tile-animated.tile-anim-roll-in,
+.linknest-tile-animated.tile-anim-jack-in-the-box,
+.linknest-tile-animated.tile-anim-back-in-down,
+.linknest-tile-animated.tile-anim-back-in-up,
+.linknest-tile-animated.tile-anim-reveal,
+.linknest-tile-animated.tile-anim-jello,
+.linknest-tile-animated.tile-anim-rubber-band,
+.linknest-tile-animated.tile-anim-tada,
+.linknest-tile-animated.tile-anim-flash,
+.linknest-tile-animated.tile-anim-zoom-in-up,
+.linknest-tile-animated.tile-anim-zoom-in-down,
+.linknest-tile-animated.tile-anim-wave,
+.linknest-tile-animated.tile-anim-glitch,
+.linknest-tile-animated.tile-anim-twirl,
+.linknest-tile-animated.tile-anim-skid,
+.linknest-tile-animated.tile-anim-spiral,
+.linknest-tile-animated.tile-anim-bounce-in-right,
+.linknest-tile-animated.tile-anim-bounce-in-left,
+.linknest-tile-animated.tile-anim-flip-3d,
+.linknest-tile-animated.tile-anim-wobble,
+.linknest-tile-animated.tile-anim-heartbeat,
+.linknest-tile-animated.tile-anim-puff-in,
+.linknest-tile-animated.tile-anim-drop,
+.linknest-tile-animated.tile-anim-swing-in,
+.linknest-tile-animated.tile-anim-blur-slide-left,
+.linknest-tile-animated.tile-anim-blur-slide-right,
+.linknest-tile-animated.tile-anim-neon-flicker,
+.linknest-tile-animated.tile-anim-focus-reveal,
+.linknest-tile-animated.tile-anim-perspective-in,
+.linknest-tile-animated.tile-anim-blink,
+.linknest-tile-animated.tile-anim-elastic,
+.linknest-tile-animated.tile-anim-zoom-in-left,
+.linknest-tile-animated.tile-anim-zoom-in-right,
+.linknest-tile-animated.tile-anim-slide-in-down-left,
+.linknest-tile-animated.tile-anim-slide-in-down-right,
+.linknest-tile-animated.tile-anim-slide-in-up-left,
+.linknest-tile-animated.tile-anim-slide-in-up-right,
+.linknest-tile-animated.tile-anim-rotate-in-down-left,
+.linknest-tile-animated.tile-anim-rotate-in-down-right,
+.linknest-tile-animated.tile-anim-rotate-in-up-left,
+.linknest-tile-animated.tile-anim-rotate-in-up-right,
+.linknest-tile-animated.tile-anim-light-speed-in-right,
+.linknest-tile-animated.tile-anim-light-speed-in-left,
+.linknest-tile-animated.tile-anim-swing-in-left,
+.linknest-tile-animated.tile-anim-swing-in-right,
+.linknest-tile-animated.tile-anim-roll-in-bottom,
+.linknest-tile-animated.tile-anim-roll-in-top,
+.linknest-tile-animated.tile-anim-back-in-left,
+.linknest-tile-animated.tile-anim-back-in-right,
+.linknest-tile-animated.tile-anim-stretch-in-hor,
+.linknest-tile-animated.tile-anim-stretch-in-ver,
+.linknest-tile-animated.tile-anim-bounce-in-up,
+.linknest-tile-animated.tile-anim-bounce-in-down,
+.linknest-tile-animated.tile-anim-jelly,
+.linknest-tile-animated.tile-anim-star-in,
+.linknest-tile-animated.tile-anim-flare-in,
+.linknest-tile-animated.tile-anim-beam-in,
+.linknest-tile-animated.tile-anim-teleport,
+.linknest-tile-animated.tile-anim-shimmer-in,
+.linknest-tile-animated.tile-anim-tilt-in,
+.linknest-tile-animated.tile-anim-magnify,
+.linknest-tile-animated.tile-anim-blur-in-up,
+.linknest-tile-animated.tile-anim-blur-in-down,
+.linknest-tile-animated.tile-anim-pop-in,
+.linknest-tile-animated.tile-anim-unfold-in,
+.linknest-tile-animated.tile-anim-fold-in,
+.linknest-tile-animated.tile-anim-slot-in,
+.linknest-tile-animated.tile-anim-newspaper,
+.linknest-tile-animated.tile-anim-carousel-in,
+.linknest-tile-animated.tile-anim-cube-in,
+.linknest-tile-animated.tile-anim-stack-in,
+.linknest-tile-animated.tile-anim-door-in,
+.linknest-tile-animated.tile-anim-ghost-in,
+.linknest-tile-animated.tile-anim-glitch-2,
+.linknest-tile-animated.tile-anim-neon-pulse,
+.linknest-tile-animated.tile-anim-vibrate,
+.linknest-tile-animated.tile-anim-bounce-top,
+.linknest-tile-animated.tile-anim-bounce-bottom,
+.linknest-tile-animated.tile-anim-bounce-left,
+.linknest-tile-animated.tile-anim-bounce-right,
+.linknest-tile-animated.tile-anim-squish,
+.linknest-tile-animated.tile-anim-slide-tilt,
+.linknest-tile-animated.tile-anim-swirl-in,
+.linknest-tile-animated.tile-anim-blur-perspective {
   opacity: 0;
 }
 

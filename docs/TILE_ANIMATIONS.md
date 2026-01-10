@@ -5,8 +5,8 @@ The Tile Animations feature allows users (both authenticated and public) to cust
 
 ## Features
 
-### 15 Animation Options
-Users can choose from 15 different animation styles:
+### 47 Animation Options
+Users can choose from 47 different animation styles:
 
 1. **None** - No animation
 2. **Fade In** - Gentle fade in effect
@@ -23,6 +23,38 @@ Users can choose from 15 different animation styles:
 13. **Swing** - Swing from top
 14. **Pulse** - Pulsing effect
 15. **Shake** - Shake effect
+16. **Blur In** - Fade with blur effect
+17. **Roll In** - Roll from left
+18. **Jack In The Box** - Pop out effect
+19. **Back In Down** - Slide down with back effect
+20. **Back In Up** - Slide up with back effect
+21. **Reveal** - Wipe uncover effect
+22. **Jello** - Wobbly entrance
+23. **Rubber Band** - Stretch & squeeze effect
+24. **Tada** - Celebration shake
+25. **Flash** - Flashing entrance
+26. **Zoom In Up** - Zoom from bottom
+27. **Zoom In Down** - Zoom from top
+28. **Wave** - Wave motion entrance
+29. **Glitch** - Digital glitch effect
+30. **Twirl** - High-speed spinning scale up
+31. **Skid** - Slide with dramatic braking
+32. **Spiral** - Vortex curving entrance
+33. **Bounce In Right** - Powerful bounce from right
+34. **Bounce In Left** - Powerful bounce from left
+35. **Flip 3D** - Perspective 3D tumbling flip
+36. **Wobble** - Playful wobbling entrance
+37. **Heartbeat** - Rhythmic life-like pulse
+38. **Puff In** - Smoke-like appearance
+39. **Drop** - Gravity-weighted fall and stop
+40. **Swing In** - Perspective swing from top
+41. **Blur Slide Left** - Fast blurred slide from right
+42. **Blur Slide Right** - Fast blurred slide from left
+43. **Neon Flicker** - Cyberpunk flickering light
+44. **Focus Reveal** - Sharp focus from extreme blur
+45. **Perspective In** - 3D depth tilt entrance
+46. **Blink** - Rapid flashing entrance
+47. **Elastic** - Rubber-band like sling-shot effect
 
 ### User Interface
 - **Animation Selector Button**: Located next to the search bar, accessible to all users
