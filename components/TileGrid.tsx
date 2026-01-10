@@ -53,6 +53,7 @@ interface CategoryProps {
   isArchive?: boolean;
   onScheduleCategory?: (categoryName: string) => void;
   onUnarchiveCategory?: (categoryName: string) => void;
+  animationClass?: string;
 }
 
 const Category: React.FC<CategoryProps> = ({
@@ -78,7 +79,8 @@ const Category: React.FC<CategoryProps> = ({
   isRecycleBin = false,
   isArchive = false,
   onScheduleCategory,
-  onUnarchiveCategory
+  onUnarchiveCategory,
+  animationClass
 }) => {
   const { user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
@@ -117,7 +119,7 @@ const Category: React.FC<CategoryProps> = ({
 
   return (
     <div
-      className="linknest-category linknest-category-animated"
+      className={`linknest-category linknest-category-animated ${animationClass}`}
       style={{ animationDelay: `${categoryAnimationDelay}ms` }}
     >
       {/* Category Header with Arrow Buttons */}
@@ -3364,17 +3366,21 @@ export const TileGrid: React.FC<TileGridProps> = ({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              {favoriteLinks.map((link) => {
+              {favoriteLinks.map((link, linkIndex) => {
                 // Resolve effective browser (Link specific > Tile default > System default)
                 const parentTile = tiles.find(t => t.id === link.tile.id);
                 const browserToUse = (link.browser && link.browser !== 'default')
                   ? link.browser
                   : (parentTile?.browser && parentTile.browser !== 'default' ? parentTile.browser : null);
 
+                const animationClass = getTileAnimationClass(currentAnimation);
+                const animationDelay = (linkIndex * 50);
+
                 return (
                   <div
                     key={link.id}
-                    className="group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer"
+                    className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${animationClass} linknest-tile-animated`}
+                    style={{ animationDelay: `${animationDelay}ms` }}
                     onClick={(e) => {
                       // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                       if (e.ctrlKey || e.metaKey) {
@@ -3503,6 +3509,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               onToggleCategoryFavorite={handleToggleCategoryFavorite}
               isCategoryFavorited={isCategoryFavorited(groupName)}
               onScheduleCategory={handleOpenCategorySchedule}
+              animationClass={getTileAnimationClass(currentAnimation)}
             >
               {/* Grid with wider tiles */}
               {groupTiles.length > 0 ? (
@@ -3647,16 +3654,20 @@ export const TileGrid: React.FC<TileGridProps> = ({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              {matchingLinks.map((link) => {
+              {matchingLinks.map((link, linkIndex) => {
                 // Resolve effective browser (Link specific > Tile default > System default)
                 const browserToUse = (link.browser && link.browser !== 'default')
                   ? link.browser
                   : (link.tile.browser && link.tile.browser !== 'default' ? link.tile.browser : null);
 
+                const animationClass = getTileAnimationClass(currentAnimation);
+                const animationDelay = (linkIndex * 50);
+
                 return (
                   <div
                     key={link.id}
-                    className="group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-brand-300 dark:hover:border-brand-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer"
+                    className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-brand-300 dark:hover:border-brand-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${animationClass} linknest-tile-animated`}
+                    style={{ animationDelay: `${animationDelay}ms` }}
                     onClick={(e) => {
                       // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                       if (e.ctrlKey || e.metaKey) {
@@ -3825,17 +3836,21 @@ export const TileGrid: React.FC<TileGridProps> = ({
                   }
                   return 0;
                 })
-                .map((link) => {
+                .map((link, linkIndex) => {
                   // Resolve effective browser (Link specific > Tile default > System default)
                   const parentTile = tiles.find(t => t.id === link.tile.id);
                   const browserToUse = (link.browser && link.browser !== 'default')
                     ? link.browser
                     : (parentTile?.browser && parentTile.browser !== 'default' ? parentTile.browser : null);
 
+                  const animationClass = getTileAnimationClass(currentAnimation);
+                  const animationDelay = (linkIndex * 50);
+
                   return (
                     <div
                       key={link.id}
-                      className="group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer"
+                      className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${animationClass} linknest-tile-animated`}
+                      style={{ animationDelay: `${animationDelay}ms` }}
                       onClick={(e) => {
                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                         if (e.ctrlKey || e.metaKey) {
