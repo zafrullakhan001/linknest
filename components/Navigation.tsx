@@ -26,13 +26,13 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme, u
   return (
     <nav className="border-b border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/50 backdrop-blur-md sticky top-0 z-50 transition-colors duration-300">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between max-w-6xl">
-        <div 
+        <div
           onClick={() => window.location.hash = '#/'}
           className="flex items-center gap-2 group cursor-pointer"
         >
           {settings.logo_type === 'image' && settings.logo_image ? (
-            <img 
-              src={settings.logo_image} 
+            <img
+              src={settings.logo_image}
               alt={settings.app_name}
               className="w-8 h-8 rounded-lg object-contain group-hover:scale-105 transition-transform"
             />
@@ -93,7 +93,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme, u
               Sign In
             </button>
           )}
-          <button 
+          <button
             onClick={onHelpClick}
             className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all"
             title="Help & About"
@@ -104,7 +104,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme, u
               <path d="M12 17h.01"></path>
             </svg>
           </button>
-          <button 
+          <button
             onClick={toggleTheme}
             className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all"
             title={darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
@@ -115,7 +115,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme, u
               </svg>
             ) : (
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-indigo-500">
-                 <path fillRule="evenodd" d="M9.528 1.718a.75.75 0 01.162.819A8.97 8.97 0 009 6a9 9 0 009 9 8.97 8.97 0 003.463-.69.75.75 0 01.981.98 10.503 10.503 0 01-9.694 6.46c-5.799 0-10.5-4.7-10.5-10.5 0-4.368 2.667-8.112 6.46-9.694a.75.75 0 01.818.162z" clipRule="evenodd" />
+                <path fillRule="evenodd" d="M9.528 1.718a.75.75 0 01.162.819A8.97 8.97 0 009 6a9 9 0 009 9 8.97 8.97 0 003.463-.69.75.75 0 01.981.98 10.503 10.503 0 01-9.694 6.46c-5.799 0-10.5-4.7-10.5-10.5 0-4.368 2.667-8.112 6.46-9.694a.75.75 0 01.818.162z" clipRule="evenodd" />
               </svg>
             )}
           </button>

@@ -143,3 +143,315 @@ body {
   justify-content: center;
   min-height: 100vh;
 }
+
+/* ========================================
+   TILE ANIMATIONS
+   ======================================== */
+
+/* Fade In Animation */
+@keyframes tileAnimFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.tile-anim-fade-in {
+  animation: tileAnimFadeIn 0.6s ease-out forwards;
+}
+
+/* Slide Up Animation */
+@keyframes tileAnimSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-anim-slide-up {
+  animation: tileAnimSlideUp 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Slide Down Animation */
+@keyframes tileAnimSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-anim-slide-down {
+  animation: tileAnimSlideDown 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Slide Left Animation */
+@keyframes tileAnimSlideLeft {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tile-anim-slide-left {
+  animation: tileAnimSlideLeft 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Slide Right Animation */
+@keyframes tileAnimSlideRight {
+  from {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tile-anim-slide-right {
+  animation: tileAnimSlideRight 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Zoom In Animation */
+@keyframes tileAnimZoomIn {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-zoom-in {
+  animation: tileAnimZoomIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Zoom Out Animation */
+@keyframes tileAnimZoomOut {
+  from {
+    opacity: 0;
+    transform: scale(1.2);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-zoom-out {
+  animation: tileAnimZoomOut 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Flip X Animation */
+@keyframes tileAnimFlipX {
+  from {
+    opacity: 0;
+    transform: perspective(800px) rotateY(-90deg);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(800px) rotateY(0);
+  }
+}
+
+.tile-anim-flip-x {
+  animation: tileAnimFlipX 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Flip Y Animation */
+@keyframes tileAnimFlipY {
+  from {
+    opacity: 0;
+    transform: perspective(800px) rotateX(-90deg);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(800px) rotateX(0);
+  }
+}
+
+.tile-anim-flip-y {
+  animation: tileAnimFlipY 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Bounce Animation */
+@keyframes tileAnimBounce {
+  0% {
+    opacity: 0;
+    transform: translateY(-50px);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(10px);
+  }
+  80% {
+    opacity: 1;
+    transform: translateY(-5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-anim-bounce {
+  animation: tileAnimBounce 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+}
+
+/* Rotate In Animation */
+@keyframes tileAnimRotateIn {
+  from {
+    opacity: 0;
+    transform: rotate(-180deg) scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+  }
+}
+
+.tile-anim-rotate-in {
+  animation: tileAnimRotateIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Swing Animation */
+@keyframes tileAnimSwing {
+  0% {
+    opacity: 0;
+    transform: rotate(-10deg);
+  }
+  20% {
+    opacity: 1;
+    transform: rotate(10deg);
+  }
+  40% {
+    opacity: 1;
+    transform: rotate(-8deg);
+  }
+  60% {
+    opacity: 1;
+    transform: rotate(6deg);
+  }
+  80% {
+    opacity: 1;
+    transform: rotate(-4deg);
+  }
+  100% {
+    opacity: 1;
+    transform: rotate(0);
+  }
+}
+
+.tile-anim-swing {
+  animation: tileAnimSwing 0.8s ease-in-out forwards;
+  transform-origin: top center;
+}
+
+/* Pulse Animation */
+@keyframes tileAnimPulse {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-pulse {
+  animation: tileAnimPulse 0.6s ease-in-out forwards;
+}
+
+/* Shake Animation */
+@keyframes tileAnimShake {
+  0% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+  10% {
+    opacity: 1;
+    transform: translateX(-10px);
+  }
+  20% {
+    transform: translateX(10px);
+  }
+  30% {
+    transform: translateX(-10px);
+  }
+  40% {
+    transform: translateX(10px);
+  }
+  50% {
+    transform: translateX(-10px);
+  }
+  60% {
+    transform: translateX(10px);
+  }
+  70% {
+    transform: translateX(-5px);
+  }
+  80% {
+    transform: translateX(5px);
+  }
+  90% {
+    transform: translateX(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tile-anim-shake {
+  animation: tileAnimShake 0.8s ease-in-out forwards;
+}
+
+/* Initial state for animated tiles */
+.linknest-tile-animated {
+  opacity: 0;
+}
+
+/* Apply animation with staggered delays */
+.linknest-tile-animated.tile-anim-fade-in,
+.linknest-tile-animated.tile-anim-slide-up,
+.linknest-tile-animated.tile-anim-slide-down,
+.linknest-tile-animated.tile-anim-slide-left,
+.linknest-tile-animated.tile-anim-slide-right,
+.linknest-tile-animated.tile-anim-zoom-in,
+.linknest-tile-animated.tile-anim-zoom-out,
+.linknest-tile-animated.tile-anim-flip-x,
+.linknest-tile-animated.tile-anim-flip-y,
+.linknest-tile-animated.tile-anim-bounce,
+.linknest-tile-animated.tile-anim-rotate-in,
+.linknest-tile-animated.tile-anim-swing,
+.linknest-tile-animated.tile-anim-pulse,
+.linknest-tile-animated.tile-anim-shake {
+  opacity: 0;
+}
+
+/* Category animations */
+.linknest-category-animated {
+  opacity: 0;
+  animation: fadeInUp 0.5s ease-out forwards;
+}

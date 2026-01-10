@@ -121,7 +121,7 @@ const AppContent: React.FC = () => {
       const now = new Date();
       const hour = now.getHours();
       let nextHour: number;
-      
+
       if (hour < 7) {
         // Before 7am, next change is at 7am
         nextHour = 7;
@@ -135,7 +135,7 @@ const AppContent: React.FC = () => {
 
       const nextCheck = new Date();
       nextCheck.setHours(nextHour, 0, 0, 0);
-      
+
       // If we've passed the hour today, set for tomorrow
       if (nextCheck <= now) {
         nextCheck.setDate(nextCheck.getDate() + 1);
@@ -270,7 +270,7 @@ const AppContent: React.FC = () => {
     try {
       setTiles(newTiles);
       await saveTiles(newTiles);
-      
+
       // Reload from server after successful save to ensure we have the latest data
       // This is especially important for tabs/sections which are stored separately
       // Skip reload if requested (e.g., during auto-save to preserve edit mode)

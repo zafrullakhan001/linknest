@@ -14,6 +14,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { userPreferencesService } from '../services/userPreferencesService';
 import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite } from '../services/publicFavoritesService';
 import { linkHealthService } from '../services/linkHealthService';
+import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, TileAnimation } from './TileAnimationSelector';
 
 interface TileGridProps {
   tiles: Tile[];
@@ -430,6 +431,7 @@ interface SortableTileProps {
   availableCategories: string[];
   groupIndex: number;
   tileIndex: number;
+  animationClass?: string;
 }
 
 const SortableTile: React.FC<SortableTileProps> = ({
@@ -454,7 +456,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
   canMoveRight = false,
   availableCategories,
   groupIndex,
-  tileIndex
+  tileIndex,
+  animationClass = ''
 }) => {
   const { user } = useAuth();
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
@@ -482,7 +485,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
         }
       }}
       className={`
-        linknest-tile linknest-tile-animated group relative rounded-xl border border-slate-200 dark:border-slate-700/50
+        linknest-tile linknest-tile-animated ${animationClass} group relative rounded-xl border border-slate-200 dark:border-slate-700/50
         hover:border-brand-300 dark:hover:border-brand-500/50
         transition-all duration-200 
         flex flex-col h-full min-h-[140px] cursor-pointer
@@ -871,6 +874,11 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
   // Emoji Picker State
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
+  // Tile Animation State
+  const tileAnimation = useTileAnimation();
+  const [currentAnimation, setCurrentAnimation] = useState<TileAnimation>(tileAnimation);
+
 
   // Modal drag and resize state
   const [modalPosition, setModalPosition] = useState({ x: 0, y: 0 });
@@ -3018,6 +3026,11 @@ export const TileGrid: React.FC<TileGridProps> = ({
             </div>
 
             <div className="flex gap-2 justify-end">
+              {/* Tile Animation Selector - Available for all users */}
+              <TileAnimationSelector
+                onAnimationChange={(animation) => setCurrentAnimation(animation)}
+              />
+
               {isAuthenticated && (
                 <button
                   onClick={() => setIsModalOpen(true)}
@@ -3523,6 +3536,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         availableCategories={allCategories}
                         groupIndex={groupIndex}
                         tileIndex={tileIndex}
+                        animationClass={getTileAnimationClass(currentAnimation)}
                       />
                     );
                   })}
@@ -3590,7 +3604,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
         }> = [];
 
         // Collect all links that match the search term
-        Object.values(groupedTiles).forEach(groupTiles => {
+        Object.values(groupedTiles).forEach((groupTiles: Tile[]) => {
           groupTiles.forEach(tile => {
             tile.sections?.forEach(section => {
               section.links?.forEach(link => {
@@ -3721,8 +3735,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         }
                       }}
                       className={`absolute top-2 right-2 p-1.5 rounded-lg transition-all z-10 ${(isAuthenticated ? favoriteLinks.some(fl => fl.id === link.id) : getPublicLinkFavorites().includes(link.id))
-                          ? 'text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20'
-                          : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                        ? 'text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                        : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20'
                         }`}
                       title={(isAuthenticated ? favoriteLinks.some(fl => fl.id === link.id) : getPublicLinkFavorites().includes(link.id)) ? 'Remove from favorites' : 'Add to favorites'}
                     >
