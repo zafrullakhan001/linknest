@@ -14,6 +14,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { userPreferencesService } from '../services/userPreferencesService';
 import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite, clearPublicLinkFavorites } from '../services/publicFavoritesService';
 import { linkHealthService } from '../services/linkHealthService';
+import { favoriteLinkHealthService, LinkHealthCheckResult } from '../services/favoriteLinkHealthService';
 import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, getTileDecorationClass, TileAnimation, TileDecoration } from './TileAnimationSelector';
 
 interface TileGridProps {
@@ -853,6 +854,11 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [favoriteLinks, setFavoriteLinks] = useState<FavoriteLink[]>([]);
   const [isLoadingFavoriteLinks, setIsLoadingFavoriteLinks] = useState(false);
   const [favLinksSort, setFavLinksSort] = useState<'default' | 'asc'>('default');
+  const [linkHealthResults, setLinkHealthResults] = useState<Map<string, LinkHealthCheckResult>>(new Map());
+  const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState<number>(30); // Default 30s
+  const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(false);
+  const [refreshCountdown, setRefreshCountdown] = useState<number>(30);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // New Tile Form State
@@ -1241,6 +1247,114 @@ export const TileGrid: React.FC<TileGridProps> = ({
       }
     }
   }, [activeTab, isAuthenticated, tiles]);
+
+  // Check health of favorite links when favorites tab is active
+  useEffect(() => {
+    // Only check health for favorites and public-favorites tabs
+    if (activeTab !== 'favorites' && activeTab !== 'public-favorites') {
+      // Cancel any ongoing checks when switching away from favorites tab
+      favoriteLinkHealthService.cancelCheck();
+      setIsCheckingHealth(false);
+      return;
+    }
+
+    // Don't check if no favorite links
+    if (favoriteLinks.length === 0) {
+      return;
+    }
+
+    // Start health checking
+    const checkHealth = async () => {
+      setIsCheckingHealth(true);
+
+      const linksToCheck = favoriteLinks.map(link => ({
+        id: link.id,
+        url: link.url
+      }));
+
+      try {
+        const results = await favoriteLinkHealthService.checkMultipleLinks(
+          linksToCheck,
+          (linkId, result) => {
+            // Update results progressively as each link is checked
+            setLinkHealthResults(prev => {
+              const newMap = new Map(prev);
+              newMap.set(linkId, result);
+              return newMap;
+            });
+          }
+        );
+
+        // Final update with all results
+        setLinkHealthResults(results);
+      } catch (error) {
+        console.error('Error checking link health:', error);
+      } finally {
+        setIsCheckingHealth(false);
+      }
+    };
+
+    checkHealth();
+
+    // Cleanup: cancel checks when component unmounts or dependencies change
+    return () => {
+      favoriteLinkHealthService.cancelCheck();
+    };
+  }, [activeTab, favoriteLinks]);
+
+  const handleForceRefresh = useCallback(async () => {
+    if (favoriteLinks.length === 0 || isCheckingHealth) return;
+
+    setIsCheckingHealth(true);
+    const linksToCheck = favoriteLinks.map(link => ({
+      id: link.id,
+      url: link.url
+    }));
+
+    try {
+      await favoriteLinkHealthService.checkMultipleLinks(
+        linksToCheck,
+        (linkId, result) => {
+          setLinkHealthResults(prev => {
+            const newMap = new Map(prev);
+            newMap.set(linkId, result);
+            return newMap;
+          });
+        }
+      );
+      setRefreshCountdown(autoRefreshInterval);
+    } catch (error) {
+      console.error('Error in force refresh:', error);
+    } finally {
+      setIsCheckingHealth(false);
+    }
+  }, [favoriteLinks, isCheckingHealth, autoRefreshInterval]);
+
+  // Handle auto-refresh of link health with countdown
+  useEffect(() => {
+    if (!isAutoRefreshEnabled || (activeTab !== 'favorites' && activeTab !== 'public-favorites') || favoriteLinks.length === 0) {
+      setRefreshCountdown(autoRefreshInterval);
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      setRefreshCountdown(prev => {
+        if (prev <= 1) {
+          if (!isCheckingHealth) {
+            handleForceRefresh();
+          }
+          return autoRefreshInterval;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [isAutoRefreshEnabled, autoRefreshInterval, activeTab, favoriteLinks, isCheckingHealth, handleForceRefresh]);
+
+  useEffect(() => {
+    setRefreshCountdown(autoRefreshInterval);
+  }, [autoRefreshInterval]);
 
   // Load saved active tab preference for authenticated users
   useEffect(() => {
@@ -2379,6 +2493,43 @@ export const TileGrid: React.FC<TileGridProps> = ({
     [user]
   );
 
+  const handleExportStats = useCallback(() => {
+    if (favoriteLinks.length === 0) {
+      alert('No favorite links to export.');
+      return;
+    }
+
+    // CSV Headers
+    const headers = ['Label', 'URL', 'Status', 'HTTP Code', 'Latency (ms)', 'Parent Tile', 'Checked At'];
+
+    // CSV Rows
+    const rows = favoriteLinks.map(link => {
+      const health = linkHealthResults.get(link.id);
+      return [
+        `"${link.label.replace(/"/g, '""')}"`,
+        `"${link.url}"`,
+        (health?.health.status || 'unknown').toUpperCase(),
+        health?.health.httpCode || '',
+        health?.latency || '',
+        `"${link.tile.title.replace(/"/g, '""')}"`,
+        health?.health.checkedAt ? new Date(health.health.checkedAt).toLocaleString() : ''
+      ];
+    });
+
+    // Combine into CSV string
+    const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+
+    // Download logic
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `linknest_url_stats_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [favoriteLinks, linkHealthResults]);
+
   const handleImportCategory = useCallback(
     async (categoryName: string) => {
       if (!isAuthenticated) {
@@ -3304,6 +3455,103 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 <span className="text-sm text-slate-500 dark:text-slate-400">({favoriteLinks.length})</span>
               </div>
 
+              {/* Monitoring Controls on the Right */}
+              <div className="flex items-center gap-2">
+                {/* Export Button */}
+                <button
+                  onClick={handleExportStats}
+                  className="flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg transition-all shadow-sm hover:shadow-md"
+                  title="Export stats to CSV"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-emerald-500">
+                    <path fillRule="evenodd" d="M3 4.5A1.5 1.5 0 014.5 3h11A1.5 1.5 0 0117 4.5v11a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 013 15.5v-11zM4.5 4.5v11h11v-11h-11z" clipRule="evenodd" />
+                    <path fillRule="evenodd" d="M10 13a.75.75 0 01-.75-.75V7.56l-1.72 1.72a.75.75 0 01-1.06-1.06l3-3a.75.75 0 011.06 0l3 3a.75.75 0 11-1.06 1.06l-1.72-1.72v4.69A.75.75 0 0110 13z" clipRule="evenodd" />
+                  </svg>
+                </button>
+
+                {/* Force Refresh Button */}
+                <button
+                  onClick={handleForceRefresh}
+                  disabled={isCheckingHealth}
+                  className={`flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg transition-all shadow-sm hover:shadow-md disabled:opacity-50 ${isCheckingHealth ? 'animate-spin' : ''}`}
+                  title="Force refresh now"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-blue-500">
+                    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                    <path d="M21 3v5h-5" />
+                  </svg>
+                </button>
+
+                {/* Auto Refresh Control */}
+                <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-1 shadow-sm">
+                  <div className="relative w-8 h-8 flex items-center justify-center">
+                    <svg className="w-6 h-6 rotate-[-90deg]">
+                      <circle
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        fill="transparent"
+                        className="text-slate-100 dark:text-slate-700"
+                      />
+                      <circle
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        fill="transparent"
+                        strokeDasharray={2 * Math.PI * 10}
+                        strokeDashoffset={isAutoRefreshEnabled ? (2 * Math.PI * 10) * (1 - refreshCountdown / autoRefreshInterval) : (2 * Math.PI * 10)}
+                        className={`${isAutoRefreshEnabled ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'} transition-all duration-1000 ease-linear`}
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <button
+                      onClick={() => setIsAutoRefreshEnabled(!isAutoRefreshEnabled)}
+                      className="absolute inset-0 flex items-center justify-center"
+                      title={isAutoRefreshEnabled ? "Disable auto-refresh" : "Enable auto-refresh"}
+                    >
+                      <div className={`w-1.5 h-1.5 rounded-full ${isAutoRefreshEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-600'}`}></div>
+                    </button>
+                  </div>
+
+                  <select
+                    value={autoRefreshInterval}
+                    onChange={(e) => setAutoRefreshInterval(Number(e.target.value))}
+                    disabled={!isAutoRefreshEnabled}
+                    className="bg-transparent text-[10px] font-medium text-slate-600 dark:text-slate-400 border-none focus:ring-0 cursor-pointer disabled:opacity-50 pr-2 pl-0"
+                  >
+                    <option value={10}>10s</option>
+                    <option value={30}>30s</option>
+                    <option value={60}>1m</option>
+                    <option value={180}>3m</option>
+                    <option value={300}>5m</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Sub-row for Sort and Position Controls */}
+            <div className="flex items-center gap-4 mb-4">
+              {/* Sort Controls */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 dark:text-slate-400">Sort:</span>
+                <button
+                  onClick={() => setFavLinksSort(prev => prev === 'default' ? 'asc' : 'default')}
+                  className={`p-1.5 rounded-lg transition-all ${favLinksSort === 'asc'
+                    ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                    }`}
+                  title={favLinksSort === 'asc' ? "Sorted alphabetically" : "Sort alphabetically"}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path fillRule="evenodd" d="M2.24 6.8a.75.75 0 001.06-.04l1.95-2.1v8.59a.75.75 0 001.5 0V4.66l1.95 2.1a.75.75 0 101.1-1.02l-3.25-3.5a.75.75 0 00-1.1 0L2.2 5.74a.75.75 0 00.04 1.06zm8 4a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0-4a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0 8a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+
               {/* Reorder Controls */}
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500 dark:text-slate-400">Position:</span>
@@ -3337,109 +3585,141 @@ export const TileGrid: React.FC<TileGridProps> = ({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              {favoriteLinks.map((link, linkIndex) => {
-                // Resolve effective browser (Link specific > Tile default > System default)
-                const parentTile = tiles.find(t => t.id === link.tile.id);
-                const browserToUse = (link.browser && link.browser !== 'default')
-                  ? link.browser
-                  : (parentTile?.browser && parentTile.browser !== 'default' ? parentTile.browser : null);
+              {[...favoriteLinks]
+                .sort((a, b) => {
+                  if (favLinksSort === 'asc') {
+                    return a.label.localeCompare(b.label);
+                  }
+                  return 0;
+                })
+                .map((link, linkIndex) => {
+                  // Resolve effective browser (Link specific > Tile default > System default)
+                  const parentTile = tiles.find(t => t.id === link.tile.id);
+                  const browserToUse = (link.browser && link.browser !== 'default')
+                    ? link.browser
+                    : (parentTile?.browser && parentTile.browser !== 'default' ? parentTile.browser : null);
 
-                const animationClass = getTileAnimationClass(currentAnimation);
-                const decorationClass = getTileDecorationClass(currentDecoration);
-                const fullAnimationClass = `${animationClass} ${decorationClass}`.trim();
-                const animationDelay = (linkIndex * 50);
+                  const animationClass = getTileAnimationClass(currentAnimation);
+                  const decorationClass = getTileDecorationClass(currentDecoration);
+                  const fullAnimationClass = `${animationClass} ${decorationClass}`.trim();
+                  const animationDelay = (linkIndex * 50);
 
-                return (
-                  <div
-                    key={link.id}
-                    className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} linknest-tile-animated`}
-                    style={{ animationDelay: `${animationDelay}ms` }}
-                    onClick={(e) => {
-                      // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
-                      if (e.ctrlKey || e.metaKey) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
-                        if (newWindow) newWindow.focus();
-                        return;
-                      }
+                  // Get health check result for this link
+                  const healthResult = linkHealthResults.get(link.id);
+                  const healthStatus = healthResult?.health.status || 'unknown';
+                  const latency = healthResult?.latency;
+                  const httpCode = healthResult?.health.httpCode;
 
-                      if (settings.browser_specific_links_enabled === '1' && browserToUse) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        openLinkInBrowser(link.url, browserToUse);
-                        return;
-                      }
+                  return (
+                    <div
+                      key={link.id}
+                      className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} linknest-tile-animated overflow-hidden`}
+                      style={{ animationDelay: `${animationDelay}ms` }}
+                      onClick={(e) => {
+                        // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
+                        if (e.ctrlKey || e.metaKey) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
+                          if (newWindow) newWindow.focus();
+                          return;
+                        }
 
-                      // Default behavior
-                      window.open(link.url, '_blank');
-                    }}
-                  >
-                    {/* Health Status Indicator */}
-                    {link.health && (
-                      <div className="shrink-0">
+                        if (settings.browser_specific_links_enabled === '1' && browserToUse) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openLinkInBrowser(link.url, browserToUse);
+                          return;
+                        }
+
+                        // Default behavior
+                        window.open(link.url, '_blank');
+                      }}
+                    >
+                      {/* Shark Fin Health Indicator - Top Left Corner */}
+                      {healthResult && (
                         <div
-                          className={`w-2 h-2 rounded-full ${linkHealthService.getHealthColor(link.health.status)}`}
-                          title={`${linkHealthService.getHealthLabel(link.health.status)}${link.health.error ? `: ${link.health.error}` : ''}`}
-                        />
-                      </div>
-                    )}
-
-                    {/* Link Icon */}
-                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 text-lg border border-slate-200 dark:border-slate-700">
-                      {link.icon || '🔗'}
-                    </div>
-
-                    {/* Link Info */}
-                    <div className="flex-1 min-w-0 overflow-hidden">
-                      <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
-                        {link.label}
-                      </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
-                        {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
-                      </div>
-                      {/* Browser Indicator */}
-                      {settings.browser_specific_links_enabled === '1' && browserToUse && (
-                        <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
-                          ({formatBrowserName(browserToUse)} browser)
+                          className="absolute -top-[1px] -left-[1px] w-4 h-4 z-20 pointer-events-none overflow-hidden"
+                          title={`Server Status: ${healthStatus.toUpperCase()}${latency ? `\nLatency: ${favoriteLinkHealthService.formatLatency(latency)} (Roundtrip from your browser)` : ''}`}
+                        >
+                          <div
+                            className="absolute -top-2 -left-2 w-5 h-5 rotate-45"
+                            style={{
+                              backgroundColor: healthStatus === 'healthy' ? '#10b981' :
+                                healthStatus === 'timeout' ? '#f97316' :
+                                  healthStatus === 'broken' ? '#ef4444' : '#94a3b8'
+                            }}
+                          />
                         </div>
                       )}
-                      {/* Parent Tile Info */}
-                      <div className="flex items-center gap-1.5 mt-1 overflow-hidden">
-                        <span className="text-xs shrink-0">{link.tile.emoji}</span>
-                        <span className="text-xs text-slate-400 dark:text-slate-500 line-clamp-1" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{link.tile.title}</span>
-                      </div>
-                    </div>
 
-                    {/* Unfavorite Button */}
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (isAuthenticated) {
-                          const { toggleLinkFavorite } = await import('../services/storageService');
-                          await toggleLinkFavorite(link.id);
-                          const links = await getFavoriteLinks();
-                          setFavoriteLinks(links);
-                        } else {
-                          togglePublicLinkFavorite(link.id);
-                          const favIds = getPublicLinkFavorites();
-                          const newLinks: FavoriteLink[] = [];
-                          tiles.forEach(t => t.sections?.forEach(s => s.links?.forEach(l => {
-                            if (favIds.includes(l.id)) newLinks.push({ id: l.id, label: l.label, url: l.url, icon: l.icon, textColor: l.textColor, visibility: l.visibility, notes: l.notes, tooltip: l.tooltip, browser: l.browser, isFavorite: true, health: l.health, tile: { id: t.id, title: t.title, emoji: t.emoji || '✨', themeColor: t.themeColor || 'blue' } });
-                          })));
-                          setFavoriteLinks(newLinks);
-                        }
-                      }}
-                      className="absolute top-2 right-2 p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all z-10"
-                      title="Remove from favorites"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                        <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
-                      </svg>
-                    </button>
-                  </div>
-                );
-              })}
+                      {/* Link Icon */}
+                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 text-lg border border-slate-200 dark:border-slate-700">
+                        {link.icon || '🔗'}
+                      </div>
+
+                      {/* Link Info */}
+                      <div className="flex-1 min-w-0 overflow-hidden">
+                        <div className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
+                          {link.label}
+                        </div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
+                          {link.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
+                        </div>
+                        {/* Browser Indicator */}
+                        {settings.browser_specific_links_enabled === '1' && browserToUse && (
+                          <div className="text-[10px] text-blue-500 dark:text-blue-400 transition-colors mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
+                            ({formatBrowserName(browserToUse)} browser)
+                          </div>
+                        )}
+                        {/* Parent Tile Info */}
+                        <div className="flex items-center gap-1.5 mt-1 overflow-hidden">
+                          <span className="text-xs shrink-0">{link.tile.emoji}</span>
+                          <span className="text-xs text-slate-400 dark:text-slate-500 line-clamp-1" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{link.tile.title}</span>
+                        </div>
+                      </div>
+
+                      {/* Latency and Status Code - Bottom Right Corner */}
+                      {healthResult && (latency || httpCode) && (
+                        <div
+                          className="absolute bottom-1 right-1 text-[10px] text-slate-400 dark:text-slate-500 opacity-60 font-mono cursor-help"
+                          title={`Server Status: ${healthStatus.toUpperCase()}${httpCode ? ` (${httpCode})` : ''}${latency ? `\nLatency: ${favoriteLinkHealthService.formatLatency(latency)} (Roundtrip from your browser)` : ''}`}
+                        >
+                          {latency && <span>{favoriteLinkHealthService.formatLatency(latency)}</span>}
+                          {latency && httpCode && <span className="mx-0.5">·</span>}
+                          {httpCode && <span>{httpCode}</span>}
+                        </div>
+                      )}
+
+                      {/* Unfavorite Button */}
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (isAuthenticated) {
+                            const { toggleLinkFavorite } = await import('../services/storageService');
+                            await toggleLinkFavorite(link.id);
+                            const links = await getFavoriteLinks();
+                            setFavoriteLinks(links);
+                          } else {
+                            togglePublicLinkFavorite(link.id);
+                            const favIds = getPublicLinkFavorites();
+                            const newLinks: FavoriteLink[] = [];
+                            tiles.forEach(t => t.sections?.forEach(s => s.links?.forEach(l => {
+                              if (favIds.includes(l.id)) newLinks.push({ id: l.id, label: l.label, url: l.url, icon: l.icon, textColor: l.textColor, visibility: l.visibility, notes: l.notes, tooltip: l.tooltip, browser: l.browser, isFavorite: true, health: l.health, tile: { id: t.id, title: t.title, emoji: t.emoji || '✨', themeColor: t.themeColor || 'blue' } });
+                            })));
+                            setFavoriteLinks(newLinks);
+                          }
+                        }}
+                        className="absolute top-2 right-2 p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all z-10"
+                        title="Remove from favorites"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
+                  );
+                })}
             </div>
           </div>
         );
@@ -3754,16 +4034,94 @@ export const TileGrid: React.FC<TileGridProps> = ({
                   <span className="text-sm text-slate-500 dark:text-slate-400">({favoriteLinks.length})</span>
                 </div>
 
+                {/* Monitoring Controls */}
+                <div className="flex items-center gap-2">
+                  {/* Export Button */}
+                  <button
+                    onClick={handleExportStats}
+                    className="flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg transition-all shadow-sm hover:shadow-md"
+                    title="Export stats to CSV"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-emerald-500">
+                      <path fillRule="evenodd" d="M3 4.5A1.5 1.5 0 014.5 3h11A1.5 1.5 0 0117 4.5v11a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 013 15.5v-11zM4.5 4.5v11h11v-11h-11z" clipRule="evenodd" />
+                      <path fillRule="evenodd" d="M10 13a.75.75 0 01-.75-.75V7.56l-1.72 1.72a.75.75 0 01-1.06-1.06l3-3a.75.75 0 011.06 0l3 3a.75.75 0 11-1.06 1.06l-1.72-1.72v4.69A.75.75 0 0110 13z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+
+                  {/* Force Refresh Button */}
+                  <button
+                    onClick={handleForceRefresh}
+                    disabled={isCheckingHealth}
+                    className={`flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg transition-all shadow-sm hover:shadow-md disabled:opacity-50 ${isCheckingHealth ? 'animate-spin' : ''}`}
+                    title="Force refresh now"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-blue-500">
+                      <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                      <path d="M21 3v5h-5" />
+                    </svg>
+                  </button>
+
+                  {/* Auto Refresh Control */}
+                  <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-1 shadow-sm">
+                    {/* Progress Indicator */}
+                    <div className="relative w-8 h-8 flex items-center justify-center">
+                      <svg className="w-6 h-6 rotate-[-90deg]">
+                        <circle
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          fill="transparent"
+                          className="text-slate-100 dark:text-slate-700"
+                        />
+                        <circle
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          fill="transparent"
+                          strokeDasharray={2 * Math.PI * 10}
+                          strokeDashoffset={isAutoRefreshEnabled ? (2 * Math.PI * 10) * (1 - refreshCountdown / autoRefreshInterval) : (2 * Math.PI * 10)}
+                          className={`${isAutoRefreshEnabled ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'} transition-all duration-1000 ease-linear`}
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                      <button
+                        onClick={() => setIsAutoRefreshEnabled(!isAutoRefreshEnabled)}
+                        className="absolute inset-0 flex items-center justify-center"
+                        title={isAutoRefreshEnabled ? "Disable auto-refresh" : "Enable auto-refresh"}
+                      >
+                        <div className={`w-1.5 h-1.5 rounded-full ${isAutoRefreshEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-600'}`}></div>
+                      </button>
+                    </div>
+
+                    <select
+                      value={autoRefreshInterval}
+                      onChange={(e) => setAutoRefreshInterval(Number(e.target.value))}
+                      disabled={!isAutoRefreshEnabled}
+                      className="bg-transparent text-[10px] font-medium text-slate-600 dark:text-slate-400 border-none focus:ring-0 cursor-pointer disabled:opacity-50 pr-2 pl-0"
+                    >
+                      <option value={10}>10s</option>
+                      <option value={30}>30s</option>
+                      <option value={60}>1m</option>
+                      <option value={180}>3m</option>
+                      <option value={300}>5m</option>
+                    </select>
+                  </div>
+                </div>
               </div>
 
-              <div className="flex items-center gap-4">
+              {/* Sub-row for Sort and Position Controls */}
+              <div className="flex items-center gap-4 mb-4">
                 {/* Sort Controls */}
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-slate-500 dark:text-slate-400">Sort:</span>
                   <button
                     onClick={() => setFavLinksSort(prev => prev === 'default' ? 'asc' : 'default')}
                     className={`p-1.5 rounded-lg transition-all ${favLinksSort === 'asc'
-                      ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 ring-1 ring-brand-500/20'
+                      ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400'
                       : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                       }`}
                     title={favLinksSort === 'asc' ? "Sorted alphabetically (Click to reset)" : "Sort alphabetically"}
