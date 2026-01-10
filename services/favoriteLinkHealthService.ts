@@ -7,7 +7,8 @@ const API_BASE: string =
 export interface LinkHealthCheckResult {
     linkId: string;
     health: LinkHealth;
-    latency?: number; // in milliseconds
+    latency?: number; // Local latency (roundtrip from browser to server) in milliseconds
+    serverLatency?: number; // Server-side latency (time taken by server to check URL) in milliseconds
 }
 
 /**
@@ -43,15 +44,16 @@ class FavoriteLinkHealthService {
             }
 
             const data = await response.json();
-            const latency = Math.round(performance.now() - startTime);
+            const localLatency = Math.round(performance.now() - startTime);
 
             return {
                 linkId,
                 health: data.health,
-                latency
+                latency: localLatency,
+                serverLatency: data.health.serverLatency !== undefined ? data.health.serverLatency : 0
             };
         } catch (error: any) {
-            const latency = Math.round(performance.now() - startTime);
+            const localLatency = Math.round(performance.now() - startTime);
 
             if (error.name === 'AbortError') {
                 return {
@@ -62,7 +64,8 @@ class FavoriteLinkHealthService {
                         error: 'Request timed out',
                         checkedAt: Date.now()
                     },
-                    latency
+                    latency: localLatency,
+                    serverLatency: 0
                 };
             }
 
@@ -74,7 +77,8 @@ class FavoriteLinkHealthService {
                     error: error.message || 'Failed to check link',
                     checkedAt: Date.now()
                 },
-                latency
+                latency: localLatency,
+                serverLatency: 0
             };
         }
     }
@@ -177,8 +181,8 @@ class FavoriteLinkHealthService {
     /**
      * Format latency for display
      */
-    formatLatency(latency?: number): string {
-        if (!latency) return '';
+    formatLatency(latency?: number | null): string {
+        if (latency === undefined || latency === null) return '';
         if (latency < 1000) return `${latency}ms`;
         return `${(latency / 1000).toFixed(1)}s`;
     }

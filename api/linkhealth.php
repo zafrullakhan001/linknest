@@ -47,7 +47,8 @@ function checkUrlHealth($url) {
         return [
             'status' => 'broken',
             'http_code' => 0,
-            'error' => 'Invalid URL format'
+            'error' => 'Invalid URL format',
+            'server_latency' => 0
         ];
     }
 
@@ -75,7 +76,11 @@ function checkUrlHealth($url) {
         CURLOPT_FORBID_REUSE => true // Force new connection
     ]);
 
+    // Measure ONLY cURL execution time (excluding PHP overhead)
+    $curlStartTime = microtime(true);
     $response = curl_exec($ch);
+    $serverLatency = round((microtime(true) - $curlStartTime) * 1000); // Convert to milliseconds
+    
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $error = curl_error($ch);
     $errno = curl_errno($ch);
@@ -135,7 +140,8 @@ function checkUrlHealth($url) {
     return [
         'status' => $status,
         'http_code' => $httpCode,
-        'error' => $error
+        'error' => $error,
+        'server_latency' => $serverLatency
     ];
 }
 
@@ -156,6 +162,7 @@ function checkUrlsParallel($urls, $maxConcurrent = 5) {
     
     $multiHandle = curl_multi_init();
     $handles = [];
+    $handleStartTimes = []; // Track start time for each handle
     $results = [];
     
     // Initialize handles for all URLs
@@ -164,7 +171,8 @@ function checkUrlsParallel($urls, $maxConcurrent = 5) {
             $results[$url] = [
                 'status' => 'broken',
                 'http_code' => 0,
-                'error' => 'Invalid URL format'
+                'error' => 'Invalid URL format',
+                'server_latency' => 0
             ];
             continue;
         }
@@ -192,6 +200,7 @@ function checkUrlsParallel($urls, $maxConcurrent = 5) {
         
         curl_multi_add_handle($multiHandle, $ch);
         $handles[$url] = $ch;
+        $handleStartTimes[$url] = microtime(true); // Track start time
     }
     
     // Execute all handles in parallel with timeout protection
@@ -209,10 +218,12 @@ function checkUrlsParallel($urls, $maxConcurrent = 5) {
                 if (!isset($results[$url])) {
                     curl_multi_remove_handle($multiHandle, $ch);
                     curl_close($ch);
+                    $serverLatency = isset($handleStartTimes[$url]) ? round((microtime(true) - $handleStartTimes[$url]) * 1000) : 0;
                     $results[$url] = [
                         'status' => 'timeout',
                         'http_code' => 0,
-                        'error' => 'Request timeout'
+                        'error' => 'Request timeout',
+                        'server_latency' => $serverLatency
                     ];
                 }
             }
@@ -230,6 +241,7 @@ function checkUrlsParallel($urls, $maxConcurrent = 5) {
             continue; // Already processed (timeout or invalid)
         }
         
+        $serverLatency = isset($handleStartTimes[$url]) ? round((microtime(true) - $handleStartTimes[$url]) * 1000) : 0;
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
         $errno = curl_errno($ch);
@@ -273,7 +285,8 @@ function checkUrlsParallel($urls, $maxConcurrent = 5) {
         $results[$url] = [
             'status' => $status,
             'http_code' => $httpCode,
-            'error' => $error
+            'error' => $error,
+            'server_latency' => $serverLatency
         ];
         
         curl_multi_remove_handle($multiHandle, $ch);
@@ -529,6 +542,7 @@ function handleCheckSingleLink() {
                 'status' => $healthResult['status'],
                 'httpCode' => $healthResult['http_code'],
                 'error' => $healthResult['error'],
+                'serverLatency' => $healthResult['server_latency'],
                 'checkedAt' => time()
             ]
         ]);
@@ -543,6 +557,7 @@ function handleCheckSingleLink() {
                     'status' => $healthResult['status'],
                     'httpCode' => $healthResult['http_code'],
                     'error' => $healthResult['error'],
+                    'serverLatency' => $healthResult['server_latency'],
                     'checkedAt' => time()
                 ]
             ]);
@@ -560,6 +575,7 @@ function handleCheckSingleLink() {
                     'status' => $healthResult['status'],
                     'httpCode' => $healthResult['http_code'],
                     'error' => $healthResult['error'],
+                    'serverLatency' => $healthResult['server_latency'],
                     'checkedAt' => time()
                 ]
             ]);
@@ -681,6 +697,7 @@ function handleCheckTileLinks() {
                             'status' => $healthResult['status'],
                             'httpCode' => $healthResult['http_code'],
                             'error' => $healthResult['error'],
+                            'serverLatency' => $healthResult['server_latency'],
                             'checkedAt' => $now
                         ];
                     }

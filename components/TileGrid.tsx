@@ -2495,39 +2495,54 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
   const handleExportStats = useCallback(() => {
     if (favoriteLinks.length === 0) {
-      alert('No favorite links to export.');
+      alert('No favorite links to export');
       return;
     }
 
-    // CSV Headers
-    const headers = ['Label', 'URL', 'Status', 'HTTP Code', 'Latency (ms)', 'Parent Tile', 'Checked At'];
+    // Prepare CSV data with both local and server latency
+    const headers = ['Label', 'URL', 'Status', 'HTTP Code', 'Local Latency (ms)', 'Server Latency (ms)', 'Total Latency (ms)', 'Parent Space', 'Last Checked'];
+    const rows: string[][] = [];
 
-    // CSV Rows
-    const rows = favoriteLinks.map(link => {
-      const health = linkHealthResults.get(link.id);
-      return [
-        `"${link.label.replace(/"/g, '""')}"`,
-        `"${link.url}"`,
-        (health?.health.status || 'unknown').toUpperCase(),
-        health?.health.httpCode || '',
-        health?.latency || '',
-        `"${link.tile.title.replace(/"/g, '""')}"`,
-        health?.health.checkedAt ? new Date(health.health.checkedAt).toLocaleString() : ''
-      ];
+    favoriteLinks.forEach(link => {
+      const healthResult = linkHealthResults.get(link.id);
+      const status = healthResult?.health.status || 'unknown';
+      const httpCode = healthResult?.health.httpCode || '';
+      const localLatency = healthResult?.latency || 0;
+      const serverLatency = healthResult?.serverLatency || 0;
+      const totalLatency = localLatency; // Local latency already includes server processing time
+      const lastChecked = healthResult?.health.checkedAt
+        ? new Date(healthResult.health.checkedAt).toLocaleString()
+        : 'Never';
+
+      rows.push([
+        link.label,
+        link.url,
+        status,
+        httpCode.toString(),
+        localLatency.toString(),
+        serverLatency.toString(),
+        totalLatency.toString(),
+        link.tile.title,
+        lastChecked
+      ]);
     });
 
-    // Combine into CSV string
-    const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+    // Convert to CSV
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell.replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
 
-    // Download logic
+    // Download CSV
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `linknest_url_stats_${new Date().toISOString().split('T')[0]}.csv`);
+    link.href = url;
+    link.download = `favorite-links-stats-${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   }, [favoriteLinks, linkHealthResults]);
 
   const handleImportCategory = useCallback(
@@ -3608,7 +3623,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                       {healthResult && (
                         <div
                           className="absolute -top-[1px] -left-[1px] w-4 h-4 z-20 pointer-events-none overflow-hidden"
-                          title={`Server Status: ${healthStatus.toUpperCase()}${latency ? `\nLatency: ${favoriteLinkHealthService.formatLatency(latency)} (Roundtrip from your browser)` : ''}`}
+                          title={`Health Status: ${healthStatus.toUpperCase()}${httpCode ? ` (HTTP ${httpCode})` : ''}\n\n${healthResult.serverLatency ? `Server Check Time: ${favoriteLinkHealthService.formatLatency(healthResult.serverLatency)}\n(Time taken by server to check URL via cURL)` : ''}${latency ? `\n\nClient Roundtrip Time: ${favoriteLinkHealthService.formatLatency(latency)}\n(Total time from browser to server and back)` : ''}\n\nDifference = Network overhead + API processing`}
                         >
                           <div
                             className="absolute -top-2 -left-2 w-5 h-5 rotate-45"
@@ -3648,14 +3663,27 @@ export const TileGrid: React.FC<TileGridProps> = ({
                       </div>
 
                       {/* Latency and Status Code - Bottom Right Corner */}
-                      {healthResult && (latency || httpCode) && (
+                      {healthResult && (healthResult.serverLatency || latency || httpCode) && (
                         <div
                           className="absolute bottom-1 right-1 text-[10px] text-slate-400 dark:text-slate-500 opacity-60 font-mono cursor-help"
-                          title={`Server Status: ${healthStatus.toUpperCase()}${httpCode ? ` (${httpCode})` : ''}${latency ? `\nLatency: ${favoriteLinkHealthService.formatLatency(latency)} (Roundtrip from your browser)` : ''}`}
+                          title={`Health Check Results:\n${healthResult.serverLatency ? `Server Check: ${favoriteLinkHealthService.formatLatency(healthResult.serverLatency)} (Time for server to check URL)` : ''}${httpCode ? `\nServer Response Code: ${httpCode}` : ''}${latency ? `\n\nClient Roundtrip: ${favoriteLinkHealthService.formatLatency(latency)} (Total time from browser)` : ''}${httpCode ? `\nClient Response Code: ${httpCode}` : ''}\n\nStatus: ${healthStatus.toUpperCase()}`}
                         >
-                          {latency && <span>{favoriteLinkHealthService.formatLatency(latency)}</span>}
-                          {latency && httpCode && <span className="mx-0.5">·</span>}
-                          {httpCode && <span>{httpCode}</span>}
+                          {/* Server latency (code) */}
+                          {healthResult.serverLatency !== undefined ? (
+                            <span>
+                              {favoriteLinkHealthService.formatLatency(healthResult.serverLatency)}
+                              {httpCode && `(${httpCode})`}
+                            </span>
+                          ) : null}
+                          {/* Separator */}
+                          {healthResult.serverLatency !== undefined && latency && <span className="mx-1">|</span>}
+                          {/* Client latency (code) */}
+                          {latency && (
+                            <span>
+                              {favoriteLinkHealthService.formatLatency(latency)}
+                              {httpCode && `(${httpCode})`}
+                            </span>
+                          )}
                         </div>
                       )}
 
@@ -4155,7 +4183,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         {healthResult && (
                           <div
                             className="absolute -top-[1px] -left-[1px] w-4 h-4 z-20 pointer-events-none overflow-hidden"
-                            title={`Server Status: ${healthStatus.toUpperCase()}${latency ? `\nLatency: ${favoriteLinkHealthService.formatLatency(latency)} (Roundtrip from your browser)` : ''}`}
+                            title={`Health Status: ${healthStatus.toUpperCase()}${httpCode ? ` (HTTP ${httpCode})` : ''}\n\n${healthResult.serverLatency ? `Server Check Time: ${favoriteLinkHealthService.formatLatency(healthResult.serverLatency)}\n(Time taken by server to check URL via cURL)` : ''}${latency ? `\n\nClient Roundtrip Time: ${favoriteLinkHealthService.formatLatency(latency)}\n(Total time from browser to server and back)` : ''}\n\nDifference = Network overhead + API processing`}
                           >
                             <div
                               className="absolute -top-2 -left-2 w-5 h-5 rotate-45"
@@ -4195,14 +4223,27 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         </div>
 
                         {/* Latency and Status Code - Bottom Right Corner */}
-                        {healthResult && (latency || httpCode) && (
+                        {healthResult && (healthResult.serverLatency || latency || httpCode) && (
                           <div
                             className="absolute bottom-1 right-1 text-[10px] text-slate-400 dark:text-slate-500 opacity-60 font-mono cursor-help"
-                            title={`Server Status: ${healthStatus.toUpperCase()}${httpCode ? ` (${httpCode})` : ''}${latency ? `\nLatency: ${favoriteLinkHealthService.formatLatency(latency)} (Roundtrip from your browser)` : ''}`}
+                            title={`Health Check Results:\n${healthResult.serverLatency ? `Server Check: ${favoriteLinkHealthService.formatLatency(healthResult.serverLatency)} (Time for server to check URL)` : ''}${httpCode ? `\nServer Response Code: ${httpCode}` : ''}${latency ? `\n\nClient Roundtrip: ${favoriteLinkHealthService.formatLatency(latency)} (Total time from browser)` : ''}${httpCode ? `\nClient Response Code: ${httpCode}` : ''}\n\nStatus: ${healthStatus.toUpperCase()}`}
                           >
-                            {latency && <span>{favoriteLinkHealthService.formatLatency(latency)}</span>}
-                            {latency && httpCode && <span className="mx-0.5">·</span>}
-                            {httpCode && <span>{httpCode}</span>}
+                            {/* Server latency (code) */}
+                            {healthResult.serverLatency !== undefined ? (
+                              <span>
+                                {favoriteLinkHealthService.formatLatency(healthResult.serverLatency)}
+                                {httpCode && `(${httpCode})`}
+                              </span>
+                            ) : null}
+                            {/* Separator */}
+                            {healthResult.serverLatency !== undefined && latency && <span className="mx-1">|</span>}
+                            {/* Client latency (code) */}
+                            {latency && (
+                              <span>
+                                {favoriteLinkHealthService.formatLatency(latency)}
+                                {httpCode && `(${httpCode})`}
+                              </span>
+                            )}
                           </div>
                         )}
 
