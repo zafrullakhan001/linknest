@@ -2287,108 +2287,19 @@ body {
 }
 
 
-/* Initial state for animated tiles */
+/* Initial state for animated tiles - Ensure they are hidden until animation starts */
 .linknest-tile-animated {
   opacity: 0;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
 }
 
-/* Apply animation with staggered delays */
-.linknest-tile-animated.tile-anim-fade-in,
-.linknest-tile-animated.tile-anim-slide-up,
-.linknest-tile-animated.tile-anim-slide-down,
-.linknest-tile-animated.tile-anim-slide-left,
-.linknest-tile-animated.tile-anim-slide-right,
-.linknest-tile-animated.tile-anim-zoom-in,
-.linknest-tile-animated.tile-anim-zoom-out,
-.linknest-tile-animated.tile-anim-flip-x,
-.linknest-tile-animated.tile-anim-flip-y,
-.linknest-tile-animated.tile-anim-bounce,
-.linknest-tile-animated.tile-anim-rotate-in,
-.linknest-tile-animated.tile-anim-swing,
-.linknest-tile-animated.tile-anim-pulse,
-.linknest-tile-animated.tile-anim-shake,
-.linknest-tile-animated.tile-anim-blur-in,
-.linknest-tile-animated.tile-anim-roll-in,
-.linknest-tile-animated.tile-anim-jack-in-the-box,
-.linknest-tile-animated.tile-anim-back-in-down,
-.linknest-tile-animated.tile-anim-back-in-up,
-.linknest-tile-animated.tile-anim-reveal,
-.linknest-tile-animated.tile-anim-jello,
-.linknest-tile-animated.tile-anim-rubber-band,
-.linknest-tile-animated.tile-anim-tada,
-.linknest-tile-animated.tile-anim-flash,
-.linknest-tile-animated.tile-anim-zoom-in-up,
-.linknest-tile-animated.tile-anim-zoom-in-down,
-.linknest-tile-animated.tile-anim-wave,
-.linknest-tile-animated.tile-anim-glitch,
-.linknest-tile-animated.tile-anim-twirl,
-.linknest-tile-animated.tile-anim-skid,
-.linknest-tile-animated.tile-anim-spiral,
-.linknest-tile-animated.tile-anim-bounce-in-right,
-.linknest-tile-animated.tile-anim-bounce-in-left,
-.linknest-tile-animated.tile-anim-flip-3d,
-.linknest-tile-animated.tile-anim-wobble,
-.linknest-tile-animated.tile-anim-heartbeat,
-.linknest-tile-animated.tile-anim-puff-in,
-.linknest-tile-animated.tile-anim-drop,
-.linknest-tile-animated.tile-anim-swing-in,
-.linknest-tile-animated.tile-anim-blur-slide-left,
-.linknest-tile-animated.tile-anim-blur-slide-right,
-.linknest-tile-animated.tile-anim-neon-flicker,
-.linknest-tile-animated.tile-anim-focus-reveal,
-.linknest-tile-animated.tile-anim-perspective-in,
-.linknest-tile-animated.tile-anim-blink,
-.linknest-tile-animated.tile-anim-elastic,
-.linknest-tile-animated.tile-anim-zoom-in-left,
-.linknest-tile-animated.tile-anim-zoom-in-right,
-.linknest-tile-animated.tile-anim-slide-in-down-left,
-.linknest-tile-animated.tile-anim-slide-in-down-right,
-.linknest-tile-animated.tile-anim-slide-in-up-left,
-.linknest-tile-animated.tile-anim-slide-in-up-right,
-.linknest-tile-animated.tile-anim-rotate-in-down-left,
-.linknest-tile-animated.tile-anim-rotate-in-down-right,
-.linknest-tile-animated.tile-anim-rotate-in-up-left,
-.linknest-tile-animated.tile-anim-rotate-in-up-right,
-.linknest-tile-animated.tile-anim-light-speed-in-right,
-.linknest-tile-animated.tile-anim-light-speed-in-left,
-.linknest-tile-animated.tile-anim-swing-in-left,
-.linknest-tile-animated.tile-anim-swing-in-right,
-.linknest-tile-animated.tile-anim-roll-in-bottom,
-.linknest-tile-animated.tile-anim-roll-in-top,
-.linknest-tile-animated.tile-anim-back-in-left,
-.linknest-tile-animated.tile-anim-back-in-right,
-.linknest-tile-animated.tile-anim-stretch-in-hor,
-.linknest-tile-animated.tile-anim-stretch-in-ver,
-.linknest-tile-animated.tile-anim-bounce-in-up,
-.linknest-tile-animated.tile-anim-bounce-in-down,
-.linknest-tile-animated.tile-anim-jelly,
-.linknest-tile-animated.tile-anim-star-in,
-.linknest-tile-animated.tile-anim-flare-in,
-.linknest-tile-animated.tile-anim-beam-in,
-.linknest-tile-animated.tile-anim-teleport,
-.linknest-tile-animated.tile-anim-shimmer-in,
-.linknest-tile-animated.tile-anim-tilt-in,
-.linknest-tile-animated.tile-anim-magnify,
-.linknest-tile-animated.tile-anim-blur-in-up,
-.linknest-tile-animated.tile-anim-blur-in-down,
-.linknest-tile-animated.tile-anim-pop-in,
-.linknest-tile-animated.tile-anim-unfold-in,
-.linknest-tile-animated.tile-anim-fold-in,
-.linknest-tile-animated.tile-anim-slot-in,
-.linknest-tile-animated.tile-anim-newspaper,
-.linknest-tile-animated.tile-anim-carousel-in,
-.linknest-tile-animated.tile-anim-cube-in,
-.linknest-tile-animated.tile-anim-stack-in,
-.linknest-tile-animated.tile-anim-door-in,
-.linknest-tile-animated.tile-anim-ghost-in,
-.linknest-tile-animated.tile-anim-glitch-2,
-.linknest-tile-animated.tile-anim-neon-pulse,
-.linknest-tile-animated.tile-anim-vibrate,
-.linknest-tile-animated.tile-anim-bounce-top,
-.linknest-tile-animated.tile-anim-bounce-bottom,
-.linknest-tile-animated.tile-anim-bounce-left {
-  opacity: 1;
+/* Ensure tiles stay visible after animation completes */
+.linknest-tile-animated[class*="tile-anim-"] {
+  animation-fill-mode: forwards !important;
 }
+
 
 @keyframes tileAnimLiquid {
   0% {
@@ -4072,8 +3983,9 @@ body {
 }
 
 .tile-anim-flutter-in {
-  animation: tileAnimFlutter 0.4s 3 forwards;
+  animation: tileAnimFlutter 0.6s ease-in-out forwards;
 }
+
 
 @keyframes tileAnimVibrateFast {
   0% {
@@ -4093,8 +4005,9 @@ body {
 }
 
 .tile-anim-vibrate-fast {
-  animation: tileAnimVibrateFast 0.05s infinite, tileAnimFadeIn 0.3s forwards;
+  animation: tileAnimVibrateFast 0.3s ease-out forwards;
 }
+
 
 @keyframes tileAnimJiggle {
   0% {
@@ -4184,8 +4097,9 @@ body {
 }
 
 .tile-anim-tremble-in {
-  animation: tileAnimTremble 0.4s infinite, tileAnimFadeIn 0.5s forwards;
+  animation: tileAnimTremble 0.5s ease-out forwards;
 }
+
 
 @keyframes tileAnimThrob {
   0% {
@@ -4257,119 +4171,17 @@ body {
 
 
 
-.linknest-tile-animated.tile-anim-bounce-right,
-.linknest-tile-animated.tile-anim-squish,
-.linknest-tile-animated.tile-anim-slide-tilt,
-.linknest-tile-animated.tile-anim-swirl-in,
-.linknest-tile-animated.tile-anim-blur-perspective,
-.linknest-tile-animated.tile-anim-liquid-in,
-.linknest-tile-animated.tile-anim-smoke-in,
-.linknest-tile-animated.tile-anim-fire-in,
-.linknest-tile-animated.tile-anim-pixel-in,
-.linknest-tile-animated.tile-anim-mosaic-in,
-.linknest-tile-animated.tile-anim-shatter-in,
-.linknest-tile-animated.tile-anim-crack-in,
-.linknest-tile-animated.tile-anim-dissolve-in,
-.linknest-tile-animated.tile-anim-evaporate-in,
-.linknest-tile-animated.tile-anim-crystallize-in,
-.linknest-tile-animated.tile-anim-gravity-in,
-.linknest-tile-animated.tile-anim-magnet-in,
-.linknest-tile-animated.tile-anim-vortex-in,
-.linknest-tile-animated.tile-anim-black-hole-in,
-.linknest-tile-animated.tile-anim-warp-in,
-.linknest-tile-animated.tile-anim-hyper-jump-in,
-.linknest-tile-animated.tile-anim-time-warp-in,
-.linknest-tile-animated.tile-anim-dimension-shift-in,
-.linknest-tile-animated.tile-anim-phase-in,
-.linknest-tile-animated.tile-anim-ghost-fade-in,
-.linknest-tile-animated.tile-anim-neon-flicker-3,
-.linknest-tile-animated.tile-anim-cyber-scan-in,
-.linknest-tile-animated.tile-anim-code-reveal-in,
-.linknest-tile-animated.tile-anim-binary-in,
-.linknest-tile-animated.tile-anim-matrix-in,
-.linknest-tile-animated.tile-anim-data-stream-in,
-.linknest-tile-animated.tile-anim-circuit-in,
-.linknest-tile-animated.tile-anim-pulse-glow-in,
-.linknest-tile-animated.tile-anim-hologram-in,
-.linknest-tile-animated.tile-anim-static-in,
-.linknest-tile-animated.tile-anim-bounce-elastic-up,
-.linknest-tile-animated.tile-anim-bounce-elastic-down,
-.linknest-tile-animated.tile-anim-bounce-elastic-left,
-.linknest-tile-animated.tile-anim-bounce-elastic-right,
-.linknest-tile-animated.tile-anim-spring-in-up,
-.linknest-tile-animated.tile-anim-spring-in-down,
-.linknest-tile-animated.tile-anim-spring-in-left,
-.linknest-tile-animated.tile-anim-spring-in-right,
-.linknest-tile-animated.tile-anim-rubber-band-2,
-.linknest-tile-animated.tile-anim-bungee-in,
-.linknest-tile-animated.tile-anim-slide-rotate-in-tl,
-.linknest-tile-animated.tile-anim-slide-rotate-in-tr,
-.linknest-tile-animated.tile-anim-slide-rotate-in-bl,
-.linknest-tile-animated.tile-anim-slide-rotate-in-br,
-.linknest-tile-animated.tile-anim-zoom-rotate-in,
-.linknest-tile-animated.tile-anim-flip-rotate-in,
-.linknest-tile-animated.tile-anim-swing-rotate-in,
-.linknest-tile-animated.tile-anim-bounce-rotate-in,
-.linknest-tile-animated.tile-anim-roll-rotate-in,
-.linknest-tile-animated.tile-anim-twirl-rotate-in,
-.linknest-tile-animated.tile-anim-split-v-in,
-.linknest-tile-animated.tile-anim-split-h-in,
-.linknest-tile-animated.tile-anim-blind-v-in,
-.linknest-tile-animated.tile-anim-blind-h-in,
-.linknest-tile-animated.tile-anim-checker-in,
-.linknest-tile-animated.tile-anim-diagonal-in,
-.linknest-tile-animated.tile-anim-diamond-in,
-.linknest-tile-animated.tile-anim-circle-in,
-.linknest-tile-animated.tile-anim-square-in,
-.linknest-tile-animated.tile-anim-star-reveal-in,
-.linknest-tile-animated.tile-anim-pop-out-in-2,
-.linknest-tile-animated.tile-anim-expand-in,
-.linknest-tile-animated.tile-anim-contract-reveal-in,
-.linknest-tile-animated.tile-anim-bounce-scale-in,
-.linknest-tile-animated.tile-anim-elastic-scale-in,
-.linknest-tile-animated.tile-anim-swing-scale-in,
-.linknest-tile-animated.tile-anim-roll-scale-in,
-.linknest-tile-animated.tile-anim-twirl-scale-in,
-.linknest-tile-animated.tile-anim-spiral-scale-in,
-.linknest-tile-animated.tile-anim-wave-scale-in,
-.linknest-tile-animated.tile-anim-blur-swipe-up,
-.linknest-tile-animated.tile-anim-blur-swipe-down,
-.linknest-tile-animated.tile-anim-blur-swipe-left,
-.linknest-tile-animated.tile-anim-blur-swipe-right,
-.linknest-tile-animated.tile-anim-focus-swipe-in,
-.linknest-tile-animated.tile-anim-glow-swipe-in,
-.linknest-tile-animated.tile-anim-color-swipe-in,
-.linknest-tile-animated.tile-anim-mask-swipe-in,
-.linknest-tile-animated.tile-anim-gradient-swipe-in,
-.linknest-tile-animated.tile-anim-texture-swipe-in,
-.linknest-tile-animated.tile-anim-skid-up,
-.linknest-tile-animated.tile-anim-skid-down,
-.linknest-tile-animated.tile-anim-skid-left,
-.linknest-tile-animated.tile-anim-skid-right,
-.linknest-tile-animated.tile-anim-drift-in,
-.linknest-tile-animated.tile-anim-brake-in,
-.linknest-tile-animated.tile-anim-accelerate-in,
-.linknest-tile-animated.tile-anim-cruise-in,
-.linknest-tile-animated.tile-anim-jump-in,
-.linknest-tile-animated.tile-anim-dive-in,
-.linknest-tile-animated.tile-anim-heartbeat-2,
-.linknest-tile-animated.tile-anim-breathing-in,
-.linknest-tile-animated.tile-anim-flutter-in,
-.linknest-tile-animated.tile-anim-vibrate-fast,
-.linknest-tile-animated.tile-anim-jiggle-in,
-.linknest-tile-animated.tile-anim-wiggle-in,
-.linknest-tile-animated.tile-anim-tremble-in,
-.linknest-tile-animated.tile-anim-throb-in,
-.linknest-tile-animated.tile-anim-pulse-burst-in,
-.linknest-tile-animated.tile-anim-finale-mega-in {
-  opacity: 1;
-}
+/* End of animated tile declarations */
+
 
 /* Category animations */
 .linknest-category-animated {
   opacity: 0;
   animation: fadeInUp 0.5s ease-out forwards;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
 }
+
 
 /* Tile Decorations */
 .linknest-tile {
@@ -4389,9 +4201,10 @@ body {
   justify-content: center;
   font-size: 24px;
   pointer-events: none;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
-  transition: transform 0.2s ease;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.15));
+  transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
+
 
 .group:hover .linknest-tile[class*="tile-decor-"]::before {
   transform: scale(1.1) rotate(-5deg);
