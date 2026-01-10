@@ -3454,86 +3454,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">Favorite Links</h2>
                 <span className="text-sm text-slate-500 dark:text-slate-400">({favoriteLinks.length})</span>
               </div>
-
-              {/* Monitoring Controls on the Right */}
-              <div className="flex items-center gap-2">
-                {/* Export Button */}
-                <button
-                  onClick={handleExportStats}
-                  className="flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg transition-all shadow-sm hover:shadow-md"
-                  title="Export stats to CSV"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-emerald-500">
-                    <path fillRule="evenodd" d="M3 4.5A1.5 1.5 0 014.5 3h11A1.5 1.5 0 0117 4.5v11a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 013 15.5v-11zM4.5 4.5v11h11v-11h-11z" clipRule="evenodd" />
-                    <path fillRule="evenodd" d="M10 13a.75.75 0 01-.75-.75V7.56l-1.72 1.72a.75.75 0 01-1.06-1.06l3-3a.75.75 0 011.06 0l3 3a.75.75 0 11-1.06 1.06l-1.72-1.72v4.69A.75.75 0 0110 13z" clipRule="evenodd" />
-                  </svg>
-                </button>
-
-                {/* Force Refresh Button */}
-                <button
-                  onClick={handleForceRefresh}
-                  disabled={isCheckingHealth}
-                  className={`flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg transition-all shadow-sm hover:shadow-md disabled:opacity-50 ${isCheckingHealth ? 'animate-spin' : ''}`}
-                  title="Force refresh now"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-blue-500">
-                    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-                    <path d="M21 3v5h-5" />
-                  </svg>
-                </button>
-
-                {/* Auto Refresh Control */}
-                <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-1 shadow-sm">
-                  <div className="relative w-8 h-8 flex items-center justify-center">
-                    <svg className="w-6 h-6 rotate-[-90deg]">
-                      <circle
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        fill="transparent"
-                        className="text-slate-100 dark:text-slate-700"
-                      />
-                      <circle
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        fill="transparent"
-                        strokeDasharray={2 * Math.PI * 10}
-                        strokeDashoffset={isAutoRefreshEnabled ? (2 * Math.PI * 10) * (1 - refreshCountdown / autoRefreshInterval) : (2 * Math.PI * 10)}
-                        className={`${isAutoRefreshEnabled ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'} transition-all duration-1000 ease-linear`}
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                    <button
-                      onClick={() => setIsAutoRefreshEnabled(!isAutoRefreshEnabled)}
-                      className="absolute inset-0 flex items-center justify-center"
-                      title={isAutoRefreshEnabled ? "Disable auto-refresh" : "Enable auto-refresh"}
-                    >
-                      <div className={`w-1.5 h-1.5 rounded-full ${isAutoRefreshEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-600'}`}></div>
-                    </button>
-                  </div>
-
-                  <select
-                    value={autoRefreshInterval}
-                    onChange={(e) => setAutoRefreshInterval(Number(e.target.value))}
-                    disabled={!isAutoRefreshEnabled}
-                    className="bg-transparent text-[10px] font-medium text-slate-600 dark:text-slate-400 border-none focus:ring-0 cursor-pointer disabled:opacity-50 pr-2 pl-0"
-                  >
-                    <option value={10}>10s</option>
-                    <option value={30}>30s</option>
-                    <option value={60}>1m</option>
-                    <option value={180}>3m</option>
-                    <option value={300}>5m</option>
-                  </select>
-                </div>
-              </div>
             </div>
 
-            {/* Sub-row for Sort and Position Controls */}
+            {/* Sub-row for Sort, Position, and Monitoring Controls */}
             <div className="flex items-center gap-4 mb-4">
               {/* Sort Controls */}
               <div className="flex items-center gap-2">
@@ -3580,6 +3503,51 @@ export const TileGrid: React.FC<TileGridProps> = ({
                       <path fillRule="evenodd" d="M10 3a.75.75 0 01.75.75v10.638l3.96-4.158a.75.75 0 111.08 1.04l-5.25 5.5a.75.75 0 01-1.08 0l-5.25-5.5a.75.75 0 111.08-1.04l3.96 4.158V3.75A.75.75 0 0110 3z" clipRule="evenodd" />
                     </svg>
                   </button>
+                </div>
+              </div>
+
+              {/* Monitoring Controls */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportStats}
+                  className="flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg transition-all shadow-sm hover:shadow-md"
+                  title="Export stats to CSV"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-emerald-500">
+                    <path fillRule="evenodd" d="M3 4.5A1.5 1.5 0 014.5 3h11A1.5 1.5 0 0117 4.5v11a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 013 15.5v-11zM4.5 4.5v11h11v-11h-11z" clipRule="evenodd" />
+                    <path fillRule="evenodd" d="M10 13a.75.75 0 01-.75-.75V7.56l-1.72 1.72a.75.75 0 01-1.06-1.06l3-3a.75.75 0 011.06 0l3 3a.75.75 0 11-1.06 1.06l-1.72-1.72v4.69A.75.75 0 0110 13z" clipRule="evenodd" />
+                  </svg>
+                </button>
+
+                <button
+                  onClick={handleForceRefresh}
+                  disabled={isCheckingHealth}
+                  className={`flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg transition-all shadow-sm hover:shadow-md disabled:opacity-50 ${isCheckingHealth ? 'animate-spin' : ''}`}
+                  title="Force refresh now"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-blue-500">
+                    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                    <path d="M21 3v5h-5" />
+                  </svg>
+                </button>
+
+                <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-1 shadow-sm">
+                  <div className="relative w-8 h-8 flex items-center justify-center">
+                    <svg className="w-6 h-6 rotate-[-90deg]">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="transparent" className="text-slate-100 dark:text-slate-700" />
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="transparent" strokeDasharray={2 * Math.PI * 10} strokeDashoffset={isAutoRefreshEnabled ? (2 * Math.PI * 10) * (1 - refreshCountdown / autoRefreshInterval) : (2 * Math.PI * 10)} className={`${isAutoRefreshEnabled ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'} transition-all duration-1000 ease-linear`} strokeLinecap="round" />
+                    </svg>
+                    <button onClick={() => setIsAutoRefreshEnabled(!isAutoRefreshEnabled)} className="absolute inset-0 flex items-center justify-center" title={isAutoRefreshEnabled ? "Disable auto-refresh" : "Enable auto-refresh"}>
+                      <div className={`w-1.5 h-1.5 rounded-full ${isAutoRefreshEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-600'}`}></div>
+                    </button>
+                  </div>
+                  <select value={autoRefreshInterval} onChange={(e) => setAutoRefreshInterval(Number(e.target.value))} disabled={!isAutoRefreshEnabled} className="bg-transparent text-[10px] font-medium text-slate-600 dark:text-slate-400 border-none focus:ring-0 cursor-pointer disabled:opacity-50 pr-2 pl-0">
+                    <option value={10}>10s</option>
+                    <option value={30}>30s</option>
+                    <option value={60}>1m</option>
+                    <option value={180}>3m</option>
+                    <option value={300}>5m</option>
+                  </select>
                 </div>
               </div>
             </div>
@@ -4032,84 +4000,6 @@ export const TileGrid: React.FC<TileGridProps> = ({
                   </svg>
                   <h2 className="text-xl font-bold text-slate-900 dark:text-white">Favorite Links</h2>
                   <span className="text-sm text-slate-500 dark:text-slate-400">({favoriteLinks.length})</span>
-                </div>
-
-                {/* Monitoring Controls */}
-                <div className="flex items-center gap-2">
-                  {/* Export Button */}
-                  <button
-                    onClick={handleExportStats}
-                    className="flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg transition-all shadow-sm hover:shadow-md"
-                    title="Export stats to CSV"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-emerald-500">
-                      <path fillRule="evenodd" d="M3 4.5A1.5 1.5 0 014.5 3h11A1.5 1.5 0 0117 4.5v11a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 013 15.5v-11zM4.5 4.5v11h11v-11h-11z" clipRule="evenodd" />
-                      <path fillRule="evenodd" d="M10 13a.75.75 0 01-.75-.75V7.56l-1.72 1.72a.75.75 0 01-1.06-1.06l3-3a.75.75 0 011.06 0l3 3a.75.75 0 11-1.06 1.06l-1.72-1.72v4.69A.75.75 0 0110 13z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-
-                  {/* Force Refresh Button */}
-                  <button
-                    onClick={handleForceRefresh}
-                    disabled={isCheckingHealth}
-                    className={`flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg transition-all shadow-sm hover:shadow-md disabled:opacity-50 ${isCheckingHealth ? 'animate-spin' : ''}`}
-                    title="Force refresh now"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-blue-500">
-                      <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-                      <path d="M21 3v5h-5" />
-                    </svg>
-                  </button>
-
-                  {/* Auto Refresh Control */}
-                  <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-1 shadow-sm">
-                    {/* Progress Indicator */}
-                    <div className="relative w-8 h-8 flex items-center justify-center">
-                      <svg className="w-6 h-6 rotate-[-90deg]">
-                        <circle
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          fill="transparent"
-                          className="text-slate-100 dark:text-slate-700"
-                        />
-                        <circle
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          fill="transparent"
-                          strokeDasharray={2 * Math.PI * 10}
-                          strokeDashoffset={isAutoRefreshEnabled ? (2 * Math.PI * 10) * (1 - refreshCountdown / autoRefreshInterval) : (2 * Math.PI * 10)}
-                          className={`${isAutoRefreshEnabled ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'} transition-all duration-1000 ease-linear`}
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                      <button
-                        onClick={() => setIsAutoRefreshEnabled(!isAutoRefreshEnabled)}
-                        className="absolute inset-0 flex items-center justify-center"
-                        title={isAutoRefreshEnabled ? "Disable auto-refresh" : "Enable auto-refresh"}
-                      >
-                        <div className={`w-1.5 h-1.5 rounded-full ${isAutoRefreshEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-600'}`}></div>
-                      </button>
-                    </div>
-
-                    <select
-                      value={autoRefreshInterval}
-                      onChange={(e) => setAutoRefreshInterval(Number(e.target.value))}
-                      disabled={!isAutoRefreshEnabled}
-                      className="bg-transparent text-[10px] font-medium text-slate-600 dark:text-slate-400 border-none focus:ring-0 cursor-pointer disabled:opacity-50 pr-2 pl-0"
-                    >
-                      <option value={10}>10s</option>
-                      <option value={30}>30s</option>
-                      <option value={60}>1m</option>
-                      <option value={180}>3m</option>
-                      <option value={300}>5m</option>
-                    </select>
-                  </div>
                 </div>
               </div>
 
