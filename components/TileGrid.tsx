@@ -951,12 +951,15 @@ export const TileGrid: React.FC<TileGridProps> = ({
     e.stopPropagation();
     if (modalRef.current) {
       setIsDragging(true);
-      const rect = modalRef.current.getBoundingClientRect();
+      // Calculate offset from mouse to current modal position
+      // Use the current position from state/ref, not getBoundingClientRect
+      const currentX = modalPositionRef.current.x || 0;
+      const currentY = modalPositionRef.current.y || 0;
+
       dragStartRef.current = {
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top
+        x: e.clientX - currentX,
+        y: e.clientY - currentY
       };
-      modalPositionRef.current = { x: modalPosition.x, y: modalPosition.y };
       modalSizeRef.current = { width: modalSize.width, height: modalSize.height };
     }
   };

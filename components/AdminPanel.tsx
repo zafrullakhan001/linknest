@@ -5256,9 +5256,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         btn.innerText = 'Fetching...';
                         btn.disabled = true;
 
+                        // Flag to track if we've already processed a response
+                        let responseProcessed = false;
+
                         BrowserLauncher.fetchBrowsers(async (response: any) => {
+                          // Ignore subsequent responses (e.g., timeout errors)
+                          if (responseProcessed) {
+                            console.log('Ignoring duplicate/timeout response from extension:', response);
+                            return;
+                          }
+
+                          // Mark as processed immediately
+                          responseProcessed = true;
                           btn.innerText = originalText;
                           btn.disabled = false;
+
                           if (response && response.success && response.browsers && response.browsers.length > 0) {
                             setDetectedBrowsers(response.browsers);
 
