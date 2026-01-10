@@ -291,21 +291,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   // Check extension status when browser tab is active
   useEffect(() => {
     if (activeTab === 'browser') {
-      // Wait a bit for the DOM to be ready
-      setTimeout(() => {
+      // Small delay to ensure script has had time to initialize
+      const checkTimeout = setTimeout(() => {
         const statusDiv = document.getElementById('extension-status-browser');
         if (!statusDiv) return;
 
-        if (typeof (window as any).BrowserLauncher === 'undefined') {
+        const win = window as any;
+        if (typeof win.BrowserLauncher === 'undefined') {
           statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
-          statusDiv.innerHTML = '<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Error:</strong> Browser Launcher Pro integration script not loaded. Please check the script path.</div>';
+          statusDiv.innerHTML = '<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Error:</strong> Browser Launcher Pro integration script not loaded. Please check the script path in index.html.</div>';
           return;
         }
 
         statusDiv.className = 'p-4 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700';
         statusDiv.innerHTML = '<div class="flex items-center gap-2"><svg class="animate-spin h-4 w-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span class="text-sm text-slate-600 dark:text-slate-400">Checking extension availability...</span></div>';
 
-        const BrowserLauncher = (window as any).BrowserLauncher;
+        const BrowserLauncher = win.BrowserLauncher;
 
         // Configure extension ID if provided
         if (settings.browser_extension_id) {
@@ -334,8 +335,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               console.warn('[BrowserLauncher] Background refresh failed:', response.error);
             }
           });
+        } else {
+          // Fallback to static list if fetchBrowsers isn't available
+          const staticBrowsers = BrowserLauncher.getBrowsers();
+          if (staticBrowsers && staticBrowsers.length > 0) {
+            setDetectedBrowsers(staticBrowsers);
+          }
         }
       }, 500);
+
+      return () => clearTimeout(checkTimeout);
     }
   }, [activeTab, settings.browser_extension_id]);
 
@@ -5043,16 +5052,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     const statusDiv = document.getElementById('extension-status-browser');
                     if (!statusDiv) return;
 
-                    if (typeof (window as any).BrowserLauncher === 'undefined') {
+                    const win = window as any;
+                    if (typeof win.BrowserLauncher === 'undefined') {
                       statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
-                      statusDiv.innerHTML = '<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Error:</strong> Browser Launcher Pro integration script not loaded. Please check the script path.</div>';
+                      statusDiv.innerHTML = '<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Error:</strong> Browser Launcher Pro integration script not loaded. Please check the script path in index.html.</div>';
                       return;
                     }
 
                     statusDiv.className = 'p-4 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700';
-                    statusDiv.innerHTML = '<div class="flex items-center gap-2"><svg class="animate-spin h-4 w-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span class="text-sm text-slate-600 dark:text-slate-400">Checking...</span></div>';
+                    statusDiv.innerHTML = '<div class="flex items-center gap-2"><svg class="animate-spin h-4 w-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span class="text-sm text-slate-600 dark:text-slate-400">Checking...</span></div>';
 
-                    const BrowserLauncher = (window as any).BrowserLauncher;
+                    const BrowserLauncher = win.BrowserLauncher;
                     if (settings.browser_extension_id) {
                       BrowserLauncher.setExtensionId(settings.browser_extension_id);
                     }
@@ -5223,32 +5233,40 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (typeof (window as any).BrowserLauncher !== 'undefined') {
-                      const BrowserLauncher = (window as any).BrowserLauncher;
+                  onClick={(e) => {
+                    const win = window as any;
+                    if (typeof win.BrowserLauncher !== 'undefined') {
+                      const BrowserLauncher = win.BrowserLauncher;
+                      if (settings.browser_extension_id) {
+                        BrowserLauncher.setExtensionId(settings.browser_extension_id);
+                      }
 
                       // Try to fetch dynamic browser list first
                       if (BrowserLauncher.fetchBrowsers) {
-                        const btn = (window.event?.target as HTMLButtonElement);
-                        const originalText = btn?.innerText;
-                        if (btn) btn.innerText = 'Fetching...';
+                        const btn = e.currentTarget;
+                        const originalText = btn.innerText;
+                        btn.innerText = 'Fetching...';
+                        btn.disabled = true;
 
                         BrowserLauncher.fetchBrowsers((response: any) => {
-                          if (btn) btn.innerText = originalText;
+                          btn.innerText = originalText;
+                          btn.disabled = false;
                           if (response && response.success && response.browsers && response.browsers.length > 0) {
                             setDetectedBrowsers(response.browsers);
                             alert('Browsers discovered by extension:\n\n' + response.browsers.join('\n'));
                           } else {
-                            alert('No active browsers detected by extension.\n\nError: ' + (response ? response.error : 'No response') + '\n\nIMPORTANT: Please ensure the extension is installed and its background scripts are running.');
+                            const error = response ? response.error : 'No response';
+                            alert(`No browsers detected.\n\nError: ${error}\n\nIMPORTANT: Please ensure the extension is installed and its background scripts are running. If detection fails, try re-checking extension status.`);
                           }
                         });
                       } else {
                         const browsers = BrowserLauncher.getBrowsers();
+                        setDetectedBrowsers(browsers);
                         alert('Extension loaded but fetchBrowsers API not found.\nStatic list: ' + browsers.join(', '));
                       }
                     }
                   }}
-                  className="px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg text-sm font-medium transition-colors"
+                  className="px-4 py-2 bg-slate-600 hover:bg-slate-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
                 >
                   Show Available Browsers
                 </button>
