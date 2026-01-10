@@ -26,7 +26,7 @@ export const databaseService = {
 
     // Get the blob data
     const blob = await response.blob();
-    
+
     // Create download link
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -44,6 +44,7 @@ export const databaseService = {
     imported: {
       users: number;
       tiles: number;
+      tabs: number;
       sections: number;
       links: number;
       settings: number;
@@ -58,7 +59,7 @@ export const databaseService = {
   }> {
     // Read file as text
     const fileText = await file.text();
-    
+
     // Parse JSON
     let data;
     try {

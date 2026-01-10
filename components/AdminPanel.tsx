@@ -462,7 +462,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   useEffect(() => {
     const pendingUserIds = new Set(pendingUsers.map(user => user.id));
     setSelectedUserIds(prev => {
-      const newSelection = new Set(Array.from(prev).filter(id => pendingUserIds.has(id)));
+      const newSelection = new Set((Array.from(prev) as number[]).filter(id => pendingUserIds.has(id)));
       return newSelection.size !== prev.size ? newSelection : prev;
     });
   }, [pendingUsers]);
@@ -613,7 +613,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
     try {
       setBulkProcessing(true);
-      const userIdsArray = Array.from(selectedUserIds);
+      const userIdsArray = Array.from(selectedUserIds) as number[];
       const result = await authService.bulkApproveUsers(userIdsArray);
       await loadData();
       setSelectedUserIds(new Set()); // Clear selection after approval
