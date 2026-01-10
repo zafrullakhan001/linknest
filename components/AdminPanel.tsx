@@ -288,9 +288,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [detectedBrowsers, setDetectedBrowsers] = useState<string[]>([]);
 
-  // Check extension status when browser tab is active
+  // Load saved browsers from database and check extension status when browser tab is active
   useEffect(() => {
     if (activeTab === 'browser') {
+      // Load saved browsers from database
+      const loadSavedBrowsers = async () => {
+        try {
+          const apiBase = resolveApiBase();
+          const response = await fetch(`${apiBase}/browsers`, {
+            credentials: 'include',
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.browsers && data.browsers.length > 0) {
+              const browserIds = data.browsers.map((b: any) => b.browser_id);
+              setDetectedBrowsers(browserIds);
+              // Auto-select first browser if default is still set
+              if (testBrowser === 'chrome-stable' && browserIds.length > 0) {
+                setTestBrowser(browserIds[0]);
+              }
+            }
+          }
+        } catch (err) {
+          console.error('Failed to load saved browsers:', err);
+        }
+      };
+
+      loadSavedBrowsers();
+
       // Small delay to ensure script has had time to initialize
       const checkTimeout = setTimeout(() => {
         const statusDiv = document.getElementById('extension-status-browser');
@@ -323,25 +348,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           }
         }, 5, 1000);
 
-        if (BrowserLauncher.fetchBrowsers) {
-          BrowserLauncher.fetchBrowsers((response: any) => {
-            if (response && response.success && response.browsers && response.browsers.length > 0) {
-              setDetectedBrowsers(response.browsers);
-              // Auto-select first detected browser if default is still set
-              if (testBrowser === 'chrome-stable') {
-                setTestBrowser(response.browsers[0]);
-              }
-            } else if (response && response.success === false) {
-              console.warn('[BrowserLauncher] Background refresh failed:', response.error);
-            }
-          });
-        } else {
-          // Fallback to static list if fetchBrowsers isn't available
-          const staticBrowsers = BrowserLauncher.getBrowsers();
-          if (staticBrowsers && staticBrowsers.length > 0) {
-            setDetectedBrowsers(staticBrowsers);
-          }
-        }
+        // Note: We no longer automatically fetch browsers here
+        // Browsers will be loaded from database and only refreshed when admin clicks the button
       }, 500);
 
       return () => clearTimeout(checkTimeout);
@@ -5248,12 +5256,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         btn.innerText = 'Fetching...';
                         btn.disabled = true;
 
-                        BrowserLauncher.fetchBrowsers((response: any) => {
+                        BrowserLauncher.fetchBrowsers(async (response: any) => {
                           btn.innerText = originalText;
                           btn.disabled = false;
                           if (response && response.success && response.browsers && response.browsers.length > 0) {
                             setDetectedBrowsers(response.browsers);
-                            alert('Browsers discovered by extension:\n\n' + response.browsers.join('\n'));
+
+                            // Save browser list to database
+                            try {
+                              const apiBase = resolveApiBase();
+                              const saveResponse = await fetch(`${apiBase}/browsers`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include',
+                                body: JSON.stringify({ browsers: response.browsers })
+                              });
+
+                              if (saveResponse.ok) {
+                                const saveData = await saveResponse.json();
+                                alert(`Browsers discovered and saved to database:\n\n${response.browsers.join('\n')}\n\nTotal: ${saveData.count} browsers saved`);
+                              } else {
+                                alert('Browsers discovered by extension:\n\n' + response.browsers.join('\n') + '\n\nNote: Failed to save to database');
+                              }
+                            } catch (err) {
+                              console.error('Failed to save browsers to database:', err);
+                              alert('Browsers discovered by extension:\n\n' + response.browsers.join('\n') + '\n\nNote: Failed to save to database');
+                            }
                           } else {
                             const error = response ? response.error : 'No response';
                             alert(`No browsers detected.\n\nError: ${error}\n\nIMPORTANT: Please ensure the extension is installed and its background scripts are running. If detection fails, try re-checking extension status.`);
@@ -5269,6 +5297,65 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className="px-4 py-2 bg-slate-600 hover:bg-slate-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
                 >
                   Show Available Browsers
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const apiBase = resolveApiBase();
+                      const response = await fetch(`${apiBase}/browsers`, {
+                        credentials: 'include',
+                      });
+                      if (response.ok) {
+                        const data = await response.json();
+                        if (data.success && data.browsers && data.browsers.length > 0) {
+                          const browserList = data.browsers.map((b: any) => `• ${b.browser_name} (${b.browser_id})`).join('\n');
+                          const lastUpdated = data.metadata?.last_updated
+                            ? new Date(data.metadata.last_updated * 1000).toLocaleString()
+                            : 'Unknown';
+                          alert(`Saved Browsers in Database:\n\n${browserList}\n\nTotal: ${data.browsers.length} browsers\nLast Updated: ${lastUpdated}`);
+                        } else {
+                          alert('No browsers found in database.\n\nClick "Show Available Browsers" to fetch and save the browser list.');
+                        }
+                      } else {
+                        alert('Failed to load saved browsers from database.');
+                      }
+                    } catch (err) {
+                      console.error('Failed to load saved browsers:', err);
+                      alert('Error loading saved browsers from database.');
+                    }
+                  }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  View Saved Browsers
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!confirm('Are you sure you want to clear the browser cache?\n\nThis will delete all saved browsers from the database. You will need to click "Show Available Browsers" again to refresh the list.')) {
+                      return;
+                    }
+                    try {
+                      const apiBase = resolveApiBase();
+                      const response = await fetch(`${apiBase}/browsers`, {
+                        method: 'DELETE',
+                        credentials: 'include',
+                      });
+                      if (response.ok) {
+                        const data = await response.json();
+                        setDetectedBrowsers([]);
+                        alert('✓ Browser cache cleared successfully!\n\nClick "Show Available Browsers" to refresh the list.');
+                      } else {
+                        alert('Failed to clear browser cache.');
+                      }
+                    } catch (err) {
+                      console.error('Failed to clear browser cache:', err);
+                      alert('Error clearing browser cache.');
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Clear Browser Cache
                 </button>
               </div>
 

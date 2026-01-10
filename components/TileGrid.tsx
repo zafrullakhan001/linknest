@@ -12,7 +12,7 @@ import {
 import { authService, UserListItem } from '../services/authService';
 import { useAuth } from '../contexts/AuthContext';
 import { userPreferencesService } from '../services/userPreferencesService';
-import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite } from '../services/publicFavoritesService';
+import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite, clearPublicLinkFavorites } from '../services/publicFavoritesService';
 import { linkHealthService } from '../services/linkHealthService';
 import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, getTileDecorationClass, TileAnimation, TileDecoration } from './TileAnimationSelector';
 
@@ -2935,25 +2935,30 @@ export const TileGrid: React.FC<TileGridProps> = ({
   }, [activeTab, tiles, onUpdateTiles]);
 
   const handleClearAllPublicFavorites = useCallback(() => {
-    const favoritesCount = publicFavorites.length;
-    if (favoritesCount === 0) {
+    const tileCount = publicFavorites.length;
+    const linkCount = favoriteLinks.length;
+    const totalCount = tileCount + linkCount;
+
+    if (totalCount === 0) {
       alert('No favorites to remove.');
       return;
     }
 
-    const confirmMessage = `Are you sure you want to remove all ${favoritesCount} favorite(s)? This action cannot be undone.`;
+    const confirmMessage = `Are you sure you want to remove all ${totalCount} favorite(s)? This action will remove both favorite spaces and favorite links. This cannot be undone.`;
     if (window.confirm(confirmMessage)) {
       try {
         clearPublicFavorites();
-        // Update state immediately
+        clearPublicLinkFavorites();
+        // Update states immediately
         setPublicFavorites([]);
-        alert(`Successfully removed all ${favoritesCount} favorite(s).`);
+        setFavoriteLinks([]);
+        alert(`Successfully removed all ${totalCount} favorite(s).`);
       } catch (error) {
         console.error('Failed to clear public favorites:', error);
         alert('Failed to clear favorites. Please try again.');
       }
     }
-  }, [publicFavorites]);
+  }, [publicFavorites, favoriteLinks]);
 
   // Helper function to check if all tiles in a category are favorited
   const isCategoryFavorited = useCallback((categoryName: string): boolean => {

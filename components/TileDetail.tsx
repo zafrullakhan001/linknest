@@ -505,44 +505,42 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     }, [isEditing, isAuthenticated, tile.canEdit]);
 
-    // Load available browsers from BrowserLauncher API when feature is enabled
+    // Load available browsers from database when feature is enabled
     useEffect(() => {
         if (settings.browser_specific_links_enabled === '1') {
-            // Wait for BrowserLauncher to be available (it loads asynchronously)
-            const loadBrowsers = (retries = 0) => {
-                if (typeof (window as any).BrowserLauncher !== 'undefined') {
-                    try {
-                        const BrowserLauncher = (window as any).BrowserLauncher;
+            const loadBrowsersFromDatabase = async () => {
+                try {
+                    const API_BASE = (import.meta as any).env?.VITE_API_BASE || '/api';
+                    const response = await fetch(`${API_BASE}/browsers`, {
+                        credentials: 'include',
+                    });
 
-                        if (BrowserLauncher.fetchBrowsers) {
-                            console.log('Fetching dynamic browser list from extension...');
-                            BrowserLauncher.fetchBrowsers((response: any) => {
-                                if (response && response.success && response.browsers && response.browsers.length > 0) {
-                                    console.log('Received dynamic browser list:', response.browsers);
-                                    setAvailableBrowsers(response.browsers);
-                                } else if (response && response.success === false) {
-                                    console.warn('Dynamic fetch failed:', response.error);
-                                }
-                            });
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.success && data.browsers && data.browsers.length > 0) {
+                            const browserIds = data.browsers.map((b: any) => b.browser_id);
+                            console.log('Loaded browsers from database:', browserIds);
+                            setAvailableBrowsers(browserIds);
                         } else {
-                            const browsers = BrowserLauncher.getBrowsers();
-                            if (browsers && browsers.length > 0) {
-                                setAvailableBrowsers(browsers);
+                            console.log('No browsers found in database, using fallback');
+                            // Fallback to BrowserLauncher static list if database is empty
+                            if (typeof (window as any).BrowserLauncher !== 'undefined') {
+                                const BrowserLauncher = (window as any).BrowserLauncher;
+                                const browsers = BrowserLauncher.getBrowsers();
+                                if (browsers && browsers.length > 0) {
+                                    setAvailableBrowsers(browsers);
+                                }
                             }
                         }
-                    } catch (error) {
-                        console.error('Failed to load available browsers:', error);
+                    } else {
+                        console.warn('Failed to load browsers from database');
                     }
-                } else if (retries < 10) {
-                    // Retry after a short delay if BrowserLauncher is not yet available (max 10 retries = 5 seconds)
-                    setTimeout(() => loadBrowsers(retries + 1), 500);
-                } else {
-                    console.warn('BrowserLauncher not available after retries');
+                } catch (error) {
+                    console.error('Failed to load browsers from database:', error);
                 }
             };
 
-            // Start loading browsers
-            loadBrowsers();
+            loadBrowsersFromDatabase();
         } else {
             setAvailableBrowsers([]);
         }

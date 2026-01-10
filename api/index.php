@@ -97,6 +97,9 @@ if (empty($path) || $path === '/') {
     error_log("api/index.php: Setting PATH_INFO to: " . $_SERVER['PATH_INFO']);
     error_log("api/index.php: Requiring clone.php");
     require __DIR__ . '/clone.php';
+} elseif (strpos($path, '/browsers') === 0) {
+    $_SERVER['PATH_INFO'] = substr($path, 9); // Remove '/browsers'
+    require __DIR__ . '/browsers.php';
 } elseif (strpos($path, '/uploads') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 8); // Remove '/uploads'
     require __DIR__ . '/uploads.php';
