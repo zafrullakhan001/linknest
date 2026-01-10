@@ -513,30 +513,31 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 if (typeof (window as any).BrowserLauncher !== 'undefined') {
                     try {
                         const BrowserLauncher = (window as any).BrowserLauncher;
-                        const browsers = BrowserLauncher.getBrowsers();
-                        if (browsers && browsers.length > 0) {
-                            console.log('Loaded browsers from API:', browsers);
-                            setAvailableBrowsers(browsers);
+
+                        if (BrowserLauncher.fetchBrowsers) {
+                            console.log('Fetching dynamic browser list from extension...');
+                            BrowserLauncher.fetchBrowsers((response: any) => {
+                                if (response && response.success && response.browsers && response.browsers.length > 0) {
+                                    console.log('Received dynamic browser list:', response.browsers);
+                                    setAvailableBrowsers(response.browsers);
+                                } else if (response && response.success === false) {
+                                    console.warn('Dynamic fetch failed:', response.error);
+                                }
+                            });
                         } else {
-                            // Fallback to default list if empty
-                            const fallbackBrowsers = ['chrome-stable', 'chrome-beta', 'chrome-dev', 'edge-stable', 'edge-beta', 'edge-dev', 'firefox-wsl', 'chrome-stable-wsl', 'edge-stable-wsl', 'chrome-beta-wsl', 'edge-beta-wsl', 'chrome-dev-wsl', 'edge-dev-wsl', 'opera-wsl', 'brave-wsl'];
-                            console.log('Browser API returned empty, using fallback:', fallbackBrowsers);
-                            setAvailableBrowsers(fallbackBrowsers);
+                            const browsers = BrowserLauncher.getBrowsers();
+                            if (browsers && browsers.length > 0) {
+                                setAvailableBrowsers(browsers);
+                            }
                         }
                     } catch (error) {
                         console.error('Failed to load available browsers:', error);
-                        // Fallback to default list if API fails
-                        const fallbackBrowsers = ['chrome-stable', 'chrome-beta', 'chrome-dev', 'edge-stable', 'edge-beta', 'edge-dev', 'firefox-wsl', 'chrome-stable-wsl', 'edge-stable-wsl', 'chrome-beta-wsl', 'edge-beta-wsl', 'chrome-dev-wsl', 'edge-dev-wsl', 'opera-wsl', 'brave-wsl'];
-                        setAvailableBrowsers(fallbackBrowsers);
                     }
                 } else if (retries < 10) {
                     // Retry after a short delay if BrowserLauncher is not yet available (max 10 retries = 5 seconds)
                     setTimeout(() => loadBrowsers(retries + 1), 500);
                 } else {
-                    console.warn('BrowserLauncher not available after retries, using fallback list');
-                    // Fallback to default list if BrowserLauncher never becomes available
-                    const fallbackBrowsers = ['chrome-stable', 'chrome-beta', 'chrome-dev', 'edge-stable', 'edge-beta', 'edge-dev', 'firefox-wsl', 'chrome-stable-wsl', 'edge-stable-wsl', 'chrome-beta-wsl', 'edge-beta-wsl', 'chrome-dev-wsl', 'edge-dev-wsl', 'opera-wsl', 'brave-wsl'];
-                    setAvailableBrowsers(fallbackBrowsers);
+                    console.warn('BrowserLauncher not available after retries');
                 }
             };
 

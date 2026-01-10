@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -25,7 +26,7 @@
             margin: 0 auto;
             background: white;
             border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
             padding: 40px;
         }
 
@@ -279,6 +280,7 @@
     <!-- Include the Browser Launcher Pro integration script -->
     <script src="browser-launcher-integration.js"></script>
 </head>
+
 <body>
     <div class="container">
         <h1>🚀 Browser Launcher Pro</h1>
@@ -288,7 +290,7 @@
         <div id="extension-status" class="status warning">
             <strong>Status:</strong> Checking extension availability...
         </div>
-        
+
         <!-- Manual Test Button -->
         <div style="text-align: center; margin-bottom: 20px;">
             <button class="btn btn-secondary" onclick="checkExtensionStatus()" style="margin-right: 10px;">
@@ -302,8 +304,9 @@
         <!-- Section 1: Quick Links with Data Attributes -->
         <div class="section">
             <h2>📋 Method 1: Quick Links (Data Attributes)</h2>
-            <p>Simply add <code>data-browser</code> attribute to your links. Click any link below to see it open in the specified browser!</p>
-            
+            <p>Simply add <code>data-browser</code> attribute to your links. Click any link below to see it open in the
+                specified browser!</p>
+
             <div class="link-grid">
                 <div class="link-card">
                     <a href="https://github.com" data-browser="chrome-stable">GitHub</a>
@@ -340,18 +343,20 @@
                     <p>Open in Edge Stable</p>
                     <span class="browser-badge edge">Edge Stable</span>
                 </div>
-                
+
                 <div class="link-card">
-                    <a href="https://example.com" data-browser="chrome-stable" data-no-fallback="true">Example (No Fallback)</a>
+                    <a href="https://example.com" data-browser="chrome-stable" data-no-fallback="true">Example (No
+                        Fallback)</a>
                     <p>Open in Chrome - won't fallback to main browser</p>
                     <span class="browser-badge chrome">Chrome Stable</span>
                 </div>
             </div>
 
             <div class="info-box">
-                <strong>How it works:</strong> Just add <code>data-browser="browser-id"</code> to any link. 
+                <strong>How it works:</strong> Just add <code>data-browser="browser-id"</code> to any link.
                 The script automatically intercepts clicks and opens them in the specified browser.<br><br>
-                <strong>Disable fallback:</strong> Add <code>data-no-fallback="true"</code> to prevent the link from opening in the main browser if the extension times out.
+                <strong>Disable fallback:</strong> Add <code>data-no-fallback="true"</code> to prevent the link from
+                opening in the main browser if the extension times out.
             </div>
         </div>
 
@@ -479,7 +484,7 @@ console.log('Available browsers:', browsers);
         <div class="section">
             <h2>🔍 Available Browser IDs</h2>
             <p>Use these browser IDs in your <code>data-browser</code> attributes or JavaScript API calls:</p>
-            
+
             <div class="info-box">
                 <strong>Windows Local:</strong><br>
                 chrome-stable, chrome-beta, chrome-dev<br>
@@ -488,7 +493,10 @@ console.log('Available browsers:', browsers);
                 <strong>WSL:</strong><br>
                 chrome-stable-wsl, chrome-beta-wsl, chrome-dev-wsl<br>
                 edge-stable-wsl, edge-beta-wsl, edge-dev-wsl<br>
-                firefox-wsl, opera-wsl, brave-wsl
+
+                firefox-wsl, opera-wsl, brave-wsl<br><br>
+                <strong>Custom:</strong><br>
+                comet, vivaldi, duckduckgo
             </div>
         </div>
 
@@ -498,16 +506,20 @@ console.log('Available browsers:', browsers);
             <div class="info-box">
                 <strong>If extension is not detected:</strong>
                 <ol style="margin-top: 10px; padding-left: 20px;">
-                    <li><strong>Reload the extension:</strong> Go to <code>chrome://extensions</code> or <code>edge://extensions</code>, find "Browser Launcher Pro", and click the reload button</li>
+                    <li><strong>Reload the extension:</strong> Go to <code>chrome://extensions</code> or
+                        <code>edge://extensions</code>, find "Browser Launcher Pro", and click the reload button
+                    </li>
                     <li><strong>Refresh this page:</strong> Press F5 or Ctrl+R to reload</li>
-                    <li><strong>Check file protocol:</strong> If opening via <code>file://</code>, content scripts may not load. Try:
+                    <li><strong>Check file protocol:</strong> If opening via <code>file://</code>, content scripts may
+                        not load. Try:
                         <ul style="margin-top: 5px;">
                             <li>Use a local HTTP server (e.g., Python: <code>python -m http.server 8000</code>)</li>
                             <li>Or test on a hosted page</li>
                         </ul>
                     </li>
                     <li><strong>Check browser console:</strong> Press F12 and look for errors</li>
-                    <li><strong>Verify extension is enabled:</strong> Make sure the extension toggle is ON in extensions page</li>
+                    <li><strong>Verify extension is enabled:</strong> Make sure the extension toggle is ON in extensions
+                        page</li>
                 </ol>
             </div>
         </div>
@@ -521,25 +533,25 @@ console.log('Available browsers:', browsers);
 
     <script>
         // Check extension status on page load
-        window.addEventListener('load', function() {
+        window.addEventListener('load', function () {
             checkExtensionStatus();
         });
 
         function checkExtensionStatus() {
             const statusDiv = document.getElementById('extension-status');
-            
+
             if (typeof BrowserLauncher === 'undefined') {
                 statusDiv.className = 'status warning';
                 statusDiv.innerHTML = '<strong>⚠ Error:</strong> Browser Launcher Pro integration script not loaded. Please check the script path.';
                 return;
             }
-            
+
             // Show checking status
             statusDiv.className = 'status';
             statusDiv.innerHTML = '<strong>Checking...</strong> Verifying extension availability...';
-            
+
             // Use the improved availability check with more retries
-            BrowserLauncher.checkAvailability(function(available, message) {
+            BrowserLauncher.checkAvailability(function (available, message) {
                 if (available) {
                     statusDiv.className = 'status success';
                     statusDiv.innerHTML = '<strong>✓ Extension Available:</strong> Browser Launcher Pro is ready! You can use all features. <br><small>Extension ID: ' + (BrowserLauncher.extensionId || 'Auto-detected') + ' | ' + message + '</small>';
@@ -552,7 +564,7 @@ console.log('Available browsers:', browsers);
 
         // Example functions for JavaScript API
         function openGitHubInChrome() {
-            BrowserLauncher.open('https://github.com', 'chrome-stable', {}, function(response) {
+            BrowserLauncher.open('https://github.com', 'chrome-stable', {}, function (response) {
                 if (response.success) {
                     alert('✓ Opening GitHub in Chrome Stable!');
                 } else {
@@ -562,7 +574,7 @@ console.log('Available browsers:', browsers);
         }
 
         function openMicrosoftInEdge() {
-            BrowserLauncher.open('https://microsoft.com', 'edge-stable', {}, function(response) {
+            BrowserLauncher.open('https://microsoft.com', 'edge-stable', {}, function (response) {
                 if (response.success) {
                     alert('✓ Opening Microsoft in Edge Stable!');
                 } else {
@@ -572,7 +584,7 @@ console.log('Available browsers:', browsers);
         }
 
         function openGoogleInChromeBeta() {
-            BrowserLauncher.open('https://google.com', 'chrome-beta', {}, function(response) {
+            BrowserLauncher.open('https://google.com', 'chrome-beta', {}, function (response) {
                 if (response.success) {
                     alert('✓ Opening Google in Chrome Beta!');
                 } else {
@@ -591,10 +603,10 @@ console.log('Available browsers:', browsers);
             const statusDiv = document.getElementById('extension-status');
             statusDiv.className = 'status';
             statusDiv.innerHTML = '<strong>Testing...</strong> Attempting to open a test link...';
-            
+
             // Try to open a test URL
             if (typeof BrowserLauncher !== 'undefined') {
-                BrowserLauncher.open('https://www.google.com', 'chrome-stable', {}, function(response) {
+                BrowserLauncher.open('https://www.google.com', 'chrome-stable', {}, function (response) {
                     if (response && response.success) {
                         statusDiv.className = 'status success';
                         statusDiv.innerHTML = '<strong>✓ Test Successful!</strong> Extension is working! The link should have opened in Chrome.';
@@ -627,7 +639,7 @@ console.log('Available browsers:', browsers);
             resultDiv.style.display = 'block';
 
             // Disable fallback for test area to prevent double-opening
-            BrowserLauncher.open(url, browser, { fallback: false }, function(response) {
+            BrowserLauncher.open(url, browser, { fallback: false }, function (response) {
                 if (response && response.success !== false) {
                     resultDiv.className = 'result-box success';
                     const message = response.message || 'Browser launch initiated';
@@ -641,14 +653,14 @@ console.log('Available browsers:', browsers);
 
         // Enable debug mode for demonstration
         if (typeof BrowserLauncher !== 'undefined') {
-            BrowserLauncher.configure({ 
+            BrowserLauncher.configure({
                 debug: true,
                 responseTimeout: 15000, // 15 seconds timeout
                 fallbackToNormalNavigation: true // Can be set to false to disable global fallback
             });
-            
+
             // Also listen for the extension ready event
-            window.addEventListener('BrowserLauncherProReady', function(event) {
+            window.addEventListener('BrowserLauncherProReady', function (event) {
                 console.log('Browser Launcher Pro extension ready!', event.detail);
                 // Re-check status when extension becomes ready
                 setTimeout(checkExtensionStatus, 500);
@@ -656,5 +668,5 @@ console.log('Available browsers:', browsers);
         }
     </script>
 </body>
-</html>
 
+</html>

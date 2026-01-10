@@ -1,18 +1,18 @@
-chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
+chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
   if (request.action === "getSelectedText") {
-    sendResponse({selectedText: window.getSelection().toString()});
+    sendResponse({ selectedText: window.getSelection().toString() });
   }
 });
 
 // Signal to the page that the extension content script is loaded
-(function() {
+(function () {
   // Inject a marker that the integration script can detect
   if (typeof window !== 'undefined') {
     window.BrowserLauncherProExtension = {
       available: true,
       version: '3.0'
     };
-    
+
     // Also dispatch a custom event
     window.dispatchEvent(new CustomEvent('BrowserLauncherProReady', {
       detail: { version: '3.0' }
@@ -21,7 +21,7 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
 })();
 
 // Listen for messages from third-party landing pages
-window.addEventListener('message', function(event) {
+window.addEventListener('message', function (event) {
   // Security: Only accept messages with the expected type
   if (event.data && event.data.type === 'BROWSER_LAUNCHER_OPEN') {
     const { url, browserId, timestamp } = event.data;
@@ -31,10 +31,10 @@ window.addEventListener('message', function(event) {
       new URL(url);
     } catch (e) {
       console.error('Invalid URL received:', url);
-      sendResponseToPage({ 
-        success: false, 
+      sendResponseToPage({
+        success: false,
         error: 'Invalid URL',
-        timestamp: timestamp 
+        timestamp: timestamp
       });
       return;
     }
@@ -66,7 +66,7 @@ window.addEventListener('message', function(event) {
       }
     });
   }
-  
+
   // Handle extension availability check
   if (event.data && event.data.type === 'BROWSER_LAUNCHER_CHECK') {
     window.postMessage({
@@ -75,6 +75,29 @@ window.addEventListener('message', function(event) {
       version: '3.0',
       timestamp: event.data.timestamp
     }, '*');
+  }
+
+  // Handle get browsers list request
+  if (event.data && event.data.type === 'BROWSER_LAUNCHER_GET_BROWSERS') {
+    const timestamp = event.data.timestamp;
+    chrome.runtime.sendMessage({ action: 'getBrowsers' }, (response) => {
+      if (response && response.success) {
+        window.postMessage({
+          type: 'BROWSER_LAUNCHER_BROWSERS_LIST',
+          browsers: response.browsers,
+          timestamp: timestamp,
+          success: true
+        }, '*');
+      } else {
+        window.postMessage({
+          type: 'BROWSER_LAUNCHER_BROWSERS_LIST',
+          browsers: [],
+          error: response ? response.error : 'Failed to fetch browsers',
+          timestamp: timestamp,
+          success: false
+        }, '*');
+      }
+    });
   }
 });
 

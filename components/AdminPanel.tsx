@@ -23,7 +23,7 @@ function resolveApiBase(): string {
   // Fallback: dynamically detect base path from current location
   if (typeof window !== 'undefined') {
     const path = window.location.pathname || '';
-    
+
     // Extract base path (everything before the last segment or root)
     // Examples:
     // /linknest/ -> /linknest/api
@@ -112,26 +112,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [ldapTestResult, setLdapTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [ldapTestUser, setLdapTestUser] = useState('');
   const [ldapTestPassword, setLdapTestPassword] = useState('');
-  
+
   // Ref to store bind password for immediate access (avoids React state timing issues)
   const ldapBindPasswordRef = useRef<string>('');
 
   // Add User modal state
   const [addUserModal, setAddUserModal] = useState(false);
   const [addUserType, setAddUserType] = useState<'local' | 'ldap'>('local');
-  
+
   // Local user form state
   const [localUsername, setLocalUsername] = useState('');
   const [localEmail, setLocalEmail] = useState('');
   const [localPassword, setLocalPassword] = useState('');
-  
+
   // LDAP user search state
   const [ldapSearchTerm, setLdapSearchTerm] = useState('');
   const [ldapSearchResults, setLdapSearchResults] = useState<Array<{ username: string; email: string; displayName: string; dn: string }>>([]);
   const [ldapSearchLoading, setLdapSearchLoading] = useState(false);
   const [selectedLdapUser, setSelectedLdapUser] = useState<{ username: string; email: string; displayName: string; dn: string } | null>(null);
   const [addUserLoading, setAddUserLoading] = useState(false);
-  
+
   // Bulk import state
   const [bulkImportMode, setBulkImportMode] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -163,7 +163,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [cloneLoading, setCloneLoading] = useState(false);
   const [cloneProgress, setCloneProgress] = useState(0);
   const [cloneStatus, setCloneStatus] = useState<string | null>(null);
-  const [cloneLogs, setCloneLogs] = useState<Array<{time: string; message: string}>>([]);
+  const [cloneLogs, setCloneLogs] = useState<Array<{ time: string; message: string }>>([]);
   const [currentCloneId, setCurrentCloneId] = useState<number | null>(null);
   const [clonesList, setClonesList] = useState<Array<{
     id: number;
@@ -180,7 +180,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     copyDatabase: boolean;
   }>>([]);
   const [clonesLoading, setClonesLoading] = useState(false);
-  
+
   // Clone edit modal state
   const [editCloneModal, setEditCloneModal] = useState<{
     open: boolean;
@@ -197,7 +197,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [editCloneLoading, setEditCloneLoading] = useState(false);
   const [deleteCloneLoading, setDeleteCloneLoading] = useState<number | null>(null);
   const [rerunCloneLoading, setRerunCloneLoading] = useState<number | null>(null);
-  
+
   // Prechecks state
   const [prechecksLoading, setPrechecksLoading] = useState(false);
   const [prechecksResults, setPrechecksResults] = useState<{
@@ -286,6 +286,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [testUrl, setTestUrl] = useState('https://github.com');
   const [testBrowser, setTestBrowser] = useState('chrome-stable');
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [detectedBrowsers, setDetectedBrowsers] = useState<string[]>([]);
 
   // Check extension status when browser tab is active
   useEffect(() => {
@@ -305,7 +306,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         statusDiv.innerHTML = '<div class="flex items-center gap-2"><svg class="animate-spin h-4 w-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span class="text-sm text-slate-600 dark:text-slate-400">Checking extension availability...</span></div>';
 
         const BrowserLauncher = (window as any).BrowserLauncher;
-        
+
         // Configure extension ID if provided
         if (settings.browser_extension_id) {
           BrowserLauncher.setExtensionId(settings.browser_extension_id);
@@ -320,6 +321,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             statusDiv.innerHTML = `<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Extension Status:</strong> ${message}<br><small><strong>Tips:</strong><br>1. Make sure Browser Launcher Pro extension is installed<br>2. Go to chrome://extensions and reload the extension<br>3. Refresh this page</small></div>`;
           }
         }, 5, 1000);
+
+        if (BrowserLauncher.fetchBrowsers) {
+          BrowserLauncher.fetchBrowsers((response: any) => {
+            if (response && response.success && response.browsers && response.browsers.length > 0) {
+              setDetectedBrowsers(response.browsers);
+              // Auto-select first detected browser if default is still set
+              if (testBrowser === 'chrome-stable') {
+                setTestBrowser(response.browsers[0]);
+              }
+            } else if (response && response.success === false) {
+              console.warn('[BrowserLauncher] Background refresh failed:', response.error);
+            }
+          });
+        }
       }, 500);
     }
   }, [activeTab, settings.browser_extension_id]);
@@ -374,13 +389,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             const data = await response.json();
             const step = data.step || 'running';
             const progress = data.progress || 0;
-            
+
             setCloneProgress(progress);
             setCloneStatus(step);
             if (data.logs && Array.isArray(data.logs)) {
               setCloneLogs(data.logs);
             }
-            
+
             // Check if clone is complete or failed
             if (step === 'complete' || step === 'error') {
               // Clear the current clone tracking
@@ -410,7 +425,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       }
     }
   }, [currentCloneId]);
-  
+
   // Also check clones list to see if current clone is completed
   useEffect(() => {
     if (currentCloneId && clonesList.length > 0) {
@@ -512,7 +527,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       const existingPerm = permissions.find(
         p => p.userId === permissionForm.userId && p.tileId === permissionForm.tileId
       );
-      
+
       if (existingPerm) {
         // Update existing permission
         await accessService.updatePermission(
@@ -1119,185 +1134,184 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               </div>
               <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
                 <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">User</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Email</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Registered</th>
-                      <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                    {allUsers.map((user) => (
-                      <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-colors">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center gap-3">
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${user.is_admin
-                              ? 'bg-gradient-to-br from-amber-500 to-orange-600'
-                              : 'bg-gradient-to-br from-brand-500 to-brand-600'
-                              }`}>
-                              {user.username.charAt(0).toUpperCase()}
-                            </div>
-                            <div>
-                              <span className="font-medium text-slate-900 dark:text-white">{user.username}</span>
-                              <div className="flex items-center gap-2 mt-1">
-                                {user.is_admin && (
-                                  <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-semibold">
-                                    Admin
-                                  </span>
-                                )}
-                                {user.auth_source === 'ldap' ? (
-                                  <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs font-semibold">
-                                    LDAP
-                                  </span>
-                                ) : (
-                                  <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold">
-                                    Local
-                                  </span>
-                                )}
+                  <table className="w-full">
+                    <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">User</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Email</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Registered</th>
+                        <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                      {allUsers.map((user) => (
+                        <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${user.is_admin
+                                ? 'bg-gradient-to-br from-amber-500 to-orange-600'
+                                : 'bg-gradient-to-br from-brand-500 to-brand-600'
+                                }`}>
+                                {user.username.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <span className="font-medium text-slate-900 dark:text-white">{user.username}</span>
+                                <div className="flex items-center gap-2 mt-1">
+                                  {user.is_admin && (
+                                    <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-semibold">
+                                      Admin
+                                    </span>
+                                  )}
+                                  {user.auth_source === 'ldap' ? (
+                                    <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs font-semibold">
+                                      LDAP
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold">
+                                      Local
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">
-                          {user.email}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          {user.is_approved ? (
-                            <span className="px-2 py-1 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-semibold">
-                              Approved
-                            </span>
-                          ) : (
-                            <span className="px-2 py-1 rounded-full bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 text-xs font-semibold">
-                              Pending
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-500">
-                          {formatDate(user.created_at)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={async () => {
-                                try {
-                                  setProcessing(user.id);
-                                  setError('');
-                                  const result = await authService.toggleAdmin(user.id);
-                                  // Update the user in the local state
-                                  setAllUsers(prevUsers => 
-                                    prevUsers.map(u => 
-                                      u.id === user.id ? { ...u, is_admin: result.is_admin } : u
-                                    )
-                                  );
-                                } catch (err: any) {
-                                  setError(err.message || 'Failed to toggle admin status');
-                                } finally {
-                                  setProcessing(null);
-                                }
-                              }}
-                              disabled={processing === user.id}
-                              className={`px-3 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${
-                                user.is_admin 
-                                  ? 'bg-amber-600 hover:bg-amber-500' 
-                                  : 'bg-emerald-600 hover:bg-emerald-500'
-                              }`}
-                              title={user.is_admin ? 'Demote from Admin' : 'Promote to Admin'}
-                            >
-                              {processing === user.id ? (
-                                <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                              ) : user.is_admin ? (
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
-                                </svg>
-                              ) : (
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                                </svg>
-                              )}
-                              {user.is_admin ? 'Demote' : 'Promote'}
-                            </button>
-                            {!user.is_admin && (
-                              <>
-                                <button
-                                  onClick={async () => {
-                                    try {
-                                      setProcessing(user.id);
-                                      setError('');
-                                      const result = await authService.toggleAuthSource(user.id);
-                                      // Update the user in the local state
-                                      setAllUsers(prevUsers => 
-                                        prevUsers.map(u => 
-                                          u.id === user.id ? { ...u, auth_source: result.auth_source } : u
-                                        )
-                                      );
-                                    } catch (err: any) {
-                                      setError(err.message || 'Failed to toggle auth source');
-                                    } finally {
-                                      setProcessing(null);
-                                    }
-                                  }}
-                                  disabled={processing === user.id}
-                                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
-                                  title={`Toggle Auth Source (Current: ${user.auth_source === 'ldap' ? 'LDAP' : 'Local'})`}
-                                >
-                                  {processing === user.id ? (
-                                    <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                  ) : (
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                      <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                                    </svg>
-                                  )}
-                                  Toggle
-                                </button>
-                                {user.auth_source !== 'ldap' && (
-                                  <button
-                                    onClick={() => setResetPasswordModal({ open: true, userId: user.id, username: user.username })}
-                                    disabled={processing === user.id}
-                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
-                                    title="Reset Password"
-                                  >
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                      <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
-                                    </svg>
-                                    Reset
-                                  </button>
-                                )}
-                                <button
-                                  onClick={() => handleDeleteUser(user.id, user.username)}
-                                  disabled={processing === user.id}
-                                  className="px-3 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
-                                  title="Delete User"
-                                >
-                                  {processing === user.id ? (
-                                    <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                  ) : (
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                      <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-                                    </svg>
-                                  )}
-                                  Delete
-                                </button>
-                              </>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">
+                            {user.email}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {user.is_approved ? (
+                              <span className="px-2 py-1 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-semibold">
+                                Approved
+                              </span>
+                            ) : (
+                              <span className="px-2 py-1 rounded-full bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 text-xs font-semibold">
+                                Pending
+                              </span>
                             )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-500">
+                            {formatDate(user.created_at)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    setProcessing(user.id);
+                                    setError('');
+                                    const result = await authService.toggleAdmin(user.id);
+                                    // Update the user in the local state
+                                    setAllUsers(prevUsers =>
+                                      prevUsers.map(u =>
+                                        u.id === user.id ? { ...u, is_admin: result.is_admin } : u
+                                      )
+                                    );
+                                  } catch (err: any) {
+                                    setError(err.message || 'Failed to toggle admin status');
+                                  } finally {
+                                    setProcessing(null);
+                                  }
+                                }}
+                                disabled={processing === user.id}
+                                className={`px-3 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${user.is_admin
+                                  ? 'bg-amber-600 hover:bg-amber-500'
+                                  : 'bg-emerald-600 hover:bg-emerald-500'
+                                  }`}
+                                title={user.is_admin ? 'Demote from Admin' : 'Promote to Admin'}
+                              >
+                                {processing === user.id ? (
+                                  <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                ) : user.is_admin ? (
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                                  </svg>
+                                ) : (
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                                  </svg>
+                                )}
+                                {user.is_admin ? 'Demote' : 'Promote'}
+                              </button>
+                              {!user.is_admin && (
+                                <>
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        setProcessing(user.id);
+                                        setError('');
+                                        const result = await authService.toggleAuthSource(user.id);
+                                        // Update the user in the local state
+                                        setAllUsers(prevUsers =>
+                                          prevUsers.map(u =>
+                                            u.id === user.id ? { ...u, auth_source: result.auth_source } : u
+                                          )
+                                        );
+                                      } catch (err: any) {
+                                        setError(err.message || 'Failed to toggle auth source');
+                                      } finally {
+                                        setProcessing(null);
+                                      }
+                                    }}
+                                    disabled={processing === user.id}
+                                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
+                                    title={`Toggle Auth Source (Current: ${user.auth_source === 'ldap' ? 'LDAP' : 'Local'})`}
+                                  >
+                                    {processing === user.id ? (
+                                      <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                      </svg>
+                                    ) : (
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                        <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                                      </svg>
+                                    )}
+                                    Toggle
+                                  </button>
+                                  {user.auth_source !== 'ldap' && (
+                                    <button
+                                      onClick={() => setResetPasswordModal({ open: true, userId: user.id, username: user.username })}
+                                      disabled={processing === user.id}
+                                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
+                                      title="Reset Password"
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                        <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
+                                      </svg>
+                                      Reset
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handleDeleteUser(user.id, user.username)}
+                                    disabled={processing === user.id}
+                                    className="px-3 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
+                                    title="Delete User"
+                                  >
+                                    {processing === user.id ? (
+                                      <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                      </svg>
+                                    ) : (
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                        <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                                      </svg>
+                                    )}
+                                    Delete
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -1496,8 +1510,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Spaces Export & Import</h3>
                 <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-                  Export your spaces to JSON or CSV format, or import spaces from previously exported files or CSV spreadsheets. 
-                  JSON format includes all features: rich text content, tabs, scheduling, visibility settings, browser preferences, icons, and more. 
+                  Export your spaces to JSON or CSV format, or import spaces from previously exported files or CSV spreadsheets.
+                  JSON format includes all features: rich text content, tabs, scheduling, visibility settings, browser preferences, icons, and more.
                   CSV format is simplified and includes only basic link information.
                 </p>
 
@@ -1507,7 +1521,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     <div>
                       <h4 className="text-base font-semibold text-slate-900 dark:text-white mb-2">Export Spaces</h4>
                       <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                        Export all spaces to JSON or CSV format for backup or sharing. 
+                        Export all spaces to JSON or CSV format for backup or sharing.
                         JSON format preserves all data including rich text content, tabs, scheduling, visibility, browser settings, and more.
                       </p>
                       <div className="space-y-2">
@@ -1552,12 +1566,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               setSpacesExporting(true);
                               setError('');
                               await loadSpaces();
-                              
+
                               // Convert tiles to CSV format
                               // Note: CSV format is simplified and does not include rich text content, tabs structure, scheduling, browser settings, icons, or other advanced features
                               const csvRows: string[] = [];
                               csvRows.push('Tile Title,Tile Description,Tile Emoji,Tile Theme Color,Tile Group,Tab Title,Section Title,Link Label,Link URL,Link Visibility,Link Notes,Link Tooltip');
-                              
+
                               spacesTiles.forEach(tile => {
                                 // Handle tabs structure (new structure)
                                 if (tile.tabs && tile.tabs.length > 0) {
@@ -1612,7 +1626,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   });
                                 }
                               });
-                              
+
                               const csvContent = csvRows.join('\n');
                               const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                               const url = window.URL.createObjectURL(blob);
@@ -1623,7 +1637,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               a.click();
                               document.body.removeChild(a);
                               window.URL.revokeObjectURL(url);
-                              
+
                               alert('Spaces exported to CSV successfully!');
                             } catch (err: any) {
                               setError(err.message || 'Failed to export spaces to CSV');
@@ -1698,14 +1712,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 setError('');
                                 const text = await spacesImportFile.text();
                                 const data = JSON.parse(text);
-                                
+
                                 // Validate and parse the import file
                                 const parsed = parseSpaceExportObject(data);
-                                
+
                                 // Check if it's a single tile, category, or all categories
                                 let importType = '';
                                 let tileCount = 0;
-                                
+
                                 if (parsed.type === 'tile') {
                                   importType = 'single space';
                                   tileCount = parsed.tiles.length;
@@ -1716,7 +1730,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   importType = 'all categories';
                                   tileCount = parsed.tiles.length;
                                 }
-                                
+
                                 const newTiles = normalizeImportedTiles(parsed);
 
                                 if (!newTiles.length) {
@@ -1727,7 +1741,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 // Import tiles one by one using createTile API
                                 let imported = 0;
                                 let errors: string[] = [];
-                                
+
                                 for (const tile of newTiles) {
                                   try {
                                     await createTile(tile);
@@ -1748,7 +1762,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 };
 
                                 setSpacesImportFile(null);
-                                
+
                                 if (result.success) {
                                   let message = `Successfully imported ${result.created} space(s) from ${importType}.`;
                                   if (result.errors > 0) {
@@ -1826,7 +1840,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 setSpacesBulkImporting(true);
                                 setError('');
                                 const result = await bulkImportTiles(spacesBulkImportFile);
-                                
+
                                 if (result.success) {
                                   let message = `Successfully imported ${result.created} tile(s).`;
                                   if (result.errors > 0) {
@@ -2262,20 +2276,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       try {
                         setLdapTestLoading(true);
                         setLdapTestResult(null);
-                        
+
                         // Use ref value first (most up-to-date), fallback to state
                         const bindPassword = ldapBindPasswordRef.current || settings.ldap_bind_password || '';
-                        
+
                         // Ensure bind password doesn't contain dots (should never happen, but safety check)
                         if (bindPassword.includes('•')) {
-                          setLdapTestResult({ 
-                            success: false, 
-                            message: 'Password field contains invalid characters. Please re-enter the password.' 
+                          setLdapTestResult({
+                            success: false,
+                            message: 'Password field contains invalid characters. Please re-enter the password.'
                           });
                           setLdapTestLoading(false);
                           return;
                         }
-                        
+
                         // Create settings object with the real password
                         const testSettings = { ...settings, ldap_bind_password: bindPassword };
                         const result = await settingsService.testLdapConnection(testSettings, ldapTestUser, ldapTestPassword);
@@ -2357,189 +2371,189 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   <div className="flex flex-wrap gap-3 items-start">
                     {/* Export Section */}
                     <button
-                          onClick={async () => {
-                            try {
-                              setLdapExporting(true);
-                              setError('');
-                              
-                              // Filter only LDAP-related settings
-                              const ldapSettings: Partial<AppSettings> = {};
-                              const ldapKeys = [
-                                'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
-                                'ldap_login_domain', 'ldap_bind_dn', 'ldap_bind_password',
-                                'ldap_user_search_base', 'ldap_user_filter', 'ldap_user_attributes',
-                                'ldap_group_search_base', 'ldap_group_filter', 'ldap_group_attributes',
-                                'ldap_auto_create_users', 'ldap_auto_update_users', 'ldap_sync_interval',
-                                'ldap_require_group_membership', 'ldap_required_groups', 'ldap_timeout', 'ldap_tls',
-                                'ldap_search_scope', 'ldap_user_dn_template', 'ldap_nested_groups', 'ldap_case_sensitive',
-                                'ldap_ssl_verify', 'ldap_connection_retry', 'ldap_retry_delay', 'ldap_email_attribute',
-                                'ldap_display_name_attribute', 'ldap_referrals'
-                              ];
-                              
-                              ldapKeys.forEach(key => {
-                                if (settings[key as keyof AppSettings] !== undefined) {
-                                  ldapSettings[key as keyof AppSettings] = settings[key as keyof AppSettings];
-                                }
-                              });
-                              
-                              // Encrypt password before exporting
-                              if (ldapSettings.ldap_bind_password && ldapSettings.ldap_bind_password.trim() !== '') {
-                                try {
-                                  ldapSettings.ldap_bind_password = await settingsService.encryptPassword(ldapSettings.ldap_bind_password);
-                                } catch (encryptErr: any) {
-                                  throw new Error('Failed to encrypt password: ' + (encryptErr.message || 'Unknown error'));
-                                }
-                              }
-                              
-                              // Create JSON blob
-                              const jsonData = JSON.stringify(ldapSettings, null, 2);
-                              const blob = new Blob([jsonData], { type: 'application/json' });
-                              const url = URL.createObjectURL(blob);
-                              
-                              // Create download link
-                              const a = document.createElement('a');
-                              a.href = url;
-                              a.download = `ldap-settings-${new Date().toISOString().split('T')[0]}.json`;
-                              document.body.appendChild(a);
-                              a.click();
-                              document.body.removeChild(a);
-                              URL.revokeObjectURL(url);
-                              
-                              alert('LDAP settings exported successfully!');
-                            } catch (err: any) {
-                              setError(err.message || 'Failed to export LDAP settings');
-                            } finally {
-                              setLdapExporting(false);
+                      onClick={async () => {
+                        try {
+                          setLdapExporting(true);
+                          setError('');
+
+                          // Filter only LDAP-related settings
+                          const ldapSettings: Partial<AppSettings> = {};
+                          const ldapKeys = [
+                            'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
+                            'ldap_login_domain', 'ldap_bind_dn', 'ldap_bind_password',
+                            'ldap_user_search_base', 'ldap_user_filter', 'ldap_user_attributes',
+                            'ldap_group_search_base', 'ldap_group_filter', 'ldap_group_attributes',
+                            'ldap_auto_create_users', 'ldap_auto_update_users', 'ldap_sync_interval',
+                            'ldap_require_group_membership', 'ldap_required_groups', 'ldap_timeout', 'ldap_tls',
+                            'ldap_search_scope', 'ldap_user_dn_template', 'ldap_nested_groups', 'ldap_case_sensitive',
+                            'ldap_ssl_verify', 'ldap_connection_retry', 'ldap_retry_delay', 'ldap_email_attribute',
+                            'ldap_display_name_attribute', 'ldap_referrals'
+                          ];
+
+                          ldapKeys.forEach(key => {
+                            if (settings[key as keyof AppSettings] !== undefined) {
+                              ldapSettings[key as keyof AppSettings] = settings[key as keyof AppSettings];
                             }
-                          }}
-                          disabled={ldapExporting}
-                          className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
-                        >
-                          {ldapExporting ? (
-                            <>
-                              <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                              Exporting...
-                            </>
-                          ) : (
-                            <>
-                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
-                                <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
-                              </svg>
-                              Export
-                            </>
-                          )}
-                        </button>
+                          });
+
+                          // Encrypt password before exporting
+                          if (ldapSettings.ldap_bind_password && ldapSettings.ldap_bind_password.trim() !== '') {
+                            try {
+                              ldapSettings.ldap_bind_password = await settingsService.encryptPassword(ldapSettings.ldap_bind_password);
+                            } catch (encryptErr: any) {
+                              throw new Error('Failed to encrypt password: ' + (encryptErr.message || 'Unknown error'));
+                            }
+                          }
+
+                          // Create JSON blob
+                          const jsonData = JSON.stringify(ldapSettings, null, 2);
+                          const blob = new Blob([jsonData], { type: 'application/json' });
+                          const url = URL.createObjectURL(blob);
+
+                          // Create download link
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `ldap-settings-${new Date().toISOString().split('T')[0]}.json`;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          URL.revokeObjectURL(url);
+
+                          alert('LDAP settings exported successfully!');
+                        } catch (err: any) {
+                          setError(err.message || 'Failed to export LDAP settings');
+                        } finally {
+                          setLdapExporting(false);
+                        }
+                      }}
+                      disabled={ldapExporting}
+                      className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      {ldapExporting ? (
+                        <>
+                          <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Exporting...
+                        </>
+                      ) : (
+                        <>
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                            <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
+                            <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+                          </svg>
+                          Export
+                        </>
+                      )}
+                    </button>
 
                     {/* Import Section */}
                     <div className="flex items-center gap-2">
                       <input
-                              type="file"
-                              accept=".json,application/json"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  setLdapImportFile(file);
-                                  setError('');
-                                }
-                              }}
+                        type="file"
+                        accept=".json,application/json"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setLdapImportFile(file);
+                            setError('');
+                          }
+                        }}
                         className="text-xs text-slate-600 dark:text-slate-400 file:mr-2 file:py-1.5 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer"
                       />
                       <button
-                            onClick={async () => {
-                              if (!ldapImportFile) {
-                                setError('Please select a JSON file to import');
-                                return;
-                              }
+                        onClick={async () => {
+                          if (!ldapImportFile) {
+                            setError('Please select a JSON file to import');
+                            return;
+                          }
 
-                              if (!confirm('This will replace all existing LDAP settings. Are you sure you want to continue?')) {
-                                return;
-                              }
+                          if (!confirm('This will replace all existing LDAP settings. Are you sure you want to continue?')) {
+                            return;
+                          }
 
+                          try {
+                            setLdapImporting(true);
+                            setError('');
+
+                            // Read file content
+                            const fileContent = await ldapImportFile.text();
+                            const importedSettings = JSON.parse(fileContent);
+
+                            // Validate that it's an object
+                            if (typeof importedSettings !== 'object' || importedSettings === null) {
+                              throw new Error('Invalid JSON format');
+                            }
+
+                            // Filter only valid LDAP keys
+                            const validLdapKeys = [
+                              'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
+                              'ldap_login_domain', 'ldap_bind_dn', 'ldap_bind_password',
+                              'ldap_user_search_base', 'ldap_user_filter', 'ldap_user_attributes',
+                              'ldap_group_search_base', 'ldap_group_filter', 'ldap_group_attributes',
+                              'ldap_auto_create_users', 'ldap_auto_update_users', 'ldap_sync_interval',
+                              'ldap_require_group_membership', 'ldap_required_groups', 'ldap_timeout', 'ldap_tls',
+                              'ldap_search_scope', 'ldap_user_dn_template', 'ldap_nested_groups', 'ldap_case_sensitive',
+                              'ldap_ssl_verify', 'ldap_connection_retry', 'ldap_retry_delay', 'ldap_email_attribute',
+                              'ldap_display_name_attribute', 'ldap_referrals'
+                            ];
+
+                            const filteredSettings: Partial<AppSettings> = {};
+                            validLdapKeys.forEach(key => {
+                              if (importedSettings[key] !== undefined) {
+                                filteredSettings[key as keyof AppSettings] = importedSettings[key];
+                              }
+                            });
+
+                            // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
+                            if (filteredSettings.ldap_bind_password && filteredSettings.ldap_bind_password.trim() !== '') {
                               try {
-                                setLdapImporting(true);
-                                setError('');
-                                
-                                // Read file content
-                                const fileContent = await ldapImportFile.text();
-                                const importedSettings = JSON.parse(fileContent);
-                                
-                                // Validate that it's an object
-                                if (typeof importedSettings !== 'object' || importedSettings === null) {
-                                  throw new Error('Invalid JSON format');
-                                }
-                                
-                                // Filter only valid LDAP keys
-                                const validLdapKeys = [
-                                  'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
-                                  'ldap_login_domain', 'ldap_bind_dn', 'ldap_bind_password',
-                                  'ldap_user_search_base', 'ldap_user_filter', 'ldap_user_attributes',
-                                  'ldap_group_search_base', 'ldap_group_filter', 'ldap_group_attributes',
-                                  'ldap_auto_create_users', 'ldap_auto_update_users', 'ldap_sync_interval',
-                                  'ldap_require_group_membership', 'ldap_required_groups', 'ldap_timeout', 'ldap_tls',
-                                  'ldap_search_scope', 'ldap_user_dn_template', 'ldap_nested_groups', 'ldap_case_sensitive',
-                                  'ldap_ssl_verify', 'ldap_connection_retry', 'ldap_retry_delay', 'ldap_email_attribute',
-                                  'ldap_display_name_attribute', 'ldap_referrals'
-                                ];
-                                
-                                const filteredSettings: Partial<AppSettings> = {};
-                                validLdapKeys.forEach(key => {
-                                  if (importedSettings[key] !== undefined) {
-                                    filteredSettings[key as keyof AppSettings] = importedSettings[key];
-                                  }
-                                });
-                                
-                                // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
-                                if (filteredSettings.ldap_bind_password && filteredSettings.ldap_bind_password.trim() !== '') {
-                                  try {
-                                    // Try to decrypt - decryptPassword handles plain text passwords too
-                                    filteredSettings.ldap_bind_password = await settingsService.decryptPassword(filteredSettings.ldap_bind_password);
-                                  } catch (decryptErr: any) {
-                                    // If decryption fails, it might be plain text (old export format)
-                                    // Keep it as is - the backend will handle it
-                                    console.warn('Password decryption failed, assuming plain text:', decryptErr.message);
-                                  }
-                                }
-                                
-                                // Update settings
-                                await settingsService.updateSettings(filteredSettings);
-                                
-                                // Reload settings to reflect changes
-                                await loadSettings();
-                                await refreshSettings();
-                                
-                                setLdapImportFile(null);
-                                alert('LDAP settings imported successfully!');
-                              } catch (err: any) {
-                                setError(err.message || 'Failed to import LDAP settings. Please check the file format.');
-                              } finally {
-                                setLdapImporting(false);
+                                // Try to decrypt - decryptPassword handles plain text passwords too
+                                filteredSettings.ldap_bind_password = await settingsService.decryptPassword(filteredSettings.ldap_bind_password);
+                              } catch (decryptErr: any) {
+                                // If decryption fails, it might be plain text (old export format)
+                                // Keep it as is - the backend will handle it
+                                console.warn('Password decryption failed, assuming plain text:', decryptErr.message);
                               }
-                            }}
-                            disabled={ldapImporting || !ldapImportFile}
-                            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
-                          >
-                            {ldapImporting ? (
-                              <>
-                                <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                Importing...
-                              </>
-                            ) : (
-                              <>
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                  <path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 3.129a.75.75 0 001.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 101.09 1.03l2.955-3.129V13.25z" />
-                                  <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
-                                </svg>
-                                Import
-                              </>
-                            )}
-                          </button>
+                            }
+
+                            // Update settings
+                            await settingsService.updateSettings(filteredSettings);
+
+                            // Reload settings to reflect changes
+                            await loadSettings();
+                            await refreshSettings();
+
+                            setLdapImportFile(null);
+                            alert('LDAP settings imported successfully!');
+                          } catch (err: any) {
+                            setError(err.message || 'Failed to import LDAP settings. Please check the file format.');
+                          } finally {
+                            setLdapImporting(false);
+                          }
+                        }}
+                        disabled={ldapImporting || !ldapImportFile}
+                        className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        {ldapImporting ? (
+                          <>
+                            <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Importing...
+                          </>
+                        ) : (
+                          <>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                              <path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 3.129a.75.75 0 001.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 101.09 1.03l2.955-3.129V13.25z" />
+                              <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+                            </svg>
+                            Import
+                          </>
+                        )}
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -2599,7 +2613,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
                     Customize the footer text that appears at the bottom of every page.
                   </p>
-                  
+
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
@@ -2707,7 +2721,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             const firstFile = files[0] as any;
                             const relativePath = firstFile.webkitRelativePath || firstFile.name;
                             const folderName = relativePath.split('/')[0] || relativePath.split('\\')[0];
-                            
+
                             alert(`Browser security prevents accessing the full file path.\n\nSelected folder name: ${folderName}\n\nPlease manually enter or verify the full path in the input field above.`);
                           }
                           // Reset input
@@ -2760,7 +2774,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             const firstFile = files[0] as any;
                             const relativePath = firstFile.webkitRelativePath || firstFile.name;
                             const folderName = relativePath.split('/')[0] || relativePath.split('\\')[0];
-                            
+
                             alert(`Browser security prevents accessing the full file path.\n\nSelected folder name: ${folderName}\n\nPlease manually enter or verify the full path in the input field above.`);
                           }
                           e.target.value = '';
@@ -2839,15 +2853,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       <div className="mb-2 flex justify-between items-center">
                         <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
                           {cloneStatus === 'validating' ? 'Validating...' :
-                           cloneStatus === 'creating' ? 'Creating directory...' :
-                           cloneStatus === 'copying' ? 'Copying files...' :
-                           cloneStatus === 'configuring' ? 'Configuring...' :
-                           cloneStatus === 'installing' ? 'Installing dependencies...' :
-                           cloneStatus === 'building' ? 'Building application...' :
-                           cloneStatus === 'finalizing' ? 'Finalizing...' :
-                           cloneStatus === 'running' ? 'Running...' :
-                           cloneStatus === 'pending' ? 'Starting...' :
-                           cloneStatus || 'Processing...'}
+                            cloneStatus === 'creating' ? 'Creating directory...' :
+                              cloneStatus === 'copying' ? 'Copying files...' :
+                                cloneStatus === 'configuring' ? 'Configuring...' :
+                                  cloneStatus === 'installing' ? 'Installing dependencies...' :
+                                    cloneStatus === 'building' ? 'Building application...' :
+                                      cloneStatus === 'finalizing' ? 'Finalizing...' :
+                                        cloneStatus === 'running' ? 'Running...' :
+                                          cloneStatus === 'pending' ? 'Starting...' :
+                                            cloneStatus || 'Processing...'}
                         </span>
                         <span className="text-sm text-slate-600 dark:text-slate-400">{cloneProgress}%</span>
                       </div>
@@ -2859,15 +2873,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </div>
                     </div>
                   )}
-                  
+
                   {/* Completion Message */}
                   {currentCloneId && (cloneStatus === 'complete' || cloneStatus === 'error') && (
                     <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                      <div className={`p-3 rounded-lg ${
-                        cloneStatus === 'complete' 
-                          ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' 
-                          : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
-                      }`}>
+                      <div className={`p-3 rounded-lg ${cloneStatus === 'complete'
+                        ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                        : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                        }`}>
                         <div className="flex items-center gap-2">
                           {cloneStatus === 'complete' ? (
                             <>
@@ -2978,7 +2991,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             // Set current clone ID and start polling
                             setCurrentCloneId(data.cloneId);
                             setCloneStatus('running');
-                            
+
                             // Reset form
                             setCloneFolderName('');
                             setCloneSourcePath('');
@@ -2986,7 +2999,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             setCloneUrl('');
                             setCloneCopyAssets(false);
                             setCloneCopyDatabase(false);
-                            
+
                             // Reload clones list
                             loadClonesList();
                           } catch (err: any) {
@@ -3003,7 +3016,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </button>
                     </div>
                   </div>
-                  
+
                   {/* Prechecks Results */}
                   {showPrechecks && prechecksResults && (
                     <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
@@ -3018,12 +3031,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           </svg>
                         </button>
                       </div>
-                      
-                      <div className={`p-4 rounded-lg mb-4 ${
-                        prechecksResults.allGood 
-                          ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' 
-                          : 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
-                      }`}>
+
+                      <div className={`p-4 rounded-lg mb-4 ${prechecksResults.allGood
+                        ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                        : 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
+                        }`}>
                         <div className="flex items-center gap-2">
                           {prechecksResults.allGood ? (
                             <>
@@ -3042,7 +3054,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           )}
                         </div>
                       </div>
-                      
+
                       <div className="space-y-4 max-h-96 overflow-y-auto">
                         {prechecksResults.checks.map((checkCategory, categoryIdx) => (
                           <div key={categoryIdx} className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -3070,11 +3082,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   <div className="flex-1">
                                     <div className="flex items-center gap-2">
                                       <span className="font-medium text-slate-900 dark:text-white">{item.name}</span>
-                                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                                        item.status === 'pass' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
+                                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${item.status === 'pass' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
                                         item.status === 'fail' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' :
-                                        'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                                      }`}>
+                                          'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                                        }`}>
                                         {item.message}
                                       </span>
                                     </div>
@@ -3137,11 +3148,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               {clone.targetPath || '-'}
                             </td>
                             <td className="py-3 px-4 text-sm">
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                clone.status === 'completed' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${clone.status === 'completed' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
                                 clone.status === 'failed' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' :
-                                'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
-                              }`}>
+                                  'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                                }`}>
                                 {clone.status}
                               </span>
                             </td>
@@ -3149,11 +3159,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               <div className="flex items-center gap-2">
                                 <div className="w-24 bg-slate-200 dark:bg-slate-700 rounded-full h-2">
                                   <div
-                                    className={`h-2 rounded-full transition-all ${
-                                      clone.status === 'completed' ? 'bg-green-600' :
+                                    className={`h-2 rounded-full transition-all ${clone.status === 'completed' ? 'bg-green-600' :
                                       clone.status === 'failed' ? 'bg-red-600' :
-                                      'bg-brand-600'
-                                    }`}
+                                        'bg-brand-600'
+                                      }`}
                                     style={{ width: `${clone.progress}%` }}
                                   ></div>
                                 </div>
@@ -3210,7 +3219,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     if (!confirm(`Are you sure you want to rerun the clone for "${clone.folderName}"? This will restart the clone process.`)) {
                                       return;
                                     }
-                                    
+
                                     try {
                                       setRerunCloneLoading(clone.id);
                                       const apiBase = resolveApiBase();
@@ -3218,19 +3227,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         method: 'POST',
                                         credentials: 'include',
                                       });
-                                      
+
                                       const data = await response.json();
-                                      
+
                                       if (!response.ok) {
                                         throw new Error(data.error || 'Failed to rerun clone');
                                       }
-                                      
+
                                       // Set as current clone to track progress
                                       setCurrentCloneId(clone.id);
                                       setCloneStatus('running');
                                       setCloneProgress(0);
                                       setCloneLogs([]);
-                                      
+
                                       // Reload list
                                       loadClonesList();
                                     } catch (err: any) {
@@ -3252,18 +3261,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     if (!confirm(`Are you sure you want to delete clone "${clone.folderName}"?`)) {
                                       return;
                                     }
-                                    
+
                                     const deleteFolder = confirm(`Do you also want to delete the folder?\n\nClick OK to delete both the record and the folder.\nClick Cancel to only remove the record from the database.`);
-                                    
+
                                     try {
                                       setDeleteCloneLoading(clone.id);
                                       setError('');
-                                      
+
                                       const apiBase = resolveApiBase();
                                       const url = `${apiBase}/clone/${clone.id}?deleteFolder=${deleteFolder ? '1' : '0'}`;
                                       console.log('Delete request URL:', url);
                                       console.log('Delete folder option:', deleteFolder);
-                                      
+
                                       const response = await fetch(url, {
                                         method: 'DELETE',
                                         headers: {
@@ -3271,14 +3280,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         },
                                         credentials: 'include',
                                       });
-                                      
+
                                       const data = await response.json();
                                       console.log('Delete response:', data);
-                                      
+
                                       if (!response.ok) {
                                         throw new Error(data.error || `Failed to delete clone (${response.status})`);
                                       }
-                                      
+
                                       // Show success message with folder deletion status
                                       if (deleteFolder) {
                                         if (data.folderDeleted) {
@@ -3289,7 +3298,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       } else {
                                         alert(`Clone "${clone.folderName}" record has been deleted. The folder remains on disk.`);
                                       }
-                                      
+
                                       // If this was the current clone being tracked, clear it
                                       if (currentCloneId === clone.id) {
                                         setCurrentCloneId(null);
@@ -3297,7 +3306,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         setCloneProgress(0);
                                         setCloneLogs([]);
                                       }
-                                      
+
                                       // Reload list
                                       await loadClonesList();
                                     } catch (err: any) {
@@ -3327,168 +3336,168 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             </div>
           )}
 
-      {/* Edit Clone Modal */}
-      {editCloneModal.open && editCloneModal.clone && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/20 dark:bg-slate-900/40" onClick={() => setEditCloneModal({ open: false, clone: null })}></div>
-          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-2xl p-6 relative shadow-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Edit Clone</h3>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Folder Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={editCloneModal.clone.folderName}
-                  onChange={(e) => setEditCloneModal({
-                    ...editCloneModal,
-                    clone: { ...editCloneModal.clone!, folderName: e.target.value }
-                  })}
-                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                />
-              </div>
+          {/* Edit Clone Modal */}
+          {editCloneModal.open && editCloneModal.clone && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-slate-900/20 dark:bg-slate-900/40" onClick={() => setEditCloneModal({ open: false, clone: null })}></div>
+              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-2xl p-6 relative shadow-2xl max-h-[90vh] overflow-y-auto">
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Edit Clone</h3>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Source Path
-                </label>
-                <input
-                  type="text"
-                  value={editCloneModal.clone.sourcePath}
-                  onChange={(e) => setEditCloneModal({
-                    ...editCloneModal,
-                    clone: { ...editCloneModal.clone!, sourcePath: e.target.value }
-                  })}
-                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                />
-              </div>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Folder Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={editCloneModal.clone.folderName}
+                      onChange={(e) => setEditCloneModal({
+                        ...editCloneModal,
+                        clone: { ...editCloneModal.clone!, folderName: e.target.value }
+                      })}
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Target Path
-                </label>
-                <input
-                  type="text"
-                  value={editCloneModal.clone.targetPath}
-                  onChange={(e) => setEditCloneModal({
-                    ...editCloneModal,
-                    clone: { ...editCloneModal.clone!, targetPath: e.target.value }
-                  })}
-                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                />
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Source Path
+                    </label>
+                    <input
+                      type="text"
+                      value={editCloneModal.clone.sourcePath}
+                      onChange={(e) => setEditCloneModal({
+                        ...editCloneModal,
+                        clone: { ...editCloneModal.clone!, sourcePath: e.target.value }
+                      })}
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Instance URL
-                </label>
-                <input
-                  type="url"
-                  value={editCloneModal.clone.url}
-                  onChange={(e) => setEditCloneModal({
-                    ...editCloneModal,
-                    clone: { ...editCloneModal.clone!, url: e.target.value }
-                  })}
-                  placeholder="e.g., https://myspaces.example.com or http://localhost/myspaces"
-                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                />
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  Full URL where the cloned instance will be accessible
-                </p>
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Target Path
+                    </label>
+                    <input
+                      type="text"
+                      value={editCloneModal.clone.targetPath}
+                      onChange={(e) => setEditCloneModal({
+                        ...editCloneModal,
+                        clone: { ...editCloneModal.clone!, targetPath: e.target.value }
+                      })}
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                    />
+                  </div>
 
-              <div className="space-y-3">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editCloneModal.clone.copyAssets}
-                    onChange={(e) => setEditCloneModal({
-                      ...editCloneModal,
-                      clone: { ...editCloneModal.clone!, copyAssets: e.target.checked }
-                    })}
-                    className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
-                  />
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Copy Assets</span>
-                </label>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Instance URL
+                    </label>
+                    <input
+                      type="url"
+                      value={editCloneModal.clone.url}
+                      onChange={(e) => setEditCloneModal({
+                        ...editCloneModal,
+                        clone: { ...editCloneModal.clone!, url: e.target.value }
+                      })}
+                      placeholder="e.g., https://myspaces.example.com or http://localhost/myspaces"
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                    />
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Full URL where the cloned instance will be accessible
+                    </p>
+                  </div>
 
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editCloneModal.clone.copyDatabase}
-                    onChange={(e) => setEditCloneModal({
-                      ...editCloneModal,
-                      clone: { ...editCloneModal.clone!, copyDatabase: e.target.checked }
-                    })}
-                    className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
-                  />
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Copy Database</span>
-                </label>
-              </div>
+                  <div className="space-y-3">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editCloneModal.clone.copyAssets}
+                        onChange={(e) => setEditCloneModal({
+                          ...editCloneModal,
+                          clone: { ...editCloneModal.clone!, copyAssets: e.target.checked }
+                        })}
+                        className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                      />
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Copy Assets</span>
+                    </label>
 
-              {error && (
-                <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
-                  {error}
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editCloneModal.clone.copyDatabase}
+                        onChange={(e) => setEditCloneModal({
+                          ...editCloneModal,
+                          clone: { ...editCloneModal.clone!, copyDatabase: e.target.checked }
+                        })}
+                        className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                      />
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Copy Database</span>
+                    </label>
+                  </div>
+
+                  {error && (
+                    <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
+                      {error}
+                    </div>
+                  )}
+
+                  <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                    <button
+                      onClick={() => setEditCloneModal({ open: false, clone: null })}
+                      className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!editCloneModal.clone) return;
+
+                        try {
+                          setEditCloneLoading(true);
+                          setError('');
+
+                          const apiBase = resolveApiBase();
+                          const response = await fetch(`${apiBase}/clone/${editCloneModal.clone.id}`, {
+                            method: 'PUT',
+                            headers: {
+                              'Content-Type': 'application/json',
+                            },
+                            credentials: 'include',
+                            body: JSON.stringify({
+                              folderName: editCloneModal.clone.folderName,
+                              sourcePath: editCloneModal.clone.sourcePath,
+                              targetPath: editCloneModal.clone.targetPath,
+                              url: editCloneModal.clone.url.trim() || undefined,
+                              copyAssets: editCloneModal.clone.copyAssets,
+                              copyDatabase: editCloneModal.clone.copyDatabase,
+                            }),
+                          });
+
+                          const data = await response.json();
+
+                          if (!response.ok) {
+                            throw new Error(data.error || 'Failed to update clone');
+                          }
+
+                          setEditCloneModal({ open: false, clone: null });
+                          loadClonesList();
+                        } catch (err: any) {
+                          setError(err.message || 'Failed to update clone');
+                        } finally {
+                          setEditCloneLoading(false);
+                        }
+                      }}
+                      disabled={editCloneLoading || !editCloneModal.clone.folderName.trim()}
+                      className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
+                    >
+                      {editCloneLoading ? 'Saving...' : 'Save Changes'}
+                    </button>
+                  </div>
                 </div>
-              )}
-
-              <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
-                <button
-                  onClick={() => setEditCloneModal({ open: false, clone: null })}
-                  className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={async () => {
-                    if (!editCloneModal.clone) return;
-                    
-                    try {
-                      setEditCloneLoading(true);
-                      setError('');
-                      
-                      const apiBase = resolveApiBase();
-                      const response = await fetch(`${apiBase}/clone/${editCloneModal.clone.id}`, {
-                        method: 'PUT',
-                        headers: {
-                          'Content-Type': 'application/json',
-                        },
-                        credentials: 'include',
-                        body: JSON.stringify({
-                          folderName: editCloneModal.clone.folderName,
-                          sourcePath: editCloneModal.clone.sourcePath,
-                          targetPath: editCloneModal.clone.targetPath,
-                          url: editCloneModal.clone.url.trim() || undefined,
-                          copyAssets: editCloneModal.clone.copyAssets,
-                          copyDatabase: editCloneModal.clone.copyDatabase,
-                        }),
-                      });
-                      
-                      const data = await response.json();
-                      
-                      if (!response.ok) {
-                        throw new Error(data.error || 'Failed to update clone');
-                      }
-                      
-                      setEditCloneModal({ open: false, clone: null });
-                      loadClonesList();
-                    } catch (err: any) {
-                      setError(err.message || 'Failed to update clone');
-                    } finally {
-                      setEditCloneLoading(false);
-                    }
-                  }}
-                  disabled={editCloneLoading || !editCloneModal.clone.folderName.trim()}
-                  className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
-                >
-                  {editCloneLoading ? 'Saving...' : 'Save Changes'}
-                </button>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
           {/* Access Manager Tab */}
           {activeTab === 'access' && (
@@ -4070,21 +4079,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             <button
                               type="button"
                               onClick={() => {
-                                setSettings({ 
-                                  ...settings, 
-                                  guest_access_enabled: (settings.guest_access_enabled === '1' || settings.guest_access_enabled === undefined) ? '0' : '1' 
+                                setSettings({
+                                  ...settings,
+                                  guest_access_enabled: (settings.guest_access_enabled === '1' || settings.guest_access_enabled === undefined) ? '0' : '1'
                                 });
                               }}
-                              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                                (settings.guest_access_enabled === '1' || settings.guest_access_enabled === undefined)
-                                  ? 'bg-brand-600' 
-                                  : 'bg-slate-300 dark:bg-slate-600'
-                              }`}
+                              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${(settings.guest_access_enabled === '1' || settings.guest_access_enabled === undefined)
+                                ? 'bg-brand-600'
+                                : 'bg-slate-300 dark:bg-slate-600'
+                                }`}
                             >
                               <span
-                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                  (settings.guest_access_enabled === '1' || settings.guest_access_enabled === undefined) ? 'translate-x-6' : 'translate-x-1'
-                                }`}
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${(settings.guest_access_enabled === '1' || settings.guest_access_enabled === undefined) ? 'translate-x-6' : 'translate-x-1'
+                                  }`}
                               />
                             </button>
                           </div>
@@ -4123,18 +4130,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 }
                               }}
                               disabled={settingsSaving}
-                              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                                settings.show_database_path_in_footer === '1' 
-                                  ? 'bg-brand-600' 
-                                  : 'bg-slate-300 dark:bg-slate-600'
-                              }`}
+                              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.show_database_path_in_footer === '1'
+                                ? 'bg-brand-600'
+                                : 'bg-slate-300 dark:bg-slate-600'
+                                }`}
                             >
                               <span
-                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                  settings.show_database_path_in_footer === '1' 
-                                    ? 'translate-x-6' 
-                                    : 'translate-x-1'
-                                }`}
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.show_database_path_in_footer === '1'
+                                  ? 'translate-x-6'
+                                  : 'translate-x-1'
+                                  }`}
                               />
                             </button>
                           </div>
@@ -4194,7 +4199,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   p => p.userId === permissionForm.userId && p.tileId === permissionForm.tileId
                 ) ? 'Edit Tile Permission' : 'Add Tile Permission'}
               </h3>
-              
+
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
@@ -4473,7 +4478,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           }}></div>
           <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-2xl p-6 relative shadow-2xl max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Add User</h3>
-            
+
             {/* Tabs */}
             <div className="flex gap-2 border-b border-slate-200 dark:border-slate-700 mb-4">
               <button
@@ -4483,11 +4488,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   setError('');
                   setBulkImportResults(null);
                 }}
-                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-                  addUserType === 'local' && !bulkImportMode
-                    ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
+                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${addUserType === 'local' && !bulkImportMode
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                  }`}
               >
                 Local User
               </button>
@@ -4498,11 +4502,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   setError('');
                   setBulkImportResults(null);
                 }}
-                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-                  addUserType === 'ldap' && !bulkImportMode
-                    ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
+                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${addUserType === 'ldap' && !bulkImportMode
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                  }`}
               >
                 LDAP User
               </button>
@@ -4512,11 +4515,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   setError('');
                   setBulkImportResults(null);
                 }}
-                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-                  bulkImportMode
-                    ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
+                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${bulkImportMode
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                  }`}
               >
                 Bulk Import
               </button>
@@ -4590,15 +4592,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   <button
                     type="button"
                     onClick={() => {
-      setAddUserModal(false);
-      setBulkImportMode(false);
-      setLocalUsername('');
-      setLocalEmail('');
-      setLocalPassword('');
-      setCsvFile(null);
-      setLdapUsersText('');
-      setBulkImportResults(null);
-      setError('');
+                      setAddUserModal(false);
+                      setBulkImportMode(false);
+                      setLocalUsername('');
+                      setLocalEmail('');
+                      setLocalPassword('');
+                      setCsvFile(null);
+                      setLdapUsersText('');
+                      setBulkImportResults(null);
+                      setError('');
                     }}
                     className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
                   >
@@ -4662,9 +4664,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             setSelectedLdapUser(user);
                             setError('');
                           }}
-                          className={`p-3 cursor-pointer border-b border-slate-200 dark:border-slate-700 last:border-b-0 hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors ${
-                            selectedLdapUser?.dn === user.dn ? 'bg-brand-50 dark:bg-brand-500/10 border-brand-500' : ''
-                          }`}
+                          className={`p-3 cursor-pointer border-b border-slate-200 dark:border-slate-700 last:border-b-0 hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors ${selectedLdapUser?.dn === user.dn ? 'bg-brand-50 dark:bg-brand-500/10 border-brand-500' : ''
+                            }`}
                         >
                           <div className="flex items-center justify-between">
                             <div>
@@ -4746,11 +4747,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       setBulkImportResults(null);
                       setError('');
                     }}
-                    className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-                      addUserType === 'local'
-                        ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                        : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                    }`}
+                    className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${addUserType === 'local'
+                      ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                      : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                      }`}
                   >
                     Import Local Users (CSV)
                   </button>
@@ -4761,11 +4761,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       setBulkImportResults(null);
                       setError('');
                     }}
-                    className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-                      addUserType === 'ldap'
-                        ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                        : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                    }`}
+                    className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${addUserType === 'ldap'
+                      ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                      : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                      }`}
                   >
                     Import LDAP Users (Text)
                   </button>
@@ -4801,8 +4800,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-3">
                       <p className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">CSV Format Example:</p>
                       <pre className="text-xs text-slate-600 dark:text-slate-400 font-mono whitespace-pre-wrap">username,email,password
-john.doe,john@example.com,SecurePass123
-jane.smith,jane@example.com,AnotherPass456</pre>
+                        john.doe,john@example.com,SecurePass123
+                        jane.smith,jane@example.com,AnotherPass456</pre>
                     </div>
                     {bulkImportResults && (
                       <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
@@ -4875,7 +4874,7 @@ jane.smith,jane@example.com,AnotherPass456</pre>
                     <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-3">
                       <p className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Format Example:</p>
                       <pre className="text-xs text-slate-600 dark:text-slate-400 font-mono whitespace-pre-wrap">john.doe,john@example.com,CN=John Doe,OU=Users,DC=company,DC=com,John Doe
-jane.smith,jane@example.com,CN=Jane Smith,OU=Users,DC=company,DC=com,Jane Smith</pre>
+                        jane.smith,jane@example.com,CN=Jane Smith,OU=Users,DC=company,DC=com,Jane Smith</pre>
                     </div>
                     {bulkImportResults && (
                       <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
@@ -4982,7 +4981,7 @@ jane.smith,jane@example.com,CN=Jane Smith,OU=Users,DC=company,DC=com,Jane Smith<
             {/* Configuration Section */}
             <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
               <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Configuration</h4>
-              
+
               <div className="space-y-4">
                 <div className="space-y-2">
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -5036,7 +5035,7 @@ jane.smith,jane@example.com,CN=Jane Smith,OU=Users,DC=company,DC=com,Jane Smith<
                   <span className="text-sm text-slate-600 dark:text-slate-400">Checking extension availability...</span>
                 </div>
               </div>
-              
+
               <div className="flex flex-wrap gap-2 mt-4">
                 <button
                   type="button"
@@ -5227,8 +5226,26 @@ jane.smith,jane@example.com,CN=Jane Smith,OU=Users,DC=company,DC=com,Jane Smith<
                   onClick={() => {
                     if (typeof (window as any).BrowserLauncher !== 'undefined') {
                       const BrowserLauncher = (window as any).BrowserLauncher;
-                      const browsers = BrowserLauncher.getBrowsers();
-                      alert('Available Browser IDs:\n\n' + browsers.join('\n'));
+
+                      // Try to fetch dynamic browser list first
+                      if (BrowserLauncher.fetchBrowsers) {
+                        const btn = (window.event?.target as HTMLButtonElement);
+                        const originalText = btn?.innerText;
+                        if (btn) btn.innerText = 'Fetching...';
+
+                        BrowserLauncher.fetchBrowsers((response: any) => {
+                          if (btn) btn.innerText = originalText;
+                          if (response && response.success && response.browsers && response.browsers.length > 0) {
+                            setDetectedBrowsers(response.browsers);
+                            alert('Browsers discovered by extension:\n\n' + response.browsers.join('\n'));
+                          } else {
+                            alert('No active browsers detected by extension.\n\nError: ' + (response ? response.error : 'No response') + '\n\nIMPORTANT: Please ensure the extension is installed and its background scripts are running.');
+                          }
+                        });
+                      } else {
+                        const browsers = BrowserLauncher.getBrowsers();
+                        alert('Extension loaded but fetchBrowsers API not found.\nStatic list: ' + browsers.join(', '));
+                      }
                     }
                   }}
                   className="px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg text-sm font-medium transition-colors"
@@ -5242,7 +5259,7 @@ jane.smith,jane@example.com,CN=Jane Smith,OU=Users,DC=company,DC=com,Jane Smith<
                 <div>
                   <h5 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Example 1: Simple usage with callback</h5>
                   <pre className="bg-slate-900 text-slate-100 p-4 rounded-lg text-xs overflow-x-auto">
-{`BrowserLauncher.open('https://github.com', 'chrome-stable', {}, function(response) {
+                    {`BrowserLauncher.open('https://github.com', 'chrome-stable', {}, function(response) {
   if (response.success) {
     console.log('Opened successfully!');
   } else {
@@ -5254,7 +5271,7 @@ jane.smith,jane@example.com,CN=Jane Smith,OU=Users,DC=company,DC=com,Jane Smith<
                 <div>
                   <h5 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Example 2: Using Promises</h5>
                   <pre className="bg-slate-900 text-slate-100 p-4 rounded-lg text-xs overflow-x-auto">
-{`BrowserLauncher.open('https://example.com', 'edge-stable')
+                    {`BrowserLauncher.open('https://example.com', 'edge-stable')
   .then(response => console.log('Success:', response))
   .catch(error => console.error('Error:', error));`}
                   </pre>
@@ -5262,7 +5279,7 @@ jane.smith,jane@example.com,CN=Jane Smith,OU=Users,DC=company,DC=com,Jane Smith<
                 <div>
                   <h5 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Example 3: Using async/await</h5>
                   <pre className="bg-slate-900 text-slate-100 p-4 rounded-lg text-xs overflow-x-auto">
-{`async function openLink() {
+                    {`async function openLink() {
   try {
     const response = await BrowserLauncher.open('https://example.com', 'chrome-stable');
     console.log('Success:', response);
@@ -5300,14 +5317,17 @@ jane.smith,jane@example.com,CN=Jane Smith,OU=Users,DC=company,DC=com,Jane Smith<
                       onChange={(e) => setTestBrowser(e.target.value)}
                       className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
                     >
-                      <option value="chrome-stable">Chrome Stable</option>
-                      <option value="chrome-beta">Chrome Beta</option>
-                      <option value="chrome-dev">Chrome Dev</option>
-                      <option value="edge-stable">Edge Stable</option>
-                      <option value="edge-beta">Edge Beta</option>
-                      <option value="edge-dev">Edge Dev</option>
-                      <option value="chrome-stable-wsl">Chrome Stable (WSL)</option>
-                      <option value="edge-stable-wsl">Edge Stable (WSL)</option>
+                      {detectedBrowsers.length > 0 ? (
+                        <>
+                          {detectedBrowsers.map(id => (
+                            <option key={id} value={id}>
+                              {id.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                            </option>
+                          ))}
+                        </>
+                      ) : (
+                        <option value="">🔍 Detecting browsers...</option>
+                      )}
                     </select>
                   </div>
                   <button
@@ -5343,15 +5363,8 @@ jane.smith,jane@example.com,CN=Jane Smith,OU=Users,DC=company,DC=com,Jane Smith<
                     Open Link in Browser
                   </button>
                   {testResult && (
-                    <div className={`p-3 rounded-lg border ${
-                      testResult.success
-                        ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
-                        : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300'
-                    }`}>
-                      <p className="text-sm">{testResult.message}</p>
-                      {testResult.success && (
-                        <p className="text-xs mt-1 opacity-75">Opening {testUrl} in {testBrowser}</p>
-                      )}
+                    <div className={`mt-3 p-3 rounded-lg text-xs font-medium ${testResult.success ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800' : 'bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800'}`}>
+                      {testResult.message}
                     </div>
                   )}
                 </div>
@@ -5360,26 +5373,35 @@ jane.smith,jane@example.com,CN=Jane Smith,OU=Users,DC=company,DC=com,Jane Smith<
 
             {/* Browser IDs Reference */}
             <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
-              <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">🔍 Available Browser IDs</h4>
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-lg font-semibold text-slate-900 dark:text-white">🔍 Discovered Browser IDs</h4>
+                {detectedBrowsers.length > 0 && (
+                  <span className="px-2 py-1 text-xs font-semibold rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
+                    {detectedBrowsers.length} active
+                  </span>
+                )}
+              </div>
+
               <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                Use these browser IDs in your <code className="px-1.5 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-xs">data-browser</code> attributes or JavaScript API calls:
+                Use these discovered browser IDs in your <code className="px-1.5 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-xs">data-browser</code> attributes:
               </p>
-              <div className="bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500 p-4 rounded">
-                <div className="text-sm text-blue-800 dark:text-blue-300 space-y-2">
-                  <div>
-                    <strong>Windows Local:</strong><br />
-                    chrome-stable, chrome-beta, chrome-dev<br />
-                    edge-stable, edge-beta, edge-dev<br />
-                    chrome (alias), edge (alias)
-                  </div>
-                  <div>
-                    <strong>WSL:</strong><br />
-                    chrome-stable-wsl, chrome-beta-wsl, chrome-dev-wsl<br />
-                    edge-stable-wsl, edge-beta-wsl, edge-dev-wsl<br />
-                    firefox-wsl, opera-wsl, brave-wsl
+
+              {detectedBrowsers.length > 0 ? (
+                <div className="bg-emerald-50 dark:bg-emerald-900/10 border-l-4 border-emerald-500 p-4 rounded">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {detectedBrowsers.map((id) => (
+                      <div key={id} className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400 font-mono">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                        {id}
+                      </div>
+                    ))}
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="bg-slate-50 dark:bg-slate-900/20 border-l-4 border-slate-400 p-4 rounded text-sm text-slate-600 dark:text-slate-400 italic">
+                  🔍 Scanning system for installed browsers...
+                </div>
+              )}
             </div>
 
             {/* Troubleshooting */}

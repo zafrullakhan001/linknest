@@ -46,21 +46,21 @@ const getBrowserVersion = async (registryKey) => {
     }, (response) => {
       // Debug log removed to reduce console noise
       // console.log('Received response:', response);
-      
+
       if (chrome.runtime.lastError) {
         // Suppress error logging for registry errors (usually means browser not installed)
         // console.error(`Native messaging error: ${chrome.runtime.lastError.message}`);
         resolve(null);
         return;
       }
-      
+
       if (!response) {
         // Suppress error logging for no response
         // console.error('No response received from native messaging host');
         resolve(null);
         return;
       }
-      
+
       // Check if response contains version directly
       if (typeof response === 'string') {
         if (response.startsWith('Error:')) {
@@ -72,7 +72,7 @@ const getBrowserVersion = async (registryKey) => {
         }
         return;
       }
-      
+
       // Check if response is an object with version property
       if (response && response.version) {
         if (response.version.startsWith('Error:')) {
@@ -84,7 +84,7 @@ const getBrowserVersion = async (registryKey) => {
         }
         return;
       }
-      
+
       // Suppress error logging for invalid response format
       // console.error('Invalid response format:', response);
       resolve(null);
@@ -157,54 +157,54 @@ const isValidVersion = (version) => {
 const checkAndUpdateBrowserVersions = async () => {
   const browsers = [
     // Edge paths for both architectures
-    { 
-      id: 'edgeStableCheckbox', 
+    {
+      id: 'edgeStableCheckbox',
       registryKey: [
         'HKEY_CURRENT_USER\\Software\\Microsoft\\Edge\\BLBeacon',
         'HKEY_CURRENT_USER\\Software\\WOW6432Node\\Microsoft\\Edge\\BLBeacon'
-      ], 
-      name: 'Edge Stable' 
+      ],
+      name: 'Edge Stable'
     },
-    { 
-      id: 'edgeBetaCheckbox', 
+    {
+      id: 'edgeBetaCheckbox',
       registryKey: [
         'HKEY_CURRENT_USER\\Software\\Microsoft\\Edge Beta\\BLBeacon',
         'HKEY_CURRENT_USER\\Software\\WOW6432Node\\Microsoft\\Edge Beta\\BLBeacon'
-      ], 
-      name: 'Edge Beta' 
+      ],
+      name: 'Edge Beta'
     },
-    { 
-      id: 'edgeDevCheckbox', 
+    {
+      id: 'edgeDevCheckbox',
       registryKey: [
         'HKEY_CURRENT_USER\\Software\\Microsoft\\Edge Dev\\BLBeacon',
         'HKEY_CURRENT_USER\\Software\\WOW6432Node\\Microsoft\\Edge Dev\\BLBeacon'
-      ], 
-      name: 'Edge Dev' 
+      ],
+      name: 'Edge Dev'
     },
     // Chrome paths for both architectures
-    { 
-      id: 'chromeStableCheckbox', 
+    {
+      id: 'chromeStableCheckbox',
       registryKey: [
         'HKEY_CURRENT_USER\\Software\\Google\\Chrome\\BLBeacon',
         'HKEY_CURRENT_USER\\Software\\WOW6432Node\\Google\\Chrome\\BLBeacon'
-      ], 
-      name: 'Chrome Stable' 
+      ],
+      name: 'Chrome Stable'
     },
-    { 
-      id: 'chromeBetaCheckbox', 
+    {
+      id: 'chromeBetaCheckbox',
       registryKey: [
         'HKEY_CURRENT_USER\\Software\\Google\\Chrome Beta\\BLBeacon',
         'HKEY_CURRENT_USER\\Software\\WOW6432Node\\Google\\Chrome Beta\\BLBeacon'
-      ], 
-      name: 'Chrome Beta' 
+      ],
+      name: 'Chrome Beta'
     },
-    { 
-      id: 'chromeDevCheckbox', 
+    {
+      id: 'chromeDevCheckbox',
       registryKey: [
         'HKEY_CURRENT_USER\\Software\\Google\\Chrome Dev\\BLBeacon',
         'HKEY_CURRENT_USER\\Software\\WOW6432Node\\Google\\Chrome Dev\\BLBeacon'
-      ], 
-      name: 'Chrome Dev' 
+      ],
+      name: 'Chrome Dev'
     }
   ];
 
@@ -244,13 +244,13 @@ const checkAndUpdateBrowserVersions = async () => {
             });
 
             // First check if the checkbox for this browser is checked
-            chrome.storage.local.get([browser.id], function(checkboxResult) {
+            chrome.storage.local.get([browser.id], function (checkboxResult) {
               console.log(`Checkbox state for ${browser.name} (${browser.id}): `, checkboxResult[browser.id]);
-              
+
               // Save the new version regardless of checkbox state
               chrome.storage.local.set({ [`${browser.id}Version`]: newVersion, versionUpdateLog }, () => {
                 console.log(`[${dateTime}] ${browser.name} version changed from ${currentVersion} to ${newVersion}`);
-                
+
                 // Only show notification if the checkbox is checked and it's not the initial set
                 if (checkboxResult[browser.id] === true && currentVersion !== '0.0.0.0') {
                   console.log(`Showing notification for ${browser.name} - checkbox is checked`);
@@ -356,7 +356,7 @@ const checkLicenseStatus = async () => {
       'licenseStatus',
       'installDate'
     ]);
-    
+
     // If already licensed and has a key, validate it's still good
     if (data.licenseStatus === LICENSE_STATUS.LICENSED && data.licenseKey) {
       // In a real implementation, you might want to verify with the server periodically
@@ -367,10 +367,10 @@ const checkLicenseStatus = async () => {
         await deactivateLicense();
         return await checkTrialStatus();
       }
-      
+
       return LICENSE_STATUS.LICENSED;
     }
-    
+
     // Check trial status
     return await checkTrialStatus();
   } catch (error) {
@@ -382,18 +382,18 @@ const checkLicenseStatus = async () => {
 // Function to check if trial has expired and update status
 const checkTrialStatus = async () => {
   const data = await chrome.storage.local.get(['installDate', 'licenseStatus']);
-  
+
   // If already marked as expired, keep it that way
   if (data.licenseStatus === LICENSE_STATUS.EXPIRED) {
     return LICENSE_STATUS.EXPIRED;
   }
-  
+
   // Check install date to determine if trial expired
   if (data.installDate) {
     const installTime = new Date(data.installDate).getTime();
     const currentTime = new Date().getTime();
     const daysSinceInstall = Math.floor((currentTime - installTime) / (1000 * 60 * 60 * 24));
-    
+
     if (daysSinceInstall > TRIAL_PERIOD_DAYS) {
       // Trial has expired, update status
       await chrome.storage.local.set({ licenseStatus: LICENSE_STATUS.EXPIRED });
@@ -406,9 +406,9 @@ const checkTrialStatus = async () => {
   } else {
     // No install date, set it now
     const now = new Date().toISOString();
-    await chrome.storage.local.set({ 
+    await chrome.storage.local.set({
       installDate: now,
-      licenseStatus: LICENSE_STATUS.TRIAL 
+      licenseStatus: LICENSE_STATUS.TRIAL
     });
     return LICENSE_STATUS.TRIAL;
   }
@@ -417,7 +417,7 @@ const checkTrialStatus = async () => {
 // Function to disable extension functionality when trial expires
 const disableExtensionFunctionality = async () => {
   console.log("Disabling extension functionality - trial expired");
-  
+
   try {
     // First remove all existing menus
     await new Promise(resolve => {
@@ -426,10 +426,10 @@ const disableExtensionFunctionality = async () => {
         resolve();
       });
     });
-    
+
     // Wait a short time before creating the new menu to prevent race conditions
     await new Promise(resolve => setTimeout(resolve, 50));
-    
+
     // Create a single context menu item to purchase
     await new Promise(resolve => {
       chrome.contextMenus.create({
@@ -446,18 +446,18 @@ const disableExtensionFunctionality = async () => {
         resolve();
       });
     });
-    
+
     // Clear any active alarms to stop background tasks
     chrome.alarms.clear('checkBrowserVersions');
     chrome.alarms.clear('checkLicense');
-    
+
     // Show expiration notification if not shown recently
-    chrome.storage.local.get(['lastExpiryNotification'], function(data) {
+    chrome.storage.local.get(['lastExpiryNotification'], function (data) {
       const now = Date.now();
       // Only show once per day
       if (!data.lastExpiryNotification || (now - data.lastExpiryNotification > 24 * 60 * 60 * 1000)) {
         chrome.storage.local.set({ lastExpiryNotification: now });
-        
+
         chrome.notifications.create({
           type: 'basic',
           iconUrl: 'icon.png',
@@ -485,25 +485,25 @@ const disableExtensionFunctionality = async () => {
 const initializeExtension = async () => {
   chrome.storage.local.get(['extensionReloaded', 'checkInterval', 'searchConfig', 'installDate'], async function (result) {
     const checkInterval = parseInt(result.checkInterval, 10) || 60; // Default to 60 minutes if not set
-    
+
     // Initialize searchConfig if it doesn't exist
     if (!result.searchConfig) {
       chrome.storage.local.set({ searchConfig: defaultSearchConfig });
     }
-    
+
     // Set install date for trial if not already set
     if (!result.installDate) {
       const installDate = new Date().toISOString();
-      chrome.storage.local.set({ 
+      chrome.storage.local.set({
         installDate: installDate,
-        licenseStatus: LICENSE_STATUS.TRIAL 
+        licenseStatus: LICENSE_STATUS.TRIAL
       });
       console.log(`Trial period started on ${installDate}`);
     }
-    
+
     // Check license status immediately on startup
     const licenseStatus = await checkLicenseStatus();
-    
+
     // If license is expired, disable functionality immediately
     if (licenseStatus === LICENSE_STATUS.EXPIRED) {
       console.log("License expired - disabling extension functionality");
@@ -531,7 +531,7 @@ const initializeExtension = async () => {
           chrome.storage.local.get(['showWSL'], function (result) {
             const showWSL = result.showWSL || false;
             createContextMenus(showWSL);
-            
+
             // Set the alarm with the current checkInterval
             chrome.alarms.create('checkBrowserVersions', { periodInMinutes: checkInterval });
             checkAndUpdateBrowserVersions();
@@ -549,13 +549,13 @@ const initializeExtension = async () => {
         chrome.storage.local.get('showWSL', function (result) {
           const showWSL = result.showWSL || false;
           createContextMenus(showWSL);
-          
+
           // Update the alarm when the extension is initialized
           chrome.alarms.create('checkBrowserVersions', { periodInMinutes: checkInterval });
         });
       }
     }
-    
+
     // Always create the license check alarm
     chrome.alarms.create('checkLicense', { periodInMinutes: 60 }); // Check license status hourly
   });
@@ -574,10 +574,10 @@ async function createContextMenus(showWSL) {
   try {
     // Remove all existing menus first
     await new Promise(resolve => chrome.contextMenus.removeAll(resolve));
-    
+
     // Check license status first
     const { licenseStatus } = await chrome.storage.local.get('licenseStatus');
-    
+
     // If license is expired, only create the purchase license menu item
     if (licenseStatus === LICENSE_STATUS.EXPIRED) {
       console.log("License expired - only creating purchase menu item");
@@ -607,7 +607,7 @@ async function createContextMenus(showWSL) {
 
     // Get both built-in search config and custom search engines
     const { searchConfig, customSearchEngines = [] } = await chrome.storage.local.get(['searchConfig', 'customSearchEngines']);
-    
+
     // Create built-in search engine menus
     const searchEngines = {
       general: [
@@ -632,7 +632,7 @@ async function createContextMenus(showWSL) {
     // Create search engine menus by category
     for (const [category, engines] of Object.entries(searchEngines)) {
       let hasEnabledEngines = false;
-      
+
       // Check if any engine in this category is enabled
       for (const engine of engines) {
         if (searchConfig && searchConfig[engine.type]) {
@@ -640,9 +640,9 @@ async function createContextMenus(showWSL) {
           break;
         }
       }
-      
+
       if (!hasEnabledEngines) continue;
-      
+
       // Create category separator
       const categoryId = `${category}-separator`;
       if (!createdIds.has(categoryId)) {
@@ -664,7 +664,7 @@ async function createContextMenus(showWSL) {
       // Create menu items for each enabled engine in the category
       for (const engine of engines) {
         if (!searchConfig || !searchConfig[engine.type]) continue;
-        
+
         const parentId = `${engine.type}-search-parent`;
         if (!createdIds.has(parentId)) {
           await new Promise((resolve) => {
@@ -737,7 +737,7 @@ async function createContextMenus(showWSL) {
       // Create menu items for custom search engines
       for (const engine of enabledCustomEngines) {
         const engineId = `custom-${engine.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
-        
+
         // Create parent menu item
         await new Promise((resolve) => {
           chrome.contextMenus.create({
@@ -822,10 +822,10 @@ async function createContextMenus(showWSL) {
 
     // Create browser menu items
     await new Promise((resolve) => {
-      chrome.storage.local.get(commands, function(result) {
-        const filteredBrowsers = browsers.filter(browser => 
+      chrome.storage.local.get(commands, function (result) {
+        const filteredBrowsers = browsers.filter(browser =>
           result[browser.command] !== 'NA' || browser.command.startsWith('edge://'));
-        const filteredWslBrowsers = wslBrowsers.filter(browser => 
+        const filteredWslBrowsers = wslBrowsers.filter(browser =>
           result[browser.command] !== 'NA');
 
         const createMenuItems = async (menuItems) => {
@@ -847,8 +847,8 @@ async function createContextMenus(showWSL) {
               });
 
               // Add sub-menu items for Beta, Dev, and Stable browsers
-              if (browser.id.includes('-beta') || browser.id.includes('-dev') || 
-                  browser.id.includes('-stable') && !browser.id.includes('-local')) {
+              if (browser.id.includes('-beta') || browser.id.includes('-dev') ||
+                browser.id.includes('-stable') && !browser.id.includes('-local')) {
                 // Add normal window option
                 const normalId = `${browser.id}-normal`;
                 if (!createdIds.has(normalId)) {
@@ -934,16 +934,16 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   // Handle custom search engines
   if (info.menuItemId.startsWith('custom-')) {
     const { customSearchEngines = [] } = await chrome.storage.local.get('customSearchEngines');
-    
+
     // Extract the engine name from the ID
     const engineId = info.menuItemId.split('-')[1];
-    const engine = customSearchEngines.find(e => 
+    const engine = customSearchEngines.find(e =>
       e.name.toLowerCase().replace(/[^a-z0-9]/g, '-') === engineId
     );
 
     if (engine) {
       const searchUrl = engine.url.replace('{searchTerms}', encodeURIComponent(info.selectionText));
-      
+
       // Determine how to open the search
       if (info.menuItemId.endsWith('-tab')) {
         chrome.tabs.create({ url: searchUrl });
@@ -990,14 +990,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
         if (command) {
           // Determine the URL to open - prioritize linkUrl over pageUrl
-          let urlToOpen = info.linkUrl || info.pageUrl || (tab && tab.url) || 
-                         (browser.id.includes('edge') ? 'edge://newtab' : 'chrome://newtab');
+          let urlToOpen = info.linkUrl || info.pageUrl || (tab && tab.url) ||
+            (browser.id.includes('edge') ? 'edge://newtab' : 'chrome://newtab');
 
           // Check if this is a WSL command
           if (browser.command.startsWith('wsl')) {
             // For WSL commands, we need to prepare the command differently
             command = await prepareWSLCommand(command);
-            
+
             // Format the command with quotes and private mode flags if needed
             if (info.menuItemId.endsWith('-inprivate')) {
               if (browser.id.includes('chrome')) {
@@ -1049,8 +1049,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
       if (command) {
         // Determine the URL to open - prioritize linkUrl over pageUrl
-        let urlToOpen = info.linkUrl || info.pageUrl || (tab && tab.url) || 
-                       (browser.id.includes('edge') ? 'edge://newtab' : 'chrome://newtab');
+        let urlToOpen = info.linkUrl || info.pageUrl || (tab && tab.url) ||
+          (browser.id.includes('edge') ? 'edge://newtab' : 'chrome://newtab');
 
         // Check if this is a WSL command
         if (browser.command.startsWith('wsl')) {
@@ -1077,13 +1077,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         alert(`Error: Path not set for ${browser.id.replace(/-/g, ' ')} in settings.`);
       }
     });
-  } else if (info.parentMenuItemId === "youtube-search-parent" || 
-             info.parentMenuItemId === "google-search-parent" || 
-             info.parentMenuItemId === "duckduckgo-search-parent" || 
-             info.parentMenuItemId === "perplexity-search-parent" || 
-             info.parentMenuItemId === "chatgpt-search-parent" ||
-             info.parentMenuItemId === "amazon-search-parent" ||
-             info.parentMenuItemId === "googlemaps-search-parent") {
+  } else if (info.parentMenuItemId === "youtube-search-parent" ||
+    info.parentMenuItemId === "google-search-parent" ||
+    info.parentMenuItemId === "duckduckgo-search-parent" ||
+    info.parentMenuItemId === "perplexity-search-parent" ||
+    info.parentMenuItemId === "chatgpt-search-parent" ||
+    info.parentMenuItemId === "amazon-search-parent" ||
+    info.parentMenuItemId === "googlemaps-search-parent") {
     const searchQuery = encodeURIComponent(info.selectionText);
     let searchUrl, searchType;
 
@@ -1117,7 +1117,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         searchType = "Google Maps";
         break;
     }
-    
+
     switch (info.menuItemId.split('-')[2]) {
       case "tab":
         chrome.tabs.create({ url: searchUrl });
@@ -1181,14 +1181,14 @@ chrome.runtime.onInstalled.addListener(async () => {
 
   // Check license status
   const { licenseStatus } = await chrome.storage.local.get('licenseStatus');
-  
+
   // If license is expired, call disableExtensionFunctionality
   if (licenseStatus === LICENSE_STATUS.EXPIRED) {
     console.log("License expired detected during installation - disabling functionality");
     await disableExtensionFunctionality();
     return;
   }
-  
+
   // Create context menus based on settings
   await createContextMenus(settings.showWSL);
 });
@@ -1197,14 +1197,14 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.runtime.onStartup.addListener(async () => {
   // Check license status first
   const { licenseStatus } = await chrome.storage.local.get('licenseStatus');
-  
+
   // If license is expired, call disableExtensionFunctionality
   if (licenseStatus === LICENSE_STATUS.EXPIRED) {
     console.log("License expired detected during startup - disabling functionality");
     await disableExtensionFunctionality();
     return;
   }
-  
+
   // Otherwise proceed with normal context menu creation
   const { showWSL = false } = await chrome.storage.local.get('showWSL');
   await createContextMenus(showWSL);
@@ -1222,7 +1222,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
       }, 100);
       return;
     }
-    
+
     const pathsChanged = Object.keys(changes).some(key => key.includes('Path'));
     if (changes.showWSL || pathsChanged || changes.searchConfig || changes.contextMenuEnabled) {
       // Check the current license status first before recreating menus
@@ -1238,12 +1238,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
           }
           return;
         }
-        
+
         const showWSL = result.showWSL || false;
         await createContextMenus(showWSL);
       });
     }
-    
+
     if (changes.checkInterval) {
       const checkInterval = parseInt(changes.checkInterval.newValue, 10) || 60;
       chrome.alarms.clear('checkBrowserVersions', () => {
@@ -1261,7 +1261,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       await createContextMenus(showWSL);
     });
   }
-  
+
   // Handle PowerShell script execution request
   if (request.action === 'executePowerShellScript') {
     executePowerShellScript(request.scriptPath)
@@ -1272,11 +1272,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         console.error('Error executing PowerShell script:', error);
         sendResponse({ success: false, error: error.message });
       });
-    
+
     // Return true to indicate we'll send a response asynchronously
     return true;
   }
-  
+
   // Listen for messages from popup.js or content scripts
   if (request.action === 'activateLicense') {
     if (request.licenseKey) {
@@ -1285,7 +1285,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ valid: false, message: 'No license key provided' });
     }
     return true; // Indicate we will respond asynchronously
-  } 
+  }
   else if (request.action === 'deactivateLicense') {
     deactivateLicense().then(result => {
       sendResponse(result);
@@ -1301,44 +1301,44 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       try {
         if (chrome.runtime.lastError) {
           console.error('Native messaging error:', chrome.runtime.lastError);
-          sendResponse({ 
-            success: false, 
-            error: chrome.runtime.lastError.message 
+          sendResponse({
+            success: false,
+            error: chrome.runtime.lastError.message
           });
           return;
         }
-        
+
         console.log("Received response from native messaging host:", response);
-        
+
         // Handle different response formats
         if (!response) {
           console.error('Empty response from native messaging host');
-          sendResponse({ 
-            success: false, 
+          sendResponse({
+            success: false,
             error: 'Empty response from native messaging host'
           });
           return;
         }
-        
+
         if (response.error) {
           console.error('Error from native messaging host:', response.error);
-          sendResponse({ 
-            success: false, 
+          sendResponse({
+            success: false,
             error: response.error || 'Error from native messaging host'
           });
           return;
         }
-        
+
         // The response may be the hardware info directly
         let hardwareInfo = null;
-        
+
         // Look for typical hardware info properties to determine if this is hardware info
-        const hardwareInfoProps = ['platform', 'machine', 'processor', 'mac', 'volume_serial', 
-                                   'bios_serial', 'cpu_id', 'hostname', 'machine_id'];
-        
+        const hardwareInfoProps = ['platform', 'machine', 'processor', 'mac', 'volume_serial',
+          'bios_serial', 'cpu_id', 'hostname', 'machine_id'];
+
         // Check if response itself has hardware info properties
         const directMatchCount = hardwareInfoProps.filter(prop => typeof response[prop] !== 'undefined').length;
-        
+
         if (directMatchCount >= 2) {
           console.log("Response appears to be direct hardware info");
           hardwareInfo = response;
@@ -1354,7 +1354,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             const value = response[key];
             if (typeof value === 'object' && value !== null) {
               const matchCount = hardwareInfoProps.filter(prop => typeof value[prop] !== 'undefined').length;
-              
+
               if (matchCount >= 2) {
                 console.log(`Found hardware info in property "${key}"`);
                 hardwareInfo = value;
@@ -1363,44 +1363,44 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
           }
         }
-        
+
         // If we still couldn't find hardware info, return an error
         if (!hardwareInfo) {
           console.error('Could not find hardware info in response:', response);
-          sendResponse({ 
-            success: false, 
+          sendResponse({
+            success: false,
             error: 'Invalid response from native messaging host: missing hardware info'
           });
           return;
         }
-        
+
         // Generate a hardware ID from the received info
         const encoder = new TextEncoder();
         const data = encoder.encode(JSON.stringify(hardwareInfo));
         const hashBuffer = await crypto.subtle.digest('SHA-256', data);
         const hashArray = Array.from(new Uint8Array(hashBuffer));
         const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        
+
         // Save the generated hardware ID
-        await chrome.storage.local.set({ 
+        await chrome.storage.local.set({
           hardwareId: hashHex,
           hardwareIdError: null,
           usingFallbackId: false
         });
-        
-        sendResponse({ 
-          success: true, 
-          hardwareId: hashHex 
+
+        sendResponse({
+          success: true,
+          hardwareId: hashHex
         });
       } catch (error) {
         console.error('Error regenerating hardware ID:', error);
-        sendResponse({ 
-          success: false, 
+        sendResponse({
+          success: false,
           error: error.message || 'Unknown error'
         });
       }
     });
-    
+
     return true; // Indicate we will respond asynchronously
   }
   else if (request.action === 'licenseUpdated') {
@@ -1409,13 +1409,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .then(async (licenseStatus) => {
         console.log(`License status updated to: ${licenseStatus} - updating UI`);
         const { showWSL = false } = await chrome.storage.local.get('showWSL');
-        
+
         if (licenseStatus === LICENSE_STATUS.EXPIRED) {
           await disableExtensionFunctionality();
         } else {
           await createContextMenus(showWSL);
         }
-        
+
         sendResponse({ success: true });
       })
       .catch(error => {
@@ -1432,7 +1432,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       createContextMenus();
     });
   }
-  
+
   if (request.action === 'updateSandboxContextMenu') {
     // Update sandbox context menu enabled state
     chrome.storage.local.set({ 'sandboxContextEnabled': request.enabled }, () => {
@@ -1450,7 +1450,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Handle link opening from third-party landing pages
   if (request.action === 'openLinkInBrowser') {
     const { url, browserId } = request;
-    
+
     // Map browserId to command setting
     const browserMap = {
       'edge-stable-local': 'edgeStablePath',
@@ -1469,46 +1469,37 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       'opera': 'wslOperaPath',
       'brave': 'wslBravePath'
     };
-    
+
     const commandSetting = browserMap[browserId];
-    if (!commandSetting) {
-      sendResponse({ 
-        success: false, 
-        error: 'Invalid browser ID: ' + browserId 
-      });
-      return true;
-    }
-    
-    chrome.storage.local.get([commandSetting], async function (result) {
-      let command = result[commandSetting];
-      
+
+    // Function to execute the browser opening
+    const executeOpen = async (command, isWsl) => {
       if (!command || command === 'NA') {
-        sendResponse({ 
-          success: false, 
-          error: 'Browser path not configured for ' + browserId 
+        sendResponse({
+          success: false,
+          error: 'Browser path not configured for ' + browserId
         });
         return;
       }
-      
+
       // Prepare command based on WSL or local
-      if (commandSetting.startsWith('wsl')) {
-        command = await prepareWSLCommand(command);
-        command = `${command} "${url}"`;
+      let finalCommand;
+      if (isWsl) {
+        finalCommand = await prepareWSLCommand(command);
+        finalCommand = `${finalCommand} "${url}"`;
       } else {
-        command = `"${command}" "${url}"`;
+        finalCommand = `"${command}" "${url}"`;
       }
-      
-      console.log('Opening link in browser:', command);
-      
+
+      console.log('Opening link in browser:', finalCommand);
+
       // Send immediate response to prevent timeout
-      // The browser launch is asynchronous, so we respond immediately
       sendResponse({ success: true, message: 'Browser launch initiated' });
-      
-      // Send to native messaging host (fire and forget for faster response)
+
+      // Send to native messaging host
       chrome.runtime.sendNativeMessage('com.example.browserlauncher', {
-        command: command
+        command: finalCommand
       }, (response) => {
-        // Log result but don't block the response
         if (chrome.runtime.lastError) {
           console.error('Native messaging error:', chrome.runtime.lastError.message);
         } else if (response && response.result && response.result.startsWith("Error:")) {
@@ -1517,52 +1508,126 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           console.log('Browser launched successfully');
         }
       });
-    });
-    
+    };
+
+    if (commandSetting) {
+      // Standard browser
+      chrome.storage.local.get([commandSetting], function (result) {
+        executeOpen(result[commandSetting], commandSetting.startsWith('wsl'));
+      });
+    } else {
+      // Check for custom browser
+      chrome.storage.local.get(['customBrowsers'], function (result) {
+        const customBrowsers = result.customBrowsers || [];
+        // Match by ID or Name (case insensitive)
+        const customBrowser = customBrowsers.find(b =>
+          (b.id && b.id === browserId) ||
+          (b.name && b.name.toLowerCase() === browserId.toLowerCase())
+        );
+
+        if (customBrowser) {
+          // Determine if WSL based on platform setting or path
+          const isWsl = customBrowser.platform === 'wsl' || (customBrowser.path && customBrowser.path.startsWith('/'));
+          executeOpen(customBrowser.path, isWsl);
+        } else {
+          sendResponse({
+            success: false,
+            error: 'Invalid browser ID: ' + browserId
+          });
+        }
+      });
+    }
+
     return true; // Keep channel open for async response
+  }
+
+  // Handle getBrowsers request
+  if (request.action === 'getBrowsers') {
+    chrome.storage.local.get(null, function (result) {
+      const availableBrowsers = [];
+
+      // Standard browsers
+      const standardMap = {
+        'edgeStablePath': 'edge-stable-local',
+        'edgeBetaPath': 'edge-beta-local',
+        'edgeDevPath': 'edge-dev-local',
+        'chromeStablePath': 'chrome-stable-local',
+        'chromeBetaPath': 'chrome-beta-local',
+        'chromeDevPath': 'chrome-dev-local',
+        'wslEdgeStablePath': 'edge-stable-wsl',
+        'wslEdgeBetaPath': 'edge-beta-wsl',
+        'wslEdgeDevPath': 'edge-dev-wsl',
+        'wslChromeStablePath': 'chrome-stable-wsl',
+        'wslChromeBetaPath': 'chrome-beta-wsl',
+        'wslChromeDevPath': 'chrome-dev-wsl',
+        'wslFirefoxPath': 'firefox-wsl',
+        'wslOperaPath': 'opera-wsl',
+        'wslBravePath': 'brave-wsl'
+      };
+
+      for (const [pathKey, id] of Object.entries(standardMap)) {
+        if (result[pathKey] && result[pathKey] !== 'NA') {
+          availableBrowsers.push(id);
+        }
+      }
+
+      // Custom browsers
+      if (result.customBrowsers && Array.isArray(result.customBrowsers)) {
+        result.customBrowsers.forEach(cb => {
+          if (cb.enabled !== false) { // Include if enabled or enabled property missing
+            // Use ID if available, otherwise sanitize name
+            const id = cb.id || cb.name.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+            availableBrowsers.push(id);
+          }
+        });
+      }
+
+      sendResponse({ success: true, browsers: availableBrowsers });
+    });
+    return true;
   }
 });
 
 // Function to execute PowerShell script
 async function executePowerShellScript(scriptPath) {
-    console.log(`Attempting to execute PowerShell script: ${scriptPath}`);
-    
-    try {
-        // Send message to native messaging host
-        const response = await chrome.runtime.sendNativeMessage(
-            'com.example.browserlauncher',
-            {
-                action: 'executePowerShellScript',
-                scriptPath: scriptPath
-            }
-        );
-        
-        if (!response) {
-            const errorMsg = 'No response received from native messaging host';
-            console.error(errorMsg);
-            return { success: false, error: errorMsg };
-        }
-        
-        // Check if the response contains an error
-        if (response.error) {
-            console.error(`Native messaging host returned error: ${response.error}`);
-            return { success: false, error: response.error };
-        }
-        
-        // Check if the response contains a result
-        if (response.result) {
-            console.log('PowerShell script executed successfully');
-            return { success: true, result: response.result };
-        } else {
-            const errorMsg = 'No result returned from native messaging host';
-            console.error(errorMsg);
-            return { success: false, error: errorMsg };
-        }
-    } catch (error) {
-        const errorMsg = `Native messaging error: ${error.message}`;
-        console.error(errorMsg);
-        return { success: false, error: errorMsg };
+  console.log(`Attempting to execute PowerShell script: ${scriptPath}`);
+
+  try {
+    // Send message to native messaging host
+    const response = await chrome.runtime.sendNativeMessage(
+      'com.example.browserlauncher',
+      {
+        action: 'executePowerShellScript',
+        scriptPath: scriptPath
+      }
+    );
+
+    if (!response) {
+      const errorMsg = 'No response received from native messaging host';
+      console.error(errorMsg);
+      return { success: false, error: errorMsg };
     }
+
+    // Check if the response contains an error
+    if (response.error) {
+      console.error(`Native messaging host returned error: ${response.error}`);
+      return { success: false, error: response.error };
+    }
+
+    // Check if the response contains a result
+    if (response.result) {
+      console.log('PowerShell script executed successfully');
+      return { success: true, result: response.result };
+    } else {
+      const errorMsg = 'No result returned from native messaging host';
+      console.error(errorMsg);
+      return { success: false, error: errorMsg };
+    }
+  } catch (error) {
+    const errorMsg = `Native messaging error: ${error.message}`;
+    console.error(errorMsg);
+    return { success: false, error: errorMsg };
+  }
 }
 
 // Listen for the alarm event to check browser versions
@@ -1579,20 +1644,20 @@ checkAndUpdateBrowserVersions();
 // Update the handleShortcut function
 function handleShortcut(command) {
   if (command === "open-youtube-search" || command === "open-youtube-incognito") {
-    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
       if (tabs.length === 0) {
         console.log("No active tab found");
         return;
       }
-      
-      chrome.tabs.sendMessage(tabs[0].id, {action: "getSelectedText"}, function(response) {
+
+      chrome.tabs.sendMessage(tabs[0].id, { action: "getSelectedText" }, function (response) {
         if (chrome.runtime.lastError) {
           console.log("Error sending message:", chrome.runtime.lastError.message);
           // Fallback: Open YouTube search without selected text
           openYouTubeSearch("", command === "open-youtube-incognito");
           return;
         }
-        
+
         const searchQuery = response && response.selectedText ? response.selectedText : "";
         openYouTubeSearch(searchQuery, command === "open-youtube-incognito");
       });
@@ -1602,7 +1667,7 @@ function handleShortcut(command) {
 
 function openYouTubeSearch(searchQuery, isIncognito) {
   const encodedQuery = encodeURIComponent(searchQuery);
-  const searchUrl = searchQuery 
+  const searchUrl = searchQuery
     ? `https://www.youtube.com/results?search_query=${encodedQuery}`
     : "https://www.youtube.com";
 
@@ -1622,12 +1687,12 @@ initializeExtension();
 // Test function to verify checkbox-based notification behavior
 function testBrowserNotification(browserId, browserName) {
   console.log(`Testing notification for ${browserName} with checkbox ID ${browserId}`);
-  chrome.storage.local.get([browserId], function(result) {
+  chrome.storage.local.get([browserId], function (result) {
     console.log(`Current checkbox state for ${browserId}: ${result[browserId]}`);
     // Simulate a version update notification
     const oldVersion = "100.0.0.0";
     const newVersion = "101.0.0.0";
-    
+
     if (result[browserId] === true) {
       console.log(`Showing notification for ${browserName} - checkbox is checked`);
       showNotification(browserName, oldVersion, newVersion);
@@ -1682,7 +1747,7 @@ chrome.runtime.onMessage.addListener((message) => {
 async function executeCommand(command) {
   // Check license status before execution
   const licenseStatus = await checkLicenseStatus();
-  
+
   // Only allow commands if license is valid or in trial
   if (licenseStatus === LICENSE_STATUS.EXPIRED) {
     chrome.notifications.create({
@@ -1703,10 +1768,10 @@ async function executeCommand(command) {
     });
     return;
   }
-  
+
   // Continue with original execution logic
   // ... existing command execution logic would go here ...
-  
+
   chrome.storage.local.get('eulaAccepted', function (result) {
     if (result.eulaAccepted) {
       // Execute command logic here
@@ -1724,15 +1789,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(result => sendResponse(result))
       .catch(error => {
         console.error('License validation error:', error);
-        sendResponse({ 
-          valid: false, 
+        sendResponse({
+          valid: false,
           errorCode: 'unknown_error',
-          message: 'Error validating license' 
+          message: 'Error validating license'
         });
       });
     return true; // Keep message channel open for async response
   }
-  
+
   if (message.action === 'deactivateLicense') {
     deactivateLicense()
       .then(result => sendResponse(result))
@@ -1742,20 +1807,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
     return true; // Keep message channel open for async response
   }
-  
+
   if (message.action === 'licenseUpdated') {
     // No longer reload extension - we're manually updating context menus
     checkLicenseStatus()
       .then(async (licenseStatus) => {
         console.log(`License status updated to: ${licenseStatus} - updating UI`);
         const { showWSL = false } = await chrome.storage.local.get('showWSL');
-        
+
         if (licenseStatus === LICENSE_STATUS.EXPIRED) {
           await disableExtensionFunctionality();
         } else {
           await createContextMenus(showWSL);
         }
-        
+
         sendResponse({ success: true });
       })
       .catch(error => {
@@ -1776,72 +1841,72 @@ async function extractAndVerifyLicenseMetadata(licenseKey) {
     // Check basic format first
     const parts = licenseKey.split('#');
     if (parts.length !== 2) {
-      return { 
-        valid: false, 
+      return {
+        valid: false,
         errorCode: 'invalid_format',
         message: 'Invalid license key format'
       };
     }
-    
+
     // Get current hardware ID
     const data = await chrome.storage.local.get('hardwareId');
     const hardwareId = data.hardwareId;
-    
+
     if (!hardwareId) {
-      return { 
-        valid: false, 
+      return {
+        valid: false,
         errorCode: 'unknown_error',
         message: 'Hardware ID not found'
       };
     }
-    
+
     // Extract parts of the key
     const keyPart = parts[0];
     const metadataBase64 = parts[1];
-    
+
     // Decode and parse the metadata
     try {
       // Decode base64 string to JSON
       const decodedData = atob(metadataBase64);
       const metadata = JSON.parse(decodedData);
-      
+
       // Verify the license key matches the hardware ID
       const targetHardwareId = metadata.hardwareId;
       if (!targetHardwareId || targetHardwareId !== hardwareId) {
-        return { 
-          valid: false, 
+        return {
+          valid: false,
           errorCode: 'hardware_mismatch',
           message: 'This license key is bound to a different device'
         };
       }
-      
+
       // Check if the license has expired (for subscription licenses)
       if (metadata.expiryDate) {
         const expiryDate = new Date(metadata.expiryDate);
         const now = new Date();
-        
+
         if (now > expiryDate) {
-          return { 
-            valid: false, 
+          return {
+            valid: false,
             errorCode: 'expired_key',
             message: 'This license key has expired'
           };
         }
       }
-      
+
       // Verify key integrity
       // Production implementation would use proper cryptographic validation here
       const expectedKeyPart = generateKeyFromHardwareId(hardwareId, metadata.salt || '');
       const formattedKeyPart = keyPart.replace(/-/g, '');
-      
+
       if (formattedKeyPart.substr(5, 8) !== hardwareId.substr(0, 8)) {
-        return { 
+        return {
           valid: false,
           errorCode: 'tampered_key',
           message: 'Invalid license key for this device'
         };
       }
-      
+
       // All verification passed
       return {
         valid: true,
@@ -1857,18 +1922,18 @@ async function extractAndVerifyLicenseMetadata(licenseKey) {
       };
     } catch (e) {
       console.error('Error decoding license metadata:', e);
-      return { 
-        valid: false, 
+      return {
+        valid: false,
         errorCode: 'extraction_failed',
         message: 'Could not decode license key data'
       };
     }
   } catch (error) {
     console.error('Error extracting license metadata:', error);
-    return { 
-      valid: false, 
+    return {
+      valid: false,
       errorCode: 'unknown_error',
-      message: 'An unexpected error occurred' 
+      message: 'An unexpected error occurred'
     };
   }
 }
@@ -1880,13 +1945,13 @@ function generateKeyFromHardwareId(hardwareId, salt = '') {
   // This should match the algorithm in license_generator.py
   if (!salt) {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    salt = Array.from({length: 5}, () => 
+    salt = Array.from({ length: 5 }, () =>
       chars.charAt(Math.floor(Math.random() * chars.length))).join('');
   }
-  
+
   // Take first 8 chars of hardware ID
   const hwPrefix = hardwareId.substring(0, 8);
-  
+
   // Generate a key using salt and hardware ID
   return salt + hwPrefix;
 }
@@ -1897,19 +1962,19 @@ function generateKeyFromHardwareId(hardwareId, salt = '') {
 async function validateLicense(licenseKey) {
   try {
     if (!licenseKey || licenseKey.length < 20) {
-      return { 
+      return {
         valid: false,
         errorCode: 'invalid_format',
         message: 'Invalid license key format'
       };
     }
-    
+
     // Extract and verify the license metadata
     const result = await extractAndVerifyLicenseMetadata(licenseKey);
-    
+
     if (result.valid) {
       const metadata = result.metadata;
-      
+
       // Save license information to storage - preserve the full name exactly as it appears in the license
       const licenseData = {
         licenseKey: licenseKey,
@@ -1919,32 +1984,32 @@ async function validateLicense(licenseKey) {
         purchaseDate: metadata.purchaseDate || new Date().toISOString(),
         licenseType: metadata.licenseType || 'lifetime'
       };
-      
+
       // Add expiry date if present (for subscription licenses)
       if (metadata.expiryDate) {
         licenseData.expiryDate = metadata.expiryDate;
       }
-      
+
       // Set the license data in storage
       await chrome.storage.local.set(licenseData);
-      
+
       // Force context menu recreation when license is activated
       console.log("License activated - recreating context menus");
       const { showWSL = false } = await chrome.storage.local.get('showWSL');
       await createContextMenus(showWSL);
-      
-      return { 
-        valid: true, 
+
+      return {
+        valid: true,
         message: 'License activated successfully',
         metadata: metadata
       };
     }
-    
+
     // Return the error from the extraction function
     return result;
   } catch (error) {
     console.error('License validation error:', error);
-    return { 
+    return {
       valid: false,
       errorCode: 'unknown_error',
       message: 'Error validating license: ' + (error.message || 'Unknown error')
@@ -1958,37 +2023,37 @@ async function validateLicense(licenseKey) {
 async function deactivateLicense() {
   try {
     const licenseKeys = [
-      'licenseKey', 
-      'licenseeName', 
-      'licenseeEmail', 
-      'purchaseDate', 
-      'expiryDate', 
+      'licenseKey',
+      'licenseeName',
+      'licenseeEmail',
+      'purchaseDate',
+      'expiryDate',
       'licenseType'
     ];
-    
+
     // Remove license data
     for (const key of licenseKeys) {
       await chrome.storage.local.remove(key);
     }
-    
+
     // Check if trial is still valid or expired
     const trialStatus = await checkTrialStatus();
-    
+
     // Update license status
     await chrome.storage.local.set({ licenseStatus: trialStatus });
-    
+
     // Force context menu recreation based on the new status
     console.log(`License deactivated - recreating context menus with status: ${trialStatus}`);
     const { showWSL = false } = await chrome.storage.local.get('showWSL');
-    
+
     if (trialStatus === LICENSE_STATUS.EXPIRED) {
       await disableExtensionFunctionality();
     } else {
       await createContextMenus(showWSL);
     }
-    
-    return { 
-      success: true, 
+
+    return {
+      success: true,
       message: 'License deactivated successfully',
       trialStatus: trialStatus
     };

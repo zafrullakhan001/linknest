@@ -13,7 +13,7 @@
  * @author Browser Launcher Pro
  */
 
-(function() {
+(function () {
   'use strict';
 
   // Extension ID - Users need to provide this or it will be auto-detected
@@ -22,31 +22,11 @@
 
   // Browser IDs mapping - maps friendly names to extension browser IDs
   const BROWSER_IDS = {
-    // Windows Local Browsers
-    'edge-stable': 'edge-stable-local',
-    'edge-beta': 'edge-beta-local',
-    'edge-dev': 'edge-dev-local',
-    'chrome-stable': 'chrome-stable-local',
-    'chrome-beta': 'chrome-beta-local',
-    'chrome-dev': 'chrome-dev-local',
-    
-    // WSL Browsers
-    'edge-stable-wsl': 'edge-stable',
-    'edge-beta-wsl': 'edge-beta',
-    'edge-dev-wsl': 'edge-dev',
-    'chrome-stable-wsl': 'chrome-stable',
-    'chrome-beta-wsl': 'chrome-beta',
-    'chrome-dev-wsl': 'chrome-dev',
-    'firefox-wsl': 'firefox',
-    'opera-wsl': 'opera',
-    'brave-wsl': 'brave',
-    
-    // Aliases for convenience
+    // Custom Mappings (necessary for shorthand)
+    'comet': 'custom-comet-windows',
+    // Minimal aliases
     'edge': 'edge-stable-local',
-    'chrome': 'chrome-stable-local',
-    'firefox': 'firefox-wsl',
-    'opera': 'opera-wsl',
-    'brave': 'brave-wsl'
+    'chrome': 'chrome-stable-local'
   };
 
   // Configuration
@@ -54,13 +34,13 @@
     // Timeout for extension response (milliseconds)
     // Increased to 15 seconds to allow for browser launch time
     responseTimeout: 15000,
-    
+
     // Whether to show console logs
     debug: false,
-    
+
     // Fallback behavior when extension is not available
     fallbackToNormalNavigation: true,
-    
+
     // Prevent fallback if we got a successful response (even if delayed)
     preventFallbackOnSuccess: true
   };
@@ -88,9 +68,9 @@
   function detectExtensionId() {
     // Method 1: Try chrome.management API (requires permission)
     if (typeof chrome !== 'undefined' && chrome.management) {
-      chrome.management.getAll(function(extensions) {
-        const browserLauncher = extensions.find(ext => 
-          ext.name === 'Browser Launcher Pro' || 
+      chrome.management.getAll(function (extensions) {
+        const browserLauncher = extensions.find(ext =>
+          ext.name === 'Browser Launcher Pro' ||
           ext.name.includes('Browser Launcher')
         );
         if (browserLauncher) {
@@ -99,10 +79,10 @@
         }
       });
     }
-    
+
     // Method 2: Try common extension IDs (if you know them)
     // You can add known extension IDs here
-    
+
     return EXTENSION_ID;
   }
 
@@ -124,14 +104,19 @@
    */
   function normalizeBrowserId(browserId) {
     if (!browserId) return null;
-    
+
     const normalized = browserId.toLowerCase().trim();
-    
+
     // Check direct mapping
     if (BROWSER_IDS[normalized]) {
       return BROWSER_IDS[normalized];
     }
-    
+
+    // Allow custom browser IDs to pass through as-is
+    if (normalized.startsWith('custom-')) {
+      return normalized;
+    }
+
     // Return as-is if already in correct format
     return normalized;
   }
@@ -199,14 +184,14 @@
     let navigationPrevented = false;
 
     // Set up listener for response
-    const responseListener = function(event) {
+    const responseListener = function (event) {
       // Security: Only accept responses to our messages
-      if (event.data && 
-          event.data.type === 'BROWSER_LAUNCHER_RESPONSE' && 
-          event.data.timestamp === timestamp) {
+      if (event.data &&
+        event.data.type === 'BROWSER_LAUNCHER_RESPONSE' &&
+        event.data.timestamp === timestamp) {
         window.removeEventListener('message', responseListener);
         hasResponded = true;
-        
+
         // Clear any pending timeouts
         if (timeoutId) {
           clearTimeout(timeoutId);
@@ -216,12 +201,12 @@
           clearTimeout(gracePeriodId);
           gracePeriodId = null;
         }
-        
+
         const result = event.data;
         log('Received response:', result);
-        
+
         if (callback) callback(result);
-        
+
         if (result.success !== false) {
           // Success - don't fallback, resolve immediately
           log('Success response received, preventing any fallback navigation');
@@ -251,17 +236,17 @@
     const extensionMarkerExists = typeof window !== 'undefined' && window.BrowserLauncherProExtension;
     // Use shorter timeout if marker doesn't exist (extension likely not available)
     const timeoutDuration = extensionMarkerExists ? config.responseTimeout : 3000; // 3 seconds if marker not found
-    
+
     timeoutId = setTimeout(() => {
       // Only proceed if we haven't received a response
       if (!hasResponded) {
         window.removeEventListener('message', responseListener);
-        
+
         // Only fallback if we haven't received a response AND fallback is enabled
         if (shouldFallback) {
           const error = 'Timeout waiting for extension response';
           logError(error);
-          
+
           // If extension marker wasn't found, fallback faster
           if (!extensionMarkerExists) {
             log('Extension marker not found and no response, falling back to normal navigation');
@@ -270,7 +255,7 @@
             reject(new Error('Extension not available'));
             return;
           }
-          
+
           // Extension marker exists but no response - give it a grace period
           log('Timeout occurred, but browser may have opened. Waiting briefly before fallback...');
           gracePeriodId = setTimeout(() => {
@@ -308,7 +293,7 @@
    * Usage: <a href="..." data-browser="chrome-stable">Link</a>
    */
   function initializeAutoLinks() {
-    document.addEventListener('click', function(e) {
+    document.addEventListener('click', function (e) {
       const link = e.target.closest('a[data-browser]');
       if (!link || !link.href) return;
 
@@ -316,19 +301,19 @@
       if (browserId) {
         e.preventDefault();
         e.stopPropagation();
-        
+
         // Get optional data attributes
         const options = {
           fallback: link.getAttribute('data-fallback') !== 'false',
           noFallback: link.getAttribute('data-no-fallback') === 'true' // Explicitly disable fallback
         };
-        
+
         // If no-fallback is set, override fallback setting
         if (options.noFallback) {
           options.fallback = false;
         }
-        
-        openInBrowser(link.href, browserId, options, function(response) {
+
+        openInBrowser(link.href, browserId, options, function (response) {
           if (!response || !response.success) {
             logError('Failed to open link in browser:', response);
             // Fallback handled by openInBrowser if enabled
@@ -382,15 +367,15 @@
     if (typeof window !== 'undefined' && window.BrowserLauncherProExtension) {
       return true;
     }
-    
+
     // Fallback: Check if chrome.runtime is available (for direct messaging)
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
       return true;
     }
-    
+
     return false;
   }
-  
+
   /**
    * Check extension availability with callback (more reliable)
    */
@@ -400,30 +385,30 @@
       callback(true, 'Content script detected');
       return;
     }
-    
+
     // If marker not found, wait a bit and check again (content script might load after page script)
     let attempt = 0;
-    const checkWithRetry = function() {
+    const checkWithRetry = function () {
       attempt++;
-      
+
       // Check for marker again
       if (typeof window !== 'undefined' && window.BrowserLauncherProExtension) {
         callback(true, 'Content script detected (after retry)');
         return;
       }
-      
+
       // Try to ping the extension via postMessage
       const timestamp = Date.now();
       const checkMessage = {
         type: 'BROWSER_LAUNCHER_CHECK',
         timestamp: timestamp
       };
-      
+
       let responded = false;
-      const responseListener = function(event) {
-        if (event.data && 
-            event.data.type === 'BROWSER_LAUNCHER_CHECK_RESPONSE' && 
-            event.data.timestamp === timestamp) {
+      const responseListener = function (event) {
+        if (event.data &&
+          event.data.type === 'BROWSER_LAUNCHER_CHECK_RESPONSE' &&
+          event.data.timestamp === timestamp) {
           window.removeEventListener('message', responseListener);
           if (!responded) {
             responded = true;
@@ -431,10 +416,10 @@
           }
         }
       };
-      
+
       window.addEventListener('message', responseListener);
       window.postMessage(checkMessage, '*');
-      
+
       // Timeout for this attempt
       setTimeout(() => {
         window.removeEventListener('message', responseListener);
@@ -449,16 +434,52 @@
         }
       }, delay);
     };
-    
+
     // Start checking
     checkWithRetry();
   }
 
   /**
-   * Get available browser IDs
+   * Get available browser IDs (static list)
    */
   function getAvailableBrowsers() {
     return Object.keys(BROWSER_IDS);
+  }
+
+  /**
+   * Fetch latest browser list from extension (async)
+   * This includes custom browsers added by the user
+   */
+  function fetchBrowsers(callback) {
+    // Always attempt postMessage, don't rely on isExtensionAvailable variable which might be stale
+    // if (!isExtensionAvailable()) {
+    //   if (callback) callback({ success: false, error: 'Extension not available' });
+    //   return;
+    // }
+
+    const timestamp = Date.now();
+    const message = {
+      type: 'BROWSER_LAUNCHER_GET_BROWSERS',
+      timestamp: timestamp
+    };
+
+    const responseListener = function (event) {
+      if (event.data &&
+        event.data.type === 'BROWSER_LAUNCHER_BROWSERS_LIST' &&
+        event.data.timestamp === timestamp) {
+        window.removeEventListener('message', responseListener);
+        if (callback) callback(event.data);
+      }
+    };
+
+    window.addEventListener('message', responseListener);
+    window.postMessage(message, '*');
+
+    // Timeout - Increased to 15 seconds as PowerShell discovery can be slow
+    setTimeout(() => {
+      window.removeEventListener('message', responseListener);
+      if (callback) callback({ success: false, error: 'Timeout waiting for extension response' });
+    }, 15000);
   }
 
   // Initialize when script loads
@@ -468,22 +489,23 @@
   window.BrowserLauncher = {
     // Main function to open URL in browser
     open: openInBrowser,
-    
+
     // Configuration
     configure: configure,
     setExtensionId: setExtensionId,
-    
+
     // Utility functions
     isAvailable: isExtensionAvailable,
     checkAvailability: checkExtensionAvailability,
     getBrowsers: getAvailableBrowsers,
-    
+    fetchBrowsers: fetchBrowsers,
+
     // Browser ID constants
     BROWSERS: BROWSER_IDS,
-    
+
     // Extension ID
     extensionId: EXTENSION_ID,
-    
+
     // Version
     version: '1.0.0'
   };
