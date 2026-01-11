@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { preferenceService } from '../services/preferenceService';
+import { useAuth } from '../contexts/AuthContext';
 
 export type TileAnimation =
     | 'none'
@@ -381,21 +383,72 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ on
     const [searchQuery, setSearchQuery] = useState('');
     const buttonRef = useRef<HTMLButtonElement>(null);
     const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
+    const { user } = useAuth();
 
-    // Load preferences from localStorage on mount
+    // Load preferences from database or localStorage on mount
     useEffect(() => {
-        const savedAnimation = localStorage.getItem(ANIMATION_STORAGE_KEY) as TileAnimation | null;
-        if (savedAnimation && ANIMATION_OPTIONS.find(opt => opt.id === savedAnimation)) {
-            setSelectedAnimation(savedAnimation);
-            onAnimationChange?.(savedAnimation);
-        }
+        const loadPreferences = async () => {
+            let anim: TileAnimation | null = null;
+            let decor: TileDecoration | null = null;
 
-        const savedDecoration = localStorage.getItem(DECORATION_STORAGE_KEY) as TileDecoration | null;
-        if (savedDecoration && DECORATION_OPTIONS.find(opt => opt.id === savedDecoration)) {
-            setSelectedDecoration(savedDecoration);
-            onDecorationChange?.(savedDecoration);
-        }
-    }, [onAnimationChange, onDecorationChange]);
+            if (user) {
+                // Try to load from database first
+                try {
+                    const prefs = await preferenceService.getPreferences();
+                    if (prefs[ANIMATION_STORAGE_KEY]) {
+                        anim = prefs[ANIMATION_STORAGE_KEY] as TileAnimation;
+                    }
+                    if (prefs[DECORATION_STORAGE_KEY]) {
+                        decor = prefs[DECORATION_STORAGE_KEY] as TileDecoration;
+                    }
+                } catch (error) {
+                    console.error('Failed to load preferences from database:', error);
+                }
+            }
+
+            // Fallback to localStorage if not in database or guest
+            if (!anim) {
+                anim = localStorage.getItem(ANIMATION_STORAGE_KEY) as TileAnimation | null;
+            }
+            if (!decor) {
+                decor = localStorage.getItem(DECORATION_STORAGE_KEY) as TileDecoration | null;
+            }
+
+            // Apply loaded values
+            if (anim && ANIMATION_OPTIONS.find(opt => opt.id === anim)) {
+                setSelectedAnimation(anim);
+                onAnimationChange?.(anim);
+            }
+
+            if (decor && DECORATION_OPTIONS.find(opt => opt.id === decor)) {
+                setSelectedDecoration(decor);
+                onDecorationChange?.(decor);
+            }
+        };
+
+        loadPreferences();
+
+        // Listen for updates from other components or tabs
+        const handleStorageChange = () => loadPreferences();
+
+        const handleCustomAnimChange = (e: any) => {
+            if (e.detail?.animation) setSelectedAnimation(e.detail.animation);
+        };
+
+        const handleCustomDecorChange = (e: any) => {
+            if (e.detail?.decoration) setSelectedDecoration(e.detail.decoration);
+        };
+
+        window.addEventListener('storage', handleStorageChange);
+        window.addEventListener('linknest-tile-animation-change', handleCustomAnimChange);
+        window.addEventListener('linknest-tile-decoration-change', handleCustomDecorChange);
+
+        return () => {
+            window.removeEventListener('storage', handleStorageChange);
+            window.removeEventListener('linknest-tile-animation-change', handleCustomAnimChange);
+            window.removeEventListener('linknest-tile-decoration-change', handleCustomDecorChange);
+        };
+    }, [user, onAnimationChange, onDecorationChange]);
 
     // Update dropdown position when opened
     useEffect(() => {
@@ -408,17 +461,31 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ on
         }
     }, [isOpen]);
 
-    const handleAnimationSelect = (animation: TileAnimation) => {
+    const handleAnimationSelect = async (animation: TileAnimation) => {
         setSelectedAnimation(animation);
         localStorage.setItem(ANIMATION_STORAGE_KEY, animation);
+        if (user) {
+            try {
+                await preferenceService.updatePreferences({ [ANIMATION_STORAGE_KEY]: animation });
+            } catch (error) {
+                console.error('Failed to save animation to database:', error);
+            }
+        }
         onAnimationChange?.(animation);
         // Notify other components in the same window
         window.dispatchEvent(new CustomEvent('linknest-tile-animation-change', { detail: { animation } }));
     };
 
-    const handleDecorationSelect = (decoration: TileDecoration) => {
+    const handleDecorationSelect = async (decoration: TileDecoration) => {
         setSelectedDecoration(decoration);
         localStorage.setItem(DECORATION_STORAGE_KEY, decoration);
+        if (user) {
+            try {
+                await preferenceService.updatePreferences({ [DECORATION_STORAGE_KEY]: decoration });
+            } catch (error) {
+                console.error('Failed to save decoration to database:', error);
+            }
+        }
         onDecorationChange?.(decoration);
         // Notify other components in the same window
         window.dispatchEvent(new CustomEvent('linknest-tile-decoration-change', { detail: { decoration } }));
@@ -651,20 +718,35 @@ export const useTileAnimation = () => {
     const [animation, setAnimation] = useState<TileAnimation>('fade-in');
     const [decoration, setDecoration] = useState<TileDecoration>('none');
 
-    useEffect(() => {
-        const loadFromStorage = () => {
-            const savedAnim = localStorage.getItem(ANIMATION_STORAGE_KEY) as TileAnimation | null;
-            if (savedAnim) setAnimation(savedAnim);
+    const { user } = useAuth();
 
-            const savedDec = localStorage.getItem(DECORATION_STORAGE_KEY) as TileDecoration | null;
-            if (savedDec) setDecoration(savedDec);
+    useEffect(() => {
+        const loadPreferences = async () => {
+            let anim: TileAnimation | null = null;
+            let decor: TileDecoration | null = null;
+
+            if (user) {
+                try {
+                    const prefs = await preferenceService.getPreferences();
+                    if (prefs[ANIMATION_STORAGE_KEY]) anim = prefs[ANIMATION_STORAGE_KEY] as TileAnimation;
+                    if (prefs[DECORATION_STORAGE_KEY]) decor = prefs[DECORATION_STORAGE_KEY] as TileDecoration;
+                } catch (error) {
+                    console.error('Failed to load preferences from database:', error);
+                }
+            }
+
+            if (!anim) anim = localStorage.getItem(ANIMATION_STORAGE_KEY) as TileAnimation | null;
+            if (!decor) decor = localStorage.getItem(DECORATION_STORAGE_KEY) as TileDecoration | null;
+
+            if (anim) setAnimation(anim);
+            if (decor) setDecoration(decor);
         };
 
-        loadFromStorage();
+        loadPreferences();
 
         // Listen for storage changes (other tabs)
         const handleStorageChange = () => {
-            loadFromStorage();
+            loadPreferences();
         };
 
         // Listen for custom events (same tab)
@@ -684,7 +766,7 @@ export const useTileAnimation = () => {
             window.removeEventListener('linknest-tile-animation-change' as any, handleCustomAnimChange);
             window.removeEventListener('linknest-tile-decoration-change' as any, handleCustomDecorChange);
         };
-    }, []);
+    }, [user]);
 
     return { animation, decoration };
 };

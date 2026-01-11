@@ -4197,7 +4197,8 @@ body {
   position: relative;
 }
 
-.linknest-tile[class*="tile-decor-"]::before {
+.linknest-tile[class*="tile-decor-"]::before,
+.linknest-tile-animated[class*="tile-decor-"]::before {
   content: '';
   position: absolute;
   top: -12px;
@@ -4215,7 +4216,8 @@ body {
 }
 
 
-.group:hover .linknest-tile[class*="tile-decor-"]::before {
+.group:hover .linknest-tile[class*="tile-decor-"]::before,
+.group:hover .linknest-tile-animated[class*="tile-decor-"]::before {
   transform: scale(1.1) rotate(-5deg);
 }
 
