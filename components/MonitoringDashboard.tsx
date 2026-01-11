@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Monitor, MonitorLog, monitoringService } from '../services/monitoringService';
 import { MonitorForm } from './MonitorForm';
-import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaFileCsv, FaArrowsAlt, FaPalette } from 'react-icons/fa';
+import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaFileCsv, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress } from 'react-icons/fa';
 import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from './TileAnimationSelector';
 import { SMTPSettingsModal } from './SMTPSettingsModal';
 import { MonitoringTileStyleModal, TileStyle } from './MonitoringTileStyleModal';
@@ -23,9 +23,9 @@ export const MonitoringDashboard: React.FC = () => {
     });
     const [isLogsLoading, setIsLogsLoading] = useState(false);
     const [checkingId, setCheckingId] = useState<number | null>(null);
-    const [viewMode, setViewMode] = useState<'tiles' | 'grid' | 'compact'>(() => {
+    const [viewMode, setViewMode] = useState<'tiles' | 'grid' | 'compact' | 'capsule'>(() => {
         const saved = localStorage.getItem('linknest_monitor_view_mode');
-        return (saved === 'tiles' || saved === 'grid' || saved === 'compact') ? saved : 'tiles';
+        return (saved === 'tiles' || saved === 'grid' || saved === 'compact' || saved === 'capsule') ? saved : 'tiles';
     });
     const [autoRefreshInterval, setAutoRefreshInterval] = useState<number>(30); // Default 30s
     const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(false);
@@ -39,6 +39,10 @@ export const MonitoringDashboard: React.FC = () => {
     const [showSMTPSettings, setShowSMTPSettings] = useState(false);
     const [showCronModal, setShowCronModal] = useState(false);
     const [showTileStyleModal, setShowTileStyleModal] = useState(false);
+    const [isFullscreen, setIsFullscreen] = useState<boolean>(() => {
+        const saved = localStorage.getItem('linknest_monitor_fullscreen');
+        return saved === 'true';
+    });
     const csvInputRef = useRef<HTMLInputElement>(null);
     
     // Tile styles state
@@ -146,6 +150,11 @@ export const MonitoringDashboard: React.FC = () => {
     useEffect(() => {
         localStorage.setItem('linknest_monitor_view_mode', viewMode);
     }, [viewMode]);
+    
+    // Persist fullscreen mode
+    useEffect(() => {
+        localStorage.setItem('linknest_monitor_fullscreen', isFullscreen.toString());
+    }, [isFullscreen]);
 
     const fetchMonitors = useCallback(async () => {
         try {
@@ -575,7 +584,8 @@ export const MonitoringDashboard: React.FC = () => {
         }
     };
 
-    const formatLastChecked = (timestamp: number | string | null) => {
+    // Memoize formatLastChecked to avoid recalculation
+    const formatLastChecked = useCallback((timestamp: number | string | null) => {
         if (!timestamp) return 'Never';
 
         const time = typeof timestamp === 'number'
@@ -597,14 +607,10 @@ export const MonitoringDashboard: React.FC = () => {
         if (hours > 0) return `${hours}h ${minutes % 60}m ${seconds % 60}s ago`;
         if (minutes > 0) return `${minutes}m ${seconds % 60}s ago`;
         return `${seconds}s ago`;
-    };
-
-    const animationClass = getTileAnimationClass(animation);
-    const decorationClass = getTileDecorationClass(decoration);
-    const fullAnimClass = `${animationClass} ${decorationClass} linknest-tile-animated`.trim();
+    }, []);
     
-    // Get tile style for a monitor status
-    const getTileStyle = (status: 'up' | 'down' | 'unknown' | null): React.CSSProperties => {
+    // Memoize helper functions for performance
+    const getTileStyle = useCallback((status: 'up' | 'down' | 'unknown' | null): React.CSSProperties => {
         if (status === 'up') {
             if (tileStyles.upUseGradient) {
                 return {
@@ -625,36 +631,40 @@ export const MonitoringDashboard: React.FC = () => {
             };
         }
         return {};
-    };
+    }, [tileStyles]);
     
-    const getTileTextColor = (status: 'up' | 'down' | 'unknown' | null): string => {
+    const getTileTextColor = useCallback((status: 'up' | 'down' | 'unknown' | null): string => {
         if (status === 'up') {
             return tileStyles.upTextColor;
         } else if (status === 'down') {
             return tileStyles.downTextColor;
         }
         return '';
-    };
+    }, [tileStyles]);
     
-    const getTileTextStyle = (status: 'up' | 'down' | 'unknown' | null): React.CSSProperties => {
+    const getTileTextStyle = useCallback((status: 'up' | 'down' | 'unknown' | null): React.CSSProperties => {
         const color = getTileTextColor(status);
         if (color) {
             return { color };
         }
         return {};
-    };
+    }, [getTileTextColor]);
     
-    const getTileBorderColor = (status: 'up' | 'down' | 'unknown' | null): string => {
+    const getTileBorderColor = useCallback((status: 'up' | 'down' | 'unknown' | null): string => {
         if (status === 'up') {
             return tileStyles.upUseGradient ? tileStyles.upGradientStart : tileStyles.upBackgroundColor;
         } else if (status === 'down') {
             return tileStyles.downUseGradient ? tileStyles.downGradientStart : tileStyles.downBackgroundColor;
         }
         return '';
-    };
+    }, [tileStyles]);
 
-    return (
-        <div className="w-full h-full p-6 overflow-y-auto bg-slate-50 dark:bg-[#121212] transition-colors">
+    const animationClass = getTileAnimationClass(animation);
+    const decorationClass = getTileDecorationClass(decoration);
+    const fullAnimClass = useMemo(() => `${animationClass} ${decorationClass} linknest-tile-animated`.trim(), [animationClass, decorationClass]);
+
+    const content = (
+        <>
             <input
                 type="file"
                 ref={fileInputRef}
@@ -733,6 +743,13 @@ export const MonitoringDashboard: React.FC = () => {
                             <FaPalette size={14} />
                         </button>
                         <button
+                            onClick={() => setIsFullscreen(!isFullscreen)}
+                            className="p-2 rounded-lg transition-all text-slate-400 hover:text-indigo-500 hover:bg-white dark:hover:bg-[#333]"
+                            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+                        >
+                            {isFullscreen ? <FaCompress size={14} /> : <FaExpand size={14} />}
+                        </button>
+                        <button
                             onClick={() => setShowCronModal(true)}
                             className="p-2 rounded-lg transition-all text-slate-400 hover:text-purple-500 hover:bg-white dark:hover:bg-[#333]"
                             title="Cron Setup"
@@ -772,6 +789,13 @@ export const MonitoringDashboard: React.FC = () => {
                             title="Table Mode"
                         >
                             <FaList size={14} />
+                        </button>
+                        <button
+                            onClick={() => setViewMode('capsule')}
+                            className={`p-2 rounded-lg transition-all ${viewMode === 'capsule' ? 'bg-white dark:bg-[#333] text-blue-500 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            title="Capsule Mode"
+                        >
+                            <FaCircle size={14} />
                         </button>
                     </div>
 
@@ -940,7 +964,42 @@ export const MonitoringDashboard: React.FC = () => {
                             </div>
 
 
-                            {(viewMode === 'tiles' || viewMode === 'compact') ? (
+                            {viewMode === 'capsule' ? (
+                                <div className="flex flex-wrap gap-2">
+                                    {groupedByGroups[groupName].map((monitor, index) => (
+                                        <div
+                                            key={monitor.id}
+                                            onClick={(e) => handleTileClick(e, monitor)}
+                                            style={{
+                                                ...(monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileStyle(monitor.last_status) : {}),
+                                                ...(monitor.last_status === 'up' || monitor.last_status === 'down' ? { borderColor: getTileBorderColor(monitor.last_status) } : {})
+                                            }}
+                                            className={`inline-flex items-center gap-3 px-4 py-2 rounded-full border cursor-pointer transition-all hover:shadow-lg group relative ${fullAnimClass} ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'bg-white dark:bg-[#1e1e1e] border-slate-200 dark:border-[#333]'}`}
+                                        >
+                                            <div className="flex items-center gap-3 min-w-0">
+                                                <span 
+                                                    className="font-semibold text-sm truncate"
+                                                    style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : { color: 'inherit' }}
+                                                >
+                                                    {monitor.name}
+                                                </span>
+                                                <div className="flex items-center gap-2 text-xs font-medium opacity-80">
+                                                    <FaClock size={10} {...(monitor.last_status === 'up' || monitor.last_status === 'down' ? { style: getTileTextStyle(monitor.last_status) } : {})} />
+                                                    <span style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : { color: 'inherit' }}>
+                                                        {monitor.last_response_time ? `${monitor.last_response_time}ms` : '-'}
+                                                    </span>
+                                                </div>
+                                                <span 
+                                                    className="text-xs opacity-70"
+                                                    style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : { color: 'inherit' }}
+                                                >
+                                                    {formatLastChecked(monitor.last_checked_at)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (viewMode === 'tiles' || viewMode === 'compact') ? (
                                 <div className={`grid gap-4 ${viewMode === 'tiles' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6'}`}>
                                     {groupedByGroups[groupName].map((monitor, index) => (
                                         <div
@@ -1665,6 +1724,18 @@ export const MonitoringDashboard: React.FC = () => {
                     </div>
                 </div>
             )}
-        </div>
+        </>
     );
+
+    if (isFullscreen) {
+        return (
+            <div className="fixed inset-0 overflow-y-auto bg-slate-50 dark:bg-[#121212] transition-colors z-50">
+                <div className="min-h-full p-4">
+                    {content}
+                </div>
+            </div>
+        );
+    }
+
+    return <>{content}</>;
 };
