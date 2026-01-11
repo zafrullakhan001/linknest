@@ -14,7 +14,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { userPreferencesService } from '../services/userPreferencesService';
 import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite, clearPublicLinkFavorites } from '../services/publicFavoritesService';
 import { linkHealthService } from '../services/linkHealthService';
-import { favoriteLinkHealthService } from '../services/favoriteLinkHealthService';
+import { favoriteLinkHealthService, LinkHealthCheckResult } from '../services/favoriteLinkHealthService';
 import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, getTileDecorationClass, TileAnimation, TileDecoration } from './TileAnimationSelector';
 import { MonitoringDashboard } from './MonitoringDashboard';
 

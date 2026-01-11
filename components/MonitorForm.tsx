@@ -14,6 +14,8 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
     const [port, setPort] = useState(monitor?.port?.toString() || '');
     const [keyword, setKeyword] = useState(monitor?.keyword || '');
     const [interval, setInterval] = useState(monitor?.interval?.toString() || '5');
+    const [tabName, setTabName] = useState(monitor?.tab_name || '');
+    const [groupName, setGroupName] = useState(monitor?.group_name || '');
     const [emailNotification, setEmailNotification] = useState(!!monitor?.email_notification);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -31,6 +33,8 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                 port: port ? parseInt(port) : undefined,
                 keyword,
                 interval: parseInt(interval),
+                tab_name: tabName || undefined,
+                group_name: groupName || undefined,
                 email_notification: emailNotification ? 1 : 0
             });
         } catch (err: any) {
@@ -125,6 +129,29 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                             className="w-full bg-[#2a2a2a] border border-[#444] rounded-lg px-3 py-2 text-white outline-none focus:border-blue-500 transition-colors"
                             required
                         />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-400 mb-1">Tab Name</label>
+                            <input
+                                type="text"
+                                value={tabName}
+                                onChange={(e) => setTabName(e.target.value)}
+                                className="w-full bg-[#2a2a2a] border border-[#444] rounded-lg px-3 py-2 text-white outline-none focus:border-blue-500 transition-colors"
+                                placeholder="General"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-400 mb-1">Group Name</label>
+                            <input
+                                type="text"
+                                value={groupName}
+                                onChange={(e) => setGroupName(e.target.value)}
+                                className="w-full bg-[#2a2a2a] border border-[#444] rounded-lg px-3 py-2 text-white outline-none focus:border-blue-500 transition-colors"
+                                placeholder="Servers"
+                            />
+                        </div>
                     </div>
 
                     <div className="flex items-center space-x-2">

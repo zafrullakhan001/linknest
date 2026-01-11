@@ -103,8 +103,9 @@ function handleCreateMonitor() {
     try {
         $stmt = $db->prepare('INSERT INTO monitors (
             name, type, target, port, keyword, interval, 
-            is_active, email_notification, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            is_active, email_notification, created_at, updated_at,
+            tab_name, group_name
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         $now = time();
         $stmt->execute([
@@ -117,7 +118,9 @@ function handleCreateMonitor() {
             isset($data['is_active']) ? (int)$data['is_active'] : 1,
             isset($data['email_notification']) ? (int)$data['email_notification'] : 0,
             $now,
-            $now
+            $now,
+            $data['tab_name'] ?? null,
+            $data['group_name'] ?? null
         ]);
         
         $id = $db->lastInsertId();
@@ -151,7 +154,7 @@ function handleUpdateMonitor($id) {
         $fields = [];
         $values = [];
         
-        $allowedFields = ['name', 'type', 'target', 'port', 'keyword', 'interval', 'is_active', 'email_notification'];
+        $allowedFields = ['name', 'type', 'target', 'port', 'keyword', 'interval', 'is_active', 'email_notification', 'tab_name', 'group_name'];
         foreach ($allowedFields as $field) {
             if (isset($data[$field])) {
                 $fields[] = "$field = ?";
@@ -306,8 +309,9 @@ function handleImportMonitors() {
         
         $stmt = $db->prepare('INSERT INTO monitors (
             name, type, target, port, keyword, interval, 
-            is_active, email_notification, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            is_active, email_notification, created_at, updated_at,
+            tab_name, group_name
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         foreach ($monitors as $m) {
             $stmt->execute([
@@ -320,7 +324,9 @@ function handleImportMonitors() {
                 isset($m['is_active']) ? (int)$m['is_active'] : 1,
                 isset($m['email_notification']) ? (int)$m['email_notification'] : 0,
                 $now,
-                $now
+                $now,
+                $m['tab_name'] ?? null,
+                $m['group_name'] ?? null
             ]);
             $count++;
         }

@@ -24,6 +24,10 @@ export const MonitoringDashboard: React.FC = () => {
     const [refreshCountdown, setRefreshCountdown] = useState<number>(30);
     const { animation, decoration } = useTileAnimation();
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [activeTab, setActiveTab] = useState<string>(() => {
+        const saved = localStorage.getItem('linknest_monitor_active_tab');
+        return saved || 'General';
+    });
 
     // Persist view mode
     useEffect(() => {
@@ -153,7 +157,7 @@ export const MonitoringDashboard: React.FC = () => {
         }
     }, [viewingLogsMonitor, logFilter, fetchLogs]);
 
-    const groupedLogs = useMemo(() => {
+    const groupedLogs = useMemo<Record<string, MonitorLog[]>>(() => {
         const groups: { [key: string]: MonitorLog[] } = {};
         logs.forEach(log => {
             const date = new Date(log.checked_at * 1000).toLocaleDateString(undefined, {
@@ -167,6 +171,54 @@ export const MonitoringDashboard: React.FC = () => {
         });
         return groups;
     }, [logs]);
+
+    const groupedByTabs = useMemo<Record<string, Monitor[]>>(() => {
+        const tabs: { [key: string]: Monitor[] } = {};
+        if (monitors.length === 0) return tabs;
+
+        monitors.forEach(m => {
+            const tab = m.tab_name || 'General';
+            if (!tabs[tab]) tabs[tab] = [];
+            tabs[tab].push(m);
+        });
+        return tabs;
+    }, [monitors]);
+
+    const tabNames = useMemo(() => Object.keys(groupedByTabs).sort((a, b) => {
+        if (a === 'General') return -1;
+        if (b === 'General') return 1;
+        return a.localeCompare(b);
+    }), [groupedByTabs]);
+
+    useEffect(() => {
+        if (tabNames.length > 0 && !tabNames.includes(activeTab)) {
+            setActiveTab(tabNames[0]);
+        } else if (tabNames.length === 0) {
+            setActiveTab('General');
+        }
+    }, [tabNames, activeTab]);
+
+    useEffect(() => {
+        localStorage.setItem('linknest_monitor_active_tab', activeTab);
+    }, [activeTab]);
+
+    const monitorsInActiveTab = useMemo(() => groupedByTabs[activeTab] || [], [groupedByTabs, activeTab]);
+
+    const groupedByGroups = useMemo<Record<string, Monitor[]>>(() => {
+        const groups: { [key: string]: Monitor[] } = {};
+        monitorsInActiveTab.forEach(m => {
+            const group = m.group_name || 'Other';
+            if (!groups[group]) groups[group] = [];
+            groups[group].push(m);
+        });
+        return groups;
+    }, [monitorsInActiveTab]);
+
+    const sortedGroups = useMemo(() => Object.keys(groupedByGroups).sort((a, b) => {
+        if (a === 'Other') return 1;
+        if (b === 'Other') return -1;
+        return a.localeCompare(b);
+    }), [groupedByGroups]);
 
     const handleTileClick = (e: React.MouseEvent, monitor: Monitor) => {
         const target = e.target as HTMLElement;
@@ -217,17 +269,17 @@ export const MonitoringDashboard: React.FC = () => {
 
     const getStatusIcon = (status: string | null) => {
         switch (status) {
-            case 'up': return <FaCheck className="text-green-500" />;
-            case 'down': return <FaTimes className="text-red-500" />;
-            default: return <FaQuestion className="text-gray-500" />;
+            case 'up': return <FaCheck {...({ className: "text-green-500" } as any)} />;
+            case 'down': return <FaTimes {...({ className: "text-red-500" } as any)} />;
+            default: return <FaQuestion {...({ className: "text-gray-500" } as any)} />;
         }
     };
 
     const getTypeIcon = (type: string) => {
         switch (type) {
-            case 'url': return <FaGlobe className="text-blue-400" />;
-            case 'keyword': return <FaSearch className="text-purple-400" />;
-            case 'port': return <FaServer className="text-orange-400" />;
+            case 'url': return <FaGlobe {...({ className: "text-blue-400" } as any)} />;
+            case 'keyword': return <FaSearch {...({ className: "text-purple-400" } as any)} />;
+            case 'port': return <FaServer {...({ className: "text-orange-400" } as any)} />;
             default: return <FaGlobe />;
         }
     };
@@ -272,7 +324,7 @@ export const MonitoringDashboard: React.FC = () => {
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
                 <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-2xl bg-blue-600/10 dark:bg-blue-500/20 flex items-center justify-center border border-blue-500/20">
-                        <FaServer className="text-blue-600 dark:text-blue-400 text-xl" />
+                        <FaServer {...({ className: "text-blue-600 dark:text-blue-400 text-xl" } as any)} />
                     </div>
                     <div>
                         <h1 className="text-2xl font-bold text-slate-900 dark:text-white leading-tight">
@@ -346,7 +398,7 @@ export const MonitoringDashboard: React.FC = () => {
                             className="flex items-center justify-center w-9 h-9 text-slate-600 dark:text-slate-400 hover:text-blue-500 dark:hover:text-blue-400 bg-slate-100 dark:bg-[#252525] rounded-xl transition-all"
                             title="Force refresh all monitors"
                         >
-                            <FaRedo size={14} className={isLoading ? 'animate-spin' : ''} />
+                            <FaRedo size={14} {...({ className: isLoading ? 'animate-spin' : '' } as any)} />
                         </button>
 
                         <div className="flex items-center gap-2 bg-slate-100 dark:bg-[#252525] rounded-xl px-2 py-1">
@@ -407,186 +459,220 @@ export const MonitoringDashboard: React.FC = () => {
                         Create your first monitor
                     </button>
                 </div>
-            ) : (viewMode === 'tiles' || viewMode === 'compact') ? (
-                <div className={`grid gap-4 ${viewMode === 'tiles' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6'}`}>
-                    {monitors.map((monitor, index) => (
-                        <div
-                            key={monitor.id}
-                            onClick={(e) => handleTileClick(e, monitor)}
-                            style={{ animationDelay: `${index * 50}ms` }}
-                            className={`border rounded-2xl shadow-lg hover:shadow-xl transition-all group relative cursor-pointer ${fullAnimClass} 
-                                ${monitor.last_status === 'up' ? 'bg-emerald-600 border-emerald-500' : (monitor.last_status === 'down' ? 'bg-red-600 border-red-500' : 'bg-white dark:bg-[#1e1e1e] border-slate-200 dark:border-[#333] hover:border-slate-300 dark:hover:border-[#444]')}
-                                ${viewMode === 'tiles' ? 'p-5' : 'p-3 flex flex-col justify-between min-h-[120px]'}`}
-                        >
-                            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-y-1 group-hover:translate-y-0 z-10">
+            ) : (
+                <div className="space-y-8">
+                    {/* Tabs Navigation */}
+                    {tabNames.length > 1 && (
+                        <div className="flex flex-wrap gap-2 p-1.5 bg-white dark:bg-[#1e1e1e] rounded-2xl border border-slate-200 dark:border-[#333] mb-6 w-fit">
+                            {tabNames.map(tab => (
                                 <button
-                                    onClick={() => handleCheckNow(monitor.id)}
-                                    disabled={checkingId === monitor.id}
-                                    className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${checkingId === monitor.id ? 'animate-spin' : ''} ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
-                                    title="Check Now"
+                                    key={tab}
+                                    onClick={() => setActiveTab(tab)}
+                                    className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === tab ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white'}`}
                                 >
-                                    <FaRedo size={10} />
+                                    {tab}
+                                    <span className={`ml-2 px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === tab ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-[#252525] text-slate-400'}`}>
+                                        {groupedByTabs[tab].length}
+                                    </span>
                                 </button>
-                                <button
-                                    onClick={() => handleDuplicate(monitor)}
-                                    className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
-                                    title="Duplicate"
-                                >
-                                    <FaCopy size={10} />
-                                </button>
-                                <button
-                                    onClick={() => { setSelectedMonitor(monitor); setIsDuplicate(false); setIsEditing(true); }}
-                                    className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
-                                    title="Edit"
-                                >
-                                    <FaEdit size={10} />
-                                </button>
-                                <button
-                                    onClick={() => handleDelete(monitor.id)}
-                                    className={`p-1.5 rounded-lg hover:bg-red-800 hover:text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400'}`}
-                                    title="Delete"
-                                >
-                                    <FaTrash size={10} />
-                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    {sortedGroups.map((groupName) => (
+                        <div key={groupName} className="space-y-4">
+                            <div className="flex items-center gap-4">
+                                <h3 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 whitespace-nowrap">
+                                    {groupName}
+                                </h3>
+                                <div className="h-px w-full bg-slate-200 dark:bg-[#252525]"></div>
                             </div>
 
-                            <div className={`flex items-start gap-3 ${viewMode === 'tiles' ? 'mb-5' : 'mb-2'}`}>
-                                <div className={`${viewMode === 'tiles' ? 'w-12 h-12 text-lg' : 'w-8 h-8 text-sm'} rounded-xl flex items-center justify-center ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-[#2a2a2a]'} ${monitor.last_status === 'down' ? 'border border-white/30' : (monitor.last_status === 'up' ? 'border border-white/20 shadow-inner' : 'border border-slate-200 dark:border-[#444]')}`}>
-                                    {React.cloneElement(getTypeIcon(monitor.type), { className: (monitor.last_status === 'up' || monitor.last_status === 'down') ? 'text-white' : undefined, size: viewMode === 'tiles' ? 18 : 14 })}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                    <h3 className={`font-bold leading-tight truncate ${viewMode === 'tiles' ? 'text-base mb-1' : 'text-xs mb-0.5'} ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'text-white' : 'text-slate-900 dark:text-white'}`} title={monitor.name}>
-                                        {monitor.name}
-                                    </h3>
-                                    {viewMode === 'tiles' ? (
-                                        <div className={`flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full inline-flex ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'text-white bg-white/20' : 'text-slate-600 dark:text-gray-400 bg-slate-100 dark:bg-[#252525]'}`}>
-                                            {React.cloneElement(getStatusIcon(monitor.last_status) as React.ReactElement, { className: (monitor.last_status === 'up' || monitor.last_status === 'down') ? 'text-white' : undefined, size: 10 })}
-                                            <span className="uppercase font-extrabold tracking-widest">
-                                                {monitor.last_status || 'UNKNOWN'}
-                                            </span>
+                            {(viewMode === 'tiles' || viewMode === 'compact') ? (
+                                <div className={`grid gap-4 ${viewMode === 'tiles' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6'}`}>
+                                    {groupedByGroups[groupName].map((monitor, index) => (
+                                        <div
+                                            key={monitor.id}
+                                            onClick={(e) => handleTileClick(e, monitor)}
+                                            style={{ animationDelay: `${index * 50}ms` }}
+                                            className={`border rounded-2xl shadow-lg hover:shadow-xl transition-all group relative cursor-pointer ${fullAnimClass} 
+                                                ${monitor.last_status === 'up' ? 'bg-emerald-600 border-emerald-500' : (monitor.last_status === 'down' ? 'bg-red-600 border-red-500' : 'bg-white dark:bg-[#1e1e1e] border-slate-200 dark:border-[#333] hover:border-slate-300 dark:hover:border-[#444]')}
+                                                ${viewMode === 'tiles' ? 'p-5' : 'p-3 flex flex-col justify-between min-h-[120px]'}`}
+                                        >
+                                            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-y-1 group-hover:translate-y-0 z-10">
+                                                <button
+                                                    onClick={() => handleCheckNow(monitor.id)}
+                                                    disabled={checkingId === monitor.id}
+                                                    className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${checkingId === monitor.id ? 'animate-spin' : ''} ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                                                    title="Check Now"
+                                                >
+                                                    <FaRedo size={10} />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDuplicate(monitor)}
+                                                    className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                                                    title="Duplicate"
+                                                >
+                                                    <FaCopy size={10} />
+                                                </button>
+                                                <button
+                                                    onClick={() => { setSelectedMonitor(monitor); setIsDuplicate(false); setIsEditing(true); }}
+                                                    className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                                                    title="Edit"
+                                                >
+                                                    <FaEdit size={10} />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(monitor.id)}
+                                                    className={`p-1.5 rounded-lg hover:bg-red-800 hover:text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400'}`}
+                                                    title="Delete"
+                                                >
+                                                    <FaTrash size={10} />
+                                                </button>
+                                            </div>
+
+                                            <div className={`flex items-start gap-3 ${viewMode === 'tiles' ? 'mb-5' : 'mb-2'}`}>
+                                                <div className={`${viewMode === 'tiles' ? 'w-12 h-12 text-lg' : 'w-8 h-8 text-sm'} rounded-xl flex items-center justify-center ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-[#2a2a2a]'} ${monitor.last_status === 'down' ? 'border border-white/30' : (monitor.last_status === 'up' ? 'border border-white/20 shadow-inner' : 'border border-slate-200 dark:border-[#444]')}`}>
+                                                    {React.cloneElement(getTypeIcon(monitor.type), { className: (monitor.last_status === 'up' || monitor.last_status === 'down') ? 'text-white' : undefined, size: viewMode === 'tiles' ? 18 : 14 })}
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <h3 className={`font-bold leading-tight truncate ${viewMode === 'tiles' ? 'text-base mb-1' : 'text-xs mb-0.5'} ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'text-white' : 'text-slate-900 dark:text-white'}`} title={monitor.name}>
+                                                        {monitor.name}
+                                                    </h3>
+                                                    {viewMode === 'tiles' ? (
+                                                        <div className={`flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full inline-flex ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'text-white bg-white/20' : 'text-slate-600 dark:text-gray-400 bg-slate-100 dark:bg-[#252525]'}`}>
+                                                            {React.cloneElement(getStatusIcon(monitor.last_status) as React.ReactElement, { className: (monitor.last_status === 'up' || monitor.last_status === 'down') ? 'text-white' : undefined, size: 10 })}
+                                                            <span className="uppercase font-extrabold tracking-widest">
+                                                                {monitor.last_status || 'UNKNOWN'}
+                                                            </span>
+                                                        </div>
+                                                    ) : (
+                                                        <div className={`text-[9px] font-black uppercase tracking-tighter ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'text-white/80' : monitor.last_status === 'up' ? 'text-emerald-500' : 'text-red-500'}`}>
+                                                            {monitor.last_status || 'UNKNOWN'}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div className={`${viewMode === 'tiles' ? 'space-y-3 mb-5' : 'mb-3'}`}>
+                                                <div className={`${viewMode === 'tiles' ? 'text-[11px] p-3' : 'text-[9px] p-1.5'} break-all rounded-xl border font-mono ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20 border-white/10 text-white/90' : 'text-slate-600 dark:text-gray-400 bg-slate-50 dark:bg-[#252525] border-slate-100 dark:border-[#333]'}`}>
+                                                    {monitor.target}
+                                                    {monitor.port && <span className={monitor.last_status === 'up' || monitor.last_status === 'down' ? 'text-white/70' : 'text-slate-400 dark:text-gray-500'}>:{monitor.port}</span>}
+                                                </div>
+                                            </div>
+
+                                            <div className={`flex flex-col gap-1 ${viewMode === 'tiles' ? 'pt-4 border-t' : 'pt-2'} ${monitor.last_status === 'up' || monitor.last_status === 'down' ? (viewMode === 'tiles' ? 'border-white/20' : '') + ' text-white/80' : 'border-slate-100 dark:border-[#333] text-slate-500 dark:text-gray-500'}`}>
+                                                <div className="flex items-center justify-between text-[10px] font-bold">
+                                                    <div className="flex items-center gap-1.5" title="Last Response Time">
+                                                        <FaClock size={10} {...({ className: monitor.last_status === 'up' || monitor.last_status === 'down' ? 'text-white/60' : 'text-blue-500' } as any)} />
+                                                        {monitor.last_response_time ? `${monitor.last_response_time}ms` : '-'}
+                                                    </div>
+                                                    <div className="opacity-70">
+                                                        {monitor.interval}m
+                                                    </div>
+                                                </div>
+                                                <div className={`text-[9px] text-right font-medium ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'text-white/60' : 'text-slate-400 dark:text-gray-600'}`}>
+                                                    {formatLastChecked(monitor.last_checked_at)}
+                                                </div>
+                                            </div>
                                         </div>
-                                    ) : (
-                                        <div className={`text-[9px] font-black uppercase tracking-tighter ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'text-white/80' : monitor.last_status === 'up' ? 'text-emerald-500' : 'text-red-500'}`}>
-                                            {monitor.last_status || 'UNKNOWN'}
-                                        </div>
-                                    )}
+                                    ))}
                                 </div>
-                            </div>
-
-                            <div className={`${viewMode === 'tiles' ? 'space-y-3 mb-5' : 'mb-3'}`}>
-                                <div className={`${viewMode === 'tiles' ? 'text-[11px] p-3' : 'text-[9px] p-1.5'} break-all rounded-xl border font-mono ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20 border-white/10 text-white/90' : 'text-slate-600 dark:text-gray-400 bg-slate-50 dark:bg-[#252525] border-slate-100 dark:border-[#333]'}`}>
-                                    {monitor.target}
-                                    {monitor.port && <span className={monitor.last_status === 'up' || monitor.last_status === 'down' ? 'text-white/70' : 'text-slate-400 dark:text-gray-500'}>:{monitor.port}</span>}
+                            ) : (
+                                <div className="bg-white dark:bg-[#1e1e1e] rounded-3xl border border-slate-200 dark:border-[#333] overflow-hidden shadow-xl overflow-x-auto">
+                                    <table className="w-full text-left border-collapse min-w-[800px]">
+                                        <thead>
+                                            <tr className="bg-slate-50 dark:bg-[#252525] text-slate-500 dark:text-slate-400 text-[11px] font-bold uppercase tracking-wider">
+                                                <th className="px-6 py-4">Monitor</th>
+                                                <th className="px-6 py-4">Status</th>
+                                                <th className="px-6 py-4">Target</th>
+                                                <th className="px-6 py-4">Response Time</th>
+                                                <th className="px-6 py-4">Last Checked</th>
+                                                <th className="px-6 py-4">Interval</th>
+                                                <th className="px-6 py-4 text-right">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 dark:divide-[#333]">
+                                            {groupedByGroups[groupName].map((monitor, index) => (
+                                                <tr
+                                                    key={monitor.id}
+                                                    onClick={(e) => handleTileClick(e, monitor)}
+                                                    className={`group cursor-pointer hover:bg-slate-50 dark:hover:bg-[#252525] transition-colors ${monitor.last_status === 'down' ? 'bg-red-600 text-white' : ''} ${fullAnimClass}`}
+                                                    style={{ animationDelay: `${index * 30}ms` }}
+                                                >
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${monitor.last_status === 'down' ? 'bg-white/20' : 'bg-slate-100 dark:bg-[#2a2a2a] text-slate-500'}`}>
+                                                                {React.cloneElement(getTypeIcon(monitor.type), { size: 14, className: monitor.last_status === 'down' ? 'text-white' : undefined })}
+                                                            </div>
+                                                            <span className={`font-bold text-sm ${monitor.last_status === 'down' ? 'text-white' : 'text-slate-900 dark:text-white'}`}>{monitor.name}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-widest ${monitor.last_status === 'up' ? 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : (monitor.last_status === 'down' ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400')}`}>
+                                                            <div className={`w-1.5 h-1.5 rounded-full ${monitor.last_status === 'up' ? 'bg-emerald-500 animate-pulse' : (monitor.last_status === 'down' ? 'bg-white animate-pulse' : 'bg-slate-400')}`}></div>
+                                                            {monitor.last_status || 'UNKNOWN'}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <code className={`text-[11px] px-2 py-1 rounded-md ${monitor.last_status === 'down' ? 'bg-black/20 text-white/90' : 'text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-[#252525]'}`}>
+                                                            {monitor.target}{monitor.port ? `:${monitor.port}` : ''}
+                                                        </code>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <div className={`flex items-center gap-1.5 text-sm font-medium ${monitor.last_status === 'down' ? 'text-white' : 'text-slate-700 dark:text-slate-300'}`}>
+                                                            <FaClock size={12} {...({ className: monitor.last_status === 'down' ? 'text-white/60' : 'text-slate-400' } as any)} />
+                                                            {monitor.last_response_time ? `${monitor.last_response_time}ms` : '-'}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <span className={`text-xs ${monitor.last_status === 'down' ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>{formatLastChecked(monitor.last_checked_at)}</span>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <span className={`text-xs font-bold ${monitor.last_status === 'down' ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>{monitor.interval}m</span>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-right">
+                                                        <div className="flex justify-end gap-2">
+                                                            <button
+                                                                onClick={() => handleCheckNow(monitor.id)}
+                                                                disabled={checkingId === monitor.id}
+                                                                className={`p-2 rounded-xl transition-colors ${checkingId === monitor.id ? 'animate-spin' : ''} ${monitor.last_status === 'down' ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
+                                                                title="Check Now"
+                                                            >
+                                                                <FaRedo size={12} />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDuplicate(monitor)}
+                                                                className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'down' ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
+                                                                title="Duplicate"
+                                                            >
+                                                                <FaCopy size={12} />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => { setSelectedMonitor(monitor); setIsDuplicate(false); setIsEditing(true); }}
+                                                                className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'down' ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
+                                                            >
+                                                                <FaEdit size={12} />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDelete(monitor.id)}
+                                                                className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'down' ? 'bg-black/40 text-white hover:bg-red-800' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-red-500'}`}
+                                                            >
+                                                                <FaTrash size={12} />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
                                 </div>
-                            </div>
-
-                            <div className={`flex flex-col gap-1 ${viewMode === 'tiles' ? 'pt-4 border-t' : 'pt-2'} ${monitor.last_status === 'up' || monitor.last_status === 'down' ? (viewMode === 'tiles' ? 'border-white/20' : '') + ' text-white/80' : 'border-slate-100 dark:border-[#333] text-slate-500 dark:text-gray-500'}`}>
-                                <div className="flex items-center justify-between text-[10px] font-bold">
-                                    <div className="flex items-center gap-1.5" title="Last Response Time">
-                                        <FaClock className={monitor.last_status === 'up' || monitor.last_status === 'down' ? 'text-white/60' : 'text-blue-500'} size={10} />
-                                        {monitor.last_response_time ? `${monitor.last_response_time}ms` : '-'}
-                                    </div>
-                                    <div className="opacity-70">
-                                        {monitor.interval}m
-                                    </div>
-                                </div>
-                                <div className={`text-[9px] text-right font-medium ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'text-white/60' : 'text-slate-400 dark:text-gray-600'}`}>
-                                    {formatLastChecked(monitor.last_checked_at)}
-                                </div>
-                            </div>
+                            )}
                         </div>
                     ))}
                 </div>
-            ) : (
-                <div className="bg-white dark:bg-[#1e1e1e] rounded-3xl border border-slate-200 dark:border-[#333] overflow-hidden shadow-xl overflow-x-auto">
-                    <table className="w-full text-left border-collapse min-w-[800px]">
-                        <thead>
-                            <tr className="bg-slate-50 dark:bg-[#252525] text-slate-500 dark:text-slate-400 text-[11px] font-bold uppercase tracking-wider">
-                                <th className="px-6 py-4">Monitor</th>
-                                <th className="px-6 py-4">Status</th>
-                                <th className="px-6 py-4">Target</th>
-                                <th className="px-6 py-4">Response Time</th>
-                                <th className="px-6 py-4">Last Checked</th>
-                                <th className="px-6 py-4">Interval</th>
-                                <th className="px-6 py-4 text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-[#333]">
-                            {monitors.map((monitor, index) => (
-                                <tr
-                                    key={monitor.id}
-                                    onClick={(e) => handleTileClick(e, monitor)}
-                                    className={`group cursor-pointer hover:bg-slate-50 dark:hover:bg-[#252525] transition-colors ${monitor.last_status === 'down' ? 'bg-red-600 text-white' : ''} ${fullAnimClass}`}
-                                    style={{ animationDelay: `${index * 30}ms` }}
-                                >
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-3">
-                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${monitor.last_status === 'down' ? 'bg-white/20' : 'bg-slate-100 dark:bg-[#2a2a2a] text-slate-500'}`}>
-                                                {React.cloneElement(getTypeIcon(monitor.type), { size: 14, className: monitor.last_status === 'down' ? 'text-white' : undefined })}
-                                            </div>
-                                            <span className={`font-bold text-sm ${monitor.last_status === 'down' ? 'text-white' : 'text-slate-900 dark:text-white'}`}>{monitor.name}</span>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-widest ${monitor.last_status === 'up' ? 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : (monitor.last_status === 'down' ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400')}`}>
-                                            <div className={`w-1.5 h-1.5 rounded-full ${monitor.last_status === 'up' ? 'bg-emerald-500 animate-pulse' : (monitor.last_status === 'down' ? 'bg-white animate-pulse' : 'bg-slate-400')}`}></div>
-                                            {monitor.last_status || 'UNKNOWN'}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <code className={`text-[11px] px-2 py-1 rounded-md ${monitor.last_status === 'down' ? 'bg-black/20 text-white/90' : 'text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-[#252525]'}`}>
-                                            {monitor.target}{monitor.port ? `:${monitor.port}` : ''}
-                                        </code>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <div className={`flex items-center gap-1.5 text-sm font-medium ${monitor.last_status === 'down' ? 'text-white' : 'text-slate-700 dark:text-slate-300'}`}>
-                                            <FaClock className={monitor.last_status === 'down' ? 'text-white/60' : 'text-slate-400'} size={12} />
-                                            {monitor.last_response_time ? `${monitor.last_response_time}ms` : '-'}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <span className={`text-xs ${monitor.last_status === 'down' ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>{formatLastChecked(monitor.last_checked_at)}</span>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <span className={`text-xs font-bold ${monitor.last_status === 'down' ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>{monitor.interval}m</span>
-                                    </td>
-                                    <td className="px-6 py-4 text-right">
-                                        <div className="flex justify-end gap-2">
-                                            <button
-                                                onClick={() => handleCheckNow(monitor.id)}
-                                                disabled={checkingId === monitor.id}
-                                                className={`p-2 rounded-xl transition-colors ${checkingId === monitor.id ? 'animate-spin' : ''} ${monitor.last_status === 'down' ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
-                                                title="Check Now"
-                                            >
-                                                <FaRedo size={12} />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDuplicate(monitor)}
-                                                className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'down' ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
-                                                title="Duplicate"
-                                            >
-                                                <FaCopy size={12} />
-                                            </button>
-                                            <button
-                                                onClick={() => { setSelectedMonitor(monitor); setIsDuplicate(false); setIsEditing(true); }}
-                                                className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'down' ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
-                                            >
-                                                <FaEdit size={12} />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(monitor.id)}
-                                                className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'down' ? 'bg-black/40 text-white hover:bg-red-800' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-red-500'}`}
-                                            >
-                                                <FaTrash size={12} />
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
             )}
+
 
             {isEditing && (
                 <MonitorForm
@@ -621,7 +707,7 @@ export const MonitoringDashboard: React.FC = () => {
                         {/* Filters Bar */}
                         <div className="px-6 py-4 border-b border-slate-100 dark:border-[#333] flex items-center justify-between bg-white dark:bg-[#1a1a1a]">
                             <div className="flex items-center gap-2">
-                                <FaCalendarAlt className="text-slate-400 mr-2" />
+                                <FaCalendarAlt {...({ className: "text-slate-400 mr-2" } as any)} />
                                 <div className="flex bg-slate-100 dark:bg-[#252525] p-1 rounded-xl">
                                     {[
                                         { id: '1d', label: 'Last 24h' },
@@ -655,7 +741,7 @@ export const MonitoringDashboard: React.FC = () => {
                                     <p className="text-slate-500 dark:text-gray-400">No event logs found for this period.</p>
                                 </div>
                             ) : (
-                                Object.entries(groupedLogs).map(([date, dateLogs]) => (
+                                (Object.entries(groupedLogs) as [string, MonitorLog[]][]).map(([date, dateLogs]) => (
                                     <div key={date} className="space-y-3">
                                         <div className="flex items-center gap-2 mb-2">
                                             <div className="h-px flex-1 bg-slate-100 dark:bg-[#333]"></div>

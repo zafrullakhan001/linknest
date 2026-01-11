@@ -13,6 +13,8 @@ export interface Monitor {
     last_response_time: number;
     created_at: number;
     updated_at: number;
+    tab_name?: string;
+    group_name?: string;
 }
 
 export interface MonitorLog {

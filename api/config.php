@@ -785,8 +785,18 @@ function initDatabase() {
             last_status TEXT, -- up, down, unknown
             last_response_time INTEGER, -- ms
             created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
+            updated_at INTEGER NOT NULL,
+            tab_name TEXT,
+            group_name TEXT
         )');
+
+        // Migrate existing monitors table to add tab_name and group_name columns
+        try {
+            @$db->exec('ALTER TABLE monitors ADD COLUMN tab_name TEXT');
+        } catch (PDOException $e) { /* ignore if column already exists */ }
+        try {
+            @$db->exec('ALTER TABLE monitors ADD COLUMN group_name TEXT');
+        } catch (PDOException $e) { /* ignore if column already exists */ }
 
         // Create monitor_logs table
         $db->exec('CREATE TABLE IF NOT EXISTS monitor_logs (
