@@ -4,6 +4,7 @@ import { MonitorForm } from './MonitorForm';
 import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaFileCsv } from 'react-icons/fa';
 import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from './TileAnimationSelector';
 import { SMTPSettingsModal } from './SMTPSettingsModal';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Brush, BarChart, Bar, Cell } from 'recharts';
 
 export const MonitoringDashboard: React.FC = () => {
     const [monitors, setMonitors] = useState<Monitor[]>([]);
@@ -13,7 +14,11 @@ export const MonitoringDashboard: React.FC = () => {
     const [isDuplicate, setIsDuplicate] = useState(false);
     const [viewingLogsMonitor, setViewingLogsMonitor] = useState<Monitor | null>(null);
     const [logs, setLogs] = useState<MonitorLog[]>([]);
-    const [logFilter, setLogFilter] = useState<'1d' | '1w' | '1m'>('1d');
+    const [logFilter, setLogFilter] = useState<'1d' | '1w' | '1m' | 'custom'>('1d');
+    const [customRange, setCustomRange] = useState<{ from: string, to: string }>({
+        from: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
+        to: new Date().toISOString().slice(0, 16)
+    });
     const [isLogsLoading, setIsLogsLoading] = useState(false);
     const [checkingId, setCheckingId] = useState<number | null>(null);
     const [viewMode, setViewMode] = useState<'tiles' | 'grid' | 'compact'>(() => {
@@ -35,6 +40,86 @@ export const MonitoringDashboard: React.FC = () => {
     const [editingGroupName, setEditingGroupName] = useState<string | null>(null);
     const [tempTabName, setTempTabName] = useState('');
     const [tempGroupName, setTempGroupName] = useState('');
+    const [historyViewMode, setHistoryViewMode] = useState<'list' | 'chart'>('chart');
+    const [modalStyle, setModalStyle] = useState({ x: 0, y: 0, width: 1000, height: 750, isMaximized: false });
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+    const [isResizing, setIsResizing] = useState(false);
+    const [resizeStart, setResizeStart] = useState({ w: 0, h: 0, x: 0, y: 0 });
+
+    // Initialize/Center modal when opened
+    useEffect(() => {
+        if (viewingLogsMonitor) {
+            const width = Math.min(window.innerWidth - 40, 1000);
+            const height = Math.min(window.innerHeight - 40, 750);
+            setModalStyle(prev => ({
+                ...prev,
+                width,
+                height,
+                x: (window.innerWidth - width) / 2,
+                y: (window.innerHeight - height) / 2
+            }));
+        }
+    }, [viewingLogsMonitor]);
+
+    // Dragging Logic
+    const handleMouseDown = (e: React.MouseEvent) => {
+        if ((e.target as HTMLElement).closest('button')) return;
+        setIsDragging(true);
+        setDragOffset({
+            x: e.clientX - modalStyle.x,
+            y: e.clientY - modalStyle.y
+        });
+    };
+
+    // Resizing Logic
+    const handleResizeMouseDown = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        setIsResizing(true);
+        setResizeStart({
+            w: modalStyle.width,
+            h: modalStyle.height,
+            x: e.clientX,
+            y: e.clientY
+        });
+    };
+
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (isDragging) {
+                setModalStyle(prev => ({
+                    ...prev,
+                    x: e.clientX - dragOffset.x,
+                    y: e.clientY - dragOffset.y
+                }));
+            }
+            if (isResizing) {
+                const dw = e.clientX - resizeStart.x;
+                const dh = e.clientY - resizeStart.y;
+                setModalStyle(prev => ({
+                    ...prev,
+                    width: Math.max(600, resizeStart.w + dw),
+                    height: Math.max(400, resizeStart.h + dh)
+                }));
+            }
+        };
+
+        const handleMouseUp = () => {
+            setIsDragging(false);
+            setIsResizing(false);
+        };
+
+        if (isDragging || isResizing) {
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+        }
+
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isDragging, isResizing, dragOffset, resizeStart]);
 
     // Persist view mode
     useEffect(() => {
@@ -145,18 +230,24 @@ export const MonitoringDashboard: React.FC = () => {
         downloadAnchorNode.remove();
     };
 
-    const fetchLogs = useCallback(async (id: number, filter: '1d' | '1w' | '1m') => {
+    const fetchLogs = useCallback(async (id: number, filter: '1d' | '1w' | '1m' | 'custom') => {
         setIsLogsLoading(true);
         try {
-            const days = filter === '1d' ? 1 : filter === '1w' ? 7 : 30;
-            const data = await monitoringService.getMonitorLogs(id, { days });
+            let options: any = {};
+            if (filter === 'custom') {
+                options.from = Math.floor(new Date(customRange.from).getTime() / 1000);
+                options.to = Math.floor(new Date(customRange.to).getTime() / 1000);
+            } else {
+                options.days = filter === '1d' ? 1 : filter === '1w' ? 7 : 30;
+            }
+            const data = await monitoringService.getMonitorLogs(id, options);
             setLogs(data);
         } catch (error) {
             console.error('Failed to fetch logs', error);
         } finally {
             setIsLogsLoading(false);
         }
-    }, []);
+    }, [customRange]);
 
     useEffect(() => {
         if (viewingLogsMonitor) {
@@ -177,6 +268,22 @@ export const MonitoringDashboard: React.FC = () => {
             groups[date].push(log);
         });
         return groups;
+    }, [logs]);
+
+    const chartData = useMemo(() => {
+        return [...logs].reverse().map(log => {
+            const dateObj = new Date(log.checked_at * 1000);
+            return {
+                time: dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                date: dateObj.toLocaleDateString([], { month: 'short', day: 'numeric' }),
+                fullTime: dateObj.toLocaleString(),
+                latency: log.status === 'up' ? log.response_time : 0,
+                status: log.status,
+                // For histogram/status bar
+                val: 1, // Constant height for status bar
+                color: log.status === 'up' ? '#10b981' : '#ef4444'
+            };
+        });
     }, [logs]);
 
     const groupedByTabs = useMemo<Record<string, Monitor[]>>(() => {
@@ -833,10 +940,22 @@ export const MonitoringDashboard: React.FC = () => {
             )}
 
             {viewingLogsMonitor && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    <div className={`${animationClass} bg-white dark:bg-[#1a1a1a] w-full max-w-4xl max-h-[90vh] rounded-3xl overflow-hidden shadow-2xl flex flex-col border border-slate-200 dark:border-[#333]`}>
-                        {/* Header */}
-                        <div className="p-6 border-b border-slate-100 dark:border-[#333] flex items-center justify-between bg-slate-50/50 dark:bg-[#202020]/50">
+                <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center overflow-hidden">
+                    <div
+                        style={{
+                            position: 'absolute',
+                            left: `${modalStyle.x}px`,
+                            top: `${modalStyle.y}px`,
+                            width: `${modalStyle.width}px`,
+                            height: `${modalStyle.height}px`,
+                        }}
+                        className={`${animationClass} bg-white dark:bg-[#1a1a1a] rounded-3xl overflow-hidden shadow-2xl flex flex-col border border-slate-200 dark:border-[#333] select-none`}
+                    >
+                        {/* Header - Grabbable for dragging */}
+                        <div
+                            onMouseDown={handleMouseDown}
+                            className="p-6 border-b border-slate-100 dark:border-[#333] flex items-center justify-between bg-slate-50/50 dark:bg-[#202020]/50 cursor-grab active:cursor-grabbing"
+                        >
                             <div className="flex items-center gap-4">
                                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${viewingLogsMonitor.last_status === 'up' ? 'bg-emerald-500/10 text-emerald-500' : viewingLogsMonitor.last_status === 'down' ? 'bg-red-500/10 text-red-500' : 'bg-slate-500/10 text-slate-500'}`}>
                                     <FaHistory size={20} />
@@ -846,32 +965,77 @@ export const MonitoringDashboard: React.FC = () => {
                                     <p className="text-sm text-slate-500 dark:text-gray-400">Viewing logs for <span className="font-bold text-blue-500">{viewingLogsMonitor.name}</span></p>
                                 </div>
                             </div>
-                            <button
-                                onClick={() => setViewingLogsMonitor(null)}
-                                className="p-2 hover:bg-slate-200 dark:hover:bg-[#333] rounded-xl transition-colors text-slate-400"
-                            >
-                                <FaTimes size={20} />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setViewingLogsMonitor(null)}
+                                    className="p-2 hover:bg-slate-200 dark:hover:bg-[#333] rounded-xl transition-colors text-slate-400"
+                                >
+                                    <FaTimes size={20} />
+                                </button>
+                            </div>
                         </div>
 
                         {/* Filters Bar */}
-                        <div className="px-6 py-4 border-b border-slate-100 dark:border-[#333] flex items-center justify-between bg-white dark:bg-[#1a1a1a]">
-                            <div className="flex items-center gap-2">
-                                <FaCalendarAlt {...({ className: "text-slate-400 mr-2" } as any)} />
+                        <div className="px-6 py-4 border-b border-slate-100 dark:border-[#333] flex items-center justify-between bg-white dark:bg-[#1a1a1a] flex-wrap gap-4">
+                            <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-2">
+                                    <FaCalendarAlt {...({ className: "text-slate-400 mr-2" } as any)} />
+                                    <div className="flex bg-slate-100 dark:bg-[#252525] p-1 rounded-xl">
+                                        {[
+                                            { id: '1d', label: 'Last 24h' },
+                                            { id: '1w', label: 'Last 7 Days' },
+                                            { id: '1m', label: 'Last 30 Days' },
+                                            { id: 'custom', label: 'Custom' }
+                                        ].map(filter => (
+                                            <button
+                                                key={filter.id}
+                                                onClick={() => setLogFilter(filter.id as any)}
+                                                className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${logFilter === filter.id ? 'bg-white dark:bg-[#333] text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                            >
+                                                {filter.label}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {logFilter === 'custom' && (
+                                        <div className="flex items-center gap-2 bg-slate-100 dark:bg-[#252525] p-1 rounded-xl animate-in fade-in slide-in-from-left-2 duration-300">
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-[10px] uppercase font-black text-slate-400 px-1">From</span>
+                                                <input
+                                                    type="datetime-local"
+                                                    value={customRange.from}
+                                                    onChange={(e) => setCustomRange(prev => ({ ...prev, from: e.target.value }))}
+                                                    className="bg-white dark:bg-[#333] text-[10px] font-bold text-slate-700 dark:text-slate-200 border-none rounded-lg px-2 py-1 focus:ring-1 focus:ring-blue-500 outline-none"
+                                                />
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-[10px] uppercase font-black text-slate-400 px-1">To</span>
+                                                <input
+                                                    type="datetime-local"
+                                                    value={customRange.to}
+                                                    onChange={(e) => setCustomRange(prev => ({ ...prev, to: e.target.value }))}
+                                                    className="bg-white dark:bg-[#333] text-[10px] font-bold text-slate-700 dark:text-slate-200 border-none rounded-lg px-2 py-1 focus:ring-1 focus:ring-blue-500 outline-none"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="h-6 w-px bg-slate-200 dark:bg-slate-700"></div>
+
                                 <div className="flex bg-slate-100 dark:bg-[#252525] p-1 rounded-xl">
-                                    {[
-                                        { id: '1d', label: 'Last 24h' },
-                                        { id: '1w', label: 'Last 7 Days' },
-                                        { id: '1m', label: 'Last 30 Days' }
-                                    ].map(filter => (
-                                        <button
-                                            key={filter.id}
-                                            onClick={() => setLogFilter(filter.id as any)}
-                                            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${logFilter === filter.id ? 'bg-white dark:bg-[#333] text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                                        >
-                                            {filter.label}
-                                        </button>
-                                    ))}
+                                    <button
+                                        onClick={() => setHistoryViewMode('chart')}
+                                        className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${historyViewMode === 'chart' ? 'bg-white dark:bg-[#333] text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                    >
+                                        <FaThLarge size={12} /> Chart
+                                    </button>
+                                    <button
+                                        onClick={() => setHistoryViewMode('list')}
+                                        className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${historyViewMode === 'list' ? 'bg-white dark:bg-[#333] text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                    >
+                                        <FaList size={12} /> List
+                                    </button>
                                 </div>
                             </div>
                             <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">
@@ -879,70 +1043,204 @@ export const MonitoringDashboard: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Logs List */}
-                        <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                        {/* Logs Content */}
+                        <div className="flex-1 overflow-y-auto p-6 scrollbar-hide">
                             {isLogsLoading ? (
                                 <div className="flex flex-col items-center justify-center py-20">
                                     <div className="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-4"></div>
                                     <p className="text-slate-500 dark:text-gray-400">Loading history...</p>
                                 </div>
-                            ) : Object.keys(groupedLogs).length === 0 ? (
+                            ) : logs.length === 0 ? (
                                 <div className="text-center py-20 bg-slate-50 dark:bg-[#202020] rounded-3xl border border-dashed border-slate-200 dark:border-[#333]">
                                     <p className="text-slate-500 dark:text-gray-400">No event logs found for this period.</p>
                                 </div>
-                            ) : (
-                                (Object.entries(groupedLogs) as [string, MonitorLog[]][]).map(([date, dateLogs]) => (
-                                    <div key={date} className="space-y-3">
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <div className="h-px flex-1 bg-slate-100 dark:bg-[#333]"></div>
-                                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 bg-white dark:bg-[#1a1a1a] px-3">
-                                                {date}
-                                            </span>
-                                            <div className="h-px flex-1 bg-slate-100 dark:bg-[#333]"></div>
-                                        </div>
-                                        <div className="grid grid-cols-1 gap-2">
-                                            {dateLogs.map(log => (
-                                                <div
-                                                    key={log.id}
-                                                    className="flex items-center justify-between p-3 rounded-2xl bg-slate-50/50 dark:bg-[#202020]/50 border border-slate-100 dark:border-[#2a2a2a] hover:border-slate-200 dark:hover:border-[#333] transition-all"
-                                                >
-                                                    <div className="flex items-center gap-4">
-                                                        <div className={`w-2.5 h-2.5 rounded-full ${log.status === 'up' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]'}`}></div>
-                                                        <div className="flex flex-col">
-                                                            <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                                                                {log.status === 'up' ? 'System Stable' : 'Service Down'}
-                                                            </span>
-                                                            <span className="text-[10px] text-slate-500 dark:text-gray-500">
-                                                                {new Date(log.checked_at * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex items-center gap-4">
-                                                        {log.details && (
-                                                            <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-slate-100 dark:bg-[#2a2a2a] text-slate-500 dark:text-gray-400 max-w-[200px] truncate">
-                                                                {log.details}
-                                                            </span>
-                                                        )}
-                                                        <div className="flex flex-col items-end min-w-[60px]">
-                                                            <span className="text-xs font-black text-slate-700 dark:text-slate-300">
-                                                                {log.response_time}ms
-                                                            </span>
-                                                            <span className="text-[9px] uppercase tracking-tighter text-slate-400 font-bold">Latency</span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
+                            ) : historyViewMode === 'chart' ? (
+                                <div className="flex-1 w-full bg-slate-50/50 dark:bg-[#202020]/30 rounded-3xl p-6 border border-slate-100 dark:border-[#333] flex flex-col gap-4 min-h-0 h-full">
+                                    <div className="flex-1 min-h-0">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                                                <defs>
+                                                    <linearGradient id="colorLatency" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                                                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                                                    </linearGradient>
+                                                </defs>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#333" opacity={0.1} />
+                                                <XAxis
+                                                    dataKey="time"
+                                                    hide={true}
+                                                />
+                                                <YAxis
+                                                    axisLine={false}
+                                                    tickLine={false}
+                                                    tick={{ fill: '#64748b', fontSize: 10, fontWeight: 'bold' }}
+                                                    unit="ms"
+                                                />
+                                                <Tooltip
+                                                    content={({ active, payload }) => {
+                                                        if (active && payload && payload.length) {
+                                                            const data = payload[0].payload;
+                                                            return (
+                                                                <div className="bg-white dark:bg-[#1e1e1e] p-3 border border-slate-200 dark:border-[#333] rounded-xl shadow-xl pointer-events-none">
+                                                                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">{data.fullTime}</p>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className={`w-2 h-2 rounded-full ${data.status === 'up' ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
+                                                                        <p className="text-sm font-bold dark:text-white">
+                                                                            {data.status === 'up' ? `Latency: ${data.latency}ms` : 'SERVICE DOWN'}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        }
+                                                        return null;
+                                                    }}
+                                                />
+                                                <Area
+                                                    type="monotone"
+                                                    dataKey="latency"
+                                                    stroke="#3b82f6"
+                                                    strokeWidth={3}
+                                                    fillOpacity={1}
+                                                    fill="url(#colorLatency)"
+                                                    animationDuration={1500}
+                                                    connectNulls={false}
+                                                />
+                                                {chartData.map((entry, index) => (
+                                                    entry.status === 'down' ? (
+                                                        <ReferenceLine
+                                                            key={`down-${index}`}
+                                                            x={entry.time}
+                                                            stroke="#ef4444"
+                                                            strokeWidth={2}
+                                                            strokeDasharray="3 3"
+                                                        />
+                                                    ) : null
+                                                ))}
+                                            </AreaChart>
+                                        </ResponsiveContainer>
                                     </div>
-                                ))
+
+                                    {/* Histogram */}
+                                    <div className="h-12 w-full shrink-0">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={chartData} margin={{ top: 0, right: 10, left: 35, bottom: 0 }}>
+                                                <Tooltip
+                                                    content={({ active, payload }) => {
+                                                        if (active && payload && payload.length) {
+                                                            const data = payload[0].payload;
+                                                            return (
+                                                                <div className="bg-white dark:bg-[#1e1e1e] p-2 border border-slate-200 dark:border-[#333] rounded-lg shadow-lg text-[10px] pointer-events-none">
+                                                                    <p className="font-bold text-slate-400">{data.fullTime}</p>
+                                                                    <p className={data.status === 'up' ? 'text-emerald-500' : 'text-red-500'}>
+                                                                        Status: {data.status.toUpperCase()}
+                                                                    </p>
+                                                                </div>
+                                                            );
+                                                        }
+                                                        return null;
+                                                    }}
+                                                />
+                                                <Bar dataKey="val">
+                                                    {chartData.map((entry, index) => (
+                                                        <Cell key={`cell-${index}`} fill={entry.color} />
+                                                    ))}
+                                                </Bar>
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+
+                                    {/* Zoom Area with Vertical Labels */}
+                                    <div className="h-40 w-full shrink-0 mt-2">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <AreaChart data={chartData} margin={{ top: 0, right: 10, left: 35, bottom: 85 }}>
+                                                <XAxis
+                                                    dataKey="time"
+                                                    interval={0}
+                                                    angle={-90}
+                                                    textAnchor="end"
+                                                    dx={-5}
+                                                    dy={5}
+                                                    tick={{ fill: '#64748b', fontSize: 9, fontWeight: 'bold' }}
+                                                    tickFormatter={(time, index) => {
+                                                        const item = chartData[index];
+                                                        return item ? `${item.date} ${time}` : time;
+                                                    }}
+                                                />
+                                                <Brush
+                                                    dataKey="time"
+                                                    height={30}
+                                                    stroke="#3b82f6"
+                                                    fill="transparent"
+                                                    travellerWidth={10}
+                                                    y={110}
+                                                />
+                                            </AreaChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-8">
+                                    {(Object.entries(groupedLogs) as [string, MonitorLog[]][]).map(([date, dateLogs]) => (
+                                        <div key={date} className="space-y-3">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <div className="h-px flex-1 bg-slate-100 dark:bg-[#333]"></div>
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 bg-white dark:bg-[#1a1a1a] px-3">
+                                                    {date}
+                                                </span>
+                                                <div className="h-px flex-1 bg-slate-100 dark:bg-[#333]"></div>
+                                            </div>
+                                            <div className="grid grid-cols-1 gap-2">
+                                                {dateLogs.map(log => (
+                                                    <div
+                                                        key={log.id}
+                                                        className="flex items-center justify-between p-3 rounded-2xl bg-slate-50/50 dark:bg-[#202020]/50 border border-slate-100 dark:border-[#2a2a2a] hover:border-slate-200 dark:hover:border-[#333] transition-all"
+                                                    >
+                                                        <div className="flex items-center gap-4">
+                                                            <div className={`w-2.5 h-2.5 rounded-full ${log.status === 'up' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]'}`}></div>
+                                                            <div className="flex flex-col">
+                                                                <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                                                                    {log.status === 'up' ? 'System Stable' : 'Service Down'}
+                                                                </span>
+                                                                <span className="text-[10px] text-slate-500 dark:text-gray-500">
+                                                                    {new Date(log.checked_at * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-4">
+                                                            {log.details && (
+                                                                <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-slate-100 dark:bg-[#2a2a2a] text-slate-500 dark:text-gray-400 max-w-[200px] truncate">
+                                                                    {log.details}
+                                                                </span>
+                                                            )}
+                                                            <div className="flex flex-col items-end min-w-[60px]">
+                                                                <span className="text-xs font-black text-slate-700 dark:text-slate-300">
+                                                                    {log.response_time}ms
+                                                                </span>
+                                                                <span className="text-[9px] uppercase tracking-tighter text-slate-400 font-bold">Latency</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             )}
                         </div>
 
                         {/* Footer Info */}
-                        <div className="p-4 bg-slate-50 dark:bg-[#202020] border-t border-slate-100 dark:border-[#333] text-center">
+                        <div className="p-4 bg-slate-50 dark:bg-[#202020] border-t border-slate-100 dark:border-[#333] text-center relative">
                             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
                                 Auto-cleaning enabled: Logs older than 30 days are automatically pruned
                             </p>
+
+                            {/* Resize Handle */}
+                            <div
+                                onMouseDown={handleResizeMouseDown}
+                                className="absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize flex items-end justify-end p-1 group"
+                            >
+                                <div className="w-1.5 h-1.5 bg-slate-300 dark:bg-[#444] rounded-full group-hover:bg-blue-500 transition-colors"></div>
+                            </div>
                         </div>
                     </div>
                 </div>

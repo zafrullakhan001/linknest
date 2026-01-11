@@ -70,12 +70,14 @@ export const monitoringService = {
         if (!response.ok) throw new Error('Failed to delete monitor');
     },
 
-    async getMonitorLogs(id: number, options?: { days?: number, limit?: number }): Promise<MonitorLog[]> {
+    async getMonitorLogs(id: number, options?: { days?: number, limit?: number, from?: number, to?: number }): Promise<MonitorLog[]> {
         let url = `api/monitors.php/${id}/logs`;
         if (options) {
             const params = new URLSearchParams();
             if (options.days) params.append('days', options.days.toString());
             if (options.limit) params.append('limit', options.limit.toString());
+            if (options.from) params.append('from', options.from.toString());
+            if (options.to) params.append('to', options.to.toString());
             if (params.toString()) url += `?${params.toString()}`;
         }
         const response = await fetch(url);

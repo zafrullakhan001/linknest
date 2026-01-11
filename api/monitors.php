@@ -233,12 +233,23 @@ function handleGetMonitorLogs($id) {
     }
     
     $days = isset($_GET['days']) ? (int)$_GET['days'] : null;
+    $from = isset($_GET['from']) ? (int)$_GET['from'] : null;
+    $to = isset($_GET['to']) ? (int)$_GET['to'] : null;
     $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 100;
 
     $sql = 'SELECT * FROM monitor_logs WHERE monitor_id = ?';
     $params = [$id];
 
-    if ($days) {
+    if ($from) {
+        $sql .= ' AND checked_at >= ?';
+        $params[] = $from;
+    }
+    if ($to) {
+        $sql .= ' AND checked_at <= ?';
+        $params[] = $to;
+    }
+
+    if (!$from && !$to && $days) {
         $since = time() - ($days * 24 * 60 * 60);
         $sql .= ' AND checked_at >= ?';
         $params[] = $since;
@@ -246,7 +257,7 @@ function handleGetMonitorLogs($id) {
 
     $sql .= ' ORDER BY checked_at DESC';
     
-    if (!$days) {
+    if (!$days && !$from && !$to) {
         $sql .= ' LIMIT ' . (int)$limit;
     }
 
