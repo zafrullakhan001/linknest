@@ -55,6 +55,9 @@ function handleCheckDueMonitors() {
  * Perform a check for a single monitor
  */
 function performMonitorCheck($monitor) {
+    // Set a maximum execution time for this check to prevent hanging
+    set_time_limit(10); // Maximum 10 seconds per check
+    
     $startTime = microtime(true);
     $status = 'down';
     $details = '';
@@ -129,21 +132,37 @@ function checkUrl($url) {
     }
     
     $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_HEADER, true); // We only need headers often, but let's get body to be safe
-    curl_setopt($ch, CURLOPT_NOBODY, true); // Actually just HEAD request is enough for simple up check
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT => 5, // Reduced from 10 to 5 seconds - fail fast
+        CURLOPT_CONNECTTIMEOUT => 3, // 3 seconds to establish connection - prevents hanging
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+        CURLOPT_NOBODY => true, // HEAD request for efficiency
+        CURLOPT_USERAGENT => 'LinkNest Monitor/1.0',
+        CURLOPT_HTTPHEADER => [
+            'Accept: */*',
+            'Cache-Control: no-cache',
+            'Connection: close' // Close connection immediately
+        ],
+        CURLOPT_FRESH_CONNECT => true, // Don't reuse connections
+        CURLOPT_FORBID_REUSE => true // Force new connection
+    ]);
     
     $exec = curl_exec($ch);
     $info = curl_getinfo($ch);
     $error = curl_error($ch);
+    $errno = curl_errno($ch);
     curl_close($ch);
     
-    if ($exec === false) {
-        return ['status' => 'down', 'details' => 'Connection failed: ' . $error];
+    if ($exec === false || $errno !== 0) {
+        // Handle timeout specifically
+        if ($errno === CURLE_OPERATION_TIMEDOUT || $errno === CURLE_OPERATION_TIMEOUTED) {
+            return ['status' => 'down', 'details' => 'Connection timeout'];
+        }
+        return ['status' => 'down', 'details' => 'Connection failed: ' . ($error ?: 'Unknown error')];
     }
     
     $code = $info['http_code'];
@@ -163,21 +182,37 @@ function checkKeyword($url, $keyword) {
     }
     
     $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    // For keyword we need body
-    curl_setopt($ch, CURLOPT_NOBODY, false);
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT => 8, // Reduced from 15 to 8 seconds - fail faster
+        CURLOPT_CONNECTTIMEOUT => 3, // 3 seconds to establish connection
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+        CURLOPT_NOBODY => false, // Need body for keyword search
+        CURLOPT_USERAGENT => 'LinkNest Monitor/1.0',
+        CURLOPT_HTTPHEADER => [
+            'Accept: */*',
+            'Cache-Control: no-cache',
+            'Connection: close'
+        ],
+        CURLOPT_FRESH_CONNECT => true,
+        CURLOPT_FORBID_REUSE => true
+    ]);
     
     $body = curl_exec($ch);
     $info = curl_getinfo($ch);
     $error = curl_error($ch);
+    $errno = curl_errno($ch);
     curl_close($ch);
     
-    if ($body === false) {
-        return ['status' => 'down', 'details' => 'Connection failed: ' . $error];
+    if ($body === false || $errno !== 0) {
+        // Handle timeout specifically
+        if ($errno === CURLE_OPERATION_TIMEDOUT || $errno === CURLE_OPERATION_TIMEOUTED) {
+            return ['status' => 'down', 'details' => 'Connection timeout'];
+        }
+        return ['status' => 'down', 'details' => 'Connection failed: ' . ($error ?: 'Unknown error')];
     }
     
     $code = $info['http_code'];
@@ -193,8 +228,15 @@ function checkKeyword($url, $keyword) {
 }
 
 function checkPort($target, $port) {
+    // Validate inputs
     if (empty($target) || empty($port)) {
-        return ['status' => 'down', 'details' => 'Target or port missing'];
+        return ['status' => 'down', 'details' => 'Target and port are required'];
+    }
+    
+    // Validate port range
+    $port = (int)$port;
+    if ($port < 1 || $port > 65535) {
+        return ['status' => 'down', 'details' => 'Invalid port number'];
     }
     
     // Extract host from URL if user entered URL instead of just host
@@ -206,7 +248,8 @@ function checkPort($target, $port) {
         }
     }
     
-    $connection = @fsockopen($host, (int)$port, $errno, $errstr, 5);
+    // Use 3 seconds timeout (reduced from 5) - fail faster
+    $connection = @fsockopen($host, $port, $errno, $errstr, 3);
     
     if (is_resource($connection)) {
         fclose($connection);

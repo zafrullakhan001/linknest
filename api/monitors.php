@@ -269,6 +269,9 @@ function handleGetMonitorLogs($id) {
 }
 
 function handleCheckMonitor($id) {
+    // Set execution time limit to prevent hanging
+    set_time_limit(15); // Maximum 15 seconds for single check
+    
     $db = getDB();
     $stmt = $db->prepare('SELECT * FROM monitors WHERE id = ?');
     $stmt->execute([$id]);
@@ -286,13 +289,28 @@ function handleCheckMonitor($id) {
 }
 
 function handleCheckAllMonitors() {
+    // Set execution time limit to prevent hanging on multiple checks
+    // Allow more time for multiple monitors, but still limit it
+    set_time_limit(60); // Maximum 60 seconds for all checks
+    
     $db = getDB();
     $stmt = $db->prepare('SELECT * FROM monitors WHERE is_active = 1');
     $stmt->execute();
     $monitors = $stmt->fetchAll();
     
     $results = [];
+    $startTime = microtime(true);
+    $maxTime = 55; // Stop before script timeout
+    
     foreach ($monitors as $monitor) {
+        // Check if we're running out of time
+        $elapsed = microtime(true) - $startTime;
+        if ($elapsed > $maxTime) {
+            // Time limit approaching - stop checking and return partial results
+            error_log("Monitor check stopped early due to time limit. Checked " . count($results) . " of " . count($monitors) . " monitors.");
+            break;
+        }
+        
         $results[] = performMonitorCheck($monitor);
     }
     
