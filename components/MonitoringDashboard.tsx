@@ -846,8 +846,39 @@ export const MonitoringDashboard: React.FC = () => {
                                             style={{ animationDelay: `${index * 50}ms` }}
                                             className={`border rounded-2xl shadow-lg hover:shadow-xl transition-all group relative cursor-pointer ${fullAnimClass} 
                                                 ${monitor.last_status === 'up' ? 'bg-emerald-600 border-emerald-500' : (monitor.last_status === 'down' ? 'bg-red-600 border-red-500' : 'bg-white dark:bg-[#1e1e1e] border-slate-200 dark:border-[#333] hover:border-slate-300 dark:hover:border-[#444]')}
-                                                ${viewMode === 'tiles' ? 'p-5' : 'p-3 flex flex-col justify-between min-h-[120px]'}`}
+                                                ${viewMode === 'tiles' ? 'p-5' : 'p-3 flex flex-col justify-between min-h-[120px]'}
+                                                ${moveMenuId === monitor.id ? 'z-[60]' : 'z-10 hover:z-20'}`}
                                         >
+                                            {moveMenuId === monitor.id && (
+                                                <>
+                                                    <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setMoveMenuId(null); }}></div>
+                                                    <div className="absolute top-12 left-2 right-2 bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-[#333] rounded-2xl shadow-2xl z-[100] p-4 animate-in fade-in zoom-in duration-150 overflow-hidden" onClick={e => e.stopPropagation()}>
+                                                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 px-1 flex items-center justify-between">
+                                                            <span>Move to Tab</span>
+                                                            <button onClick={() => setMoveMenuId(null)} className="p-1 hover:bg-slate-100 dark:hover:bg-[#333] rounded-lg">
+                                                                <FaTimes size={8} />
+                                                            </button>
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-1.5 mb-5 max-h-[100px] overflow-y-auto scrollbar-hide">
+                                                            {tabNames.map(t => (
+                                                                <button key={t} onClick={(e) => { e.stopPropagation(); handleMoveMonitor(monitor.id, { tab_name: t }); }}
+                                                                    className={`px-2.5 py-1.5 text-[10px] rounded-lg font-bold transition-all ${monitor.tab_name === t ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'bg-slate-100 dark:bg-[#252525] text-slate-500 hover:bg-slate-200 dark:hover:bg-[#333]'}`}>
+                                                                    {t}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 px-1">Move to Group</div>
+                                                        <div className="flex flex-wrap gap-1.5 max-h-[100px] overflow-y-auto scrollbar-hide">
+                                                            {sortedGroups.map(g => (
+                                                                <button key={g} onClick={(e) => { e.stopPropagation(); handleMoveMonitor(monitor.id, { group_name: g }); }}
+                                                                    className={`px-2.5 py-1.5 text-[10px] rounded-lg font-bold transition-all ${monitor.group_name === g ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'bg-slate-100 dark:bg-[#252525] text-slate-500 hover:bg-slate-200 dark:hover:bg-[#333]'}`}>
+                                                                    {g}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            )}
                                             <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-y-1 group-hover:translate-y-0 z-10">
                                                 <div className="relative">
                                                     <button
@@ -857,31 +888,6 @@ export const MonitoringDashboard: React.FC = () => {
                                                     >
                                                         <FaArrowsAlt size={10} />
                                                     </button>
-                                                    {moveMenuId === monitor.id && (
-                                                        <>
-                                                            <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setMoveMenuId(null); }}></div>
-                                                            <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-[#333] rounded-xl shadow-2xl z-50 p-2 animate-in fade-in zoom-in duration-150" onClick={e => e.stopPropagation()}>
-                                                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 px-2">Move to Tab</div>
-                                                                <div className="flex flex-wrap gap-1 mb-3">
-                                                                    {tabNames.map(t => (
-                                                                        <button key={t} onClick={(e) => { e.stopPropagation(); handleMoveMonitor(monitor.id, { tab_name: t }); }}
-                                                                            className={`px-2 py-1 text-[10px] rounded-md font-bold transition-all ${monitor.tab_name === t ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-[#252525] text-slate-500 hover:bg-slate-200'}`}>
-                                                                            {t}
-                                                                        </button>
-                                                                    ))}
-                                                                </div>
-                                                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 px-2">Move to Group</div>
-                                                                <div className="flex flex-wrap gap-1">
-                                                                    {sortedGroups.map(g => (
-                                                                        <button key={g} onClick={(e) => { e.stopPropagation(); handleMoveMonitor(monitor.id, { group_name: g }); }}
-                                                                            className={`px-2 py-1 text-[10px] rounded-md font-bold transition-all ${monitor.group_name === g ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-[#252525] text-slate-500 hover:bg-slate-200'}`}>
-                                                                            {g}
-                                                                        </button>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        </>
-                                                    )}
                                                 </div>
                                                 <button
                                                     onClick={() => handleCheckNow(monitor.id)}
