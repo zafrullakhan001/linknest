@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Monitor, MonitorLog, monitoringService } from '../services/monitoringService';
 import { MonitorForm } from './MonitorForm';
-import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaFileCsv } from 'react-icons/fa';
+import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaFileCsv, FaArrowsAlt } from 'react-icons/fa';
 import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from './TileAnimationSelector';
 import { SMTPSettingsModal } from './SMTPSettingsModal';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Brush, BarChart, Bar, Cell } from 'recharts';
@@ -37,6 +37,7 @@ export const MonitoringDashboard: React.FC = () => {
     const [showSMTPSettings, setShowSMTPSettings] = useState(false);
     const [showCronModal, setShowCronModal] = useState(false);
     const csvInputRef = useRef<HTMLInputElement>(null);
+    const [moveMenuId, setMoveMenuId] = useState<number | null>(null);
     const [editingTabName, setEditingTabName] = useState<string | null>(null);
     const [editingGroupName, setEditingGroupName] = useState<string | null>(null);
     const [tempTabName, setTempTabName] = useState('');
@@ -285,6 +286,42 @@ export const MonitoringDashboard: React.FC = () => {
             setIsLogsLoading(false);
         }
     }, [customRange]);
+
+    const handleExportHistoryCSV = () => {
+        if (!logs.length || !viewingLogsMonitor) return;
+        const headers = ['Timestamp', 'Status', 'Latency (ms)', 'Details'];
+        const rows = logs.map(log => [
+            new Date(log.checked_at * 1000).toLocaleString(),
+            log.status.toUpperCase(),
+            log.response_time,
+            log.details || ''
+        ]);
+
+        const csvContent = [
+            headers.join(','),
+            ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `uptime_history_${viewingLogsMonitor.name.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleMoveMonitor = async (id: number, updates: { tab_name?: string, group_name?: string }) => {
+        try {
+            await monitoringService.updateMonitor(id, updates);
+            fetchMonitors();
+            setMoveMenuId(null);
+        } catch (error) {
+            console.error('Failed to move monitor', error);
+        }
+    };
 
     useEffect(() => {
         if (viewingLogsMonitor) {
@@ -812,6 +849,40 @@ export const MonitoringDashboard: React.FC = () => {
                                                 ${viewMode === 'tiles' ? 'p-5' : 'p-3 flex flex-col justify-between min-h-[120px]'}`}
                                         >
                                             <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-y-1 group-hover:translate-y-0 z-10">
+                                                <div className="relative">
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); setMoveMenuId(moveMenuId === monitor.id ? null : monitor.id); }}
+                                                        className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400'}`}
+                                                        title="Move to Tab/Group"
+                                                    >
+                                                        <FaArrowsAlt size={10} />
+                                                    </button>
+                                                    {moveMenuId === monitor.id && (
+                                                        <>
+                                                            <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setMoveMenuId(null); }}></div>
+                                                            <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-[#333] rounded-xl shadow-2xl z-50 p-2 animate-in fade-in zoom-in duration-150" onClick={e => e.stopPropagation()}>
+                                                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 px-2">Move to Tab</div>
+                                                                <div className="flex flex-wrap gap-1 mb-3">
+                                                                    {tabNames.map(t => (
+                                                                        <button key={t} onClick={(e) => { e.stopPropagation(); handleMoveMonitor(monitor.id, { tab_name: t }); }}
+                                                                            className={`px-2 py-1 text-[10px] rounded-md font-bold transition-all ${monitor.tab_name === t ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-[#252525] text-slate-500 hover:bg-slate-200'}`}>
+                                                                            {t}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 px-2">Move to Group</div>
+                                                                <div className="flex flex-wrap gap-1">
+                                                                    {sortedGroups.map(g => (
+                                                                        <button key={g} onClick={(e) => { e.stopPropagation(); handleMoveMonitor(monitor.id, { group_name: g }); }}
+                                                                            className={`px-2 py-1 text-[10px] rounded-md font-bold transition-all ${monitor.group_name === g ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-[#252525] text-slate-500 hover:bg-slate-200'}`}>
+                                                                            {g}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
                                                 <button
                                                     onClick={() => handleCheckNow(monitor.id)}
                                                     disabled={checkingId === monitor.id}
@@ -1093,8 +1164,27 @@ export const MonitoringDashboard: React.FC = () => {
                                     </button>
                                 </div>
                             </div>
-                            <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                                {logs.length} Checks Found
+                            <div className="flex items-center gap-3">
+                                <button
+                                    onClick={() => viewingLogsMonitor && fetchLogs(viewingLogsMonitor.id, logFilter)}
+                                    className="p-2 bg-slate-100 dark:bg-[#252525] hover:bg-slate-200 dark:hover:bg-[#333] rounded-xl transition-all text-slate-500 hover:text-blue-500"
+                                    title="Refresh History"
+                                    disabled={isLogsLoading}
+                                >
+                                    <FaRedo size={12} className={isLogsLoading ? 'animate-spin' : ''} />
+                                </button>
+                                <button
+                                    onClick={handleExportHistoryCSV}
+                                    className="p-2 bg-slate-100 dark:bg-[#252525] hover:bg-slate-200 dark:hover:bg-[#333] rounded-xl transition-all text-slate-500 hover:text-green-600"
+                                    title="Export History (CSV)"
+                                    disabled={logs.length === 0}
+                                >
+                                    <FaFileCsv size={14} />
+                                </button>
+                                <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+                                <div className="text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-[#252525] px-3 py-1.5 rounded-lg border border-slate-100 dark:border-[#333]">
+                                    {logs.length} Checks Found
+                                </div>
                             </div>
                         </div>
 

@@ -44,7 +44,9 @@ function handleGetSettings() {
         'from_email' => '',
         'from_name' => 'LinkNest Monitor',
         'encryption' => 'tls',
-        'enabled' => false
+        'enabled' => false,
+        'pause_start' => '',
+        'pause_end' => ''
     ];
     
     foreach ($rows as $row) {
@@ -78,7 +80,7 @@ function handleUpdateSettings() {
     try {
         $db->beginTransaction();
         
-        $fields = ['host', 'port', 'username', 'password', 'from_email', 'from_name', 'encryption', 'enabled'];
+        $fields = ['host', 'port', 'username', 'password', 'from_email', 'from_name', 'encryption', 'enabled', 'pause_start', 'pause_end'];
         
         foreach ($fields as $field) {
             if (isset($data[$field])) {

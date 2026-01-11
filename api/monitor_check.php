@@ -106,10 +106,12 @@ function performMonitorCheck($monitor) {
     
     // Send Notification if enabled and status changed to DOWN or recovered to UP
     if ($monitor['email_notification'] && $statusChanged) {
-        if ($status === 'down') {
-            sendNotification($monitor, "DOWN: {$monitor['name']} is unreachable. Error: $details");
-        } elseif ($prevStatus === 'down' && $status === 'up') {
-            sendNotification($monitor, "UP: {$monitor['name']} is back online.");
+        if (!isNotificationPaused()) {
+            if ($status === 'down') {
+                sendNotification($monitor, "DOWN: {$monitor['name']} is unreachable. Error: $details");
+            } elseif ($prevStatus === 'down' && $status === 'up') {
+                sendNotification($monitor, "UP: {$monitor['name']} is back online.");
+            }
         }
     }
     
@@ -231,4 +233,31 @@ function sendNotification($monitor, $message) {
             error_log("Failed to send notification for monitor {$monitor['id']}: $result");
         }
     }
+}
+
+/**
+ * Check if notifications are currently paused based on SMTP settings
+ */
+function isNotificationPaused() {
+    $db = getDB();
+    $stmt = $db->prepare("SELECT key, value FROM settings WHERE key IN ('smtp_pause_start', 'smtp_pause_end')");
+    $stmt->execute();
+    $rows = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+    
+    $start = $rows['smtp_pause_start'] ?? null;
+    $end = $rows['smtp_pause_end'] ?? null;
+    
+    if (empty($start) || empty($end)) {
+        return false;
+    }
+    
+    $now = time();
+    $startTime = strtotime($start);
+    $endTime = strtotime($end);
+    
+    if (!$startTime || !$endTime) {
+        return false;
+    }
+    
+    return ($now >= $startTime && $now <= $endTime);
 }

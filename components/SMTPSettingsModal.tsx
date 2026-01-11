@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FaTimes, FaEnvelope, FaServer, FaKey, FaCheckCircle, FaExclamationTriangle } from 'react-icons/fa';
+import { FaTimes, FaEnvelope, FaServer, FaKey, FaCheckCircle, FaExclamationTriangle, FaBellSlash, FaClock } from 'react-icons/fa';
 import { SMTPSettings, smtpService } from '../services/smtpService';
 
 interface SMTPSettingsModalProps {
@@ -15,7 +15,9 @@ export const SMTPSettingsModal: React.FC<SMTPSettingsModalProps> = ({ onClose })
         from_email: '',
         from_name: 'LinkNest Monitor',
         encryption: 'tls',
-        enabled: false
+        enabled: false,
+        pause_start: '',
+        pause_end: ''
     });
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
@@ -215,6 +217,47 @@ export const SMTPSettingsModal: React.FC<SMTPSettingsModalProps> = ({ onClose })
                                             className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-[#333] bg-white dark:bg-[#1e1e1e] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                         />
                                     </div>
+                                </div>
+                            </div>
+
+                            {/* Quiet Hours / Pause Notifications */}
+                            <div className="space-y-4">
+                                <h3 className="text-sm font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                                    <FaBellSlash size={12} /> Maintenance Window (Pause Notifications)
+                                </h3>
+                                <div className="p-4 bg-orange-50 dark:bg-orange-500/5 rounded-2xl border border-orange-100 dark:border-orange-500/20">
+                                    <p className="text-xs text-orange-700 dark:text-orange-400 mb-4">
+                                        Configure a specific period (dates and times) during which email notifications will be paused. This is useful for extended maintenance windows.
+                                    </p>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 flex items-center gap-2">
+                                                <FaClock size={10} /> Maintenance Start
+                                            </label>
+                                            <input
+                                                type="datetime-local"
+                                                value={settings.pause_start || ''}
+                                                onChange={(e) => setSettings({ ...settings, pause_start: e.target.value })}
+                                                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-[#333] bg-white dark:bg-[#1e1e1e] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 flex items-center gap-2">
+                                                <FaClock size={10} /> Maintenance End
+                                            </label>
+                                            <input
+                                                type="datetime-local"
+                                                value={settings.pause_end || ''}
+                                                onChange={(e) => setSettings({ ...settings, pause_end: e.target.value })}
+                                                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-[#333] bg-white dark:bg-[#1e1e1e] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                            />
+                                        </div>
+                                    </div>
+                                    {settings.pause_start && settings.pause_end && (
+                                        <p className="mt-3 text-[10px] text-slate-500 italic">
+                                            Notifications will be suppressed from {new Date(settings.pause_start).toLocaleString()} to {new Date(settings.pause_end).toLocaleString()}.
+                                        </p>
+                                    )}
                                 </div>
                             </div>
 

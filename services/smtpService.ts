@@ -7,6 +7,8 @@ export interface SMTPSettings {
     from_name: string;
     encryption: 'none' | 'ssl' | 'tls';
     enabled: boolean;
+    pause_start?: string;
+    pause_end?: string;
 }
 
 export const smtpService = {
