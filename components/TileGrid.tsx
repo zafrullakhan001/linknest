@@ -853,7 +853,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
       if (saved && validTabs.includes(saved)) {
         // If not authenticated, force public-accessible tabs only
-        // monitoring tab is authenticated only
+        // monitoring tab is admin only (checked in useEffect)
         const restrictedTabs = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
         if (!isAuthenticated && restrictedTabs.includes(saved)) {
           return 'public';
@@ -892,6 +892,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
           const restrictedTabs = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
           if (!isAuthenticated && restrictedTabs.includes(tab)) {
             setActiveTab('public');
+          } else if (tab === 'monitoring' && (!user || !user.is_admin)) {
+            // Monitoring tab requires admin access
+            setActiveTab('public');
           } else {
             setActiveTab(tab);
           }
@@ -903,7 +906,15 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
     window.addEventListener('switchTab', handleSwitchTab);
     return () => window.removeEventListener('switchTab', handleSwitchTab);
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user]);
+
+  // Redirect away from monitoring tab if user is not admin
+  useEffect(() => {
+    if (activeTab === 'monitoring' && (!user || !user.is_admin)) {
+      setActiveTab('public');
+    }
+  }, [activeTab, user]);
+
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [publicFavorites, setPublicFavorites] = useState<string[]>([]);
   const [recycleBinTiles, setRecycleBinTiles] = useState<Tile[]>([]);
@@ -3389,12 +3400,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 </span>
               )}
             </button>
-            <button
-              onClick={() => setActiveTab('monitoring')}
-              className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'monitoring' ? 'active' : ''}`}
-            >
-              Monitoring
-            </button>
+            {user?.is_admin && (
+              <button
+                onClick={() => setActiveTab('monitoring')}
+                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'monitoring' ? 'active' : ''}`}
+              >
+                Monitoring
+              </button>
+            )}
             <button
               onClick={() => setActiveTab('recycle-bin')}
               className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'recycle-bin'

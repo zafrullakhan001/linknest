@@ -136,7 +136,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
     // Draggable state
     const [position, setPosition] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
-    const dragStartPos = useRef({ x: 0, y: 0 });
+    const dragOffset = useRef({ x: 0, y: 0 });
     const modalRef = useRef<HTMLDivElement>(null);
     const isInitialized = useRef(false);
 
@@ -157,9 +157,10 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
         if (modalRef.current && (e.target as HTMLElement).closest('[data-drag-handle]')) {
             e.preventDefault();
             e.stopPropagation();
+            // Get the actual current position of the modal from the DOM
             const rect = modalRef.current.getBoundingClientRect();
-            // Store the offset from the mouse position to the modal's current position
-            dragStartPos.current = {
+            // Calculate offset from mouse position to modal's top-left corner
+            dragOffset.current = {
                 x: e.clientX - rect.left,
                 y: e.clientY - rect.top
             };
@@ -170,18 +171,15 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
     // Handle dragging
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {
-            if (isDragging && modalRef.current) {
-                // Calculate new position: mouse position minus the offset we stored
-                const newX = e.clientX - dragStartPos.current.x;
-                const newY = e.clientY - dragStartPos.current.y;
+            if (isDragging) {
+                // Calculate new position: mouse position minus the stored offset
+                const newX = e.clientX - dragOffset.current.x;
+                const newY = e.clientY - dragOffset.current.y;
                 
-                // Constrain to viewport
-                const maxX = window.innerWidth - (modalRef.current.offsetWidth || 0);
-                const maxY = window.innerHeight - (modalRef.current.offsetHeight || 0);
-                
+                // Allow free movement - no viewport constraints
                 setPosition({
-                    x: Math.max(0, Math.min(newX, maxX)),
-                    y: Math.max(0, Math.min(newY, maxY))
+                    x: newX,
+                    y: newY
                 });
             }
         };
