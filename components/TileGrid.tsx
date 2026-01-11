@@ -14,8 +14,10 @@ import { useAuth } from '../contexts/AuthContext';
 import { userPreferencesService } from '../services/userPreferencesService';
 import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite, clearPublicLinkFavorites } from '../services/publicFavoritesService';
 import { linkHealthService } from '../services/linkHealthService';
-import { favoriteLinkHealthService, LinkHealthCheckResult } from '../services/favoriteLinkHealthService';
+import { favoriteLinkHealthService } from '../services/favoriteLinkHealthService';
 import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, getTileDecorationClass, TileAnimation, TileDecoration } from './TileAnimationSelector';
+import { MonitoringDashboard } from './MonitoringDashboard';
+
 
 interface TileGridProps {
   tiles: Tile[];
@@ -827,7 +829,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
   );
 };
 
-type TabType = 'favorites' | 'public' | 'public-favorites' | 'private' | 'scheduled' | 'expired' | 'archive' | 'recycle-bin';
+type TabType = 'favorites' | 'public' | 'public-favorites' | 'private' | 'scheduled' | 'expired' | 'archive' | 'recycle-bin' | 'monitoring';
 
 export const TileGrid: React.FC<TileGridProps> = ({
   tiles,
@@ -844,7 +846,34 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingTile, setEditingTile] = useState<Tile | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<TabType>('public');
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    try {
+      const saved = localStorage.getItem('linknest_active_tab');
+      const validTabs = ['favorites', 'public', 'public-favorites', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+
+      if (saved && validTabs.includes(saved)) {
+        // If not authenticated, force public-accessible tabs only
+        // monitoring tab is authenticated only
+        const restrictedTabs = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+        if (!isAuthenticated && restrictedTabs.includes(saved)) {
+          return 'public';
+        }
+        return saved as TabType;
+      }
+    } catch (e) {
+      console.error('Failed to load active tab', e);
+    }
+    return 'public';
+  });
+
+  // Persist active tab changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('linknest_active_tab', activeTab);
+    } catch (e) {
+      console.error('Failed to save active tab', e);
+    }
+  }, [activeTab]);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [publicFavorites, setPublicFavorites] = useState<string[]>([]);
   const [recycleBinTiles, setRecycleBinTiles] = useState<Tile[]>([]);
@@ -3331,6 +3360,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
               )}
             </button>
             <button
+              onClick={() => setActiveTab('monitoring')}
+              className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'monitoring' ? 'active' : ''}`}
+            >
+              Monitoring
+            </button>
+            <button
               onClick={() => setActiveTab('recycle-bin')}
               className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'recycle-bin'
                 ? 'border-brand-500 text-brand-600 dark:text-brand-400'
@@ -3724,8 +3759,10 @@ export const TileGrid: React.FC<TileGridProps> = ({
         return favoriteLinksAbove ? favoriteLinksSection : null;
       })()}
 
+      {activeTab === 'monitoring' && <MonitoringDashboard />}
+
       {/* Tiles Grid - Full Width with More Columns */}
-      <div>
+      <div className={activeTab === 'monitoring' ? 'hidden' : ''}>
         {Object.keys(groupedTiles).map((groupName, groupIndex) => {
           const groupTiles = groupedTiles[groupName];
           // Use the actual display order (which respects categoryOrder)
@@ -3842,7 +3879,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
       {/* Matching Links Section - Shown when searching */}
       {
-        searchTerm.trim() && (() => {
+        activeTab !== 'monitoring' && searchTerm.trim() && (() => {
           const searchLower = searchTerm.toLowerCase();
           const matchingLinks: Array<{
             id: string;

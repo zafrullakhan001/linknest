@@ -769,6 +769,45 @@ function initDatabase() {
             PRIMARY KEY (user_id, preference_key),
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )');
+
+        // Create monitors table
+        $db->exec('CREATE TABLE IF NOT EXISTS monitors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL, -- url, keyword, port
+            target TEXT NOT NULL, -- url or ip
+            port INTEGER,
+            keyword TEXT,
+            interval INTEGER DEFAULT 5, -- in minutes
+            is_active INTEGER DEFAULT 1,
+            email_notification INTEGER DEFAULT 0,
+            last_checked_at INTEGER,
+            last_status TEXT, -- up, down, unknown
+            last_response_time INTEGER, -- ms
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )');
+
+        // Create monitor_logs table
+        $db->exec('CREATE TABLE IF NOT EXISTS monitor_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            monitor_id INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            response_time INTEGER,
+            details TEXT,
+            checked_at INTEGER NOT NULL,
+            FOREIGN KEY (monitor_id) REFERENCES monitors(id) ON DELETE CASCADE
+        )');
+
+        // Create indexes for monitors
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_monitors_type ON monitors(type)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_monitors_status ON monitors(last_status)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_monitor_logs_monitor_id ON monitor_logs(monitor_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_monitor_logs_checked_at ON monitor_logs(checked_at)');
+        } catch (PDOException $e) {
+            // Indices might already exist
+        }
         
         // Migrate existing tables if they exist with NULL user_id
         // SQLite doesn't allow NULL in composite PRIMARY KEY, so we need to migrate to use 0 instead
