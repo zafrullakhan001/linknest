@@ -41,21 +41,7 @@ export const databaseService = {
   async importDatabase(file: File): Promise<{
     success: boolean;
     message: string;
-    imported: {
-      users: number;
-      tiles: number;
-      tabs: number;
-      sections: number;
-      links: number;
-      settings: number;
-      tile_arrangements?: number;
-      category_arrangements?: number;
-      rich_text_content?: number;
-      user_tile_favorites?: number;
-      user_tile_permissions?: number;
-      style_profiles?: number;
-      user_preferences?: number;
-    };
+    imported: Record<string, number>;
   }> {
     // Read file as text
     const fileText = await file.text();
@@ -87,6 +73,47 @@ export const databaseService = {
       throw new Error(result.error || 'Failed to import database');
     }
 
+    return result;
+  },
+
+  async getSnapshots(): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/database/snapshots`, {
+      credentials: 'include'
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Failed to fetch snapshots');
+    return result.snapshots;
+  },
+
+  async createSnapshot(): Promise<any> {
+    const response = await fetch(`${API_BASE}/database/snapshot`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Failed to create snapshot');
+    return result;
+  },
+
+  async deleteSnapshot(filename: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/database/snapshots/${filename}`, {
+      method: 'DELETE',
+      credentials: 'include'
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Failed to delete snapshot');
+    return result;
+  },
+
+  async restoreSnapshot(filename: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/database/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ filename })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Failed to restore snapshot');
     return result;
   }
 };

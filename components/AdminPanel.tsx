@@ -215,6 +215,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   } | null>(null);
   const [showPrechecks, setShowPrechecks] = useState(false);
 
+  // Snapshots state
+  const [snapshots, setSnapshots] = useState<any[]>([]);
+  const [snapshotsLoading, setSnapshotsLoading] = useState(false);
+  const [snapshotCreating, setSnapshotCreating] = useState(false);
+  const [snapshotRestoring, setSnapshotRestoring] = useState<string | null>(null);
+
   const loadPendingUsers = async () => {
     try {
       setError('');
@@ -275,7 +281,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       loadClonesList();
       loadCurrentPath();
     }
+    if (activeTab === 'database') {
+      loadSnapshots();
+    }
   }, [activeTab]);
+
+  const loadSnapshots = async () => {
+    try {
+      setSnapshotsLoading(true);
+      const data = await databaseService.getSnapshots();
+      setSnapshots(data);
+    } catch (err: any) {
+      console.error('Failed to load snapshots:', err);
+    } finally {
+      setSnapshotsLoading(false);
+    }
+  };
 
   // Persist activeTab to localStorage whenever it changes
   useEffect(() => {
@@ -1514,6 +1535,157 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <li>Database indexes are automatically recreated after import for optimal performance</li>
                         <li>Note: The clones table is excluded from export/import as it contains operational/temporary data</li>
                       </ul>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Snapshots Management Section */}
+                <div className="mt-8 pt-8 border-t border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Database Snapshots (Backups)</h3>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={loadSnapshots}
+                        className="p-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                        title="Refresh list"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-5 h-5 ${snapshotsLoading ? 'animate-spin' : ''}`}>
+                          <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={async () => {
+                          try {
+                            setSnapshotCreating(true);
+                            await databaseService.createSnapshot();
+                            await loadSnapshots();
+                            alert('Database snapshot created successfully!');
+                          } catch (err: any) {
+                            setError(err.message || 'Failed to create snapshot');
+                          } finally {
+                            setSnapshotCreating(false);
+                          }
+                        }}
+                        disabled={snapshotCreating}
+                        className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
+                      >
+                        {snapshotCreating ? 'Creating...' : '+ Create Snapshot'}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                    Manage full database snapshots stored on the server. Snapshots can be used to quickly restore the entire application state.
+                    A nightly snapshot is automatically taken and kept for 30 days.
+                  </p>
+
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+                      <thead>
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Date & Time</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Filename</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Size</th>
+                          <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                        {snapshotsLoading && snapshots.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="px-4 py-8 text-center text-sm text-slate-500">Loading snapshots...</td>
+                          </tr>
+                        ) : snapshots.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="px-4 py-8 text-center text-sm text-slate-500">No snapshots found.</td>
+                          </tr>
+                        ) : (
+                          snapshots.map((snap) => (
+                            <tr key={snap.filename} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-900 dark:text-white">
+                                {snap.created_at_formatted}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">
+                                {snap.filename}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400 font-mono">
+                                {snap.size_formatted}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  <button
+                                    onClick={async () => {
+                                      if (!confirm(`Are you sure you want to RESTORE the database from ${snap.filename}? This will OVERWRITE all current data!`)) return;
+                                      try {
+                                        setSnapshotRestoring(snap.filename);
+                                        await databaseService.restoreSnapshot(snap.filename);
+                                        alert('Database restored successfully! The page will now reload.');
+                                        window.location.reload();
+                                      } catch (err: any) {
+                                        setError(err.message || 'Failed to restore snapshot');
+                                      } finally {
+                                        setSnapshotRestoring(null);
+                                      }
+                                    }}
+                                    disabled={snapshotRestoring !== null}
+                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-colors"
+                                  >
+                                    {snapshotRestoring === snap.filename ? 'Restoring...' : 'Restore'}
+                                  </button>
+                                  <button
+                                    onClick={async () => {
+                                      if (!confirm(`Are you sure you want to DELETE snapshot ${snap.filename}?`)) return;
+                                      try {
+                                        await databaseService.deleteSnapshot(snap.filename);
+                                        await loadSnapshots();
+                                      } catch (err: any) {
+                                        setError(err.message || 'Failed to delete snapshot');
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 bg-slate-200 hover:bg-red-100 dark:bg-slate-700 dark:hover:bg-red-900/30 text-slate-700 hover:text-red-600 dark:text-slate-300 dark:hover:text-red-400 rounded-lg text-xs font-medium transition-colors"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-8 p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg">
+                    <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-brand-500">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
+                      </svg>
+                      Automated Snapshots (Cron / Task Scheduler)
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <p className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase">Windows (XAMPP)</p>
+                        <div className="text-[11px] text-slate-600 dark:text-slate-400 space-y-2">
+                          <p>To schedule a daily backup at 3:00 AM:</p>
+                          <ol className="list-decimal list-inside space-y-1">
+                            <li>Open <strong>Task Scheduler</strong></li>
+                            <li>Click <strong>Create Basic Task...</strong></li>
+                            <li>Name: <code>LinkNest Snapshot</code></li>
+                            <li>Trigger: <strong>Daily</strong> (3:00 AM)</li>
+                            <li>Action: <strong>Start a program</strong></li>
+                            <li>Program: <code>C:\xampp\php\php.exe</code></li>
+                            <li>Arguments: <code>"{window.location.protocol === 'http:' ? 'C:\\xampp\\htdocs\\linknest\\api\\snapshot.php' : '/path/to/api/snapshot.php'}"</code></li>
+                          </ol>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase">Linux (Cron)</p>
+                        <div className="text-[11px] text-slate-600 dark:text-slate-400 space-y-2">
+                          <p>Add this to your crontab (<code>crontab -e</code>):</p>
+                          <code className="block p-2 bg-slate-100 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 text-brand-600 dark:text-brand-400 select-all">
+                            0 3 * * * /usr/bin/php {window.location.protocol === 'http:' ? 'C:\\xampp\\htdocs\\linknest\\api\\snapshot.php' : '/var/www/html/api/snapshot.php'} &gt; /dev/null 2&gt;&amp;1
+                          </code>
+                          <p className="text-[10px] mt-2 italic">Note: Ensure the user running the task has write permissions to the <code>data/backups</code> directory.</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

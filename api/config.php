@@ -1012,8 +1012,14 @@ function createDatabaseIndexes($db) {
 }
 
 // Get database connection (singleton pattern - reuse connection within same request)
-function getDB() {
+function getDB($clear = false) {
     static $dbInstance = null;
+    
+    // Allow clearing the instance (useful for operations like restore)
+    if ($clear === true) {
+        $dbInstance = null;
+        return null;
+    }
     
     // Return cached instance if it exists
     if ($dbInstance !== null) {
