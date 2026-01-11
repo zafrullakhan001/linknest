@@ -28,6 +28,10 @@ switch ($method) {
     case 'POST':
         if ($path === '' || $path === '/') {
             handleCreateMonitor();
+        } elseif ($path === '/import') {
+            handleImportMonitors();
+        } elseif ($path === '/check-all') {
+            handleCheckAllMonitors();
         } elseif (preg_match('/^\/(\d+)\/check$/', $path, $matches)) {
             handleCheckMonitor($matches[1]);
         } else {
@@ -44,7 +48,9 @@ switch ($method) {
         break;
         
     case 'DELETE':
-        if (preg_match('/^\/(\d+)$/', $path, $matches)) {
+        if ($path === '/all') {
+            handleDeleteAllMonitors();
+        } elseif (preg_match('/^\/(\d+)$/', $path, $matches)) {
             handleDeleteMonitor($matches[1]);
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
@@ -242,4 +248,73 @@ function handleCheckMonitor($id) {
     $result = performMonitorCheck($monitor);
     
     sendJSON(['success' => true, 'result' => $result]);
+}
+
+function handleCheckAllMonitors() {
+    $db = getDB();
+    $stmt = $db->prepare('SELECT * FROM monitors WHERE is_active = 1');
+    $stmt->execute();
+    $monitors = $stmt->fetchAll();
+    
+    $results = [];
+    foreach ($monitors as $monitor) {
+        $results[] = performMonitorCheck($monitor);
+    }
+    
+    sendJSON(['success' => true, 'count' => count($results), 'results' => $results]);
+}
+function handleDeleteAllMonitors() {
+    $db = getDB();
+    try {
+        $db->exec('DELETE FROM monitors');
+        $db->exec('DELETE FROM monitor_logs'); // Also clear logs
+        sendJSON(['success' => true]);
+    } catch (PDOException $e) {
+        sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleImportMonitors() {
+    $data = getJSONInput();
+    if (!isset($data['monitors']) || !is_array($data['monitors'])) {
+        sendJSON(['error' => 'Invalid import data format'], 400);
+        return;
+    }
+    
+    $monitors = $data['monitors'];
+    $db = getDB();
+    $now = time();
+    $count = 0;
+    
+    try {
+        $db->beginTransaction();
+        
+        $stmt = $db->prepare('INSERT INTO monitors (
+            name, type, target, port, keyword, interval, 
+            is_active, email_notification, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        
+        foreach ($monitors as $m) {
+            $stmt->execute([
+                $m['name'] ?? 'Imported Monitor',
+                $m['type'] ?? 'url',
+                $m['target'] ?? '',
+                isset($m['port']) ? (int)$m['port'] : null,
+                $m['keyword'] ?? null,
+                isset($m['interval']) ? (int)$m['interval'] : 5,
+                isset($m['is_active']) ? (int)$m['is_active'] : 1,
+                isset($m['email_notification']) ? (int)$m['email_notification'] : 0,
+                $now,
+                $now
+            ]);
+            $count++;
+        }
+        
+        $db->commit();
+        sendJSON(['success' => true, 'count' => $count]);
+        
+    } catch (Exception $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        sendJSON(['error' => 'Import failed: ' . $e->getMessage()], 500);
+    }
 }

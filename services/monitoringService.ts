@@ -82,5 +82,30 @@ export const monitoringService = {
         if (!response.ok) throw new Error('Failed to check monitor');
         const data = await response.json();
         return data.result;
+    },
+
+    async checkAllMonitors(): Promise<void> {
+        const response = await fetch('api/monitors.php/check-all', {
+            method: 'POST'
+        });
+        if (!response.ok) throw new Error('Failed to check all monitors');
+    },
+
+    async deleteAllMonitors(): Promise<void> {
+        const response = await fetch('api/monitors.php/all', {
+            method: 'DELETE'
+        });
+        if (!response.ok) throw new Error('Failed to delete all monitors');
+    },
+
+    async importMonitors(monitors: Partial<Monitor>[]): Promise<number> {
+        const response = await fetch('api/monitors.php/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ monitors })
+        });
+        if (!response.ok) throw new Error('Failed to import monitors');
+        const data = await response.json();
+        return data.count;
     }
 };
