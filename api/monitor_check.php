@@ -1,6 +1,7 @@
 <?php
 // This script can be called via CLI (cron) or web request (check-all)
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/mailer.php';
 
 
 // If running from CLI or direct execution, ensure we don't time out
@@ -214,21 +215,20 @@ function checkPort($target, $port) {
 }
 
 function sendNotification($monitor, $message) {
-    // Basic PHP mail
-    // In a real app we'd fetch admin email from settings or users table
+    // Fetch admin email from users table
     $db = getDB();
-    // Get admin email
     $stmt = $db->prepare('SELECT email FROM users WHERE is_admin = 1 LIMIT 1');
     $stmt->execute();
     $admin = $stmt->fetch();
     
     if ($admin && !empty($admin['email'])) {
-        $to = $admin['email'];
-        $subject = "[LinkNest Monitor] " . $monitor['name'] . " Status Update";
-        $headers = "From: noreply@linknest.local\r\n";
-        $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
+        // Send email using our SMTP helper
+        // It handles fetching settings and connection automatically if config is null
+        $result = sendEmail($admin['email'], "[LinkNest Monitor] " . $monitor['name'] . " Status Update", $message);
         
-        // Suppress errors if mail server is not configured
-        @mail($to, $subject, $message, $headers);
+        // Log error if failed (optional, but good for debugging)
+        if ($result !== true) {
+            error_log("Failed to send notification for monitor {$monitor['id']}: $result");
+        }
     }
 }

@@ -116,5 +116,34 @@ export const monitoringService = {
         if (!response.ok) throw new Error('Failed to import monitors');
         const data = await response.json();
         return data.count;
+    },
+
+    async importMonitorsFromCSV(csvData: string): Promise<number> {
+        const response = await fetch('api/monitors.php/import-csv', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ csv: csvData })
+        });
+        if (!response.ok) throw new Error('Failed to import monitors from CSV');
+        const data = await response.json();
+        return data.count;
+    },
+
+    async updateTabName(oldName: string, newName: string): Promise<void> {
+        const response = await fetch('api/monitors.php/update-tab', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ old_name: oldName, new_name: newName })
+        });
+        if (!response.ok) throw new Error('Failed to update tab name');
+    },
+
+    async updateGroupName(tabName: string, oldName: string, newName: string): Promise<void> {
+        const response = await fetch('api/monitors.php/update-group', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tab_name: tabName, old_name: oldName, new_name: newName })
+        });
+        if (!response.ok) throw new Error('Failed to update group name');
     }
 };

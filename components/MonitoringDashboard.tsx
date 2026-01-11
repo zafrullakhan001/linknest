@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Monitor, MonitorLog, monitoringService } from '../services/monitoringService';
 import { MonitorForm } from './MonitorForm';
-import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt } from 'react-icons/fa';
+import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaFileCsv } from 'react-icons/fa';
 import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from './TileAnimationSelector';
+import { SMTPSettingsModal } from './SMTPSettingsModal';
 
 export const MonitoringDashboard: React.FC = () => {
     const [monitors, setMonitors] = useState<Monitor[]>([]);
@@ -28,6 +29,12 @@ export const MonitoringDashboard: React.FC = () => {
         const saved = localStorage.getItem('linknest_monitor_active_tab');
         return saved || 'General';
     });
+    const [showSMTPSettings, setShowSMTPSettings] = useState(false);
+    const csvInputRef = useRef<HTMLInputElement>(null);
+    const [editingTabName, setEditingTabName] = useState<string | null>(null);
+    const [editingGroupName, setEditingGroupName] = useState<string | null>(null);
+    const [tempTabName, setTempTabName] = useState('');
+    const [tempGroupName, setTempGroupName] = useState('');
 
     // Persist view mode
     useEffect(() => {
@@ -254,6 +261,62 @@ export const MonitoringDashboard: React.FC = () => {
         reader.readAsText(file);
     };
 
+    const handleImportCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const content = e.target?.result as string;
+                setIsLoading(true);
+                const count = await monitoringService.importMonitorsFromCSV(content);
+                await fetchMonitors();
+                alert(`Successfully imported ${count} monitors!`);
+            } catch (err) {
+                console.error('Failed to import monitors (CSV)', err);
+                alert('Failed to import monitors from CSV. Please check the file format.');
+            } finally {
+                setIsLoading(false);
+                if (csvInputRef.current) csvInputRef.current.value = '';
+            }
+        };
+        reader.readAsText(file);
+    };
+
+    const handleTabRename = async (oldName: string) => {
+        if (!tempTabName.trim() || tempTabName === oldName) {
+            setEditingTabName(null);
+            return;
+        }
+        try {
+            await monitoringService.updateTabName(oldName, tempTabName.trim());
+            if (activeTab === oldName) setActiveTab(tempTabName.trim());
+            fetchMonitors();
+        } catch (error) {
+            console.error('Failed to rename tab', error);
+            alert('Failed to rename tab');
+        } finally {
+            setEditingTabName(null);
+        }
+    };
+
+    const handleGroupRename = async (groupName: string) => {
+        if (!tempGroupName.trim() || tempGroupName === groupName) {
+            setEditingGroupName(null);
+            return;
+        }
+        try {
+            await monitoringService.updateGroupName(activeTab, groupName, tempGroupName.trim());
+            fetchMonitors();
+        } catch (error) {
+            console.error('Failed to rename group', error);
+            alert('Failed to rename group');
+        } finally {
+            setEditingGroupName(null);
+        }
+    };
+
     const handleDeleteAll = async () => {
         if (!confirm('CRITICAL ACTION: Are you sure you want to delete ALL monitoring tiles? This cannot be undone.')) return;
         setIsLoading(true);
@@ -321,6 +384,13 @@ export const MonitoringDashboard: React.FC = () => {
                 className="hidden"
                 accept=".json"
             />
+            <input
+                type="file"
+                ref={csvInputRef}
+                onChange={handleImportCSV}
+                className="hidden"
+                accept=".csv"
+            />
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
                 <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-2xl bg-blue-600/10 dark:bg-blue-500/20 flex items-center justify-center border border-blue-500/20">
@@ -352,6 +422,20 @@ export const MonitoringDashboard: React.FC = () => {
                             title="Import Monitors (JSON)"
                         >
                             <FaUpload size={14} />
+                        </button>
+                        <button
+                            onClick={() => csvInputRef.current?.click()}
+                            className="p-2 rounded-lg transition-all text-slate-400 hover:text-green-600 hover:bg-white dark:hover:bg-[#333]"
+                            title="Import Monitors (CSV)"
+                        >
+                            <FaFileCsv size={14} />
+                        </button>
+                        <button
+                            onClick={() => setShowSMTPSettings(true)}
+                            className="p-2 rounded-lg transition-all text-slate-400 hover:text-orange-500 hover:bg-white dark:hover:bg-[#333]"
+                            title="SMTP Settings"
+                        >
+                            <FaEnvelope size={14} />
                         </button>
                         <button
                             onClick={handleDeleteAll}
@@ -465,28 +549,94 @@ export const MonitoringDashboard: React.FC = () => {
                     {tabNames.length > 1 && (
                         <div className="flex flex-wrap gap-2 p-1.5 bg-white dark:bg-[#1e1e1e] rounded-2xl border border-slate-200 dark:border-[#333] mb-6 w-fit">
                             {tabNames.map(tab => (
-                                <button
+                                <div
                                     key={tab}
-                                    onClick={() => setActiveTab(tab)}
-                                    className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === tab ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white'}`}
+                                    className={`relative group/tab flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${activeTab === tab ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white'}`}
                                 >
-                                    {tab}
-                                    <span className={`ml-2 px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === tab ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-[#252525] text-slate-400'}`}>
+                                    {editingTabName === tab ? (
+                                        <input
+                                            autoFocus
+                                            type="text"
+                                            value={tempTabName}
+                                            onChange={(e) => setTempTabName(e.target.value)}
+                                            onBlur={() => handleTabRename(tab)}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleTabRename(tab)}
+                                            className="w-24 bg-transparent border-b border-white outline-none text-sm font-bold p-0"
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                    ) : (
+                                        <button
+                                            onClick={() => setActiveTab(tab)}
+                                            onDoubleClick={() => {
+                                                setEditingTabName(tab);
+                                                setTempTabName(tab);
+                                            }}
+                                            className="text-sm font-bold cursor-pointer"
+                                        >
+                                            {tab}
+                                        </button>
+                                    )}
+                                    <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === tab ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-[#252525] text-slate-400'}`}>
                                         {groupedByTabs[tab].length}
                                     </span>
-                                </button>
+                                    {/* Edit icon for tab visible on hover */}
+                                    {activeTab === tab && editingTabName !== tab && (
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setEditingTabName(tab);
+                                                setTempTabName(tab);
+                                            }}
+                                            className="ml-1 opacity-0 group-hover/tab:opacity-100 transition-opacity text-white/70 hover:text-white"
+                                            title="Rename Tab"
+                                        >
+                                            <FaEdit size={10} />
+                                        </button>
+                                    )}
+                                </div>
                             ))}
                         </div>
                     )}
 
                     {sortedGroups.map((groupName) => (
                         <div key={groupName} className="space-y-4">
-                            <div className="flex items-center gap-4">
-                                <h3 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 whitespace-nowrap">
-                                    {groupName}
-                                </h3>
+                            <div className="flex items-center gap-4 group/header">
+                                {editingGroupName === groupName ? (
+                                    <input
+                                        autoFocus
+                                        type="text"
+                                        value={tempGroupName}
+                                        onChange={(e) => setTempGroupName(e.target.value)}
+                                        onBlur={() => handleGroupRename(groupName)}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleGroupRename(groupName)}
+                                        className="text-sm font-black uppercase tracking-[0.2em] bg-transparent border-b border-blue-500 outline-none w-48 text-slate-900 dark:text-white"
+                                    />
+                                ) : (
+                                    <div className="flex items-center gap-2">
+                                        <h3
+                                            className="text-sm font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 whitespace-nowrap cursor-pointer hover:text-blue-500 transition-colors"
+                                            onDoubleClick={() => {
+                                                setEditingGroupName(groupName);
+                                                setTempGroupName(groupName);
+                                            }}
+                                        >
+                                            {groupName}
+                                        </h3>
+                                        <button
+                                            onClick={() => {
+                                                setEditingGroupName(groupName);
+                                                setTempGroupName(groupName);
+                                            }}
+                                            className="opacity-0 group-hover/header:opacity-100 transition-opacity text-slate-400 hover:text-blue-500"
+                                            title="Rename Group"
+                                        >
+                                            <FaEdit size={12} />
+                                        </button>
+                                    </div>
+                                )}
                                 <div className="h-px w-full bg-slate-200 dark:bg-[#252525]"></div>
                             </div>
+
 
                             {(viewMode === 'tiles' || viewMode === 'compact') ? (
                                 <div className={`grid gap-4 ${viewMode === 'tiles' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6'}`}>
@@ -796,6 +946,9 @@ export const MonitoringDashboard: React.FC = () => {
                         </div>
                     </div>
                 </div>
+            )}
+            {showSMTPSettings && (
+                <SMTPSettingsModal onClose={() => setShowSMTPSettings(false)} />
             )}
         </div>
     );

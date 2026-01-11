@@ -30,6 +30,8 @@ switch ($method) {
             handleCreateMonitor();
         } elseif ($path === '/import') {
             handleImportMonitors();
+        } elseif ($path === '/import-csv') {
+            handleImportCSV();
         } elseif ($path === '/check-all') {
             handleCheckAllMonitors();
         } elseif (preg_match('/^\/(\d+)\/check$/', $path, $matches)) {
@@ -40,7 +42,11 @@ switch ($method) {
         break;
         
     case 'PUT':
-        if (preg_match('/^\/(\d+)$/', $path, $matches)) {
+        if ($path === '/update-tab') {
+            handleUpdateTabName();
+        } elseif ($path === '/update-group') {
+            handleUpdateGroupName();
+        } elseif (preg_match('/^\/(\d+)$/', $path, $matches)) {
             handleUpdateMonitor($matches[1]);
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
@@ -337,5 +343,116 @@ function handleImportMonitors() {
     } catch (Exception $e) {
         if ($db->inTransaction()) $db->rollBack();
         sendJSON(['error' => 'Import failed: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleImportCSV() {
+    $data = getJSONInput();
+    if (!isset($data['csv']) || !is_string($data['csv'])) {
+        sendJSON(['error' => 'Invalid CSV data'], 400);
+        return;
+    }
+    
+    $lines = preg_split('/\r\n|\r|\n/', trim($data['csv']));
+    if (empty($lines)) {
+        sendJSON(['count' => 0]);
+        return;
+    }
+    
+    // Header row is optional, but if present, we skip it
+    $header = str_getcsv($lines[0]);
+    $startIndex = 0;
+    if (strtolower($header[0] ?? '') === 'name' || strtolower($header[0] ?? '') === 'monitor name') {
+        $startIndex = 1;
+    }
+    
+    $monitors = [];
+    for ($i = $startIndex; $i < count($lines); $i++) {
+        $row = str_getcsv($lines[$i]);
+        if (count($row) < 3) continue; // Minimal requirement: name, type, target
+        
+        $monitors[] = [
+            'name' => $row[0] ?? 'Imported',
+            'type' => strtolower($row[1] ?? 'url'),
+            'target' => $row[2] ?? '',
+            'port' => isset($row[3]) && is_numeric($row[3]) ? (int)$row[3] : null,
+            'keyword' => $row[4] ?? null,
+            'interval' => isset($row[5]) && is_numeric($row[5]) ? (int)$row[5] : 5,
+            'tab_name' => $row[6] ?? 'General',
+            'group_name' => $row[7] ?? 'Other'
+        ];
+    }
+    
+    $db = getDB();
+    $now = time();
+    $count = 0;
+    
+    try {
+        $db->beginTransaction();
+        
+        $stmt = $db->prepare('INSERT INTO monitors (
+            name, type, target, port, keyword, interval, 
+            is_active, email_notification, created_at, updated_at,
+            tab_name, group_name
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        
+        foreach ($monitors as $m) {
+            $stmt->execute([
+                $m['name'],
+                $m['type'],
+                $m['target'],
+                $m['port'],
+                $m['keyword'],
+                $m['interval'],
+                1, // is_active
+                0, // email_notification
+                $now,
+                $now,
+                $m['tab_name'],
+                $m['group_name']
+            ]);
+            $count++;
+        }
+        
+        $db->commit();
+        sendJSON(['success' => true, 'count' => $count]);
+        
+    } catch (Exception $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        sendJSON(['error' => 'Import failed: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleUpdateTabName() {
+    $data = getJSONInput();
+    if (!isset($data['old_name']) || !isset($data['new_name'])) {
+        sendJSON(['error' => 'Old name and new name are required'], 400);
+        return;
+    }
+    
+    $db = getDB();
+    try {
+        $stmt = $db->prepare("UPDATE monitors SET tab_name = ? WHERE tab_name = ?");
+        $stmt->execute([$data['new_name'], $data['old_name']]);
+        sendJSON(['success' => true]);
+    } catch (PDOException $e) {
+        sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleUpdateGroupName() {
+    $data = getJSONInput();
+    if (!isset($data['tab_name']) || !isset($data['old_name']) || !isset($data['new_name'])) {
+        sendJSON(['error' => 'Tab name, old group name and new group name are required'], 400);
+        return;
+    }
+    
+    $db = getDB();
+    try {
+        $stmt = $db->prepare("UPDATE monitors SET group_name = ? WHERE tab_name = ? AND group_name = ?");
+        $stmt->execute([$data['new_name'], $data['tab_name'], $data['old_name']]);
+        sendJSON(['success' => true]);
+    } catch (PDOException $e) {
+        sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
     }
 }
