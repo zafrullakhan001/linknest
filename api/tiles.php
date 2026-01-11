@@ -2033,7 +2033,7 @@ function handleCloneCategory($categoryName) {
 }
 
 function handleBulkImport() {
-    requireAdmin(); // Only admins can bulk import
+    $user = requireAdmin(); // Only admins can bulk import
     
     // Check if file was uploaded
     if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
@@ -2075,7 +2075,8 @@ function handleBulkImport() {
             'link_url' => ['link url', 'link_url', 'linkurl'],
             'link_visibility' => ['link visibility', 'link_visibility', 'linkvisibility'],
             'link_notes' => ['link notes', 'link_notes', 'linknotes'],
-            'link_tooltip' => ['link tooltip', 'link_tooltip', 'linktooltip']
+            'link_tooltip' => ['link tooltip', 'link_tooltip', 'linktooltip'],
+            'tab_title' => ['tab title', 'tab_title', 'tabtitle']
         ];
         
         // Match headers
@@ -2118,6 +2119,7 @@ function handleBulkImport() {
                 'link_visibility' => isset($headerMap['link_visibility']) ? trim($row[$headerMap['link_visibility']]) : 'public',
                 'link_notes' => isset($headerMap['link_notes']) ? trim($row[$headerMap['link_notes']]) : '',
                 'link_tooltip' => isset($headerMap['link_tooltip']) ? trim($row[$headerMap['link_tooltip']]) : '',
+                'tab_title' => isset($headerMap['tab_title']) ? trim($row[$headerMap['tab_title']]) : 'Default',
                 'row_num' => $rowNum
             ];
         }
@@ -2151,6 +2153,7 @@ function handleBulkImport() {
         }
         
         $tileKey = $row['tile_title'] . '|' . ($row['tile_group'] ?: 'General');
+        $tabKey = $row['tab_title'] ?: 'Default';
         $sectionKey = $row['section_title'] ?: 'General';
         
         if (!isset($tilesMap[$tileKey])) {
@@ -2160,15 +2163,21 @@ function handleBulkImport() {
                 'emoji' => $row['tile_emoji'] ?: '📁',
                 'themeColor' => $row['tile_theme_color'] ?: 'blue',
                 'group' => $row['tile_group'] ?: 'General',
-                'sections' => []
+                'tabs' => []
             ];
         }
         
-        if (!isset($tilesMap[$tileKey]['sections'][$sectionKey])) {
-            $tilesMap[$tileKey]['sections'][$sectionKey] = [];
+        if (!isset($tilesMap[$tileKey]['tabs'][$tabKey])) {
+            $tilesMap[$tileKey]['tabs'][$tabKey] = [
+                'sections' => []
+            ];
+        }
+
+        if (!isset($tilesMap[$tileKey]['tabs'][$tabKey]['sections'][$sectionKey])) {
+            $tilesMap[$tileKey]['tabs'][$tabKey]['sections'][$sectionKey] = [];
         }
         
-        $tilesMap[$tileKey]['sections'][$sectionKey][] = [
+        $tilesMap[$tileKey]['tabs'][$tabKey]['sections'][$sectionKey][] = [
             'label' => $row['link_label'],
             'url' => $row['link_url'],
             'visibility' => $row['link_visibility'] ?: 'public',
@@ -2208,35 +2217,48 @@ function handleBulkImport() {
                     continue;
                 }
                 
-                // Insert sections and links
-                $sectionIndex = 0;
-                foreach ($tileData['sections'] as $sectionTitle => $links) {
-                    $sectionId = uniqid('section_', true);
-                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, title, text_color, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?)');
-                    $sectionStmt->execute([
-                        $sectionId,
+                // Insert tabs, sections and links
+                $tabIndex = 0;
+                foreach ($tileData['tabs'] as $tabTitle => $tabData) {
+                    $tabId = uniqid('tab_', true);
+                    $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
+                    $tabStmt->execute([
+                        $tabId,
                         $tileId,
-                        $sectionTitle,
-                        null,
-                        0,
-                        $sectionIndex++
+                        $tabTitle,
+                        $tabIndex++
                     ]);
-                    
-                    foreach ($links as $link) {
-                        $linkId = uniqid('link_', true);
-                        $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                        $linkStmt->execute([
-                            $linkId,
+
+                    $sectionIndex = 0;
+                    foreach ($tabData['sections'] as $sectionTitle => $links) {
+                        $sectionId = uniqid('section_', true);
+                        $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?)');
+                        $sectionStmt->execute([
                             $sectionId,
-                            $link['label'],
-                            $link['url'],
-                            $link['icon'] ?? null,
-                            $link['textColor'] ?? null,
-                            $link['visibility'],
+                            $tileId,
+                            $tabId, // Now associated with the tab
+                            $sectionTitle,
                             null,
-                            $link['notes'] ?: null,
-                            $link['tooltip'] ?: null
+                            0,
+                            $sectionIndex++
                         ]);
+                        
+                        foreach ($links as $link) {
+                            $linkId = uniqid('link_', true);
+                            $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                            $linkStmt->execute([
+                                $linkId,
+                                $sectionId,
+                                $link['label'],
+                                $link['url'],
+                                $link['icon'] ?? null,
+                                $link['textColor'] ?? null,
+                                $link['visibility'],
+                                null,
+                                $link['notes'] ?: null,
+                                $link['tooltip'] ?: null
+                            ]);
+                        }
                     }
                 }
                 

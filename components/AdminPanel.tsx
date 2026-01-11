@@ -1363,7 +1363,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   Export your database as a JSON file for backup or import it to restore data on a new instance.
                 </p>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 gap-6">
                   {/* Export Section */}
                   <div className="space-y-4">
                     <div>
@@ -1704,7 +1704,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   CSV format is simplified and includes only basic link information.
                 </p>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 gap-6">
                   {/* Export Section */}
                   <div className="space-y-4">
                     <div>
