@@ -218,16 +218,31 @@ function handleGetMonitorLogs($id) {
     }
     
     // Clean up old logs (keep last 30 days)
-    // In a real production app this should be a cron job, but we'll do it lazily here
     $thirtyDaysAgo = time() - (30 * 24 * 60 * 60);
-    // Use low probability to avoid hitting DB every time
     if (rand(1, 100) <= 5) {
         $db->exec("DELETE FROM monitor_logs WHERE checked_at < $thirtyDaysAgo");
     }
     
-    // Get last 50 logs
-    $stmt = $db->prepare('SELECT * FROM monitor_logs WHERE monitor_id = ? ORDER BY checked_at DESC LIMIT 50');
-    $stmt->execute([$id]);
+    $days = isset($_GET['days']) ? (int)$_GET['days'] : null;
+    $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 100;
+
+    $sql = 'SELECT * FROM monitor_logs WHERE monitor_id = ?';
+    $params = [$id];
+
+    if ($days) {
+        $since = time() - ($days * 24 * 60 * 60);
+        $sql .= ' AND checked_at >= ?';
+        $params[] = $since;
+    }
+
+    $sql .= ' ORDER BY checked_at DESC';
+    
+    if (!$days) {
+        $sql .= ' LIMIT ' . (int)$limit;
+    }
+
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
     $logs = $stmt->fetchAll();
     
     sendJSON(['logs' => $logs]);

@@ -412,12 +412,16 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ on
         setSelectedAnimation(animation);
         localStorage.setItem(ANIMATION_STORAGE_KEY, animation);
         onAnimationChange?.(animation);
+        // Notify other components in the same window
+        window.dispatchEvent(new CustomEvent('linknest-tile-animation-change', { detail: { animation } }));
     };
 
     const handleDecorationSelect = (decoration: TileDecoration) => {
         setSelectedDecoration(decoration);
         localStorage.setItem(DECORATION_STORAGE_KEY, decoration);
         onDecorationChange?.(decoration);
+        // Notify other components in the same window
+        window.dispatchEvent(new CustomEvent('linknest-tile-decoration-change', { detail: { decoration } }));
     };
 
     const filteredAnimations = useMemo(() => {
@@ -512,6 +516,14 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ on
 
                         {/* Search & Header */}
                         <div className="p-3 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-[10px] font-black uppercase tracking-tighter text-brand-600 dark:text-brand-400">
+                                    Global Visual Engine
+                                </span>
+                                <span className="text-[9px] font-bold text-slate-400 bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded-full">
+                                    Affects Tiles & Monitoring
+                                </span>
+                            </div>
                             <div className="relative">
                                 <input
                                     type="text"
@@ -640,22 +652,38 @@ export const useTileAnimation = () => {
     const [decoration, setDecoration] = useState<TileDecoration>('none');
 
     useEffect(() => {
-        const savedAnim = localStorage.getItem(ANIMATION_STORAGE_KEY) as TileAnimation | null;
-        if (savedAnim) setAnimation(savedAnim);
+        const loadFromStorage = () => {
+            const savedAnim = localStorage.getItem(ANIMATION_STORAGE_KEY) as TileAnimation | null;
+            if (savedAnim) setAnimation(savedAnim);
 
-        const savedDec = localStorage.getItem(DECORATION_STORAGE_KEY) as TileDecoration | null;
-        if (savedDec) setDecoration(savedDec);
+            const savedDec = localStorage.getItem(DECORATION_STORAGE_KEY) as TileDecoration | null;
+            if (savedDec) setDecoration(savedDec);
+        };
 
-        // Listen for storage changes
+        loadFromStorage();
+
+        // Listen for storage changes (other tabs)
         const handleStorageChange = () => {
-            const a = localStorage.getItem(ANIMATION_STORAGE_KEY) as TileAnimation | null;
-            const d = localStorage.getItem(DECORATION_STORAGE_KEY) as TileDecoration | null;
-            if (a) setAnimation(a);
-            if (d) setDecoration(d);
+            loadFromStorage();
+        };
+
+        // Listen for custom events (same tab)
+        const handleCustomAnimChange = (e: any) => {
+            if (e.detail?.animation) setAnimation(e.detail.animation);
+        };
+        const handleCustomDecorChange = (e: any) => {
+            if (e.detail?.decoration) setDecoration(e.detail.decoration);
         };
 
         window.addEventListener('storage', handleStorageChange);
-        return () => window.removeEventListener('storage', handleStorageChange);
+        window.addEventListener('linknest-tile-animation-change' as any, handleCustomAnimChange);
+        window.addEventListener('linknest-tile-decoration-change' as any, handleCustomDecorChange);
+
+        return () => {
+            window.removeEventListener('storage', handleStorageChange);
+            window.removeEventListener('linknest-tile-animation-change' as any, handleCustomAnimChange);
+            window.removeEventListener('linknest-tile-decoration-change' as any, handleCustomDecorChange);
+        };
     }, []);
 
     return { animation, decoration };

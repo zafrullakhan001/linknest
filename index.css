@@ -1137,8 +1137,7 @@ body {
   23%,
   25%,
   54%,
-  56%,
-  100% {
+  56% {
     opacity: 1;
     box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
   }
@@ -1148,6 +1147,11 @@ body {
   24%,
   55% {
     opacity: 0.5;
+    box-shadow: none;
+  }
+
+  100% {
+    opacity: 1;
     box-shadow: none;
   }
 
@@ -3342,9 +3346,14 @@ body {
     clip-path: polygon(50% 50%, 50% 50%, 50% 50%, 50% 50%);
   }
 
-  100% {
+  50% {
     opacity: 1;
     clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  }
+
+  100% {
+    opacity: 1;
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
   }
 }
 

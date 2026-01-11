@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Monitor, monitoringService } from '../services/monitoringService';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Monitor, MonitorLog, monitoringService } from '../services/monitoringService';
 import { MonitorForm } from './MonitorForm';
-import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload } from 'react-icons/fa';
+import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt } from 'react-icons/fa';
 import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from './TileAnimationSelector';
 
 export const MonitoringDashboard: React.FC = () => {
@@ -10,6 +10,10 @@ export const MonitoringDashboard: React.FC = () => {
     const [isEditing, setIsEditing] = useState(false);
     const [selectedMonitor, setSelectedMonitor] = useState<Monitor | undefined>(undefined);
     const [isDuplicate, setIsDuplicate] = useState(false);
+    const [viewingLogsMonitor, setViewingLogsMonitor] = useState<Monitor | null>(null);
+    const [logs, setLogs] = useState<MonitorLog[]>([]);
+    const [logFilter, setLogFilter] = useState<'1d' | '1w' | '1m'>('1d');
+    const [isLogsLoading, setIsLogsLoading] = useState(false);
     const [checkingId, setCheckingId] = useState<number | null>(null);
     const [viewMode, setViewMode] = useState<'tiles' | 'grid' | 'compact'>(() => {
         const saved = localStorage.getItem('linknest_monitor_view_mode');
@@ -128,6 +132,46 @@ export const MonitoringDashboard: React.FC = () => {
         document.body.appendChild(downloadAnchorNode);
         downloadAnchorNode.click();
         downloadAnchorNode.remove();
+    };
+
+    const fetchLogs = useCallback(async (id: number, filter: '1d' | '1w' | '1m') => {
+        setIsLogsLoading(true);
+        try {
+            const days = filter === '1d' ? 1 : filter === '1w' ? 7 : 30;
+            const data = await monitoringService.getMonitorLogs(id, { days });
+            setLogs(data);
+        } catch (error) {
+            console.error('Failed to fetch logs', error);
+        } finally {
+            setIsLogsLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (viewingLogsMonitor) {
+            fetchLogs(viewingLogsMonitor.id, logFilter);
+        }
+    }, [viewingLogsMonitor, logFilter, fetchLogs]);
+
+    const groupedLogs = useMemo(() => {
+        const groups: { [key: string]: MonitorLog[] } = {};
+        logs.forEach(log => {
+            const date = new Date(log.checked_at * 1000).toLocaleDateString(undefined, {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+            if (!groups[date]) groups[date] = [];
+            groups[date].push(log);
+        });
+        return groups;
+    }, [logs]);
+
+    const handleTileClick = (e: React.MouseEvent, monitor: Monitor) => {
+        const target = e.target as HTMLElement;
+        if (target.closest('button')) return;
+        setViewingLogsMonitor(monitor);
     };
 
     const handleImportJSON = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -368,8 +412,9 @@ export const MonitoringDashboard: React.FC = () => {
                     {monitors.map((monitor, index) => (
                         <div
                             key={monitor.id}
+                            onClick={(e) => handleTileClick(e, monitor)}
                             style={{ animationDelay: `${index * 50}ms` }}
-                            className={`border rounded-2xl shadow-lg hover:shadow-xl transition-all group relative ${fullAnimClass} 
+                            className={`border rounded-2xl shadow-lg hover:shadow-xl transition-all group relative cursor-pointer ${fullAnimClass} 
                                 ${monitor.last_status === 'up' ? 'bg-emerald-600 border-emerald-500' : (monitor.last_status === 'down' ? 'bg-red-600 border-red-500' : 'bg-white dark:bg-[#1e1e1e] border-slate-200 dark:border-[#333] hover:border-slate-300 dark:hover:border-[#444]')}
                                 ${viewMode === 'tiles' ? 'p-5' : 'p-3 flex flex-col justify-between min-h-[120px]'}`}
                         >
@@ -470,7 +515,8 @@ export const MonitoringDashboard: React.FC = () => {
                             {monitors.map((monitor, index) => (
                                 <tr
                                     key={monitor.id}
-                                    className={`group transition-colors ${monitor.last_status === 'down' ? 'bg-red-600 text-white' : 'hover:bg-slate-50 dark:hover:bg-[#252525]'} ${fullAnimClass}`}
+                                    onClick={(e) => handleTileClick(e, monitor)}
+                                    className={`group cursor-pointer hover:bg-slate-50 dark:hover:bg-[#252525] transition-colors ${monitor.last_status === 'down' ? 'bg-red-600 text-white' : ''} ${fullAnimClass}`}
                                     style={{ animationDelay: `${index * 30}ms` }}
                                 >
                                     <td className="px-6 py-4">
@@ -548,6 +594,122 @@ export const MonitoringDashboard: React.FC = () => {
                     onSave={handleSave}
                     onCancel={() => { setIsEditing(false); setIsDuplicate(false); }}
                 />
+            )}
+
+            {viewingLogsMonitor && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                    <div className={`${animationClass} bg-white dark:bg-[#1a1a1a] w-full max-w-4xl max-h-[90vh] rounded-3xl overflow-hidden shadow-2xl flex flex-col border border-slate-200 dark:border-[#333]`}>
+                        {/* Header */}
+                        <div className="p-6 border-b border-slate-100 dark:border-[#333] flex items-center justify-between bg-slate-50/50 dark:bg-[#202020]/50">
+                            <div className="flex items-center gap-4">
+                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${viewingLogsMonitor.last_status === 'up' ? 'bg-emerald-500/10 text-emerald-500' : viewingLogsMonitor.last_status === 'down' ? 'bg-red-500/10 text-red-500' : 'bg-slate-500/10 text-slate-500'}`}>
+                                    <FaHistory size={20} />
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">Uptime History</h2>
+                                    <p className="text-sm text-slate-500 dark:text-gray-400">Viewing logs for <span className="font-bold text-blue-500">{viewingLogsMonitor.name}</span></p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setViewingLogsMonitor(null)}
+                                className="p-2 hover:bg-slate-200 dark:hover:bg-[#333] rounded-xl transition-colors text-slate-400"
+                            >
+                                <FaTimes size={20} />
+                            </button>
+                        </div>
+
+                        {/* Filters Bar */}
+                        <div className="px-6 py-4 border-b border-slate-100 dark:border-[#333] flex items-center justify-between bg-white dark:bg-[#1a1a1a]">
+                            <div className="flex items-center gap-2">
+                                <FaCalendarAlt className="text-slate-400 mr-2" />
+                                <div className="flex bg-slate-100 dark:bg-[#252525] p-1 rounded-xl">
+                                    {[
+                                        { id: '1d', label: 'Last 24h' },
+                                        { id: '1w', label: 'Last 7 Days' },
+                                        { id: '1m', label: 'Last 30 Days' }
+                                    ].map(filter => (
+                                        <button
+                                            key={filter.id}
+                                            onClick={() => setLogFilter(filter.id as any)}
+                                            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${logFilter === filter.id ? 'bg-white dark:bg-[#333] text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                        >
+                                            {filter.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                                {logs.length} Checks Found
+                            </div>
+                        </div>
+
+                        {/* Logs List */}
+                        <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                            {isLogsLoading ? (
+                                <div className="flex flex-col items-center justify-center py-20">
+                                    <div className="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-4"></div>
+                                    <p className="text-slate-500 dark:text-gray-400">Loading history...</p>
+                                </div>
+                            ) : Object.keys(groupedLogs).length === 0 ? (
+                                <div className="text-center py-20 bg-slate-50 dark:bg-[#202020] rounded-3xl border border-dashed border-slate-200 dark:border-[#333]">
+                                    <p className="text-slate-500 dark:text-gray-400">No event logs found for this period.</p>
+                                </div>
+                            ) : (
+                                Object.entries(groupedLogs).map(([date, dateLogs]) => (
+                                    <div key={date} className="space-y-3">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <div className="h-px flex-1 bg-slate-100 dark:bg-[#333]"></div>
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 bg-white dark:bg-[#1a1a1a] px-3">
+                                                {date}
+                                            </span>
+                                            <div className="h-px flex-1 bg-slate-100 dark:bg-[#333]"></div>
+                                        </div>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {dateLogs.map(log => (
+                                                <div
+                                                    key={log.id}
+                                                    className="flex items-center justify-between p-3 rounded-2xl bg-slate-50/50 dark:bg-[#202020]/50 border border-slate-100 dark:border-[#2a2a2a] hover:border-slate-200 dark:hover:border-[#333] transition-all"
+                                                >
+                                                    <div className="flex items-center gap-4">
+                                                        <div className={`w-2.5 h-2.5 rounded-full ${log.status === 'up' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]'}`}></div>
+                                                        <div className="flex flex-col">
+                                                            <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                                                                {log.status === 'up' ? 'System Stable' : 'Service Down'}
+                                                            </span>
+                                                            <span className="text-[10px] text-slate-500 dark:text-gray-500">
+                                                                {new Date(log.checked_at * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-4">
+                                                        {log.details && (
+                                                            <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-slate-100 dark:bg-[#2a2a2a] text-slate-500 dark:text-gray-400 max-w-[200px] truncate">
+                                                                {log.details}
+                                                            </span>
+                                                        )}
+                                                        <div className="flex flex-col items-end min-w-[60px]">
+                                                            <span className="text-xs font-black text-slate-700 dark:text-slate-300">
+                                                                {log.response_time}ms
+                                                            </span>
+                                                            <span className="text-[9px] uppercase tracking-tighter text-slate-400 font-bold">Latency</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        {/* Footer Info */}
+                        <div className="p-4 bg-slate-50 dark:bg-[#202020] border-t border-slate-100 dark:border-[#333] text-center">
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                                Auto-cleaning enabled: Logs older than 30 days are automatically pruned
+                            </p>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );
