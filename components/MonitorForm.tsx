@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Monitor } from '../services/monitoringService';
 
 interface MonitorFormProps {
@@ -6,6 +6,117 @@ interface MonitorFormProps {
     onSave: (monitor: Partial<Monitor>) => Promise<void>;
     onCancel: () => void;
 }
+
+interface MonitorPreset {
+    name: string;
+    description: string;
+    type: 'url' | 'keyword' | 'port';
+    target: string;
+    port?: number;
+    keyword?: string;
+    interval: number;
+    tab_name?: string;
+    group_name?: string;
+}
+
+const MONITOR_PRESETS: MonitorPreset[] = [
+    {
+        name: 'Web Server (HTTP)',
+        description: 'Monitor a standard HTTP website',
+        type: 'url',
+        target: 'http://example.com',
+        interval: 5,
+        group_name: 'Web Servers'
+    },
+    {
+        name: 'Web Server (HTTPS)',
+        description: 'Monitor a secure HTTPS website',
+        type: 'url',
+        target: 'https://example.com',
+        interval: 5,
+        group_name: 'Web Servers'
+    },
+    {
+        name: 'API Endpoint',
+        description: 'Monitor a REST API endpoint',
+        type: 'url',
+        target: 'https://api.example.com/health',
+        interval: 5,
+        group_name: 'APIs'
+    },
+    {
+        name: 'SSH Server',
+        description: 'Check if SSH port is open',
+        type: 'port',
+        target: 'server.example.com',
+        port: 22,
+        interval: 10,
+        group_name: 'Servers'
+    },
+    {
+        name: 'MySQL Database',
+        description: 'Check MySQL database port',
+        type: 'port',
+        target: 'db.example.com',
+        port: 3306,
+        interval: 5,
+        group_name: 'Databases'
+    },
+    {
+        name: 'PostgreSQL Database',
+        description: 'Check PostgreSQL database port',
+        type: 'port',
+        target: 'db.example.com',
+        port: 5432,
+        interval: 5,
+        group_name: 'Databases'
+    },
+    {
+        name: 'Redis Cache',
+        description: 'Check Redis cache server',
+        type: 'port',
+        target: 'cache.example.com',
+        port: 6379,
+        interval: 5,
+        group_name: 'Databases'
+    },
+    {
+        name: 'MongoDB',
+        description: 'Check MongoDB database port',
+        type: 'port',
+        target: 'mongo.example.com',
+        port: 27017,
+        interval: 5,
+        group_name: 'Databases'
+    },
+    {
+        name: 'SMTP Server',
+        description: 'Check email SMTP server',
+        type: 'port',
+        target: 'mail.example.com',
+        port: 25,
+        interval: 10,
+        group_name: 'Email Servers'
+    },
+    {
+        name: 'IMAP Server',
+        description: 'Check email IMAP server',
+        type: 'port',
+        target: 'mail.example.com',
+        port: 143,
+        interval: 10,
+        group_name: 'Email Servers'
+    },
+    {
+        name: 'Keyword Check',
+        description: 'Verify specific text appears on page',
+        type: 'keyword',
+        target: 'https://example.com',
+        keyword: 'Welcome',
+        interval: 5,
+        group_name: 'Web Servers'
+    }
+];
 
 export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCancel }) => {
     const [name, setName] = useState(monitor?.name || '');
@@ -17,8 +128,93 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
     const [tabName, setTabName] = useState(monitor?.tab_name || '');
     const [groupName, setGroupName] = useState(monitor?.group_name || '');
     const [emailNotification, setEmailNotification] = useState(!!monitor?.email_notification);
+    const [isActive, setIsActive] = useState(monitor?.is_active !== undefined ? !!monitor?.is_active : true);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [showPresets, setShowPresets] = useState(!monitor && name === '');
+
+    // Draggable state
+    const [position, setPosition] = useState({ x: 0, y: 0 });
+    const [isDragging, setIsDragging] = useState(false);
+    const dragStartPos = useRef({ x: 0, y: 0 });
+    const modalRef = useRef<HTMLDivElement>(null);
+    const isInitialized = useRef(false);
+
+    // Initialize position on mount
+    useEffect(() => {
+        if (!isInitialized.current && modalRef.current) {
+            const rect = modalRef.current.getBoundingClientRect();
+            setPosition({
+                x: (window.innerWidth - rect.width) / 2,
+                y: (window.innerHeight - rect.height) / 2
+            });
+            isInitialized.current = true;
+        }
+    }, []);
+
+    // Handle drag start
+    const handleMouseDown = (e: React.MouseEvent) => {
+        if (modalRef.current && (e.target as HTMLElement).closest('[data-drag-handle]')) {
+            e.preventDefault();
+            e.stopPropagation();
+            const rect = modalRef.current.getBoundingClientRect();
+            // Store the offset from the mouse position to the modal's current position
+            dragStartPos.current = {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+            setIsDragging(true);
+        }
+    };
+
+    // Handle dragging
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (isDragging && modalRef.current) {
+                // Calculate new position: mouse position minus the offset we stored
+                const newX = e.clientX - dragStartPos.current.x;
+                const newY = e.clientY - dragStartPos.current.y;
+                
+                // Constrain to viewport
+                const maxX = window.innerWidth - (modalRef.current.offsetWidth || 0);
+                const maxY = window.innerHeight - (modalRef.current.offsetHeight || 0);
+                
+                setPosition({
+                    x: Math.max(0, Math.min(newX, maxX)),
+                    y: Math.max(0, Math.min(newY, maxY))
+                });
+            }
+        };
+
+        const handleMouseUp = () => {
+            setIsDragging(false);
+        };
+
+        if (isDragging) {
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = 'grabbing';
+            document.body.style.userSelect = 'none';
+            return () => {
+                document.removeEventListener('mousemove', handleMouseMove);
+                document.removeEventListener('mouseup', handleMouseUp);
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            };
+        }
+    }, [isDragging]);
+
+    const applyPreset = (preset: MonitorPreset) => {
+        setName(preset.name);
+        setType(preset.type);
+        setTarget(preset.target);
+        if (preset.port) setPort(preset.port.toString());
+        if (preset.keyword) setKeyword(preset.keyword);
+        setInterval(preset.interval.toString());
+        if (preset.tab_name) setTabName(preset.tab_name);
+        if (preset.group_name) setGroupName(preset.group_name);
+        setShowPresets(false);
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -35,7 +231,8 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                 interval: parseInt(interval),
                 tab_name: tabName || undefined,
                 group_name: groupName || undefined,
-                email_notification: emailNotification ? 1 : 0
+                email_notification: emailNotification ? 1 : 0,
+                is_active: isActive ? 1 : 0
             });
         } catch (err: any) {
             setError(err.message || 'Failed to save monitor');
@@ -44,152 +241,312 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
         }
     };
 
+    const FieldHelp: React.FC<{ text: string }> = ({ text }) => (
+        <p className="text-xs text-gray-600 mt-1">{text}</p>
+    );
+
+    const filteredPresets = MONITOR_PRESETS.filter(p => !monitor);
+
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-[#1e1e1e] rounded-xl shadow-2xl p-6 w-full max-w-md border border-[#333]">
-                <h2 className="text-xl font-semibold text-white mb-4">
-                    {monitor ? 'Edit Monitor' : 'Add New Monitor'}
-                </h2>
-
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-1">Name</label>
-                        <input
-                            type="text"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            className="w-full bg-[#2a2a2a] border border-[#444] rounded-lg px-3 py-2 text-white outline-none focus:border-blue-500 transition-colors"
-                            placeholder="My Server"
-                            required
-                        />
+        <div className="fixed inset-0 z-50" onClick={onCancel} style={{ backgroundColor: 'transparent' }}>
+            <div
+                ref={modalRef}
+                className="bg-white rounded-xl shadow-2xl border border-gray-200 w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+                style={{
+                    position: 'absolute',
+                    left: `${position.x}px`,
+                    top: `${position.y}px`,
+                    cursor: isDragging ? 'grabbing' : 'default'
+                }}
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Draggable Header */}
+                <div
+                    data-drag-handle
+                    className={`px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gray-50 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+                    onMouseDown={handleMouseDown}
+                >
+                    <h2 className="text-xl font-semibold text-gray-800">
+                        {monitor ? 'Edit Monitor' : 'Add New Monitor'}
+                    </h2>
+                    <div className="text-gray-500 text-xs flex items-center gap-1">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                        </svg>
+                        Drag to move
                     </div>
+                </div>
 
-                    <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-1">Type</label>
-                        <select
-                            value={type}
-                            onChange={(e) => setType(e.target.value as Monitor['type'])}
-                            className="w-full bg-[#2a2a2a] border border-[#444] rounded-lg px-3 py-2 text-white outline-none focus:border-blue-500 transition-colors"
-                        >
-                            <option value="url">URL Check</option>
-                            <option value="keyword">Keyword Check</option>
-                            <option value="port">Port Check</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-1">
-                            {type === 'port' ? 'Host / IP' : 'URL'}
-                        </label>
-                        <input
-                            type={type === 'port' ? 'text' : 'url'}
-                            value={target}
-                            onChange={(e) => setTarget(e.target.value)}
-                            className="w-full bg-[#2a2a2a] border border-[#444] rounded-lg px-3 py-2 text-white outline-none focus:border-blue-500 transition-colors"
-                            placeholder={type === 'port' ? '127.0.0.1' : 'https://example.com'}
-                            required
-                        />
-                    </div>
-
-                    {type === 'port' && (
-                        <div>
-                            <label className="block text-sm font-medium text-gray-400 mb-1">Port</label>
-                            <input
-                                type="number"
-                                value={port}
-                                onChange={(e) => setPort(e.target.value)}
-                                className="w-full bg-[#2a2a2a] border border-[#444] rounded-lg px-3 py-2 text-white outline-none focus:border-blue-500 transition-colors"
-                                placeholder="80"
-                                required
-                            />
+                {/* Scrollable Content */}
+                <div className="overflow-y-auto flex-1 p-6 bg-white">
+                    {showPresets && filteredPresets.length > 0 && (
+                        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                            <div className="flex items-center justify-between mb-3">
+                                <h3 className="text-sm font-semibold text-gray-800">Quick Templates</h3>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPresets(false)}
+                                    className="text-gray-500 hover:text-gray-700 text-sm"
+                                >
+                                    Hide
+                                </button>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                                {filteredPresets.map((preset, idx) => (
+                                    <button
+                                        key={idx}
+                                        type="button"
+                                        onClick={() => applyPreset(preset)}
+                                        className="text-left p-3 bg-white border border-gray-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                                    >
+                                        <div className="font-medium text-sm text-gray-800">{preset.name}</div>
+                                        <div className="text-xs text-gray-600 mt-1">{preset.description}</div>
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     )}
 
-                    {type === 'keyword' && (
-                        <div>
-                            <label className="block text-sm font-medium text-gray-400 mb-1">Keyword</label>
-                            <input
-                                type="text"
-                                value={keyword}
-                                onChange={(e) => setKeyword(e.target.value)}
-                                className="w-full bg-[#2a2a2a] border border-[#444] rounded-lg px-3 py-2 text-white outline-none focus:border-blue-500 transition-colors"
-                                placeholder="Search String"
-                                required
-                            />
+                    {!showPresets && filteredPresets.length > 0 && (
+                        <div className="mb-4">
+                            <button
+                                type="button"
+                                onClick={() => setShowPresets(true)}
+                                className="text-sm text-blue-600 hover:text-blue-700"
+                            >
+                                Show Templates
+                            </button>
                         </div>
                     )}
 
-                    <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-1">Check Interval (min)</label>
-                        <input
-                            type="number"
-                            value={interval}
-                            onChange={(e) => setInterval(e.target.value)}
-                            min="1"
-                            className="w-full bg-[#2a2a2a] border border-[#444] rounded-lg px-3 py-2 text-white outline-none focus:border-blue-500 transition-colors"
-                            required
-                        />
-                    </div>
+                    <form id="monitor-form" onSubmit={handleSubmit} className="space-y-5">
+                        {/* Basic Information Section */}
+                        <div className="space-y-4">
+                            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide border-b border-gray-200 pb-2">
+                                Basic Information
+                            </h3>
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-400 mb-1">Tab Name</label>
-                            <input
-                                type="text"
-                                value={tabName}
-                                onChange={(e) => setTabName(e.target.value)}
-                                className="w-full bg-[#2a2a2a] border border-[#444] rounded-lg px-3 py-2 text-white outline-none focus:border-blue-500 transition-colors"
-                                placeholder="General"
-                            />
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Monitor Name <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    value={name}
+                                    onChange={(e) => setName(e.target.value)}
+                                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                    placeholder="My Server"
+                                    required
+                                />
+                                <FieldHelp text="A friendly name to identify this monitor in your dashboard (e.g., 'Production Server', 'API Endpoint')" />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Monitor Type <span className="text-red-500">*</span>
+                                </label>
+                                <select
+                                    value={type}
+                                    onChange={(e) => setType(e.target.value as Monitor['type'])}
+                                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                >
+                                    <option value="url">URL Check</option>
+                                    <option value="keyword">Keyword Check</option>
+                                    <option value="port">Port Check</option>
+                                </select>
+                                <FieldHelp text={
+                                    type === 'url' 
+                                        ? "Checks if a website or API endpoint is accessible via HTTP/HTTPS request"
+                                        : type === 'keyword'
+                                        ? "Checks if a specific text/keyword appears in the webpage content"
+                                        : "Checks if a network port on a server is open and accepting connections"
+                                } />
+                            </div>
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-400 mb-1">Group Name</label>
-                            <input
-                                type="text"
-                                value={groupName}
-                                onChange={(e) => setGroupName(e.target.value)}
-                                className="w-full bg-[#2a2a2a] border border-[#444] rounded-lg px-3 py-2 text-white outline-none focus:border-blue-500 transition-colors"
-                                placeholder="Servers"
-                            />
+
+                        {/* Target Configuration Section */}
+                        <div className="space-y-4">
+                            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide border-b border-gray-200 pb-2">
+                                Target Configuration
+                            </h3>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    {type === 'port' ? 'Host / IP Address' : 'URL'} <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type={type === 'port' ? 'text' : 'url'}
+                                    value={target}
+                                    onChange={(e) => setTarget(e.target.value)}
+                                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                    placeholder={type === 'port' ? '192.168.1.1 or example.com' : 'https://example.com'}
+                                    required
+                                />
+                                <FieldHelp text={
+                                    type === 'port'
+                                        ? "The IP address or hostname of the server to check (e.g., 192.168.1.1, server.example.com)"
+                                        : "The full URL to monitor, including protocol (http:// or https://). For APIs, include the full endpoint path."
+                                } />
+                            </div>
+
+                            {type === 'port' && (
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Port Number <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={port}
+                                        onChange={(e) => setPort(e.target.value)}
+                                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                        placeholder="80, 443, 3306, etc."
+                                        min="1"
+                                        max="65535"
+                                        required
+                                    />
+                                    <FieldHelp text="The network port number to check (common ports: 80 for HTTP, 443 for HTTPS, 22 for SSH, 3306 for MySQL)" />
+                                </div>
+                            )}
+
+                            {type === 'keyword' && (
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Keyword to Search <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={keyword}
+                                        onChange={(e) => setKeyword(e.target.value)}
+                                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                        placeholder="Welcome, Success, Error"
+                                        required
+                                    />
+                                    <FieldHelp text="The text string to search for in the webpage. Monitor will be marked as 'up' if this keyword is found, 'down' if not found." />
+                                </div>
+                            )}
                         </div>
-                    </div>
 
-                    <div className="flex items-center space-x-2">
-                        <input
-                            type="checkbox"
-                            checked={emailNotification}
-                            onChange={(e) => setEmailNotification(e.target.checked)}
-                            id="emailNotif"
-                            className="w-4 h-4 rounded border-gray-600 bg-[#2a2a2a] text-blue-600 focus:ring-blue-500 focus:ring-offset-[#1e1e1e]"
-                        />
-                        <label htmlFor="emailNotif" className="text-sm font-medium text-gray-400">
-                            Send email notification on status change
-                        </label>
-                    </div>
+                        {/* Monitoring Settings Section */}
+                        <div className="space-y-4">
+                            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide border-b border-gray-200 pb-2">
+                                Monitoring Settings
+                            </h3>
 
-                    {error && (
-                        <div className="text-red-400 text-sm bg-red-900/20 p-2 rounded">
-                            {error}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Check Interval (minutes) <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="number"
+                                    value={interval}
+                                    onChange={(e) => setInterval(e.target.value)}
+                                    min="1"
+                                    max="1440"
+                                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                    required
+                                />
+                                <FieldHelp text="How often the monitor should check the target (in minutes). Lower values provide faster alerts but use more resources. Recommended: 5-15 minutes for critical services." />
+                            </div>
+
+                            <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                <input
+                                    type="checkbox"
+                                    checked={isActive}
+                                    onChange={(e) => setIsActive(e.target.checked)}
+                                    id="isActive"
+                                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
+                                />
+                                <div className="flex-1">
+                                    <label htmlFor="isActive" className="text-sm font-medium text-gray-700 cursor-pointer">
+                                        Enable this monitor
+                                    </label>
+                                    <FieldHelp text="When enabled, the monitor will run checks according to the interval. Disable to temporarily pause monitoring without deleting the monitor." />
+                                </div>
+                            </div>
                         </div>
-                    )}
 
-                    <div className="flex justify-end space-x-3 pt-2">
-                        <button
-                            type="button"
-                            onClick={onCancel}
-                            className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={isSubmitting}
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50"
-                        >
-                            {isSubmitting ? 'Saving...' : 'Save Monitor'}
-                        </button>
-                    </div>
-                </form>
+                        {/* Organization Section */}
+                        <div className="space-y-4">
+                            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide border-b border-gray-200 pb-2">
+                                Organization (Optional)
+                            </h3>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Tab Name</label>
+                                    <input
+                                        type="text"
+                                        value={tabName}
+                                        onChange={(e) => setTabName(e.target.value)}
+                                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                        placeholder="General"
+                                    />
+                                    <FieldHelp text="Organize monitors into tabs for easier navigation (e.g., 'Production', 'Development', 'External')" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Group Name</label>
+                                    <input
+                                        type="text"
+                                        value={groupName}
+                                        onChange={(e) => setGroupName(e.target.value)}
+                                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                        placeholder="Servers"
+                                    />
+                                    <FieldHelp text="Group related monitors together within a tab (e.g., 'Web Servers', 'Database Servers', 'APIs')" />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Notifications Section */}
+                        <div className="space-y-4">
+                            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide border-b border-gray-200 pb-2">
+                                Notifications
+                            </h3>
+
+                            <div className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                <input
+                                    type="checkbox"
+                                    checked={emailNotification}
+                                    onChange={(e) => setEmailNotification(e.target.checked)}
+                                    id="emailNotif"
+                                    className="w-4 h-4 mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
+                                />
+                                <div className="flex-1">
+                                    <label htmlFor="emailNotif" className="text-sm font-medium text-gray-700 cursor-pointer block">
+                                        Send email notification on status change
+                                    </label>
+                                    <FieldHelp text="Receive email alerts when the monitor status changes from 'up' to 'down' or vice versa. Make sure SMTP settings are configured in the admin panel." />
+                                </div>
+                            </div>
+                        </div>
+
+                        {error && (
+                            <div className="text-red-700 text-sm bg-red-50 border border-red-200 p-3 rounded-lg">
+                                <strong>Error:</strong> {error}
+                            </div>
+                        )}
+                    </form>
+                </div>
+
+                {/* Footer with Actions */}
+                <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3">
+                    <button
+                        type="button"
+                        onClick={onCancel}
+                        className="px-5 py-2 text-gray-700 hover:text-gray-900 transition-colors rounded-lg hover:bg-gray-100 border border-gray-300"
+                        disabled={isSubmitting}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="submit"
+                        form="monitor-form"
+                        disabled={isSubmitting}
+                        className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                    >
+                        {isSubmitting ? 'Saving...' : monitor ? 'Update Monitor' : 'Create Monitor'}
+                    </button>
+                </div>
             </div>
         </div>
     );
