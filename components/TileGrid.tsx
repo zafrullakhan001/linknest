@@ -874,6 +874,36 @@ export const TileGrid: React.FC<TileGridProps> = ({
       console.error('Failed to save active tab', e);
     }
   }, [activeTab]);
+
+  // Listen for external tab switch events (e.g. from footer)
+  useEffect(() => {
+    const handleSwitchTab = (e: any) => {
+      const tab = e.detail as TabType;
+      const validTabs: TabType[] = ['favorites', 'public', 'public-favorites', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+
+      if (tab && validTabs.includes(tab)) {
+        // Handle guest vs auth favorites
+        if (tab === 'favorites' && !isAuthenticated) {
+          setActiveTab('public-favorites');
+        } else if (tab === 'public-favorites' && isAuthenticated) {
+          setActiveTab('favorites');
+        } else {
+          // Check restricted tabs
+          const restrictedTabs = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+          if (!isAuthenticated && restrictedTabs.includes(tab)) {
+            setActiveTab('public');
+          } else {
+            setActiveTab(tab);
+          }
+        }
+        // Scroll to top when switching tabs
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
+
+    window.addEventListener('switchTab', handleSwitchTab);
+    return () => window.removeEventListener('switchTab', handleSwitchTab);
+  }, [isAuthenticated]);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [publicFavorites, setPublicFavorites] = useState<string[]>([]);
   const [recycleBinTiles, setRecycleBinTiles] = useState<Tile[]>([]);
