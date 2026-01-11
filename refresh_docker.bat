@@ -18,6 +18,100 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
+REM Check if Docker is running
+echo 🔍 Checking if Docker Desktop is running...
+docker info >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo ⚠️  Docker daemon is not responding.
+    
+    REM Check if Docker Desktop process is already running
+    tasklist /FI "IMAGENAME eq Docker Desktop.exe" 2>nul | find /I /N "Docker Desktop.exe">nul
+    if %ERRORLEVEL% EQU 0 (
+        echo    Docker Desktop process is running, but daemon is not ready yet.
+        echo ⏳ Waiting for Docker daemon to become ready...
+        
+        REM Wait for Docker to be ready (max 2 minutes)
+        set MAX_WAIT=120
+        set WAIT_COUNT=0
+        
+        :wait_for_daemon
+        timeout /t 2 /nobreak >nul
+        set /a WAIT_COUNT+=2
+        docker info >nul 2>&1
+        if %ERRORLEVEL% EQU 0 (
+            echo ✅ Docker Desktop is now ready!
+            echo.
+            goto docker_check_done
+        )
+        if !WAIT_COUNT! LSS !MAX_WAIT! (
+            echo    Still waiting... (!WAIT_COUNT!s / !MAX_WAIT!s)
+            goto wait_for_daemon
+        )
+        
+        echo ❌ Error: Docker daemon did not become ready within the timeout period.
+        echo Please check Docker Desktop and ensure it starts correctly.
+        pause
+        exit /b 1
+    ) else (
+        REM Docker Desktop is not running, start it
+        echo 🚀 Starting Docker Desktop...
+        
+        REM Try common Docker Desktop installation paths
+        set DOCKER_DESKTOP_PATH=""
+        
+        if exist "C:\Program Files\Docker\Docker\Docker Desktop.exe" (
+            set DOCKER_DESKTOP_PATH="C:\Program Files\Docker\Docker\Docker Desktop.exe"
+        ) else if exist "%ProgramFiles(x86)%\Docker\Docker\Docker Desktop.exe" (
+            set DOCKER_DESKTOP_PATH="%ProgramFiles(x86)%\Docker\Docker\Docker Desktop.exe"
+        ) else if exist "%LOCALAPPDATA%\Docker\Docker Desktop.exe" (
+            set DOCKER_DESKTOP_PATH="%LOCALAPPDATA%\Docker\Docker Desktop.exe"
+        )
+        
+        if "!DOCKER_DESKTOP_PATH!"=="" (
+            echo ❌ Error: Could not find Docker Desktop executable.
+            echo Please start Docker Desktop manually and try again.
+            pause
+            exit /b 1
+        )
+        
+        echo    Found Docker Desktop at: !DOCKER_DESKTOP_PATH!
+        start "" !DOCKER_DESKTOP_PATH!
+        
+        echo ⏳ Waiting for Docker Desktop to start...
+        echo    This may take 30-60 seconds...
+        
+        REM Wait for Docker to be ready (max 2 minutes)
+        set MAX_WAIT=120
+        set WAIT_COUNT=0
+        
+        :wait_loop
+        timeout /t 2 /nobreak >nul
+        set /a WAIT_COUNT+=2
+        docker info >nul 2>&1
+        if %ERRORLEVEL% EQU 0 (
+            goto docker_started
+        )
+        if !WAIT_COUNT! LSS !MAX_WAIT! (
+            echo    Still waiting... (!WAIT_COUNT!s / !MAX_WAIT!s)
+            goto wait_loop
+        )
+        
+        echo ❌ Error: Docker Desktop did not start within the timeout period.
+        echo Please ensure Docker Desktop starts correctly and try again.
+        pause
+        exit /b 1
+        
+        :docker_started
+        echo ✅ Docker Desktop is now running!
+        echo.
+        goto docker_check_done
+    )
+    :docker_check_done
+) else (
+    echo ✅ Docker Desktop is already running.
+    echo.
+)
+
 REM Determine search for docker compose command
 docker compose version >nul 2>&1
 if %ERRORLEVEL% EQU 0 (

@@ -71,6 +71,7 @@ WORKDIR /var/www/html
 
 # Copy PHP files
 COPY api/ ./api/
+COPY scripts/ ./scripts/
 COPY docker/.htaccess ./.htaccess
 
 # Copy check_opcache.php to root for system status monitoring (optional - copy if exists)
