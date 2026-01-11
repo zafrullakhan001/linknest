@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Monitor, MonitorLog, monitoringService } from '../services/monitoringService';
 import { MonitorForm } from './MonitorForm';
-import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaFileCsv, FaArrowsAlt } from 'react-icons/fa';
+import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaFileCsv, FaArrowsAlt, FaPalette } from 'react-icons/fa';
 import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from './TileAnimationSelector';
 import { SMTPSettingsModal } from './SMTPSettingsModal';
+import { MonitoringTileStyleModal, TileStyle } from './MonitoringTileStyleModal';
+import { userPreferencesService } from '../services/userPreferencesService';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Brush, BarChart, Bar, Cell } from 'recharts';
 
 export const MonitoringDashboard: React.FC = () => {
@@ -36,7 +38,24 @@ export const MonitoringDashboard: React.FC = () => {
     });
     const [showSMTPSettings, setShowSMTPSettings] = useState(false);
     const [showCronModal, setShowCronModal] = useState(false);
+    const [showTileStyleModal, setShowTileStyleModal] = useState(false);
     const csvInputRef = useRef<HTMLInputElement>(null);
+    
+    // Tile styles state
+    const defaultTileStyles: TileStyle = {
+        upBackgroundColor: '#10b981',
+        upTextColor: '#ffffff',
+        upUseGradient: false,
+        upGradientStart: '#10b981',
+        upGradientEnd: '#059669',
+        downBackgroundColor: '#dc2626',
+        downTextColor: '#ffffff',
+        downUseGradient: false,
+        downGradientStart: '#dc2626',
+        downGradientEnd: '#b91c1c',
+    };
+    
+    const [tileStyles, setTileStyles] = useState<TileStyle>(defaultTileStyles);
     const [moveMenuId, setMoveMenuId] = useState<number | null>(null);
     const [editingTabName, setEditingTabName] = useState<string | null>(null);
     const [editingGroupName, setEditingGroupName] = useState<string | null>(null);
@@ -155,7 +174,34 @@ export const MonitoringDashboard: React.FC = () => {
 
     useEffect(() => {
         fetchMonitors();
+        loadTileStyles();
     }, [fetchMonitors]);
+    
+    const loadTileStyles = useCallback(async () => {
+        try {
+            const preferences = await userPreferencesService.getPreferences();
+            const loadedStyles: TileStyle = {
+                upBackgroundColor: preferences['monitor_tile_up_bg'] as string || defaultTileStyles.upBackgroundColor,
+                upTextColor: preferences['monitor_tile_up_text'] as string || defaultTileStyles.upTextColor,
+                upUseGradient: preferences['monitor_tile_up_gradient'] === 'true' || preferences['monitor_tile_up_gradient'] === true,
+                upGradientStart: preferences['monitor_tile_up_gradient_start'] as string || defaultTileStyles.upGradientStart,
+                upGradientEnd: preferences['monitor_tile_up_gradient_end'] as string || defaultTileStyles.upGradientEnd,
+                downBackgroundColor: preferences['monitor_tile_down_bg'] as string || defaultTileStyles.downBackgroundColor,
+                downTextColor: preferences['monitor_tile_down_text'] as string || defaultTileStyles.downTextColor,
+                downUseGradient: preferences['monitor_tile_down_gradient'] === 'true' || preferences['monitor_tile_down_gradient'] === true,
+                downGradientStart: preferences['monitor_tile_down_gradient_start'] as string || defaultTileStyles.downGradientStart,
+                downGradientEnd: preferences['monitor_tile_down_gradient_end'] as string || defaultTileStyles.downGradientEnd,
+            };
+            setTileStyles(loadedStyles);
+        } catch (error) {
+            console.error('Failed to load tile styles:', error);
+            setTileStyles(defaultTileStyles);
+        }
+    }, []);
+    
+    const handleTileStylesChange = useCallback((styles: TileStyle) => {
+        setTileStyles(styles);
+    }, []);
 
     // Auto refresh logic
     useEffect(() => {
@@ -556,6 +602,56 @@ export const MonitoringDashboard: React.FC = () => {
     const animationClass = getTileAnimationClass(animation);
     const decorationClass = getTileDecorationClass(decoration);
     const fullAnimClass = `${animationClass} ${decorationClass} linknest-tile-animated`.trim();
+    
+    // Get tile style for a monitor status
+    const getTileStyle = (status: 'up' | 'down' | 'unknown' | null): React.CSSProperties => {
+        if (status === 'up') {
+            if (tileStyles.upUseGradient) {
+                return {
+                    background: `linear-gradient(135deg, ${tileStyles.upGradientStart}, ${tileStyles.upGradientEnd})`,
+                };
+            }
+            return {
+                backgroundColor: tileStyles.upBackgroundColor,
+            };
+        } else if (status === 'down') {
+            if (tileStyles.downUseGradient) {
+                return {
+                    background: `linear-gradient(135deg, ${tileStyles.downGradientStart}, ${tileStyles.downGradientEnd})`,
+                };
+            }
+            return {
+                backgroundColor: tileStyles.downBackgroundColor,
+            };
+        }
+        return {};
+    };
+    
+    const getTileTextColor = (status: 'up' | 'down' | 'unknown' | null): string => {
+        if (status === 'up') {
+            return tileStyles.upTextColor;
+        } else if (status === 'down') {
+            return tileStyles.downTextColor;
+        }
+        return '';
+    };
+    
+    const getTileTextStyle = (status: 'up' | 'down' | 'unknown' | null): React.CSSProperties => {
+        const color = getTileTextColor(status);
+        if (color) {
+            return { color };
+        }
+        return {};
+    };
+    
+    const getTileBorderColor = (status: 'up' | 'down' | 'unknown' | null): string => {
+        if (status === 'up') {
+            return tileStyles.upUseGradient ? tileStyles.upGradientStart : tileStyles.upBackgroundColor;
+        } else if (status === 'down') {
+            return tileStyles.downUseGradient ? tileStyles.downGradientStart : tileStyles.downBackgroundColor;
+        }
+        return '';
+    };
 
     return (
         <div className="w-full h-full p-6 overflow-y-auto bg-slate-50 dark:bg-[#121212] transition-colors">
@@ -628,6 +724,13 @@ export const MonitoringDashboard: React.FC = () => {
                             title="SMTP Settings"
                         >
                             <FaEnvelope size={14} />
+                        </button>
+                        <button
+                            onClick={() => setShowTileStyleModal(true)}
+                            className="p-2 rounded-lg transition-all text-slate-400 hover:text-purple-500 hover:bg-white dark:hover:bg-[#333]"
+                            title="Tile Style Settings"
+                        >
+                            <FaPalette size={14} />
                         </button>
                         <button
                             onClick={() => setShowCronModal(true)}
@@ -843,9 +946,13 @@ export const MonitoringDashboard: React.FC = () => {
                                         <div
                                             key={monitor.id}
                                             onClick={(e) => handleTileClick(e, monitor)}
-                                            style={{ animationDelay: `${index * 50}ms` }}
+                                            style={{
+                                                animationDelay: `${index * 50}ms`,
+                                                ...(monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileStyle(monitor.last_status) : {}),
+                                                ...(monitor.last_status === 'up' || monitor.last_status === 'down' ? { borderColor: getTileBorderColor(monitor.last_status) } : {})
+                                            }}
                                             className={`border rounded-2xl shadow-lg hover:shadow-xl transition-all group relative cursor-pointer ${fullAnimClass} 
-                                                ${monitor.last_status === 'up' ? 'bg-emerald-600 border-emerald-500' : (monitor.last_status === 'down' ? 'bg-red-600 border-red-500' : 'bg-white dark:bg-[#1e1e1e] border-slate-200 dark:border-[#333] hover:border-slate-300 dark:hover:border-[#444]')}
+                                                ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'bg-white dark:bg-[#1e1e1e] border-slate-200 dark:border-[#333] hover:border-slate-300 dark:hover:border-[#444]'}
                                                 ${viewMode === 'tiles' ? 'p-5' : 'p-3 flex flex-col justify-between min-h-[120px]'}
                                                 ${moveMenuId === monitor.id ? 'z-[60]' : 'z-10 hover:z-20'}`}
                                         >
@@ -921,22 +1028,38 @@ export const MonitoringDashboard: React.FC = () => {
                                             </div>
 
                                             <div className={`flex items-start gap-3 ${viewMode === 'tiles' ? 'mb-5' : 'mb-2'}`}>
-                                                <div className={`${viewMode === 'tiles' ? 'w-12 h-12 text-lg' : 'w-8 h-8 text-sm'} rounded-xl flex items-center justify-center ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-[#2a2a2a]'} ${monitor.last_status === 'down' ? 'border border-white/30' : (monitor.last_status === 'up' ? 'border border-white/20 shadow-inner' : 'border border-slate-200 dark:border-[#444]')}`}>
-                                                    {React.cloneElement(getTypeIcon(monitor.type), { className: (monitor.last_status === 'up' || monitor.last_status === 'down') ? 'text-white' : undefined, size: viewMode === 'tiles' ? 18 : 14 })}
+                                                <div className={`${viewMode === 'tiles' ? 'w-12 h-12 text-lg' : 'w-8 h-8 text-sm'} rounded-xl flex items-center justify-center ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-white/20' : 'bg-slate-100 dark:bg-[#2a2a2a]'} ${monitor.last_status === 'down' ? 'border border-white/30' : (monitor.last_status === 'up' ? 'border border-white/20 shadow-inner' : 'border border-slate-200 dark:border-[#444]')}`}>
+                                                    {React.cloneElement(getTypeIcon(monitor.type), { 
+                                                        style: monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : undefined,
+                                                        size: viewMode === 'tiles' ? 18 : 14 
+                                                    })}
                                                 </div>
                                                 <div className="min-w-0 flex-1">
-                                                    <h3 className={`font-bold leading-tight truncate ${viewMode === 'tiles' ? 'text-base mb-1' : 'text-xs mb-0.5'} ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'text-white' : 'text-slate-900 dark:text-white'}`} title={monitor.name}>
+                                                    <h3 
+                                                        className={`font-bold leading-tight truncate ${viewMode === 'tiles' ? 'text-base mb-1' : 'text-xs mb-0.5'} ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-slate-900 dark:text-white'}`}
+                                                        style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
+                                                        title={monitor.name}
+                                                    >
                                                         {monitor.name}
                                                     </h3>
                                                     {viewMode === 'tiles' ? (
-                                                        <div className={`flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full inline-flex ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'text-white bg-white/20' : 'text-slate-600 dark:text-gray-400 bg-slate-100 dark:bg-[#252525]'}`}>
-                                                            {React.cloneElement(getStatusIcon(monitor.last_status) as React.ReactElement, { className: (monitor.last_status === 'up' || monitor.last_status === 'down') ? 'text-white' : undefined, size: 10 })}
+                                                        <div 
+                                                            className={`flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full inline-flex ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-white/20' : 'text-slate-600 dark:text-gray-400 bg-slate-100 dark:bg-[#252525]'}`}
+                                                            style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
+                                                        >
+                                                            {React.cloneElement(getStatusIcon(monitor.last_status) as React.ReactElement, { 
+                                                                style: monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : undefined,
+                                                                size: 10 
+                                                            })}
                                                             <span className="uppercase font-extrabold tracking-widest">
                                                                 {monitor.last_status || 'UNKNOWN'}
                                                             </span>
                                                         </div>
                                                     ) : (
-                                                        <div className={`text-[9px] font-black uppercase tracking-tighter ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'text-white/80' : monitor.last_status === 'up' ? 'text-emerald-500' : 'text-red-500'}`}>
+                                                        <div 
+                                                            className={`text-[9px] font-black uppercase tracking-tighter ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : monitor.last_status === 'up' ? 'text-emerald-500' : 'text-red-500'}`}
+                                                            style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
+                                                        >
                                                             {monitor.last_status || 'UNKNOWN'}
                                                         </div>
                                                     )}
@@ -944,23 +1067,39 @@ export const MonitoringDashboard: React.FC = () => {
                                             </div>
 
                                             <div className={`${viewMode === 'tiles' ? 'space-y-3 mb-5' : 'mb-3'}`}>
-                                                <div className={`${viewMode === 'tiles' ? 'text-[11px] p-3' : 'text-[9px] p-1.5'} break-all rounded-xl border font-mono ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20 border-white/10 text-white/90' : 'text-slate-600 dark:text-gray-400 bg-slate-50 dark:bg-[#252525] border-slate-100 dark:border-[#333]'}`}>
+                                                <div 
+                                                    className={`${viewMode === 'tiles' ? 'text-[11px] p-3' : 'text-[9px] p-1.5'} break-all rounded-xl border font-mono ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20 border-white/10' : 'text-slate-600 dark:text-gray-400 bg-slate-50 dark:bg-[#252525] border-slate-100 dark:border-[#333]'}`}
+                                                    style={monitor.last_status === 'up' || monitor.last_status === 'down' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.9 } : {}}
+                                                >
                                                     {monitor.target}
-                                                    {monitor.port && <span className={monitor.last_status === 'up' || monitor.last_status === 'down' ? 'text-white/70' : 'text-slate-400 dark:text-gray-500'}>:{monitor.port}</span>}
+                                                    {monitor.port && (
+                                                        <span 
+                                                            className={monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-slate-400 dark:text-gray-500'}
+                                                            style={monitor.last_status === 'up' || monitor.last_status === 'down' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.7 } : {}}
+                                                        >
+                                                            :{monitor.port}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
 
-                                            <div className={`flex flex-col gap-1 ${viewMode === 'tiles' ? 'pt-4 border-t' : 'pt-2'} ${monitor.last_status === 'up' || monitor.last_status === 'down' ? (viewMode === 'tiles' ? 'border-white/20' : '') + ' text-white/80' : 'border-slate-100 dark:border-[#333] text-slate-500 dark:text-gray-500'}`}>
+                                            <div 
+                                                className={`flex flex-col gap-1 ${viewMode === 'tiles' ? 'pt-4 border-t' : 'pt-2'} ${monitor.last_status === 'up' || monitor.last_status === 'down' ? (viewMode === 'tiles' ? 'border-white/20' : '') : 'border-slate-100 dark:border-[#333] text-slate-500 dark:text-gray-500'}`}
+                                                style={monitor.last_status === 'up' || monitor.last_status === 'down' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.8 } : {}}
+                                            >
                                                 <div className="flex items-center justify-between text-[10px] font-bold">
                                                     <div className="flex items-center gap-1.5" title="Last Response Time">
-                                                        <FaClock size={10} {...({ className: monitor.last_status === 'up' || monitor.last_status === 'down' ? 'text-white/60' : 'text-blue-500' } as any)} />
+                                                        <FaClock size={10} style={monitor.last_status === 'up' || monitor.last_status === 'down' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.6 } : {}} {...({ className: monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-blue-500' } as any)} />
                                                         {monitor.last_response_time ? `${monitor.last_response_time}ms` : '-'}
                                                     </div>
                                                     <div className="opacity-70">
                                                         {monitor.interval}m
                                                     </div>
                                                 </div>
-                                                <div className={`text-[9px] text-right font-medium ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'text-white/60' : 'text-slate-400 dark:text-gray-600'}`}>
+                                                <div 
+                                                    className={`text-[9px] text-right font-medium ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-slate-400 dark:text-gray-600'}`}
+                                                    style={monitor.last_status === 'up' || monitor.last_status === 'down' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.6 } : {}}
+                                                >
                                                     {formatLastChecked(monitor.last_checked_at)}
                                                 </div>
                                             </div>
@@ -986,66 +1125,100 @@ export const MonitoringDashboard: React.FC = () => {
                                                 <tr
                                                     key={monitor.id}
                                                     onClick={(e) => handleTileClick(e, monitor)}
-                                                    className={`group cursor-pointer hover:bg-slate-50 dark:hover:bg-[#252525] transition-colors ${monitor.last_status === 'down' ? 'bg-red-600 text-white' : ''} ${fullAnimClass}`}
-                                                    style={{ animationDelay: `${index * 30}ms` }}
+                                                    className={`group cursor-pointer hover:bg-slate-50 dark:hover:bg-[#252525] transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : ''} ${fullAnimClass}`}
+                                                    style={{
+                                                        animationDelay: `${index * 30}ms`,
+                                                        ...(monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileStyle(monitor.last_status) : {})
+                                                    }}
                                                 >
                                                     <td className="px-6 py-4">
                                                         <div className="flex items-center gap-3">
-                                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${monitor.last_status === 'down' ? 'bg-white/20' : 'bg-slate-100 dark:bg-[#2a2a2a] text-slate-500'}`}>
-                                                                {React.cloneElement(getTypeIcon(monitor.type), { size: 14, className: monitor.last_status === 'down' ? 'text-white' : undefined })}
+                                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-white/20' : 'bg-slate-100 dark:bg-[#2a2a2a] text-slate-500'}`}>
+                                                                {React.cloneElement(getTypeIcon(monitor.type), { 
+                                                                    size: 14, 
+                                                                    style: monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : undefined
+                                                                })}
                                                             </div>
-                                                            <span className={`font-bold text-sm ${monitor.last_status === 'down' ? 'text-white' : 'text-slate-900 dark:text-white'}`}>{monitor.name}</span>
+                                                            <span 
+                                                                className={`font-bold text-sm ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-slate-900 dark:text-white'}`}
+                                                                style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
+                                                            >
+                                                                {monitor.name}
+                                                            </span>
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-widest ${monitor.last_status === 'up' ? 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : (monitor.last_status === 'down' ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400')}`}>
+                                                        <div 
+                                                            className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-widest ${monitor.last_status === 'up' ? 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : (monitor.last_status === 'down' ? 'bg-white/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400')}`}
+                                                            style={monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
+                                                        >
                                                             <div className={`w-1.5 h-1.5 rounded-full ${monitor.last_status === 'up' ? 'bg-emerald-500 animate-pulse' : (monitor.last_status === 'down' ? 'bg-white animate-pulse' : 'bg-slate-400')}`}></div>
                                                             {monitor.last_status || 'UNKNOWN'}
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        <code className={`text-[11px] px-2 py-1 rounded-md ${monitor.last_status === 'down' ? 'bg-black/20 text-white/90' : 'text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-[#252525]'}`}>
+                                                        <code 
+                                                            className={`text-[11px] px-2 py-1 rounded-md ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20' : 'text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-[#252525]'}`}
+                                                            style={monitor.last_status === 'up' || monitor.last_status === 'down' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.9 } : {}}
+                                                        >
                                                             {monitor.target}{monitor.port ? `:${monitor.port}` : ''}
                                                         </code>
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        <div className={`flex items-center gap-1.5 text-sm font-medium ${monitor.last_status === 'down' ? 'text-white' : 'text-slate-700 dark:text-slate-300'}`}>
-                                                            <FaClock size={12} {...({ className: monitor.last_status === 'down' ? 'text-white/60' : 'text-slate-400' } as any)} />
+                                                        <div 
+                                                            className={`flex items-center gap-1.5 text-sm font-medium ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-slate-700 dark:text-slate-300'}`}
+                                                            style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
+                                                        >
+                                                            <FaClock size={12} style={monitor.last_status === 'up' || monitor.last_status === 'down' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.6 } : {}} {...({ className: monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-slate-400' } as any)} />
                                                             {monitor.last_response_time ? `${monitor.last_response_time}ms` : '-'}
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        <span className={`text-xs ${monitor.last_status === 'down' ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>{formatLastChecked(monitor.last_checked_at)}</span>
+                                                        <span 
+                                                            className={`text-xs ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-slate-500 dark:text-slate-400'}`}
+                                                            style={monitor.last_status === 'up' || monitor.last_status === 'down' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.8 } : {}}
+                                                        >
+                                                            {formatLastChecked(monitor.last_checked_at)}
+                                                        </span>
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        <span className={`text-xs font-bold ${monitor.last_status === 'down' ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>{monitor.interval}m</span>
+                                                        <span 
+                                                            className={`text-xs font-bold ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-slate-500 dark:text-slate-400'}`}
+                                                            style={monitor.last_status === 'up' || monitor.last_status === 'down' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.8 } : {}}
+                                                        >
+                                                            {monitor.interval}m
+                                                        </span>
                                                     </td>
                                                     <td className="px-6 py-4 text-right">
                                                         <div className="flex justify-end gap-2">
                                                             <button
                                                                 onClick={() => handleCheckNow(monitor.id)}
                                                                 disabled={checkingId === monitor.id}
-                                                                className={`p-2 rounded-xl transition-colors ${checkingId === monitor.id ? 'animate-spin' : ''} ${monitor.last_status === 'down' ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
+                                                                className={`p-2 rounded-xl transition-colors ${checkingId === monitor.id ? 'animate-spin' : ''} ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-white/20 hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
+                                                                style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
                                                                 title="Check Now"
                                                             >
                                                                 <FaRedo size={12} />
                                                             </button>
                                                             <button
                                                                 onClick={() => handleDuplicate(monitor)}
-                                                                className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'down' ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
+                                                                className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-white/20 hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
+                                                                style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
                                                                 title="Duplicate"
                                                             >
                                                                 <FaCopy size={12} />
                                                             </button>
                                                             <button
                                                                 onClick={() => { setSelectedMonitor(monitor); setIsDuplicate(false); setIsEditing(true); }}
-                                                                className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'down' ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
+                                                                className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-white/20 hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
+                                                                style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
                                                             >
                                                                 <FaEdit size={12} />
                                                             </button>
                                                             <button
                                                                 onClick={() => handleDelete(monitor.id)}
-                                                                className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'down' ? 'bg-black/40 text-white hover:bg-red-800' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-red-500'}`}
+                                                                className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/40 hover:bg-red-800' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-red-500'}`}
+                                                                style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
                                                             >
                                                                 <FaTrash size={12} />
                                                             </button>
@@ -1177,7 +1350,7 @@ export const MonitoringDashboard: React.FC = () => {
                                     title="Refresh History"
                                     disabled={isLogsLoading}
                                 >
-                                    <FaRedo size={12} className={isLogsLoading ? 'animate-spin' : ''} />
+                                    <FaRedo size={12} {...({ className: isLogsLoading ? 'animate-spin' : '' } as any)} />
                                 </button>
                                 <button
                                     onClick={handleExportHistoryCSV}
@@ -1400,13 +1573,21 @@ export const MonitoringDashboard: React.FC = () => {
                 <SMTPSettingsModal onClose={() => setShowSMTPSettings(false)} />
             )}
 
+            {showTileStyleModal && (
+                <MonitoringTileStyleModal
+                    isOpen={showTileStyleModal}
+                    onClose={() => setShowTileStyleModal(false)}
+                    onStylesChange={handleTileStylesChange}
+                />
+            )}
+
             {showCronModal && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
                     <div className="bg-white dark:bg-[#1e1e1e] rounded-3xl w-full max-w-2xl border border-slate-200 dark:border-[#333] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
                         <div className="p-6 border-b border-slate-100 dark:border-[#333] flex items-center justify-between">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
-                                    <FaClock size={20} className="text-purple-500" />
+                                    <FaClock size={20} {...({ className: "text-purple-500" } as any)} />
                                 </div>
                                 <div>
                                     <h2 className="text-xl font-bold text-slate-900 dark:text-white">Cron Setup</h2>
