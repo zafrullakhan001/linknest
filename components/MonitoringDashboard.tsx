@@ -305,12 +305,13 @@ export const MonitoringDashboard: React.FC = () => {
     }), [groupedByTabs]);
 
     useEffect(() => {
+        if (isLoading) return;
         if (tabNames.length > 0 && !tabNames.includes(activeTab)) {
             setActiveTab(tabNames[0]);
-        } else if (tabNames.length === 0) {
+        } else if (tabNames.length === 0 && activeTab !== 'General') {
             setActiveTab('General');
         }
-    }, [tabNames, activeTab]);
+    }, [tabNames, activeTab, isLoading]);
 
     useEffect(() => {
         localStorage.setItem('linknest_monitor_active_tab', activeTab);
