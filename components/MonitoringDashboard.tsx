@@ -35,6 +35,7 @@ export const MonitoringDashboard: React.FC = () => {
         return saved || 'General';
     });
     const [showSMTPSettings, setShowSMTPSettings] = useState(false);
+    const [showCronModal, setShowCronModal] = useState(false);
     const csvInputRef = useRef<HTMLInputElement>(null);
     const [editingTabName, setEditingTabName] = useState<string | null>(null);
     const [editingGroupName, setEditingGroupName] = useState<string | null>(null);
@@ -228,6 +229,42 @@ export const MonitoringDashboard: React.FC = () => {
         document.body.appendChild(downloadAnchorNode);
         downloadAnchorNode.click();
         downloadAnchorNode.remove();
+    };
+
+    const handleExportCSV = () => {
+        const headers = ['name', 'type', 'target', 'port', 'keyword', 'interval', 'tab_name', 'group_name'];
+        let rows = [];
+
+        if (monitors.length > 0) {
+            rows = monitors.map(m => [
+                m.name,
+                m.type,
+                m.target,
+                m.port || '',
+                m.keyword || '',
+                m.interval,
+                m.tab_name || 'General',
+                m.group_name || 'Other'
+            ]);
+        } else {
+            // Template
+            rows = [['Sample Monitor', 'url', 'https://google.com', '', '', '5', 'General', 'Other']];
+        }
+
+        const csvContent = [
+            headers.join(','),
+            ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `linknest_monitors_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     };
 
     const fetchLogs = useCallback(async (id: number, filter: '1d' | '1w' | '1m' | 'custom') => {
@@ -522,14 +559,24 @@ export const MonitoringDashboard: React.FC = () => {
                             className="p-2 rounded-lg transition-all text-slate-400 hover:text-blue-500 hover:bg-white dark:hover:bg-[#333]"
                             title="Export Monitors (JSON)"
                         >
-                            <FaDownload size={14} />
+                            <FaUpload size={14} />
                         </button>
                         <button
                             onClick={() => fileInputRef.current?.click()}
                             className="p-2 rounded-lg transition-all text-slate-400 hover:text-emerald-500 hover:bg-white dark:hover:bg-[#333]"
                             title="Import Monitors (JSON)"
                         >
-                            <FaUpload size={14} />
+                            <FaDownload size={14} />
+                        </button>
+                        <button
+                            onClick={handleExportCSV}
+                            className="p-2 rounded-lg transition-all text-slate-400 hover:text-blue-600 hover:bg-white dark:hover:bg-[#333]"
+                            title="Export Monitors (CSV)"
+                        >
+                            <div className="relative">
+                                <FaFileCsv size={14} />
+                                <div className="absolute -top-1 -right-1 bg-blue-500 rounded-full w-2 h-2 border border-white dark:border-[#252525]"></div>
+                            </div>
                         </button>
                         <button
                             onClick={() => csvInputRef.current?.click()}
@@ -544,6 +591,13 @@ export const MonitoringDashboard: React.FC = () => {
                             title="SMTP Settings"
                         >
                             <FaEnvelope size={14} />
+                        </button>
+                        <button
+                            onClick={() => setShowCronModal(true)}
+                            className="p-2 rounded-lg transition-all text-slate-400 hover:text-purple-500 hover:bg-white dark:hover:bg-[#333]"
+                            title="Cron Setup"
+                        >
+                            <FaClock size={14} />
                         </button>
                         <button
                             onClick={handleDeleteAll}
@@ -1248,6 +1302,91 @@ export const MonitoringDashboard: React.FC = () => {
             )}
             {showSMTPSettings && (
                 <SMTPSettingsModal onClose={() => setShowSMTPSettings(false)} />
+            )}
+
+            {showCronModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-[#1e1e1e] rounded-3xl w-full max-w-2xl border border-slate-200 dark:border-[#333] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                        <div className="p-6 border-b border-slate-100 dark:border-[#333] flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
+                                    <FaClock size={20} className="text-purple-500" />
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">Cron Setup</h2>
+                                    <p className="text-sm text-slate-500">Automate your monitoring checks</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowCronModal(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-[#333] rounded-xl transition-all text-slate-500">
+                                <FaTimes size={18} />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-6">
+                            <div className="p-4 bg-blue-50 dark:bg-blue-500/5 rounded-2xl border border-blue-100 dark:border-blue-500/20">
+                                <p className="text-sm text-blue-700 dark:text-blue-400">
+                                    To keep your monitors updated automatically, you should set up a scheduled task (cron job).
+                                    Run the following command every minute to execute all active monitor checks.
+                                </p>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Linux (Cron)</h3>
+                                    <div className="relative group">
+                                        <div className="bg-slate-900 text-slate-300 p-4 rounded-xl font-mono text-xs overflow-x-auto break-all">
+                                            {`* * * * * curl -X POST "${window.location.protocol}//${window.location.host}${window.location.pathname.replace(/\/[^/]*$/, '')}/api/monitors.php/check-all" -H "Authorization: Bearer linknest_secret_token_123"`}
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(`* * * * * curl -X POST "${window.location.protocol}//${window.location.host}${window.location.pathname.replace(/\/[^/]*$/, '')}/api/monitors.php/check-all" -H "Authorization: Bearer linknest_secret_token_123"`);
+                                                alert('Command copied to clipboard!');
+                                            }}
+                                            className="absolute top-2 right-2 p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                        >
+                                            <FaCopy size={12} />
+                                        </button>
+                                    </div>
+                                    <p className="text-[10px] text-slate-500">Add this to your crontab using <code className="bg-slate-100 dark:bg-[#333] px-1 rounded text-blue-500">crontab -e</code></p>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Windows (PowerShell)</h3>
+                                    <div className="relative group">
+                                        <div className="bg-slate-900 text-slate-300 p-4 rounded-xl font-mono text-xs overflow-x-auto break-all">
+                                            {`$headers = @{ "Authorization" = "Bearer linknest_secret_token_123" }; Invoke-RestMethod -Method Post -Uri "${window.location.protocol}//${window.location.host}${window.location.pathname.replace(/\/[^/]*$/, '')}/api/monitors.php/check-all" -Headers $headers`}
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(`$headers = @{ "Authorization" = "Bearer linknest_secret_token_123" }; Invoke-RestMethod -Method Post -Uri "${window.location.protocol}//${window.location.host}${window.location.pathname.replace(/\/[^/]*$/, '')}/api/monitors.php/check-all" -Headers $headers`);
+                                                alert('Command copied to clipboard!');
+                                            }}
+                                            className="absolute top-2 right-2 p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                        >
+                                            <FaCopy size={12} />
+                                        </button>
+                                    </div>
+                                    <p className="text-[10px] text-slate-500">Schedule this in Task Scheduler as a PowerShell script.</p>
+                                </div>
+                            </div>
+
+                            <div className="p-4 bg-amber-50 dark:bg-amber-500/5 rounded-2xl border border-amber-100 dark:border-amber-500/20">
+                                <h4 className="text-xs font-bold text-amber-700 dark:text-amber-400 mb-1 flex items-center gap-2">
+                                    <FaQuestion size={10} /> Note on Security
+                                </h4>
+                                <p className="text-[10px] text-amber-700 dark:text-amber-400 mt-1">
+                                    The <code className="font-mono">linknest_secret_token_123</code> is the default system token. You should change this in <code className="font-mono">api/config.php</code> for better security if your dashboard is public.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="p-6 bg-slate-50 dark:bg-[#252525] border-t border-slate-100 dark:border-[#333] flex justify-end">
+                            <button onClick={() => setShowCronModal(false)} className="px-6 py-2.5 bg-slate-200 dark:bg-[#333] hover:bg-slate-300 dark:hover:bg-[#444] text-slate-700 dark:text-slate-200 rounded-xl font-bold transition-all active:scale-95">
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

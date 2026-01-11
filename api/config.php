@@ -36,6 +36,7 @@ set_exception_handler(function($exception) {
 // Database configuration
 define('DB_PATH', __DIR__ . '/../data/linknest.db');
 define('DB_DIR', __DIR__ . '/../data');
+define('SYSTEM_TOKEN', 'linknest_secret_token_123'); // Change this for production!
 
 // Create data directory if it doesn't exist
 if (!file_exists(DB_DIR)) {
@@ -1149,6 +1150,20 @@ function canUserViewTile($userId, $tileId, $db) {
 
 // Helper function to require authentication
 function requireAuth() {
+    // Check for system token first (for cron/system tasks)
+    $headers = function_exists('getallheaders') ? getallheaders() : [];
+    $authHeader = $headers['Authorization'] ?? $headers['authorization'] ?? $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+    $token = '';
+    if (preg_match('/Bearer\s+(.*)$/i', $authHeader, $matches)) {
+        $token = $matches[1];
+    } elseif (isset($_GET['token'])) {
+        $token = $_GET['token'];
+    }
+
+    if ($token && defined('SYSTEM_TOKEN') && $token === SYSTEM_TOKEN) {
+        return ['id' => 0, 'username' => 'system', 'is_admin' => true, 'is_approved' => true];
+    }
+
     $user = getAuthenticatedUser();
     if (!$user) {
         http_response_code(401);
