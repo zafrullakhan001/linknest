@@ -66,6 +66,7 @@ export const MonitoringDashboard: React.FC = () => {
     const [tempTabName, setTempTabName] = useState('');
     const [tempGroupName, setTempGroupName] = useState('');
     const [historyViewMode, setHistoryViewMode] = useState<'list' | 'chart'>('chart');
+    const [brushRange, setBrushRange] = useState<{ startIndex: number; endIndex: number } | null>(null);
     const [modalStyle, setModalStyle] = useState({ x: 0, y: 0, width: 1000, height: 750, isMaximized: false });
     const [isDragging, setIsDragging] = useState(false);
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -384,6 +385,18 @@ export const MonitoringDashboard: React.FC = () => {
         }
     }, [viewingLogsMonitor, logFilter, fetchLogs]);
 
+    useEffect(() => {
+        // Reset brush range when logs change or dialog closes
+        setBrushRange(null);
+    }, [logs]);
+
+    useEffect(() => {
+        // Reset brush range when dialog closes
+        if (!viewingLogsMonitor) {
+            setBrushRange(null);
+        }
+    }, [viewingLogsMonitor]);
+
     const groupedLogs = useMemo<Record<string, MonitorLog[]>>(() => {
         const groups: { [key: string]: MonitorLog[] } = {};
         logs.forEach(log => {
@@ -414,6 +427,12 @@ export const MonitoringDashboard: React.FC = () => {
             };
         });
     }, [logs]);
+
+    const filteredChartData = useMemo(() => {
+        if (!brushRange) return chartData;
+        const { startIndex, endIndex } = brushRange;
+        return chartData.slice(startIndex, endIndex + 1);
+    }, [chartData, brushRange]);
 
     const groupedByTabs = useMemo<Record<string, Monitor[]>>(() => {
         const tabs: { [key: string]: Monitor[] } = {};
@@ -1304,7 +1323,7 @@ export const MonitoringDashboard: React.FC = () => {
             )}
 
             {viewingLogsMonitor && (
-                <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center overflow-hidden">
+                <div className="fixed inset-0 z-[100] bg-transparent flex items-center justify-center overflow-hidden">
                     <div
                         style={{
                             position: 'absolute',
@@ -1441,7 +1460,7 @@ export const MonitoringDashboard: React.FC = () => {
                                 <div className="flex-1 w-full bg-slate-50/50 dark:bg-[#202020]/30 rounded-3xl p-6 border border-slate-100 dark:border-[#333] flex flex-col gap-4 min-h-0 h-full">
                                     <div className="flex-1 min-h-0">
                                         <ResponsiveContainer width="100%" height="100%">
-                                            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                                            <AreaChart data={filteredChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                                                 <defs>
                                                     <linearGradient id="colorLatency" x1="0" y1="0" x2="0" y2="1">
                                                         <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
@@ -1488,7 +1507,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                     animationDuration={1500}
                                                     connectNulls={false}
                                                 />
-                                                {chartData.map((entry, index) => (
+                                                {filteredChartData.map((entry, index) => (
                                                     entry.status === 'down' ? (
                                                         <ReferenceLine
                                                             key={`down-${index}`}
@@ -1506,7 +1525,7 @@ export const MonitoringDashboard: React.FC = () => {
                                     {/* Histogram */}
                                     <div className="h-12 w-full shrink-0">
                                         <ResponsiveContainer width="100%" height="100%">
-                                            <BarChart data={chartData} margin={{ top: 0, right: 10, left: 35, bottom: 0 }}>
+                                            <BarChart data={filteredChartData} margin={{ top: 0, right: 10, left: 35, bottom: 0 }}>
                                                 <Tooltip
                                                     content={({ active, payload }) => {
                                                         if (active && payload && payload.length) {
@@ -1524,7 +1543,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                     }}
                                                 />
                                                 <Bar dataKey="val">
-                                                    {chartData.map((entry, index) => (
+                                                    {filteredChartData.map((entry, index) => (
                                                         <Cell key={`cell-${index}`} fill={entry.color} />
                                                     ))}
                                                 </Bar>
@@ -1556,6 +1575,16 @@ export const MonitoringDashboard: React.FC = () => {
                                                     fill="transparent"
                                                     travellerWidth={10}
                                                     y={110}
+                                                    onChange={(range: any) => {
+                                                        if (range && typeof range.startIndex === 'number' && typeof range.endIndex === 'number') {
+                                                            setBrushRange({
+                                                                startIndex: range.startIndex,
+                                                                endIndex: range.endIndex
+                                                            });
+                                                        } else {
+                                                            setBrushRange(null);
+                                                        }
+                                                    }}
                                                 />
                                             </AreaChart>
                                         </ResponsiveContainer>
