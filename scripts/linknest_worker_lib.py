@@ -13,10 +13,12 @@ import datetime as _dt
 import email.utils
 import json
 import os
+import sys
 import re
 import socket
 import sqlite3
 import ssl
+import subprocess
 import time
 import urllib.request
 from dataclasses import dataclass
@@ -72,6 +74,40 @@ def ensure_outbox_schema(conn: sqlite3.Connection) -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_email_outbox_sent_at ON email_outbox(sent_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_email_outbox_created_at ON email_outbox(created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_email_outbox_monitor_id ON email_outbox(monitor_id)")
+
+
+def ensure_monitors_schema(conn: sqlite3.Connection) -> None:
+    # Make sure new monitor fields exist (safe to call multiple times).
+    # Older DBs may not have these columns/tables yet.
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN warning_threshold INTEGER DEFAULT 1")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN consecutive_failures INTEGER DEFAULT 0")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN timeout INTEGER")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN permissions_mode INTEGER DEFAULT 0")
+
+    with contextlib.suppress(Exception):
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_monitor_permissions (
+              user_id INTEGER NOT NULL,
+              monitor_id INTEGER NOT NULL,
+              can_view INTEGER DEFAULT 1,
+              created_at INTEGER NOT NULL,
+              updated_at INTEGER NOT NULL,
+              PRIMARY KEY (user_id, monitor_id)
+            )
+            """
+        )
+
+    with contextlib.suppress(Exception):
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_monitors_permissions_mode ON monitors(permissions_mode)")
+    with contextlib.suppress(Exception):
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_user_monitor_permissions_monitor_id ON user_monitor_permissions(monitor_id)")
+    with contextlib.suppress(Exception):
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_user_monitor_permissions_user_id ON user_monitor_permissions(user_id)")
 
 
 def normalize_email_list(raw: Any) -> List[str]:
@@ -310,6 +346,64 @@ def check_port(target: str, port: int, timeout: float) -> Tuple[str, str]:
         if "timed out" in msg.lower():
             return "down", "Connection timeout"
         return "down", f"Connection refused: {msg}"
+
+
+def check_ping(target: str, timeout_ms: int = 1000) -> Tuple[str, str]:
+    host = (target or "").strip()
+    if not host:
+        return "down", "Target is required"
+
+    # Extract host from URL if needed
+    m = re.match(r"^https?://([^/]+)", host, re.I)
+    if m:
+        host = m.group(1)
+        host = host.split("@")[-1]
+        host = host.split(":")[0] if host.count(":") == 0 else host
+
+    host = host.strip()
+    if not host or len(host) > 255:
+        return "down", "Invalid host"
+    if not re.match(r"^[a-zA-Z0-9\.\-:]+$", host):
+        return "down", "Invalid host format"
+
+    try:
+        tms = int(timeout_ms)
+    except Exception:
+        tms = 1000
+    tms = max(250, min(60000, tms))
+
+    is_windows = (os.name == "nt")
+    is_darwin = (sys.platform == "darwin")
+
+    if is_windows:
+        cmd = ["ping", "-n", "1", "-w", str(tms), host]
+        timeout_seconds = max(2, int((tms / 1000.0) + 2))
+    elif is_darwin:
+        # macOS: -W is milliseconds
+        cmd = ["ping", "-c", "1", "-W", str(tms), host]
+        timeout_seconds = max(2, int((tms / 1000.0) + 2))
+    else:
+        # Linux: -W is seconds
+        sec = max(1, int((tms + 999) / 1000))
+        cmd = ["ping", "-c", "1", "-W", str(sec), host]
+        timeout_seconds = max(2, sec + 2)
+
+    try:
+        cp = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds)
+    except FileNotFoundError:
+        return "down", "Ping command not available"
+    except subprocess.TimeoutExpired:
+        return "down", "Connection timeout"
+    except Exception as e:
+        return "down", f"Ping failed: {e}"
+
+    if cp.returncode == 0:
+        return "up", "Ping OK"
+
+    err = (cp.stderr or "").strip() or (cp.stdout or "").strip() or "No response"
+    if len(err) > 180:
+        err = err[:180] + "..."
+    return "down", f"Ping failed: {err}"
 
 
 def send_smtp_email(

@@ -614,7 +614,7 @@ const AppContent: React.FC = () => {
                     </button>
                   )}
 
-                  {user?.is_admin && !disabledTabs.has('monitoring') && (
+                  {!disabledTabs.has('monitoring') && (
                     <button
                       onClick={() => handleTabClick('monitoring')}
                       className="hover:text-emerald-500 transition-colors flex items-center gap-1.5 font-medium"

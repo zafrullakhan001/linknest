@@ -63,7 +63,23 @@ function performMonitorCheck($monitor) {
     $details = '';
     $checkRes = ['status' => 'down', 'details' => 'Unknown error'];
     
-    $runCheck = function(array $opts = []) use ($monitor) {
+    // Apply per-monitor defaults (timeout, etc) unless overridden by retry opts
+    $baseOpts = [];
+    if (isset($monitor['timeout']) && $monitor['timeout'] !== null && $monitor['timeout'] !== '') {
+        $t = (int)$monitor['timeout'];
+        if ($t < 1) $t = 1;
+        if ($t > 60) $t = 60;
+        $baseOpts['timeout'] = $t;
+        // Keep connect timeout <= total timeout
+        $baseOpts['connect_timeout'] = min(5, max(1, $t));
+        // Port timeout fallback
+        $baseOpts['port_timeout'] = min(5, max(1, $t));
+        // Ping timeout in ms
+        $baseOpts['ping_timeout_ms'] = min(60000, max(250, $t * 1000));
+    }
+
+    $runCheck = function(array $opts = []) use ($monitor, $baseOpts) {
+        $opts = array_merge($baseOpts, $opts);
         switch ($monitor['type']) {
             case 'url':
                 return checkUrl($monitor['target'], $opts);
@@ -71,6 +87,8 @@ function performMonitorCheck($monitor) {
                 return checkKeyword($monitor['target'], $monitor['keyword'], $opts);
             case 'port':
                 return checkPort($monitor['target'], $monitor['port'], $opts);
+            case 'ping':
+                return checkPing($monitor['target'], $opts);
             default:
                 return ['status' => 'down', 'details' => 'Invalid monitor type'];
         }
@@ -106,8 +124,28 @@ function performMonitorCheck($monitor) {
     
     $endTime = microtime(true);
     $responseTime = round(($endTime - $startTime) * 1000); // ms
-    $status = $checkRes['status'];
-    $details = $checkRes['details'];
+
+    // Apply warning threshold logic (consecutive failure gating)
+    $rawStatus = strtolower(trim((string)($checkRes['status'] ?? 'down')));
+    if ($rawStatus !== 'up' && $rawStatus !== 'down') {
+        $rawStatus = 'down';
+    }
+    $rawDetails = (string)($checkRes['details'] ?? '');
+
+    $threshold = isset($monitor['warning_threshold']) ? (int)$monitor['warning_threshold'] : 1;
+    if ($threshold < 1) $threshold = 1;
+    if ($threshold > 20) $threshold = 20;
+
+    $prevFailures = isset($monitor['consecutive_failures']) ? (int)$monitor['consecutive_failures'] : 0;
+    if ($prevFailures < 0) $prevFailures = 0;
+
+    $newFailures = ($rawStatus === 'down') ? ($prevFailures + 1) : 0;
+    $status = $rawStatus;
+    $details = $rawDetails;
+    if ($rawStatus === 'down' && $threshold > 1 && $newFailures < $threshold) {
+        $status = 'warning';
+        $details = "Warning ($newFailures/$threshold): " . $rawDetails;
+    }
     
     // Update monitor state
     $db = getDB();
@@ -126,14 +164,15 @@ function performMonitorCheck($monitor) {
     
     error_log("[MONITOR] Status check - Previous: " . ($prevStatus ?? 'null') . " (normalized: " . ($normalizedPrevStatus ?? 'null') . "), Current: $status (normalized: $normalizedStatus), Changed: " . ($statusChanged ? 'YES' : 'NO'));
     
-    // Update monitor record
+    // Update monitor record (including consecutive_failures for threshold logic)
     $stmt = $db->prepare('UPDATE monitors SET 
         last_checked_at = ?, 
         last_status = ?, 
         last_response_time = ?, 
+        consecutive_failures = ?,
         updated_at = ? 
         WHERE id = ?');
-    $stmt->execute([$now, $status, $responseTime, $now, $monitor['id']]);
+    $stmt->execute([$now, $status, $responseTime, $newFailures, $now, $monitor['id']]);
     
     // Log result
     $stmt = $db->prepare('INSERT INTO monitor_logs (monitor_id, status, response_time, details, checked_at) VALUES (?, ?, ?, ?, ?)');
@@ -217,7 +256,9 @@ function performMonitorCheck($monitor) {
         'id' => $monitor['id'],
         'status' => $status,
         'response_time' => $responseTime,
-        'details' => $details
+        'details' => $details,
+        'consecutive_failures' => $newFailures,
+        'warning_threshold' => $threshold
     ];
 }
 
@@ -358,6 +399,90 @@ function checkPort($target, $port, $opts = []) {
     } else {
         return ['status' => 'down', 'details' => "Connection refused: $errstr ($errno)"];
     }
+}
+
+function checkPing($target, $opts = []) {
+    if (empty($target)) {
+        return ['status' => 'down', 'details' => 'Target is required'];
+    }
+
+    // Extract host from URL if needed
+    $host = trim((string)$target);
+    if (strpos($host, 'http') === 0) {
+        $parsed = parse_url($host);
+        if (isset($parsed['host'])) {
+            $host = $parsed['host'];
+        }
+    }
+
+    // Basic validation: prevent shell injection
+    $host = trim($host);
+    if ($host === '' || strlen($host) > 255) {
+        return ['status' => 'down', 'details' => 'Invalid host'];
+    }
+    if (!preg_match('/^[a-zA-Z0-9\.\-:]+$/', $host)) {
+        return ['status' => 'down', 'details' => 'Invalid host format'];
+    }
+
+    $timeoutMs = isset($opts['ping_timeout_ms']) ? (int)$opts['ping_timeout_ms'] : 1000;
+    if ($timeoutMs < 250) $timeoutMs = 250;
+    if ($timeoutMs > 60000) $timeoutMs = 60000;
+
+    $isWindows = (stripos(PHP_OS, 'WIN') === 0);
+    $cmd = '';
+    if ($isWindows) {
+        // -n 1 = one echo request, -w timeout in ms
+        $cmd = 'ping -n 1 -w ' . (int)$timeoutMs . ' ' . escapeshellarg($host);
+    } else {
+        // Linux: -c 1 one packet, -W timeout (seconds). macOS uses -W in ms; we try to be reasonable.
+        $isDarwin = (stripos(PHP_OS, 'DAR') === 0);
+        if ($isDarwin) {
+            $cmd = 'ping -c 1 -W ' . (int)$timeoutMs . ' ' . escapeshellarg($host);
+        } else {
+            $timeoutSec = max(1, (int)ceil($timeoutMs / 1000));
+            $cmd = 'ping -c 1 -W ' . (int)$timeoutSec . ' ' . escapeshellarg($host);
+        }
+    }
+
+    $descriptors = [
+        0 => ['pipe', 'r'],
+        1 => ['pipe', 'w'],
+        2 => ['pipe', 'w']
+    ];
+
+    $proc = @proc_open($cmd, $descriptors, $pipes);
+    if (!is_resource($proc)) {
+        return ['status' => 'down', 'details' => 'Ping command not available'];
+    }
+
+    // No input needed
+    @fclose($pipes[0]);
+
+    $stdout = stream_get_contents($pipes[1]);
+    $stderr = stream_get_contents($pipes[2]);
+    @fclose($pipes[1]);
+    @fclose($pipes[2]);
+
+    $exitCode = proc_close($proc);
+
+    if ($exitCode === 0) {
+        return ['status' => 'up', 'details' => 'Ping OK'];
+    }
+
+    $err = trim($stderr);
+    if ($err === '') {
+        $err = trim((string)$stdout);
+    }
+    if ($err === '') {
+        $err = 'No response';
+    }
+
+    // Cap details length
+    if (strlen($err) > 180) {
+        $err = substr($err, 0, 180) . '...';
+    }
+
+    return ['status' => 'down', 'details' => 'Ping failed: ' . $err];
 }
 
 /**

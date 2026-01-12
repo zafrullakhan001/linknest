@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Monitor } from '../services/monitoringService';
 import { EmailNotificationsTab } from './EmailNotificationsTab';
 import { EmailLogsTab } from './EmailLogsTab';
+import { useAuth } from '../contexts/AuthContext';
+import { authService, UserListItem } from '../services/authService';
 
 interface MonitorFormProps {
     monitor?: Monitor;
@@ -12,7 +14,7 @@ interface MonitorFormProps {
 interface MonitorPreset {
     name: string;
     description: string;
-    type: 'url' | 'keyword' | 'port';
+    type: 'url' | 'keyword' | 'port' | 'ping';
     target: string;
     port?: number;
     keyword?: string;
@@ -121,12 +123,17 @@ const MONITOR_PRESETS: MonitorPreset[] = [
 ];
 
 export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCancel }) => {
+    const { user } = useAuth();
+    const isAdmin = !!user?.is_admin;
+
     const [name, setName] = useState(monitor?.name || '');
     const [type, setType] = useState<Monitor['type']>(monitor?.type || 'url');
     const [target, setTarget] = useState(monitor?.target || '');
     const [port, setPort] = useState(monitor?.port?.toString() || '');
     const [keyword, setKeyword] = useState(monitor?.keyword || '');
     const [interval, setInterval] = useState(monitor?.interval?.toString() || '5');
+    const [warningThreshold, setWarningThreshold] = useState((monitor?.warning_threshold ?? 1).toString());
+    const [timeoutSec, setTimeoutSec] = useState(monitor?.timeout !== null && monitor?.timeout !== undefined ? String(monitor?.timeout) : '');
     const [tabName, setTabName] = useState(monitor?.tab_name || '');
     const [groupName, setGroupName] = useState(monitor?.group_name || '');
     const [emailNotification, setEmailNotification] = useState(!!monitor?.email_notification);
@@ -147,6 +154,12 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
     const [error, setError] = useState<string | null>(null);
     const [showPresets, setShowPresets] = useState(!monitor && name === '');
     const [activeTab, setActiveTab] = useState<'settings' | 'notifications' | 'logs'>('settings');
+
+    // Permissions (admin only)
+    const [usersList, setUsersList] = useState<UserListItem[]>([]);
+    const [loadingUsers, setLoadingUsers] = useState(false);
+    const [allowedUsers, setAllowedUsers] = useState<number[]>(monitor?.allowed_user_ids || []);
+    const [showUserSelector, setShowUserSelector] = useState(false);
 
     // Draggable state
     const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -178,6 +191,24 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [onCancel]);
+
+    // Load user list (admin only, for monitor visibility assignments)
+    useEffect(() => {
+        if (!isAdmin) return;
+        const loadUsers = async () => {
+            try {
+                setLoadingUsers(true);
+                const users = await authService.getUsers();
+                setUsersList(users);
+            } catch (e) {
+                // Non-fatal; permissions UI can still work without labels
+                console.error('Failed to load users list for monitor permissions', e);
+            } finally {
+                setLoadingUsers(false);
+            }
+        };
+        loadUsers();
+    }, [isAdmin]);
 
     // Handle drag start
     const handleMouseDown = (e: React.MouseEvent) => {
@@ -247,6 +278,8 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
         setError(null);
 
         try {
+            const wt = Math.max(1, Math.min(20, parseInt(warningThreshold || '1')));
+            const timeoutVal = timeoutSec.trim() === '' ? undefined : Math.max(1, Math.min(60, parseInt(timeoutSec)));
             await onSave({
                 name,
                 type,
@@ -254,6 +287,9 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                 port: port ? parseInt(port) : undefined,
                 keyword,
                 interval: parseInt(interval),
+                warning_threshold: wt,
+                timeout: timeoutVal,
+                allowed_user_ids: isAdmin ? allowedUsers : undefined,
                 tab_name: tabName || undefined,
                 group_name: groupName || undefined,
                 email_notification: emailNotification ? 1 : 0,
@@ -444,13 +480,16 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                     <option value="url">URL Check</option>
                                     <option value="keyword">Keyword Check</option>
                                     <option value="port">Port Check</option>
+                                    <option value="ping">Ping Check</option>
                                 </select>
                                 <FieldHelp text={
                                     type === 'url' 
                                         ? "Checks if a website or API endpoint is accessible via HTTP/HTTPS request"
                                         : type === 'keyword'
                                         ? "Checks if a specific text/keyword appears in the webpage content"
-                                        : "Checks if a network port on a server is open and accepting connections"
+                                        : type === 'port'
+                                        ? "Checks if a network port on a server is open and accepting connections"
+                                        : "Checks if the host/IP responds to ping"
                                 } />
                             </div>
                         </div>
@@ -463,18 +502,18 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
 
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    {type === 'port' ? 'Host / IP Address' : 'URL'} <span className="text-red-500">*</span>
+                                    {(type === 'port' || type === 'ping') ? 'Host / IP Address' : 'URL'} <span className="text-red-500">*</span>
                                 </label>
                                 <input
-                                    type={type === 'port' ? 'text' : 'url'}
+                                    type={(type === 'port' || type === 'ping') ? 'text' : 'url'}
                                     value={target}
                                     onChange={(e) => setTarget(e.target.value)}
                                     className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
-                                    placeholder={type === 'port' ? '192.168.1.1 or example.com' : 'https://example.com'}
+                                    placeholder={(type === 'port' || type === 'ping') ? '192.168.1.1 or example.com' : 'https://example.com'}
                                     required
                                 />
                                 <FieldHelp text={
-                                    type === 'port'
+                                    (type === 'port' || type === 'ping')
                                         ? "The IP address or hostname of the server to check (e.g., 192.168.1.1, server.example.com)"
                                         : "The full URL to monitor, including protocol (http:// or https://). For APIs, include the full endpoint path."
                                 } />
@@ -515,6 +554,24 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                     <FieldHelp text="The text string to search for in the webpage. Monitor will be marked as 'up' if this keyword is found, 'down' if not found." />
                                 </div>
                             )}
+
+                            {(type === 'url' || type === 'keyword') && (
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Timeout (seconds)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={timeoutSec}
+                                        onChange={(e) => setTimeoutSec(e.target.value)}
+                                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                        placeholder={type === 'url' ? '5' : '8'}
+                                        min="1"
+                                        max="60"
+                                    />
+                                    <FieldHelp text="Maximum time to wait for the HTTP request before marking the check as failed. Leave blank to use the default." />
+                                </div>
+                            )}
                         </div>
 
                         {/* Monitoring Settings Section */}
@@ -537,6 +594,22 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                     required
                                 />
                                 <FieldHelp text="How often the monitor should check the target (in minutes). Lower values provide faster alerts but use more resources. Recommended: 5-15 minutes for critical services." />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Warning Threshold (failures) <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="number"
+                                    value={warningThreshold}
+                                    onChange={(e) => setWarningThreshold(e.target.value)}
+                                    min="1"
+                                    max="20"
+                                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                    required
+                                />
+                                <FieldHelp text="Number of consecutive failed checks before the monitor is considered DOWN. Failures below this threshold show as WARNING." />
                             </div>
 
                             <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
@@ -587,6 +660,97 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                 </div>
                             </div>
                         </div>
+
+                        {/* Permissions Section */}
+                        {isAdmin && (
+                            <div className="space-y-4">
+                                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide border-b border-gray-200 pb-2">
+                                    Permissions (Optional)
+                                </h3>
+
+                                <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div>
+                                            <div className="text-sm font-semibold text-gray-800">Visible to selected users</div>
+                                            <div className="text-xs text-gray-600 mt-1">If you select users, only they (and admins) will see this monitor.</div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowUserSelector(v => !v)}
+                                            className="text-sm text-blue-600 hover:text-blue-700"
+                                        >
+                                            {showUserSelector ? 'Hide' : 'Show'} Users
+                                        </button>
+                                    </div>
+
+                                    {allowedUsers.length > 0 && (
+                                        <div className="flex flex-wrap gap-2 mb-3">
+                                            {allowedUsers.map(userId => {
+                                                const u = usersList.find(x => x.id === userId);
+                                                return (
+                                                    <span
+                                                        key={userId}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-800 rounded-lg text-xs font-medium border border-blue-200"
+                                                    >
+                                                        {u?.username || `User ${userId}`}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setAllowedUsers(allowedUsers.filter(id => id !== userId))}
+                                                            className="hover:text-red-700 transition-colors"
+                                                            title="Remove user"
+                                                        >
+                                                            ×
+                                                        </button>
+                                                    </span>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
+                                    {showUserSelector && (
+                                        <div className="max-h-56 overflow-y-auto border border-gray-200 rounded-lg bg-white p-3 space-y-1.5">
+                                            {loadingUsers ? (
+                                                <div className="text-xs text-gray-600 text-center py-4">Loading users...</div>
+                                            ) : usersList.length === 0 ? (
+                                                <div className="text-xs text-gray-600 text-center py-4">No users available</div>
+                                            ) : (
+                                                usersList.map(u => (
+                                                    <label
+                                                        key={u.id}
+                                                        className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors"
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={allowedUsers.includes(u.id)}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) {
+                                                                    setAllowedUsers([...allowedUsers, u.id]);
+                                                                } else {
+                                                                    setAllowedUsers(allowedUsers.filter(id => id !== u.id));
+                                                                }
+                                                            }}
+                                                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                                                        />
+                                                        <span className="text-sm font-medium text-gray-700 flex-1">{u.username}</span>
+                                                        {u.auth_source && u.auth_source !== 'local' && (
+                                                            <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-semibold">
+                                                                {u.auth_source.toUpperCase()}
+                                                            </span>
+                                                        )}
+                                                    </label>
+                                                ))
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {allowedUsers.length === 0 && (
+                                        <p className="mt-3 text-xs text-gray-600">
+                                            No users selected: this monitor will be visible to all authenticated users.
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
                         {/* Notifications Section */}
                         <div className="space-y-4">

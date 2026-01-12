@@ -775,11 +775,15 @@ function initDatabase() {
         $db->exec('CREATE TABLE IF NOT EXISTS monitors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
-            type TEXT NOT NULL, -- url, keyword, port
+            type TEXT NOT NULL, -- url, keyword, port, ping
             target TEXT NOT NULL, -- url or ip
             port INTEGER,
             keyword TEXT,
             interval INTEGER DEFAULT 5, -- in minutes
+            warning_threshold INTEGER DEFAULT 1, -- consecutive failures required before declaring DOWN
+            consecutive_failures INTEGER DEFAULT 0, -- current consecutive failures counter
+            timeout INTEGER, -- seconds (used for url/keyword; optional for others)
+            permissions_mode INTEGER DEFAULT 0, -- 0=public(all authenticated users), 1=restricted to selected users
             is_active INTEGER DEFAULT 1,
             email_notification INTEGER DEFAULT 0,
             last_notified_status TEXT, -- up/down/unknown/null: last status we successfully sent a notification for (legacy notifications)
@@ -824,6 +828,20 @@ function initDatabase() {
         try { @$db->exec('ALTER TABLE monitors ADD COLUMN legacy_email_from_email TEXT'); } catch (PDOException $e) { /* ignore */ }
         try { @$db->exec('ALTER TABLE monitors ADD COLUMN legacy_email_subject_template TEXT'); } catch (PDOException $e) { /* ignore */ }
         try { @$db->exec('ALTER TABLE monitors ADD COLUMN legacy_email_body_template TEXT'); } catch (PDOException $e) { /* ignore */ }
+        try { @$db->exec('ALTER TABLE monitors ADD COLUMN warning_threshold INTEGER DEFAULT 1'); } catch (PDOException $e) { /* ignore */ }
+        try { @$db->exec('ALTER TABLE monitors ADD COLUMN consecutive_failures INTEGER DEFAULT 0'); } catch (PDOException $e) { /* ignore */ }
+        try { @$db->exec('ALTER TABLE monitors ADD COLUMN timeout INTEGER'); } catch (PDOException $e) { /* ignore */ }
+        try { @$db->exec('ALTER TABLE monitors ADD COLUMN permissions_mode INTEGER DEFAULT 0'); } catch (PDOException $e) { /* ignore */ }
+
+        // Create user_monitor_permissions table (view-only for non-admin users)
+        $db->exec('CREATE TABLE IF NOT EXISTS user_monitor_permissions (
+            user_id INTEGER NOT NULL,
+            monitor_id INTEGER NOT NULL,
+            can_view INTEGER DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, monitor_id)
+        )');
 
         // Create monitor_logs table
         $db->exec('CREATE TABLE IF NOT EXISTS monitor_logs (
@@ -840,8 +858,11 @@ function initDatabase() {
         try {
             $db->exec('CREATE INDEX IF NOT EXISTS idx_monitors_type ON monitors(type)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_monitors_status ON monitors(last_status)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_monitors_permissions_mode ON monitors(permissions_mode)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_monitor_logs_monitor_id ON monitor_logs(monitor_id)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_monitor_logs_checked_at ON monitor_logs(checked_at)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_user_monitor_permissions_monitor_id ON user_monitor_permissions(monitor_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_user_monitor_permissions_user_id ON user_monitor_permissions(user_id)');
         } catch (PDOException $e) {
             // Indices might already exist
         }

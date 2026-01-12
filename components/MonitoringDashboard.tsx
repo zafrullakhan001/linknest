@@ -7,8 +7,11 @@ import { SMTPSettingsModal } from './SMTPSettingsModal';
 import { MonitoringTileStyleModal, TileStyle } from './MonitoringTileStyleModal';
 import { userPreferencesService } from '../services/userPreferencesService';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Brush, BarChart, Bar, Cell } from 'recharts';
+import { useAuth } from '../contexts/AuthContext';
 
 export const MonitoringDashboard: React.FC = () => {
+    const { user } = useAuth();
+    const isAdmin = !!user?.is_admin;
     const [monitors, setMonitors] = useState<Monitor[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isEditing, setIsEditing] = useState(false);
@@ -283,6 +286,9 @@ export const MonitoringDashboard: React.FC = () => {
     }, [autoRefreshInterval]);
 
     const handleSave = async (data: Partial<Monitor>) => {
+        if (!isAdmin) {
+            throw new Error('Admin access required');
+        }
         try {
             if (selectedMonitor && !isDuplicate) {
                 await monitoringService.updateMonitor(selectedMonitor.id, data);
@@ -298,6 +304,7 @@ export const MonitoringDashboard: React.FC = () => {
     };
 
     const handleDelete = async (id: number) => {
+        if (!isAdmin) return;
         if (!confirm('Are you sure you want to delete this monitor?')) return;
         try {
             await monitoringService.deleteMonitor(id);
@@ -308,6 +315,7 @@ export const MonitoringDashboard: React.FC = () => {
     };
 
     const handleDuplicate = (monitor: Monitor) => {
+        if (!isAdmin) return;
         setSelectedMonitor(monitor);
         setIsDuplicate(true);
         setIsEditing(true);
@@ -326,6 +334,7 @@ export const MonitoringDashboard: React.FC = () => {
     };
 
     const handleExportJSON = async () => {
+        if (!isAdmin) return;
         try {
             setIsLoading(true);
             const bundle = await monitoringService.exportMonitorsBundle();
@@ -345,6 +354,7 @@ export const MonitoringDashboard: React.FC = () => {
     };
 
     const handleExportCSV = () => {
+        if (!isAdmin) return;
         const headers = ['name', 'type', 'target', 'port', 'keyword', 'interval', 'tab_name', 'group_name'];
         let rows = [];
 
@@ -426,6 +436,7 @@ export const MonitoringDashboard: React.FC = () => {
     };
 
     const handleMoveMonitor = async (id: number, updates: { tab_name?: string, group_name?: string }) => {
+        if (!isAdmin) return;
         try {
             await monitoringService.updateMonitor(id, updates);
             fetchMonitors();
@@ -479,7 +490,7 @@ export const MonitoringDashboard: React.FC = () => {
                 status: log.status,
                 // For histogram/status bar
                 val: 1, // Constant height for status bar
-                color: log.status === 'up' ? '#10b981' : '#ef4444'
+                color: log.status === 'up' ? '#10b981' : (log.status === 'warning' ? '#f59e0b' : '#ef4444')
             };
         });
     }, [logs]);
@@ -546,6 +557,7 @@ export const MonitoringDashboard: React.FC = () => {
     };
 
     const handleImportJSON = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        if (!isAdmin) return;
         const file = event.target.files?.[0];
         if (!file) return;
 
@@ -576,6 +588,7 @@ export const MonitoringDashboard: React.FC = () => {
     };
 
     const handleImportCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        if (!isAdmin) return;
         const file = event.target.files?.[0];
         if (!file) return;
 
@@ -599,6 +612,10 @@ export const MonitoringDashboard: React.FC = () => {
     };
 
     const handleTabRename = async (oldName: string) => {
+        if (!isAdmin) {
+            setEditingTabName(null);
+            return;
+        }
         if (!tempTabName.trim() || tempTabName === oldName) {
             setEditingTabName(null);
             return;
@@ -616,6 +633,10 @@ export const MonitoringDashboard: React.FC = () => {
     };
 
     const handleGroupRename = async (groupName: string) => {
+        if (!isAdmin) {
+            setEditingGroupName(null);
+            return;
+        }
         if (!tempGroupName.trim() || tempGroupName === groupName) {
             setEditingGroupName(null);
             return;
@@ -632,6 +653,7 @@ export const MonitoringDashboard: React.FC = () => {
     };
 
     const handleDeleteAll = async () => {
+        if (!isAdmin) return;
         if (!confirm('CRITICAL ACTION: Are you sure you want to delete ALL monitoring tiles? This cannot be undone.')) return;
         setIsLoading(true);
         try {
@@ -656,6 +678,7 @@ export const MonitoringDashboard: React.FC = () => {
         switch (status) {
             case 'up': return <FaCheck {...({ className: "text-green-500" } as any)} />;
             case 'down': return <FaTimes {...({ className: "text-red-500" } as any)} />;
+            case 'warning': return <FaQuestion {...({ className: "text-amber-500" } as any)} />;
             default: return <FaQuestion {...({ className: "text-gray-500" } as any)} />;
         }
     };
@@ -665,6 +688,7 @@ export const MonitoringDashboard: React.FC = () => {
             case 'url': return <FaGlobe {...({ className: "text-blue-400" } as any)} />;
             case 'keyword': return <FaSearch {...({ className: "text-purple-400" } as any)} />;
             case 'port': return <FaServer {...({ className: "text-orange-400" } as any)} />;
+            case 'ping': return <FaCircle {...({ className: "text-emerald-400" } as any)} />;
             default: return <FaGlobe />;
         }
     };
@@ -681,7 +705,7 @@ export const MonitoringDashboard: React.FC = () => {
         if (!effectiveCount) return null;
 
         const iconCount = effectiveCount > 1 ? 2 : 1;
-        const isColored = monitor.last_status === 'up' || monitor.last_status === 'down';
+        const isColored = monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning';
         const pillClass = isColored
             ? 'bg-white/20'
             : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400';
@@ -728,7 +752,7 @@ export const MonitoringDashboard: React.FC = () => {
     }, []);
     
     // Memoize helper functions for performance
-    const getTileStyle = useCallback((status: 'up' | 'down' | 'unknown' | null): React.CSSProperties => {
+    const getTileStyle = useCallback((status: 'up' | 'down' | 'warning' | 'unknown' | null): React.CSSProperties => {
         if (status === 'up') {
             if (tileStyles.upUseGradient) {
                 return {
@@ -747,20 +771,26 @@ export const MonitoringDashboard: React.FC = () => {
             return {
                 backgroundColor: tileStyles.downBackgroundColor,
             };
+        } else if (status === 'warning') {
+            return {
+                background: `linear-gradient(135deg, #f59e0b, #d97706)`,
+            };
         }
         return {};
     }, [tileStyles]);
     
-    const getTileTextColor = useCallback((status: 'up' | 'down' | 'unknown' | null): string => {
+    const getTileTextColor = useCallback((status: 'up' | 'down' | 'warning' | 'unknown' | null): string => {
         if (status === 'up') {
             return tileStyles.upTextColor;
         } else if (status === 'down') {
             return tileStyles.downTextColor;
+        } else if (status === 'warning') {
+            return '#ffffff';
         }
         return '';
     }, [tileStyles]);
     
-    const getTileTextStyle = useCallback((status: 'up' | 'down' | 'unknown' | null): React.CSSProperties => {
+    const getTileTextStyle = useCallback((status: 'up' | 'down' | 'warning' | 'unknown' | null): React.CSSProperties => {
         const color = getTileTextColor(status);
         if (color) {
             return { color };
@@ -768,11 +798,13 @@ export const MonitoringDashboard: React.FC = () => {
         return {};
     }, [getTileTextColor]);
     
-    const getTileBorderColor = useCallback((status: 'up' | 'down' | 'unknown' | null): string => {
+    const getTileBorderColor = useCallback((status: 'up' | 'down' | 'warning' | 'unknown' | null): string => {
         if (status === 'up') {
             return tileStyles.upUseGradient ? tileStyles.upGradientStart : tileStyles.upBackgroundColor;
         } else if (status === 'down') {
             return tileStyles.downUseGradient ? tileStyles.downGradientStart : tileStyles.downBackgroundColor;
+        } else if (status === 'warning') {
+            return '#f59e0b';
         }
         return '';
     }, [tileStyles]);
@@ -815,51 +847,56 @@ export const MonitoringDashboard: React.FC = () => {
                 <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-[#1e1e1e] p-2 rounded-2xl shadow-sm border border-slate-200 dark:border-[#333]">
                     {/* Data Management Group */}
                     <div className="flex items-center gap-1 bg-slate-100 dark:bg-[#252525] p-1 rounded-xl">
-                        <button
-                            onClick={handleExportJSON}
-                            className="p-2 rounded-lg transition-all text-slate-400 hover:text-blue-500 hover:bg-white dark:hover:bg-[#333]"
-                            title="Export Monitors (JSON)"
-                        >
-                            <FaUpload size={14} />
-                        </button>
-                        <button
-                            onClick={() => fileInputRef.current?.click()}
-                            className="p-2 rounded-lg transition-all text-slate-400 hover:text-emerald-500 hover:bg-white dark:hover:bg-[#333]"
-                            title="Import Monitors (JSON)"
-                        >
-                            <FaDownload size={14} />
-                        </button>
-                        <button
-                            onClick={handleExportCSV}
-                            className="p-2 rounded-lg transition-all text-slate-400 hover:text-blue-600 hover:bg-white dark:hover:bg-[#333]"
-                            title="Export Monitors (CSV)"
-                        >
-                            <div className="relative">
-                                <FaFileCsv size={14} />
-                                <div className="absolute -top-1 -right-1 bg-blue-500 rounded-full w-2 h-2 border border-white dark:border-[#252525]"></div>
-                            </div>
-                        </button>
-                        <button
-                            onClick={() => csvInputRef.current?.click()}
-                            className="p-2 rounded-lg transition-all text-slate-400 hover:text-green-600 hover:bg-white dark:hover:bg-[#333]"
-                            title="Import Monitors (CSV)"
-                        >
-                            <FaFileCsv size={14} />
-                        </button>
-                        <button
-                            onClick={() => setShowSMTPSettings(true)}
-                            className="p-2 rounded-lg transition-all text-slate-400 hover:text-orange-500 hover:bg-white dark:hover:bg-[#333]"
-                            title="SMTP Settings"
-                        >
-                            <FaEnvelope size={14} />
-                        </button>
-                        <button
-                            onClick={toggleNotifications}
-                            className={`p-2 rounded-lg transition-all ${notificationsPaused ? 'text-red-500 bg-red-50 dark:bg-red-900/20' : 'text-slate-400 hover:text-green-500 hover:bg-white dark:hover:bg-[#333]'}`}
-                            title={notificationsPaused ? "Email Notifications Paused - Click to Resume" : "Email Notifications Active - Click to Pause"}
-                        >
-                            {notificationsPaused ? <FaBellSlash size={14} /> : <FaBell size={14} />}
-                        </button>
+                        {isAdmin && (
+                            <>
+                                <button
+                                    onClick={handleExportJSON}
+                                    className="p-2 rounded-lg transition-all text-slate-400 hover:text-blue-500 hover:bg-white dark:hover:bg-[#333]"
+                                    title="Export Monitors (JSON)"
+                                >
+                                    <FaUpload size={14} />
+                                </button>
+                                <button
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="p-2 rounded-lg transition-all text-slate-400 hover:text-emerald-500 hover:bg-white dark:hover:bg-[#333]"
+                                    title="Import Monitors (JSON)"
+                                >
+                                    <FaDownload size={14} />
+                                </button>
+                                <button
+                                    onClick={handleExportCSV}
+                                    className="p-2 rounded-lg transition-all text-slate-400 hover:text-blue-600 hover:bg-white dark:hover:bg-[#333]"
+                                    title="Export Monitors (CSV)"
+                                >
+                                    <div className="relative">
+                                        <FaFileCsv size={14} />
+                                        <div className="absolute -top-1 -right-1 bg-blue-500 rounded-full w-2 h-2 border border-white dark:border-[#252525]"></div>
+                                    </div>
+                                </button>
+                                <button
+                                    onClick={() => csvInputRef.current?.click()}
+                                    className="p-2 rounded-lg transition-all text-slate-400 hover:text-green-600 hover:bg-white dark:hover:bg-[#333]"
+                                    title="Import Monitors (CSV)"
+                                >
+                                    <FaFileCsv size={14} />
+                                </button>
+                                <button
+                                    onClick={() => setShowSMTPSettings(true)}
+                                    className="p-2 rounded-lg transition-all text-slate-400 hover:text-orange-500 hover:bg-white dark:hover:bg-[#333]"
+                                    title="SMTP Settings"
+                                >
+                                    <FaEnvelope size={14} />
+                                </button>
+                                <button
+                                    onClick={toggleNotifications}
+                                    className={`p-2 rounded-lg transition-all ${notificationsPaused ? 'text-red-500 bg-red-50 dark:bg-red-900/20' : 'text-slate-400 hover:text-green-500 hover:bg-white dark:hover:bg-[#333]'}`}
+                                    title={notificationsPaused ? "Email Notifications Paused - Click to Resume" : "Email Notifications Active - Click to Pause"}
+                                >
+                                    {notificationsPaused ? <FaBellSlash size={14} /> : <FaBell size={14} />}
+                                </button>
+                            </>
+                        )}
+
                         <button
                             onClick={() => setShowTileStyleModal(true)}
                             className="p-2 rounded-lg transition-all text-slate-400 hover:text-purple-500 hover:bg-white dark:hover:bg-[#333]"
@@ -874,20 +911,25 @@ export const MonitoringDashboard: React.FC = () => {
                         >
                             {isFullscreen ? <FaCompress size={14} /> : <FaExpand size={14} />}
                         </button>
-                        <button
-                            onClick={() => setShowCronModal(true)}
-                            className="p-2 rounded-lg transition-all text-slate-400 hover:text-purple-500 hover:bg-white dark:hover:bg-[#333]"
-                            title="Cron Setup"
-                        >
-                            <FaClock size={14} />
-                        </button>
-                        <button
-                            onClick={handleDeleteAll}
-                            className="p-2 rounded-lg transition-all text-slate-400 hover:text-red-500 hover:bg-white dark:hover:bg-[#333]"
-                            title="Delete All Monitors"
-                        >
+
+                        {isAdmin && (
+                            <>
+                                <button
+                                    onClick={() => setShowCronModal(true)}
+                                    className="p-2 rounded-lg transition-all text-slate-400 hover:text-purple-500 hover:bg-white dark:hover:bg-[#333]"
+                                    title="Cron Setup"
+                                >
+                                    <FaClock size={14} />
+                                </button>
+                                <button
+                                    onClick={handleDeleteAll}
+                                    className="p-2 rounded-lg transition-all text-slate-400 hover:text-red-500 hover:bg-white dark:hover:bg-[#333]"
+                                    title="Delete All Monitors"
+                                >
                             <FaTrash size={14} />
-                        </button>
+                                </button>
+                            </>
+                        )}
                     </div>
 
                     <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
@@ -964,12 +1006,14 @@ export const MonitoringDashboard: React.FC = () => {
 
                     <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
 
-                    <button
-                        onClick={() => { setSelectedMonitor(undefined); setIsDuplicate(false); setIsEditing(true); }}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-blue-600/20 active:scale-95"
-                    >
-                        <FaPlus size={12} /> Add Monitor
-                    </button>
+                    {isAdmin && (
+                        <button
+                            onClick={() => { setSelectedMonitor(undefined); setIsDuplicate(false); setIsEditing(true); }}
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-blue-600/20 active:scale-95"
+                        >
+                            <FaPlus size={12} /> Add Monitor
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -1022,12 +1066,18 @@ export const MonitoringDashboard: React.FC = () => {
                     <p className="text-slate-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
                         Track the uptime and performance of your websites, APIs, and servers.
                     </p>
-                    <button
-                        onClick={() => { setSelectedMonitor(undefined); setIsDuplicate(false); setIsEditing(true); }}
-                        className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors"
-                    >
-                        Create your first monitor
-                    </button>
+                    {isAdmin ? (
+                        <button
+                            onClick={() => { setSelectedMonitor(undefined); setIsDuplicate(false); setIsEditing(true); }}
+                            className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors"
+                        >
+                            Create your first monitor
+                        </button>
+                    ) : (
+                        <div className="text-sm text-slate-500 dark:text-gray-400">
+                            You don’t have permission to create monitors. An admin can assign monitors for you to view here.
+                        </div>
+                    )}
                 </div>
             ) : (
                 <div className="space-y-8">
@@ -1176,7 +1226,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                 ${viewMode === 'tiles' ? 'p-5' : 'p-3 flex flex-col justify-between min-h-[120px]'}
                                                 ${moveMenuId === monitor.id ? 'z-[60]' : 'z-10 hover:z-20'}`}
                                         >
-                                            {moveMenuId === monitor.id && (
+                                            {isAdmin && moveMenuId === monitor.id && (
                                                 <>
                                                     <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setMoveMenuId(null); }}></div>
                                                     <div className="absolute top-12 left-2 right-2 bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-[#333] rounded-2xl shadow-2xl z-[100] p-4 animate-in fade-in zoom-in duration-150 overflow-hidden" onClick={e => e.stopPropagation()}>
@@ -1207,44 +1257,52 @@ export const MonitoringDashboard: React.FC = () => {
                                                 </>
                                             )}
                                             <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-y-1 group-hover:translate-y-0 z-10">
-                                                <div className="relative">
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); setMoveMenuId(moveMenuId === monitor.id ? null : monitor.id); }}
-                                                        className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400'}`}
-                                                        title="Move to Tab/Group"
-                                                    >
-                                                        <FaArrowsAlt size={10} />
-                                                    </button>
-                                                </div>
+                                                {isAdmin && (
+                                                    <div className="relative">
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); setMoveMenuId(moveMenuId === monitor.id ? null : monitor.id); }}
+                                                            className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400'}`}
+                                                            title="Move to Tab/Group"
+                                                        >
+                                                            <FaArrowsAlt size={10} />
+                                                        </button>
+                                                    </div>
+                                                )}
                                                 <button
                                                     onClick={() => handleCheckNow(monitor.id)}
                                                     disabled={checkingId === monitor.id}
-                                                    className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${checkingId === monitor.id ? 'animate-spin' : ''} ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                                                    className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${checkingId === monitor.id ? 'animate-spin' : ''} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
                                                     title="Check Now"
                                                 >
                                                     <FaRedo size={10} />
                                                 </button>
-                                                <button
-                                                    onClick={() => handleDuplicate(monitor)}
-                                                    className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
-                                                    title="Duplicate"
-                                                >
-                                                    <FaCopy size={10} />
-                                                </button>
-                                                <button
-                                                    onClick={() => { setSelectedMonitor(monitor); setIsDuplicate(false); setIsEditing(true); }}
-                                                    className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
-                                                    title="Edit"
-                                                >
-                                                    <FaEdit size={10} />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDelete(monitor.id)}
-                                                    className={`p-1.5 rounded-lg hover:bg-red-800 hover:text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400'}`}
-                                                    title="Delete"
-                                                >
-                                                    <FaTrash size={10} />
-                                                </button>
+                                                {isAdmin && (
+                                                    <>
+                                                        <button
+                                                            onClick={() => handleDuplicate(monitor)}
+                                                            className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                                                            title="Duplicate"
+                                                        >
+                                                            <FaCopy size={10} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => { setSelectedMonitor(monitor); setIsDuplicate(false); setIsEditing(true); }}
+                                                            className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                                                            title="Edit"
+                                                        >
+                                                            <FaEdit size={10} />
+                                                        </button>
+                                                    </>
+                                                )}
+                                                {isAdmin && (
+                                                    <button
+                                                        onClick={() => handleDelete(monitor.id)}
+                                                        className={`p-1.5 rounded-lg hover:bg-red-800 hover:text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400'}`}
+                                                        title="Delete"
+                                                    >
+                                                        <FaTrash size={10} />
+                                                    </button>
+                                                )}
                                             </div>
 
                                             <div className={`flex items-start gap-3 ${viewMode === 'tiles' ? 'mb-5' : 'mb-2'}`}>
@@ -1440,28 +1498,32 @@ export const MonitoringDashboard: React.FC = () => {
                                                             >
                                                                 <FaRedo size={12} />
                                                             </button>
-                                                            <button
-                                                                onClick={() => handleDuplicate(monitor)}
-                                                                className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-white/20 hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
-                                                                style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
-                                                                title="Duplicate"
-                                                            >
-                                                                <FaCopy size={12} />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => { setSelectedMonitor(monitor); setIsDuplicate(false); setIsEditing(true); }}
-                                                                className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-white/20 hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
-                                                                style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
-                                                            >
-                                                                <FaEdit size={12} />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleDelete(monitor.id)}
-                                                                className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/40 hover:bg-red-800' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-red-500'}`}
-                                                                style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
-                                                            >
-                                                                <FaTrash size={12} />
-                                                            </button>
+                                                            {isAdmin && (
+                                                                <>
+                                                                    <button
+                                                                        onClick={() => handleDuplicate(monitor)}
+                                                                        className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-white/20 hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
+                                                                        style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileTextStyle(monitor.last_status) : {}}
+                                                                        title="Duplicate"
+                                                                    >
+                                                                        <FaCopy size={12} />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => { setSelectedMonitor(monitor); setIsDuplicate(false); setIsEditing(true); }}
+                                                                        className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-white/20 hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
+                                                                        style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileTextStyle(monitor.last_status) : {}}
+                                                                    >
+                                                                        <FaEdit size={12} />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleDelete(monitor.id)}
+                                                                        className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/40 hover:bg-red-800' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-red-500'}`}
+                                                                        style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileTextStyle(monitor.last_status) : {}}
+                                                                    >
+                                                                        <FaTrash size={12} />
+                                                                    </button>
+                                                                </>
+                                                            )}
                                                         </div>
                                                     </td>
                                                 </tr>

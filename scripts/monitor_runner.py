@@ -26,9 +26,11 @@ from linknest_worker_lib import (
     DEFAULT_DB_PATH,
     CheckResult,
     check_keyword,
+    check_ping,
     check_port,
     check_url_head,
     day_of_week_active,
+    ensure_monitors_schema,
     ensure_outbox_schema,
     is_in_maintenance_window,
     normalize_email_list,
@@ -58,15 +60,29 @@ def perform_check(monitor: Dict[str, Any], verify_ssl: bool) -> CheckResult:
     def run_once(relaxed: bool = False) -> Tuple[str, str]:
         mtype = str(monitor.get("type") or "")
         target = str(monitor.get("target") or "")
+
+        # Per-monitor timeout (seconds) - primarily used for url/keyword, but also applies to ping
+        base_timeout = monitor.get("timeout")
+        try:
+            base_timeout_s = int(base_timeout) if base_timeout not in (None, "", False) else None
+        except Exception:
+            base_timeout_s = None
+        if base_timeout_s is not None:
+            base_timeout_s = max(1, min(60, base_timeout_s))
+
         if mtype == "url":
-            timeout = 10 if relaxed else 5
+            timeout = 10 if relaxed else (base_timeout_s or 5)
             return check_url_head(target, timeout=timeout, verify_ssl=verify_ssl)
         if mtype == "keyword":
-            timeout = 10 if relaxed else 8
+            timeout = 10 if relaxed else (base_timeout_s or 8)
             return check_keyword(target, str(monitor.get("keyword") or ""), timeout=timeout, verify_ssl=verify_ssl)
         if mtype == "port":
             timeout = 5 if relaxed else 3
             return check_port(target, int(monitor.get("port") or 0), timeout=timeout)
+        if mtype == "ping":
+            # Convert seconds to milliseconds for ping
+            tms = 10000 if relaxed else int((base_timeout_s or 1) * 1000)
+            return check_ping(target, timeout_ms=tms)
         return "down", "Invalid monitor type"
 
     status, details = run_once(relaxed=False)
@@ -255,6 +271,7 @@ def main() -> int:
 
     conn = open_db(db_path)
     ensure_outbox_schema(conn)
+    ensure_monitors_schema(conn)
 
     now = now_ts()
     monitors = conn.execute("SELECT * FROM monitors WHERE is_active = 1").fetchall()
@@ -304,6 +321,30 @@ def main() -> int:
             r = results[mid]
             prev = m["last_status"]
 
+            # Warning threshold logic: consecutive failures before declaring DOWN
+            try:
+                threshold = int(m["warning_threshold"] or 1)
+            except Exception:
+                threshold = 1
+            threshold = max(1, min(20, threshold))
+
+            try:
+                prev_fail = int(m["consecutive_failures"] or 0)
+            except Exception:
+                prev_fail = 0
+            prev_fail = max(0, prev_fail)
+
+            raw_status = (r.status or "").strip().lower()
+            if raw_status not in ("up", "down"):
+                raw_status = "down"
+
+            new_fail = (prev_fail + 1) if raw_status == "down" else 0
+            eff_status = raw_status
+            eff_details = r.details
+            if raw_status == "down" and threshold > 1 and new_fail < threshold:
+                eff_status = "warning"
+                eff_details = f"Warning ({new_fail}/{threshold}): {r.details}"
+
             # Update monitor record
             t = now_ts()
             conn.execute(
@@ -312,24 +353,25 @@ def main() -> int:
                   last_checked_at = ?,
                   last_status = ?,
                   last_response_time = ?,
+                  consecutive_failures = ?,
                   updated_at = ?
                 WHERE id = ?
                 """,
-                (t, r.status, int(r.response_ms), t, mid),
+                (t, eff_status, int(r.response_ms), int(new_fail), t, mid),
             )
 
             # Insert log
             conn.execute(
                 "INSERT INTO monitor_logs (monitor_id, status, response_time, details, checked_at) VALUES (?, ?, ?, ?, ?)",
-                (mid, r.status, int(r.response_ms), r.details, t),
+                (mid, eff_status, int(r.response_ms), eff_details, t),
             )
 
-            changed = status_changed(prev, r.status)
+            changed = status_changed(prev, eff_status)
             if changed and (not notifications_paused(conn)) and (not is_in_maintenance_window(m)):
-                queued_emails += queue_advanced_notifications(conn, m, r.status, prev, r.details, r.response_ms, args.verbose)
+                queued_emails += queue_advanced_notifications(conn, m, eff_status, prev, eff_details, r.response_ms, args.verbose)
 
             if (not notifications_paused(conn)) and (not is_in_maintenance_window(m)):
-                queued_emails += queue_legacy_notification(conn, m, r.status, prev, r.details, args.verbose)
+                queued_emails += queue_legacy_notification(conn, m, eff_status, prev, eff_details, args.verbose)
 
             updated += 1
 

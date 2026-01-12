@@ -1,11 +1,16 @@
 export interface Monitor {
     id: number;
     name: string;
-    type: 'url' | 'keyword' | 'port';
+    type: 'url' | 'keyword' | 'port' | 'ping';
     target: string;
     port?: number;
     keyword?: string;
     interval: number;
+    warning_threshold?: number;
+    consecutive_failures?: number;
+    timeout?: number | null;
+    permissions_mode?: number;
+    allowed_user_ids?: number[];
     is_active: number;
     email_notification: number;
     email_rules_count?: number; // advanced notification rules count (enabled)
@@ -17,7 +22,7 @@ export interface Monitor {
     legacy_email_subject_template?: string | null;
     legacy_email_body_template?: string | null;
     last_checked_at: number;
-    last_status: 'up' | 'down' | 'unknown' | null;
+    last_status: 'up' | 'down' | 'warning' | 'unknown' | null;
     last_response_time: number;
     created_at: number;
     updated_at: number;
@@ -30,7 +35,7 @@ export interface Monitor {
 export interface MonitorLog {
     id: number;
     monitor_id: number;
-    status: 'up' | 'down';
+    status: 'up' | 'down' | 'warning';
     response_time: number;
     details: string;
     checked_at: number;

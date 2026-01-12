@@ -869,7 +869,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
           'expired',
           'archive',
           'recycle-bin',
-          ...(user?.is_admin ? (['monitoring'] as TabType[]) : [])
+          ...(isAuthenticated ? (['monitoring'] as TabType[]) : [])
         ] as TabType[])
       : (['public', 'public-favorites'] as TabType[]);
 
@@ -877,7 +877,6 @@ export const TileGrid: React.FC<TileGridProps> = ({
       // Auth restrictions
       const restrictedTabs: TabType[] = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
       if (!isAuthenticated && restrictedTabs.includes(c)) continue;
-      if (c === 'monitoring' && (!user || !user.is_admin)) continue;
       if (isTabDisabledBySettings(c)) continue;
       return c;
     }
@@ -920,18 +919,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
       setActiveTab('public');
       return;
     }
-    if (tab === 'monitoring' && (!user || !user.is_admin)) {
-      setActiveTab('public');
-      return;
-    }
     setActiveTab(tab);
   }, [getFallbackTab, isAuthenticated, isTabDisabledBySettings, user]);
 
   // If the current tab becomes disabled (or unauthorized), fall back to the first allowed tab
   useEffect(() => {
     const restrictedTabs: TabType[] = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
-    const unauthorized = (!isAuthenticated && restrictedTabs.includes(activeTab)) ||
-      (activeTab === 'monitoring' && (!user || !user.is_admin));
+    const unauthorized = (!isAuthenticated && restrictedTabs.includes(activeTab));
     const disabled = isTabDisabledBySettings(activeTab);
 
     if (unauthorized || disabled) {
@@ -973,9 +967,6 @@ export const TileGrid: React.FC<TileGridProps> = ({
           const restrictedTabs = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
           if (!isAuthenticated && restrictedTabs.includes(tab)) {
             setActiveTab('public');
-          } else if (tab === 'monitoring' && (!user || !user.is_admin)) {
-            // Monitoring tab requires admin access
-            setActiveTab('public');
           } else {
             setActiveTab(tab);
           }
@@ -988,13 +979,6 @@ export const TileGrid: React.FC<TileGridProps> = ({
     window.addEventListener('switchTab', handleSwitchTab);
     return () => window.removeEventListener('switchTab', handleSwitchTab);
   }, [getFallbackTab, isAuthenticated, isTabDisabledBySettings, user]);
-
-  // Redirect away from monitoring tab if user is not admin
-  useEffect(() => {
-    if (activeTab === 'monitoring' && (!user || !user.is_admin)) {
-      setActiveTab('public');
-    }
-  }, [activeTab, user]);
 
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [publicFavorites, setPublicFavorites] = useState<string[]>([]);
@@ -3493,7 +3477,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 )}
               </button>
             )}
-            {user?.is_admin && !disabledAppTabs.has('monitoring') && (
+            {isAuthenticated && !disabledAppTabs.has('monitoring') && (
               <button
                 onClick={() => requestTab('monitoring')}
                 className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'monitoring' ? 'active' : ''}`}

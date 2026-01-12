@@ -10,7 +10,8 @@ $method = $_SERVER['REQUEST_METHOD'];
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
 
 // Require authentication for all monitor operations
-requireAuth();
+$AUTH_USER = requireAuth();
+$GLOBALS['AUTH_USER'] = $AUTH_USER;
 
 switch ($method) {
     case 'GET':
@@ -71,7 +72,61 @@ switch ($method) {
         sendJSON(['error' => 'Method not allowed'], 405);
 }
 
+/**
+ * Permission helpers
+ */
+function getAuthUserFromGlobals() {
+    return $GLOBALS['AUTH_USER'] ?? getAuthenticatedUser();
+}
+
+function userCanViewMonitorRow(array $monitor, array $user, $db): bool {
+    if (!empty($user['is_admin'])) return true;
+    $mode = isset($monitor['permissions_mode']) ? (int)$monitor['permissions_mode'] : 0;
+    if ($mode === 0) return true; // public to all authenticated users
+
+    $stmt = $db->prepare('SELECT can_view FROM user_monitor_permissions WHERE user_id = ? AND monitor_id = ?');
+    $stmt->execute([(int)$user['id'], (int)$monitor['id']]);
+    $can = $stmt->fetchColumn();
+    return ((int)$can) === 1;
+}
+
+function fetchMonitorForView($id, array $user, $db) {
+    $id = (int)$id;
+    if (!empty($user['is_admin'])) {
+        $stmt = $db->prepare('SELECT m.* FROM monitors m WHERE m.id = ?');
+        $stmt->execute([$id]);
+        return $stmt->fetch();
+    }
+
+    $stmt = $db->prepare('
+        SELECT m.*
+        FROM monitors m
+        LEFT JOIN user_monitor_permissions ump
+          ON ump.monitor_id = m.id AND ump.user_id = ?
+        WHERE m.id = ?
+          AND (COALESCE(m.permissions_mode, 0) = 0 OR COALESCE(ump.can_view, 0) = 1)
+        LIMIT 1
+    ');
+    $stmt->execute([(int)$user['id'], $id]);
+    return $stmt->fetch();
+}
+
+function normalizeAllowedUserIds($raw): array {
+    if (!is_array($raw)) return [];
+    $out = [];
+    foreach ($raw as $v) {
+        $id = (int)$v;
+        if ($id > 0) $out[$id] = true;
+    }
+    return array_values(array_map('intval', array_keys($out)));
+}
+
+function validateMonitorType($type): bool {
+    return in_array($type, ['url', 'keyword', 'port', 'ping'], true);
+}
+
 function handleExportMonitorsBundle() {
+    requireAdmin(); // export is admin-only
     $db = getDB();
     $now = time();
 
@@ -128,6 +183,7 @@ function handleExportMonitorsBundle() {
 }
 
 function handleImportMonitorsBundle() {
+    requireAdmin(); // import is admin-only
     $data = getJSONInput();
     if (!isset($data['monitors']) || !is_array($data['monitors'])) {
         sendJSON(['error' => 'Invalid bundle format: monitors array required'], 400);
@@ -335,48 +391,90 @@ function handleImportMonitorsBundle() {
 
 function handleGetMonitors() {
     $db = getDB();
-    $stmt = $db->prepare('
-        SELECT 
-            m.*,
-            COALESCE((
-                SELECT COUNT(*) 
-                FROM monitor_notification_rules r 
-                WHERE r.monitor_id = m.id AND r.is_enabled = 1
-            ), 0) AS email_rules_count
-        FROM monitors m
-        ORDER BY m.created_at DESC
-    ');
-    $stmt->execute();
+    $user = getAuthUserFromGlobals();
+
+    if (!empty($user['is_admin'])) {
+        $stmt = $db->prepare('
+            SELECT 
+                m.*,
+                COALESCE((
+                    SELECT COUNT(*) 
+                    FROM monitor_notification_rules r 
+                    WHERE r.monitor_id = m.id AND r.is_enabled = 1
+                ), 0) AS email_rules_count,
+                (SELECT GROUP_CONCAT(user_id) FROM user_monitor_permissions ump WHERE ump.monitor_id = m.id AND COALESCE(ump.can_view, 0) = 1) AS allowed_user_ids_csv
+            FROM monitors m
+            ORDER BY m.created_at DESC
+        ');
+        $stmt->execute();
+    } else {
+        $stmt = $db->prepare('
+            SELECT 
+                m.*,
+                COALESCE((
+                    SELECT COUNT(*) 
+                    FROM monitor_notification_rules r 
+                    WHERE r.monitor_id = m.id AND r.is_enabled = 1
+                ), 0) AS email_rules_count
+            FROM monitors m
+            LEFT JOIN user_monitor_permissions ump
+              ON ump.monitor_id = m.id AND ump.user_id = ?
+            WHERE (COALESCE(m.permissions_mode, 0) = 0 OR COALESCE(ump.can_view, 0) = 1)
+            ORDER BY m.created_at DESC
+        ');
+        $stmt->execute([(int)$user['id']]);
+    }
     $monitors = $stmt->fetchAll();
+
+    // Normalize allowed user list for admins (UI convenience)
+    if (!empty($user['is_admin'])) {
+        foreach ($monitors as &$m) {
+            $csv = $m['allowed_user_ids_csv'] ?? null;
+            $ids = [];
+            if (is_string($csv) && trim($csv) !== '') {
+                $parts = array_filter(array_map('trim', explode(',', $csv)));
+                foreach ($parts as $p) {
+                    $v = (int)$p;
+                    if ($v > 0) $ids[] = $v;
+                }
+            }
+            $m['allowed_user_ids'] = $ids;
+            unset($m['allowed_user_ids_csv']);
+        }
+        unset($m);
+    }
     
     sendJSON(['monitors' => $monitors]);
 }
 
 function handleGetMonitor($id) {
     $db = getDB();
-    $stmt = $db->prepare('
-        SELECT 
-            m.*,
-            COALESCE((
-                SELECT COUNT(*) 
-                FROM monitor_notification_rules r 
-                WHERE r.monitor_id = m.id AND r.is_enabled = 1
-            ), 0) AS email_rules_count
-        FROM monitors m
-        WHERE m.id = ?
-    ');
-    $stmt->execute([$id]);
-    $monitor = $stmt->fetch();
+    $user = getAuthUserFromGlobals();
+
+    $monitor = fetchMonitorForView($id, $user, $db);
     
     if (!$monitor) {
         sendJSON(['error' => 'Monitor not found'], 404);
         return;
+    }
+
+    // Add email rules count
+    $stmt = $db->prepare('SELECT COUNT(*) FROM monitor_notification_rules r WHERE r.monitor_id = ? AND r.is_enabled = 1');
+    $stmt->execute([(int)$monitor['id']]);
+    $monitor['email_rules_count'] = (int)$stmt->fetchColumn();
+
+    // For admins, include allowed user ids
+    if (!empty($user['is_admin'])) {
+        $stmt = $db->prepare('SELECT user_id FROM user_monitor_permissions WHERE monitor_id = ? AND COALESCE(can_view, 0) = 1 ORDER BY user_id ASC');
+        $stmt->execute([(int)$monitor['id']]);
+        $monitor['allowed_user_ids'] = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
     }
     
     sendJSON(['monitor' => $monitor]);
 }
 
 function handleCreateMonitor() {
+    requireAdmin(); // Only admins can create monitors
     $data = getJSONInput();
     
     // Validation
@@ -385,21 +483,39 @@ function handleCreateMonitor() {
         return;
     }
     
-    if (!in_array($data['type'], ['url', 'keyword', 'port'])) {
-        sendJSON(['error' => 'Invalid type. Must be url, keyword, or port'], 400);
+    if (!validateMonitorType($data['type'])) {
+        sendJSON(['error' => 'Invalid type. Must be url, keyword, port, or ping'], 400);
         return;
     }
+
+    // Warning threshold
+    $warningThreshold = isset($data['warning_threshold']) ? (int)$data['warning_threshold'] : 1;
+    if ($warningThreshold < 1) $warningThreshold = 1;
+    if ($warningThreshold > 20) $warningThreshold = 20;
+
+    // Timeout (seconds) - used for url/keyword primarily
+    $timeout = isset($data['timeout']) && $data['timeout'] !== '' ? (int)$data['timeout'] : null;
+    if ($timeout !== null) {
+        if ($timeout < 1) $timeout = 1;
+        if ($timeout > 60) $timeout = 60;
+    }
+
+    $allowedUserIds = normalizeAllowedUserIds($data['allowed_user_ids'] ?? []);
+    $permissionsMode = !empty($allowedUserIds) ? 1 : 0;
     
     $db = getDB();
     
     try {
+        $db->beginTransaction();
+
         $stmt = $db->prepare('INSERT INTO monitors (
-            name, type, target, port, keyword, interval, 
+            name, type, target, port, keyword, interval,
+            warning_threshold, consecutive_failures, timeout, permissions_mode,
             is_active, email_notification, created_at, updated_at,
             tab_name, group_name, maintenance_start, maintenance_end,
             legacy_notify_pending, legacy_email_to, legacy_email_cc, legacy_email_from_name, legacy_email_from_email,
             legacy_email_subject_template, legacy_email_body_template
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         $now = time();
         $stmt->execute([
@@ -409,6 +525,10 @@ function handleCreateMonitor() {
             isset($data['port']) ? (int)$data['port'] : null,
             $data['keyword'] ?? null,
             isset($data['interval']) ? (int)$data['interval'] : 5,
+            $warningThreshold,
+            0,
+            $timeout,
+            $permissionsMode,
             isset($data['is_active']) ? (int)$data['is_active'] : 1,
             isset($data['email_notification']) ? (int)$data['email_notification'] : 0,
             $now,
@@ -428,6 +548,14 @@ function handleCreateMonitor() {
         ]);
         
         $id = $db->lastInsertId();
+
+        // Save permissions if restricted
+        if ($permissionsMode === 1) {
+            $permStmt = $db->prepare('INSERT INTO user_monitor_permissions (user_id, monitor_id, can_view, created_at, updated_at) VALUES (?, ?, 1, ?, ?)');
+            foreach ($allowedUserIds as $uid) {
+                $permStmt->execute([(int)$uid, (int)$id, $now, $now]);
+            }
+        }
         
         // Fetch created monitor
         $stmt = $db->prepare('
@@ -443,15 +571,25 @@ function handleCreateMonitor() {
         ');
         $stmt->execute([$id]);
         $monitor = $stmt->fetch();
+
+        if ($permissionsMode === 1) {
+            $monitor['allowed_user_ids'] = $allowedUserIds;
+        } else {
+            $monitor['allowed_user_ids'] = [];
+        }
+
+        $db->commit();
         
         sendJSON(['success' => true, 'monitor' => $monitor], 201);
         
     } catch (PDOException $e) {
+        if ($db->inTransaction()) $db->rollBack();
         sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
     }
 }
 
 function handleUpdateMonitor($id) {
+    requireAdmin(); // Only admins can update monitors
     $data = getJSONInput();
     $db = getDB();
     
@@ -465,12 +603,14 @@ function handleUpdateMonitor($id) {
     }
     
     try {
+        $db->beginTransaction();
         // Build dynamic update query
         $fields = [];
         $values = [];
         
         $allowedFields = [
             'name', 'type', 'target', 'port', 'keyword', 'interval',
+            'warning_threshold', 'timeout', 'permissions_mode',
             'is_active', 'email_notification',
             'tab_name', 'group_name', 'maintenance_start', 'maintenance_end',
             'legacy_email_to', 'legacy_email_from_name', 'legacy_email_from_email',
@@ -479,8 +619,54 @@ function handleUpdateMonitor($id) {
         ];
         foreach ($allowedFields as $field) {
             if (isset($data[$field])) {
+                if ($field === 'type') {
+                    if (!validateMonitorType($data[$field])) {
+                        sendJSON(['error' => 'Invalid type. Must be url, keyword, port, or ping'], 400);
+                    }
+                }
+                if ($field === 'warning_threshold') {
+                    $v = (int)$data[$field];
+                    if ($v < 1) $v = 1;
+                    if ($v > 20) $v = 20;
+                    $fields[] = "$field = ?";
+                    $values[] = $v;
+                    continue;
+                }
+                if ($field === 'timeout') {
+                    $v = $data[$field];
+                    if ($v === null || $v === '') {
+                        $fields[] = "$field = ?";
+                        $values[] = null;
+                        continue;
+                    }
+                    $v = (int)$v;
+                    if ($v < 1) $v = 1;
+                    if ($v > 60) $v = 60;
+                    $fields[] = "$field = ?";
+                    $values[] = $v;
+                    continue;
+                }
+
                 $fields[] = "$field = ?";
                 $values[] = $data[$field];
+            }
+        }
+
+        // Permissions: if allowed_user_ids provided, set permissions_mode accordingly and replace permission rows
+        if (isset($data['allowed_user_ids'])) {
+            $allowedUserIds = normalizeAllowedUserIds($data['allowed_user_ids']);
+            $permissionsMode = !empty($allowedUserIds) ? 1 : 0;
+
+            $fields[] = "permissions_mode = ?";
+            $values[] = $permissionsMode;
+
+            $now = time();
+            $db->prepare('DELETE FROM user_monitor_permissions WHERE monitor_id = ?')->execute([(int)$id]);
+            if ($permissionsMode === 1) {
+                $permStmt = $db->prepare('INSERT INTO user_monitor_permissions (user_id, monitor_id, can_view, created_at, updated_at) VALUES (?, ?, 1, ?, ?)');
+                foreach ($allowedUserIds as $uid) {
+                    $permStmt->execute([(int)$uid, (int)$id, $now, $now]);
+                }
             }
         }
         
@@ -525,15 +711,24 @@ function handleUpdateMonitor($id) {
         ');
         $stmt->execute([$id]);
         $monitor = $stmt->fetch();
+
+        // Include allowed users for UI
+        $stmt = $db->prepare('SELECT user_id FROM user_monitor_permissions WHERE monitor_id = ? AND COALESCE(can_view, 0) = 1 ORDER BY user_id ASC');
+        $stmt->execute([(int)$id]);
+        $monitor['allowed_user_ids'] = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+
+        $db->commit();
         
         sendJSON(['success' => true, 'monitor' => $monitor]);
         
     } catch (PDOException $e) {
+        if ($db->inTransaction()) $db->rollBack();
         sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
     }
 }
 
 function handleDeleteMonitor($id) {
+    requireAdmin(); // Only admins can delete monitors
     $db = getDB();
     
     // Check if exists
@@ -557,11 +752,11 @@ function handleDeleteMonitor($id) {
 
 function handleGetMonitorLogs($id) {
     $db = getDB();
+    $user = getAuthUserFromGlobals();
     
-    // Check if exists
-    $stmt = $db->prepare('SELECT id FROM monitors WHERE id = ?');
-    $stmt->execute([$id]);
-    if (!$stmt->fetch()) {
+    // Check if exists and user can view
+    $monitor = fetchMonitorForView($id, $user, $db);
+    if (!$monitor) {
         sendJSON(['error' => 'Monitor not found'], 404);
         return;
     }
@@ -613,9 +808,8 @@ function handleCheckMonitor($id) {
     set_time_limit(15); // Maximum 15 seconds for single check
     
     $db = getDB();
-    $stmt = $db->prepare('SELECT * FROM monitors WHERE id = ?');
-    $stmt->execute([$id]);
-    $monitor = $stmt->fetch();
+    $user = getAuthUserFromGlobals();
+    $monitor = fetchMonitorForView($id, $user, $db);
     
     if (!$monitor) {
         sendJSON(['error' => 'Monitor not found'], 404);
@@ -639,9 +833,22 @@ function handleCheckAllMonitors() {
         }
         
         error_log("[MONITOR] Getting active monitor count");
-        $stmt = $db->prepare('SELECT COUNT(*) FROM monitors WHERE is_active = 1');
-        $stmt->execute();
-        $monitorCount = (int)$stmt->fetchColumn();
+        $user = getAuthUserFromGlobals();
+        if (!empty($user['is_admin'])) {
+            $stmt = $db->prepare('SELECT COUNT(*) FROM monitors WHERE is_active = 1');
+            $stmt->execute();
+            $monitorCount = (int)$stmt->fetchColumn();
+        } else {
+            $stmt = $db->prepare('
+                SELECT COUNT(*)
+                FROM monitors m
+                LEFT JOIN user_monitor_permissions ump
+                  ON ump.monitor_id = m.id AND ump.user_id = ?
+                WHERE m.is_active = 1 AND (COALESCE(m.permissions_mode, 0) = 0 OR COALESCE(ump.can_view, 0) = 1)
+            ');
+            $stmt->execute([(int)$user['id']]);
+            $monitorCount = (int)$stmt->fetchColumn();
+        }
         error_log("[MONITOR] Found $monitorCount active monitors");
         
         // Calculate time limit: allow for retry confirmation on failures (up to ~20s per monitor), min 60s, max 300s
@@ -649,9 +856,21 @@ function handleCheckAllMonitors() {
         set_time_limit($timeLimit);
         error_log("[MONITOR] Set time limit to $timeLimit seconds");
         
-        $stmt = $db->prepare('SELECT * FROM monitors WHERE is_active = 1');
-        $stmt->execute();
-        $monitors = $stmt->fetchAll();
+        if (!empty($user['is_admin'])) {
+            $stmt = $db->prepare('SELECT * FROM monitors WHERE is_active = 1');
+            $stmt->execute();
+            $monitors = $stmt->fetchAll();
+        } else {
+            $stmt = $db->prepare('
+                SELECT m.*
+                FROM monitors m
+                LEFT JOIN user_monitor_permissions ump
+                  ON ump.monitor_id = m.id AND ump.user_id = ?
+                WHERE m.is_active = 1 AND (COALESCE(m.permissions_mode, 0) = 0 OR COALESCE(ump.can_view, 0) = 1)
+            ');
+            $stmt->execute([(int)$user['id']]);
+            $monitors = $stmt->fetchAll();
+        }
         error_log("[MONITOR] Retrieved " . count($monitors) . " monitors to check");
         
         $results = [];
@@ -772,6 +991,7 @@ function handleCheckAllMonitors() {
     }
 }
 function handleDeleteAllMonitors() {
+    requireAdmin(); // Only admins can delete all monitors
     $db = getDB();
     try {
         $db->exec('DELETE FROM monitors');
@@ -783,6 +1003,7 @@ function handleDeleteAllMonitors() {
 }
 
 function handleImportMonitors() {
+    requireAdmin(); // Only admins can import monitors
     $data = getJSONInput();
     if (!isset($data['monitors']) || !is_array($data['monitors'])) {
         sendJSON(['error' => 'Invalid import data format'], 400);
@@ -833,6 +1054,7 @@ function handleImportMonitors() {
 }
 
 function handleImportCSV() {
+    requireAdmin(); // Only admins can import monitors
     $data = getJSONInput();
     if (!isset($data['csv']) || !is_string($data['csv'])) {
         sendJSON(['error' => 'Invalid CSV data'], 400);
@@ -912,6 +1134,7 @@ function handleImportCSV() {
 }
 
 function handleUpdateTabName() {
+    requireAdmin(); // Only admins can update tab/group names
     $data = getJSONInput();
     if (!isset($data['old_name']) || !isset($data['new_name'])) {
         sendJSON(['error' => 'Old name and new name are required'], 400);
@@ -929,6 +1152,7 @@ function handleUpdateTabName() {
 }
 
 function handleUpdateGroupName() {
+    requireAdmin(); // Only admins can update tab/group names
     $data = getJSONInput();
     if (!isset($data['tab_name']) || !isset($data['old_name']) || !isset($data['new_name'])) {
         sendJSON(['error' => 'Tab name, old group name and new group name are required'], 400);
