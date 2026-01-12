@@ -70,4 +70,9 @@ Create **two scheduled tasks**:
 - Monitoring checks are executed concurrently, but DB writes are serialized inside one transaction.
 - Emails are queued into `email_outbox` and sent separately, so slow SMTP cannot block monitoring.
 - Sent email results are stored in `monitor_notification_logs`, matching how LinkNest UI reads email history today.
+- `email_sender.py` also follows the “anti-spam” safeguards:
+  - obeys global notification pause windows (does not send while paused)
+  - re-checks maintenance windows and enabled/active notification rules before sending
+  - exponential backoff on failures (prevents rapid retry spam)
+  - short-window duplicate suppression to avoid accidental duplicate sends
 

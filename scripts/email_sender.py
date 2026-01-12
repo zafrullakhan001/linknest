@@ -16,15 +16,19 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from typing import Any, Dict, List, Optional, Sequence
+from typing import List, Optional, Sequence, Tuple
 
 from linknest_worker_lib import (
     DEFAULT_DB_PATH,
+    day_of_week_active,
     ensure_outbox_schema,
     get_smtp_config,
+    is_in_maintenance_window,
     normalize_email_list,
+    notifications_paused,
     now_ts,
     open_db,
+    time_window_active,
     send_smtp_email,
 )
 
@@ -41,6 +45,39 @@ def parse_args() -> argparse.Namespace:
 def _split_list(csv: Optional[str]) -> List[str]:
     return normalize_email_list(csv or "")
 
+def _compute_backoff_seconds(attempts: int) -> int:
+    # Exponential backoff to avoid hammering SMTP / spamming retries
+    # 1st failure: 60s, 2nd: 120s, 3rd: 240s ... capped at 1 hour
+    if attempts < 1:
+        attempts = 1
+    return min(3600, 60 * (2 ** (attempts - 1)))
+
+def _should_suppress_duplicate(conn, *, monitor_id: int, status_trigger: str, subject: str, recipients: Sequence[str], window_seconds: int = 300) -> bool:
+    """
+    Basic spam protection:
+    If any recipient already has a SUCCESS log with same monitor_id + trigger + subject
+    within the last window, suppress sending this message.
+    """
+    since = now_ts() - int(window_seconds)
+    for email in recipients:
+        row = conn.execute(
+            """
+            SELECT 1
+            FROM monitor_notification_logs
+            WHERE monitor_id = ?
+              AND status_trigger = ?
+              AND subject = ?
+              AND recipient_email = ?
+              AND success = 1
+              AND sent_at >= ?
+            LIMIT 1
+            """,
+            (int(monitor_id), str(status_trigger), str(subject), str(email), int(since)),
+        ).fetchone()
+        if row:
+            return True
+    return False
+
 
 def main() -> int:
     args = parse_args()
@@ -53,67 +90,188 @@ def main() -> int:
     ensure_outbox_schema(conn)
     smtp_cfg = get_smtp_config(conn)
 
-    now = now_ts()
-    rows = conn.execute(
-        """
-        SELECT *
-        FROM email_outbox
-        WHERE sent_at IS NULL
-          AND (send_after IS NULL OR send_after <= ?)
-          AND (max_attempts IS NULL OR attempts < max_attempts)
-        ORDER BY created_at ASC
-        LIMIT ?
-        """,
-        (now, int(args.limit)),
-    ).fetchall()
-
-    if args.verbose:
-        print(f"[INFO] pending={len(rows)} db={db_path}")
-
-    if not rows:
+    if notifications_paused(conn):
+        if args.verbose:
+            print("[INFO] notifications paused; not sending outbox")
         conn.close()
         return 0
 
-    conn.execute("BEGIN")
+    # Use BEGIN IMMEDIATE to reduce chance of multiple senders processing same rows.
+    conn.execute("BEGIN IMMEDIATE")
     try:
+        now = now_ts()
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM email_outbox
+            WHERE sent_at IS NULL
+              AND (send_after IS NULL OR send_after <= ?)
+              AND (max_attempts IS NULL OR attempts < max_attempts)
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (now, int(args.limit)),
+        ).fetchall()
+
+        if args.verbose:
+            print(f"[INFO] pending={len(rows)} db={db_path}")
+
+        if not rows:
+            conn.execute("COMMIT")
+            conn.close()
+            return 0
+
         for r in rows:
             outbox_id = int(r["id"])
+            monitor_id = r["monitor_id"]
+            rule_id = r["rule_id"]
+            status_trigger = (str(r["status_trigger"]) if r["status_trigger"] is not None else "both")
+            subject = str(r["subject"])
+
+            # Claim/lock this outbox item for a short time window so multiple senders won't double-send.
+            claim_until = now_ts() + 900
+            cur_now = now_ts()
+            res = conn.execute(
+                """
+                UPDATE email_outbox
+                SET send_after = ?
+                WHERE id = ?
+                  AND sent_at IS NULL
+                  AND (send_after IS NULL OR send_after <= ?)
+                """,
+                (int(claim_until), outbox_id, int(cur_now)),
+            )
+            if res.rowcount != 1:
+                # Someone else claimed it or it is no longer due.
+                continue
+
+            # Re-check pause each loop (in case it was enabled mid-run)
+            if notifications_paused(conn):
+                # Put it back quickly so it can retry later
+                conn.execute("UPDATE email_outbox SET send_after = ? WHERE id = ?", (now_ts() + 60, outbox_id))
+                continue
+
+            # If tied to a monitor, re-check maintenance window and toggle changes.
+            if monitor_id is not None:
+                m = conn.execute("SELECT * FROM monitors WHERE id = ? LIMIT 1", (int(monitor_id),)).fetchone()
+                if not m:
+                    # Monitor deleted: suppress (do not send)
+                    conn.execute(
+                        "UPDATE email_outbox SET sent_at = ?, success = 1, last_error = ? WHERE id = ?",
+                        (now_ts(), "suppressed: monitor missing", outbox_id),
+                    )
+                    continue
+                if is_in_maintenance_window(m):
+                    # Postpone without counting as an attempt.
+                    conn.execute(
+                        "UPDATE email_outbox SET send_after = ?, last_error = ? WHERE id = ?",
+                        (now_ts() + 900, "postponed: maintenance window", outbox_id),
+                    )
+                    continue
+
+                # Legacy: if user disabled legacy notifications after it was queued, suppress.
+                if rule_id is None and int(m["email_notification"] or 0) != 1:
+                    conn.execute(
+                        "UPDATE email_outbox SET sent_at = ?, success = 1, last_error = ? WHERE id = ?",
+                        (now_ts(), "suppressed: legacy notifications disabled", outbox_id),
+                    )
+                    continue
+
+            # Advanced: if rule was disabled after queueing, suppress; if rule has time window/day rules, postpone.
+            if rule_id is not None:
+                rule = conn.execute(
+                    "SELECT * FROM monitor_notification_rules WHERE id = ? LIMIT 1",
+                    (int(rule_id),),
+                ).fetchone()
+                if not rule or int(rule["is_enabled"] or 0) != 1:
+                    conn.execute(
+                        "UPDATE email_outbox SET sent_at = ?, success = 1, last_error = ? WHERE id = ?",
+                        (now_ts(), "suppressed: rule disabled/missing", outbox_id),
+                    )
+                    continue
+                if not time_window_active(rule["time_window_start"], rule["time_window_end"]) or not day_of_week_active(rule["days_of_week"]):
+                    conn.execute(
+                        "UPDATE email_outbox SET send_after = ?, last_error = ? WHERE id = ?",
+                        (now_ts() + 60, "postponed: outside rule window", outbox_id),
+                    )
+                    continue
+
             to_list = _split_list(r["to_emails"])
             cc_list = _split_list(r["cc_emails"])
+            all_rcpt: Sequence[str] = list(dict.fromkeys([*to_list, *cc_list]))
+            if not all_rcpt:
+                conn.execute(
+                    "UPDATE email_outbox SET sent_at = ?, success = 1, last_error = ? WHERE id = ?",
+                    (now_ts(), "suppressed: no recipients", outbox_id),
+                )
+                continue
 
+            # Duplicate suppression (short window). This helps prevent accidental inbox spam if duplicates were queued.
+            if monitor_id is not None and _should_suppress_duplicate(
+                conn, monitor_id=int(monitor_id), status_trigger=status_trigger, subject=subject, recipients=all_rcpt
+            ):
+                conn.execute(
+                    "UPDATE email_outbox SET sent_at = ?, success = 1, last_error = ? WHERE id = ?",
+                    (now_ts(), "suppressed: duplicate within window", outbox_id),
+                )
+                continue
+
+            # Now we can attempt a send.
             ok, err = send_smtp_email(
                 smtp_cfg=smtp_cfg,
                 to_list=to_list,
                 cc_list=cc_list,
-                subject=str(r["subject"]),
+                subject=subject,
                 body=str(r["body"]),
                 from_name=(str(r["from_name"]) if r["from_name"] is not None else None),
                 from_email=(str(r["from_email"]) if r["from_email"] is not None else None),
                 timeout_seconds=int(args.smtp_timeout),
             )
 
+            attempt_n = int(r["attempts"] or 0) + 1
+            max_attempts = int(r["max_attempts"] or 3)
             sent_time = now_ts()
-            attempts = int(r["attempts"] or 0) + 1
 
-            conn.execute(
-                """
-                UPDATE email_outbox
-                SET attempts = ?,
-                    last_error = ?,
-                    sent_at = ?,
-                    success = ?
-                WHERE id = ?
-                """,
-                (attempts, (None if ok else (err or "Unknown error")), sent_time, (1 if ok else 0), outbox_id),
-            )
+            if ok:
+                conn.execute(
+                    """
+                    UPDATE email_outbox
+                    SET attempts = ?,
+                        last_error = NULL,
+                        sent_at = ?,
+                        success = 1
+                    WHERE id = ?
+                    """,
+                    (attempt_n, sent_time, outbox_id),
+                )
+            else:
+                # Retry later with backoff; only mark sent_at when permanently failed.
+                if attempt_n >= max_attempts:
+                    conn.execute(
+                        """
+                        UPDATE email_outbox
+                        SET attempts = ?,
+                            last_error = ?,
+                            sent_at = ?,
+                            success = 0
+                        WHERE id = ?
+                        """,
+                        (attempt_n, (err or "Unknown error"), sent_time, outbox_id),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        UPDATE email_outbox
+                        SET attempts = ?,
+                            last_error = ?,
+                            send_after = ?,
+                            success = 0
+                        WHERE id = ?
+                        """,
+                        (attempt_n, (err or "Unknown error"), now_ts() + _compute_backoff_seconds(attempt_n), outbox_id),
+                    )
 
             # Log per recipient (to + cc), matches LinkNest UI expectations
-            all_rcpt: Sequence[str] = list(dict.fromkeys([*to_list, *cc_list]))
-            status_trigger = (str(r["status_trigger"]) if r["status_trigger"] is not None else "both")
-            subject = str(r["subject"])
-            rule_id = r["rule_id"]
-            monitor_id = r["monitor_id"]
-
             if monitor_id is not None:
                 for email in all_rcpt:
                     conn.execute(

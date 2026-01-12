@@ -58,8 +58,10 @@ RUN apt-get update && apt-get install -y \
     curl \
     openssl \
     libldap2-dev \
+    python3 \
     && docker-php-ext-install pdo pdo_sqlite opcache ldap \
     && docker-php-ext-enable pdo_sqlite opcache ldap \
+    && ln -sf /usr/bin/python3 /usr/local/bin/python \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

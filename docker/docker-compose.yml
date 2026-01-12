@@ -17,6 +17,8 @@ services:
       - PHP_MAX_EXECUTION_TIME=300
       - PHP_UPLOAD_MAX_FILESIZE=10M
       - PHP_POST_MAX_SIZE=10M
+    depends_on:
+      - mailpit
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "-k", "https://localhost/api/settings"]
@@ -24,6 +26,18 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  # Dev/pilot SMTP server (no external mail provider required)
+  # Mailpit provides:
+  # - SMTP on port 1025
+  # - Web UI on port 8025
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: linknest-mailpit
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # Web UI
+    restart: unless-stopped
 
 
 
