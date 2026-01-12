@@ -10,6 +10,7 @@ import { AuthModal } from './components/AuthModal';
 import { TimezoneDisplay } from './components/TimezoneDisplay';
 import { HelpAboutDialog } from './components/HelpAboutDialog';
 import { getDisabledTabsFromSettings } from './services/tabVisibilityService';
+import { FloatingClock } from './components/FloatingClock';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -570,7 +571,7 @@ const AppContent: React.FC = () => {
           </div>
         </div>
       )}
-      <footer className={`linknest-footer ${showFooterDetails ? 'py-8' : 'py-4'} text-sm relative border-t border-slate-200 dark:border-slate-800 transition-all duration-300`} style={{ zIndex: 1 }}>
+      <footer className={`linknest-footer ${showFooterDetails ? 'py-8' : 'py-4'} text-sm relative border-t border-slate-200 dark:border-slate-800 transition-all duration-300`} style={{ zIndex: 0 }}>
         <div className="container mx-auto max-w-6xl-plus px-4">
           <div className="flex flex-col items-center gap-6">
             {/* Quick Navigation Links */}
@@ -710,12 +711,10 @@ const AppContent: React.FC = () => {
             )}
           </div>
         </div>
-        {showFooterDetails && (
-          <div className="absolute right-4 bottom-6 animate-in fade-in duration-300">
-            <TimezoneDisplay />
-          </div>
-        )}
       </footer>
+      <FloatingClock>
+        <TimezoneDisplay />
+      </FloatingClock>
       <AuthModal
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}

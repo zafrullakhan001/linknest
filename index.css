@@ -104,9 +104,15 @@
     radial-gradient(circle at 40% 20%, rgba(59, 130, 246, 0.03) 0%, transparent 50%);
 }
 
-.linknest-app-container>* {
+.linknest-app-container > :not(.linknest-overlay) {
   position: relative;
   z-index: 1;
+}
+
+/* Keep footer below interactive overlays (prevents footer from stealing clicks) */
+.linknest-footer {
+  position: relative;
+  z-index: 0 !important;
 }
 
 /* Smooth fade-in for page content */
