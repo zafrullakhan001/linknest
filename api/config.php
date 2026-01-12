@@ -897,6 +897,31 @@ function initDatabase() {
             success INTEGER DEFAULT 1,
             error_message TEXT
         )');
+
+        // Outbox table for queued emails (used by external worker scripts, e.g. Python).
+        // This prevents monitor checks from blocking on slow SMTP connections.
+        $db->exec('CREATE TABLE IF NOT EXISTS email_outbox (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at INTEGER NOT NULL,
+            send_after INTEGER,
+            monitor_id INTEGER,
+            rule_id INTEGER, -- NULL for legacy notifications, rule ID for advanced notifications
+            status_trigger TEXT,
+            to_emails TEXT NOT NULL, -- comma-separated
+            cc_emails TEXT, -- comma-separated
+            subject TEXT NOT NULL,
+            body TEXT NOT NULL,
+            from_name TEXT,
+            from_email TEXT,
+            attempts INTEGER DEFAULT 0,
+            max_attempts INTEGER DEFAULT 3,
+            last_error TEXT,
+            sent_at INTEGER,
+            success INTEGER,
+            -- legacy-only helpers (applied by sender after an attempt)
+            legacy_clear_pending INTEGER DEFAULT 0,
+            legacy_update_last_notified_status TEXT
+        )');
         
         // Migrate existing table to allow NULL rule_id (for legacy notifications)
         // Only run migration once by checking a flag
@@ -959,6 +984,9 @@ function initDatabase() {
             $db->exec('CREATE INDEX IF NOT EXISTS idx_notification_logs_rule_id ON monitor_notification_logs(rule_id)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_notification_logs_monitor_id ON monitor_notification_logs(monitor_id)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_notification_logs_sent_at ON monitor_notification_logs(sent_at)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_email_outbox_sent_at ON email_outbox(sent_at)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_email_outbox_created_at ON email_outbox(created_at)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_email_outbox_monitor_id ON email_outbox(monitor_id)');
         } catch (PDOException $e) {
             // Indices might already exist
         }
