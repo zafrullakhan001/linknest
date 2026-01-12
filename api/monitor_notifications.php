@@ -40,7 +40,9 @@ try {
                 sendJSON(['success' => true, 'message' => 'File is being executed correctly', 'path' => $path, 'method' => $method]);
                 break;
             }
-            if (preg_match('/^\/monitor\/(\d+)$/', $path, $matches)) {
+            if (preg_match('/^\/monitor\/(\d+)\/logs$/', $path, $matches)) {
+                handleGetEmailLogs($matches[1]);
+            } elseif (preg_match('/^\/monitor\/(\d+)$/', $path, $matches)) {
                 handleGetNotificationRules($matches[1]);
             } elseif (preg_match('/^\/rule\/(\d+)$/', $path, $matches)) {
                 handleGetNotificationRule($matches[1]);
@@ -48,7 +50,7 @@ try {
                 // Debug: Log the path to help diagnose routing issues
                 error_log("monitor_notifications.php: Path did not match. Received path: '$path', Method: $method");
                 sendJSON([
-                    'error' => 'Invalid endpoint. Use /monitor/{id} or /rule/{id}',
+                    'error' => 'Invalid endpoint. Use /monitor/{id}, /monitor/{id}/logs, or /rule/{id}',
                     'received_path' => $path,
                     'method' => $method,
                     'path_info' => $_SERVER['PATH_INFO'] ?? 'not set',
@@ -138,6 +140,40 @@ function handleGetNotificationRule($ruleId) {
     $rule['recipients'] = $recipients;
     
     sendJSON(['rule' => $rule]);
+}
+
+function handleGetEmailLogs($monitorId) {
+    $db = getDB();
+    
+    // Verify monitor exists
+    $stmt = $db->prepare('SELECT id FROM monitors WHERE id = ?');
+    $stmt->execute([$monitorId]);
+    if (!$stmt->fetch()) {
+        sendJSON(['error' => 'Monitor not found'], 404);
+        return;
+    }
+    
+    // Get days filter from query parameter (default 7 days)
+    $days = isset($_GET['days']) ? (int)$_GET['days'] : 7;
+    $since = time() - ($days * 24 * 60 * 60);
+    
+    // Clean up old logs (keep last 90 days) - do this occasionally
+    if (rand(1, 100) <= 5) {
+        $ninetyDaysAgo = time() - (90 * 24 * 60 * 60);
+        $db->exec("DELETE FROM monitor_notification_logs WHERE sent_at < $ninetyDaysAgo");
+    }
+    
+    // Get logs for this monitor
+    $stmt = $db->prepare('
+        SELECT * FROM monitor_notification_logs 
+        WHERE monitor_id = ? AND sent_at >= ?
+        ORDER BY sent_at DESC
+        LIMIT 500
+    ');
+    $stmt->execute([$monitorId, $since]);
+    $logs = $stmt->fetchAll();
+    
+    sendJSON(['logs' => $logs]);
 }
 
 function handleCreateNotificationRule() {

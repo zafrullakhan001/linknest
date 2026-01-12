@@ -129,3 +129,33 @@ export function getDayName(day: number): string {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     return days[day] || '';
 }
+
+export interface EmailLog {
+    id: number;
+    rule_id: number;
+    monitor_id: number;
+    recipient_email: string;
+    status_trigger: 'up' | 'down' | 'both';
+    sent_at: number;
+    subject: string;
+    success: number; // 1 for success, 0 for failure
+    error_message?: string | null;
+}
+
+export async function getEmailLogs(monitorId: number, days: number = 7): Promise<EmailLog[]> {
+    const response = await fetch(`${API_BASE}/monitor/${monitorId}/logs?days=${days}`);
+    if (!response.ok) {
+        let errorMessage = `Failed to fetch email logs: ${response.statusText}`;
+        try {
+            const errorData = await response.json();
+            if (errorData.error) {
+                errorMessage = errorData.error;
+            }
+        } catch (e) {
+            // If response isn't JSON, use status text
+        }
+        throw new Error(errorMessage);
+    }
+    const data = await response.json();
+    return data.logs || [];
+}

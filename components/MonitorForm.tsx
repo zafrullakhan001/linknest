@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Monitor } from '../services/monitoringService';
 import { EmailNotificationsTab } from './EmailNotificationsTab';
+import { EmailLogsTab } from './EmailLogsTab';
 
 interface MonitorFormProps {
     monitor?: Monitor;
@@ -133,7 +134,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showPresets, setShowPresets] = useState(!monitor && name === '');
-    const [activeTab, setActiveTab] = useState<'settings' | 'notifications'>('settings');
+    const [activeTab, setActiveTab] = useState<'settings' | 'notifications' | 'logs'>('settings');
 
     // Draggable state
     const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -328,6 +329,17 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                             >
                                 Email Notifications
                             </button>
+                            <button
+                                type="button"
+                                onClick={() => setActiveTab('logs')}
+                                className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
+                                    activeTab === 'logs'
+                                        ? 'border-blue-600 text-blue-600'
+                                        : 'border-transparent text-gray-500 hover:text-gray-700'
+                                }`}
+                            >
+                                Email Logs
+                            </button>
                         </div>
                     </div>
                 )}
@@ -336,6 +348,8 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                 <div className="overflow-y-auto flex-1 p-6 bg-white">
                     {activeTab === 'notifications' && monitor && monitor.id ? (
                         <EmailNotificationsTab monitorId={monitor.id} />
+                    ) : activeTab === 'logs' && monitor && monitor.id ? (
+                        <EmailLogsTab monitorId={monitor.id} />
                     ) : (
                         <>
                             {showPresets && filteredPresets.length > 0 && (
