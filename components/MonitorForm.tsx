@@ -141,6 +141,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
     const [legacyEmailCc, setLegacyEmailCc] = useState(monitor?.legacy_email_cc || '');
     const [legacyEmailFromName, setLegacyEmailFromName] = useState(monitor?.legacy_email_from_name || '');
     const [legacyEmailFromEmail, setLegacyEmailFromEmail] = useState(monitor?.legacy_email_from_email || '');
+    const [legacyEmailDisabled, setLegacyEmailDisabled] = useState((monitor?.legacy_email_disabled ?? 0) === 1);
     const [legacyEmailSubjectTemplate, setLegacyEmailSubjectTemplate] = useState(
         monitor?.legacy_email_subject_template || '[LinkNest Monitor] {monitor_name} Status Update'
     );
@@ -294,6 +295,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                 group_name: groupName || undefined,
                 email_notification: emailNotification ? 1 : 0,
                 is_active: isActive ? 1 : 0,
+                legacy_email_disabled: legacyEmailDisabled ? 1 : 0,
                 legacy_email_to: legacyEmailTo.trim() || undefined,
                 legacy_email_cc: legacyEmailCc.trim() || undefined,
                 legacy_email_from_name: legacyEmailFromName.trim() || undefined,
@@ -774,8 +776,26 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                 </div>
                             </div>
 
-                            {/* Legacy Email Customization */}
                             {emailNotification && (
+                                <div className="flex items-start space-x-3 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                                    <input
+                                        type="checkbox"
+                                        checked={legacyEmailDisabled}
+                                        onChange={(e) => setLegacyEmailDisabled(e.target.checked)}
+                                        id="legacyEmailDisabled"
+                                        className="w-4 h-4 mt-0.5 rounded border-purple-300 text-purple-600 focus:ring-purple-500 focus:ring-offset-0"
+                                    />
+                                    <div className="flex-1">
+                                        <label htmlFor="legacyEmailDisabled" className="text-sm font-semibold text-purple-900 cursor-pointer block">
+                                            Rule-based only (disable legacy emails)
+                                        </label>
+                                        <FieldHelp text="When enabled, the old built-in (legacy) email alerts will not send for this monitor. Only rule-based notifications (Email Notifications tab) will be sent." />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Legacy Email Customization */}
+                            {emailNotification && !legacyEmailDisabled && (
                                 <div className="p-4 bg-white rounded-lg border border-gray-200 space-y-4">
                                     <div className="flex items-center justify-between">
                                         <div>

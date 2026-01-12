@@ -210,11 +210,12 @@ function handleImportMonitorsBundle() {
         $stmtInsertMonitor = $db->prepare('INSERT INTO monitors (
             id, name, type, target, port, keyword, interval, is_active, email_notification,
             last_notified_status, legacy_notify_pending,
+            legacy_email_disabled,
             legacy_email_to, legacy_email_cc, legacy_email_from_name, legacy_email_from_email,
             legacy_email_subject_template, legacy_email_body_template,
             last_checked_at, last_status, last_response_time,
             created_at, updated_at, tab_name, group_name, maintenance_start, maintenance_end
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
 
         $stmtInsertMonitorLog = $db->prepare('INSERT INTO monitor_logs (monitor_id, status, response_time, details, checked_at) VALUES (?, ?, ?, ?, ?)');
 
@@ -244,11 +245,12 @@ function handleImportMonitorsBundle() {
                 $stmt = $db->prepare('INSERT INTO monitors (
                     name, type, target, port, keyword, interval, is_active, email_notification,
                     last_notified_status, legacy_notify_pending,
+                    legacy_email_disabled,
                     legacy_email_to, legacy_email_cc, legacy_email_from_name, legacy_email_from_email,
                     legacy_email_subject_template, legacy_email_body_template,
                     last_checked_at, last_status, last_response_time,
                     created_at, updated_at, tab_name, group_name, maintenance_start, maintenance_end
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                 $stmt->execute([
                     $m['name'],
                     $m['type'],
@@ -260,6 +262,7 @@ function handleImportMonitorsBundle() {
                     isset($m['email_notification']) ? (int)$m['email_notification'] : 0,
                     $m['last_notified_status'] ?? null,
                     isset($m['legacy_notify_pending']) ? (int)$m['legacy_notify_pending'] : 0,
+                    isset($m['legacy_email_disabled']) ? (int)$m['legacy_email_disabled'] : 0,
                     $m['legacy_email_to'] ?? null,
                     $m['legacy_email_cc'] ?? null,
                     $m['legacy_email_from_name'] ?? null,
@@ -290,6 +293,7 @@ function handleImportMonitorsBundle() {
                     isset($m['email_notification']) ? (int)$m['email_notification'] : 0,
                     $m['last_notified_status'] ?? null,
                     isset($m['legacy_notify_pending']) ? (int)$m['legacy_notify_pending'] : 0,
+                    isset($m['legacy_email_disabled']) ? (int)$m['legacy_email_disabled'] : 0,
                     $m['legacy_email_to'] ?? null,
                     $m['legacy_email_cc'] ?? null,
                     $m['legacy_email_from_name'] ?? null,
@@ -513,9 +517,9 @@ function handleCreateMonitor() {
             warning_threshold, consecutive_failures, timeout, permissions_mode,
             is_active, email_notification, created_at, updated_at,
             tab_name, group_name, maintenance_start, maintenance_end,
-            legacy_notify_pending, legacy_email_to, legacy_email_cc, legacy_email_from_name, legacy_email_from_email,
+            legacy_notify_pending, legacy_email_disabled, legacy_email_to, legacy_email_cc, legacy_email_from_name, legacy_email_from_email,
             legacy_email_subject_template, legacy_email_body_template
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         $now = time();
         $stmt->execute([
@@ -539,6 +543,7 @@ function handleCreateMonitor() {
             isset($data['maintenance_end']) ? (int)$data['maintenance_end'] : null,
             // legacy_notify_pending: if user enables email immediately, allow one alert if monitor is already down later
             (isset($data['email_notification']) && (int)$data['email_notification'] === 1) ? 1 : 0,
+            isset($data['legacy_email_disabled']) ? (int)$data['legacy_email_disabled'] : 0,
             $data['legacy_email_to'] ?? null,
             $data['legacy_email_cc'] ?? null,
             $data['legacy_email_from_name'] ?? null,
@@ -613,6 +618,7 @@ function handleUpdateMonitor($id) {
             'warning_threshold', 'timeout', 'permissions_mode',
             'is_active', 'email_notification',
             'tab_name', 'group_name', 'maintenance_start', 'maintenance_end',
+            'legacy_email_disabled',
             'legacy_email_to', 'legacy_email_from_name', 'legacy_email_from_email',
             'legacy_email_cc',
             'legacy_email_subject_template', 'legacy_email_body_template'

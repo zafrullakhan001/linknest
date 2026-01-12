@@ -195,6 +195,7 @@ function performMonitorCheck($monitor) {
     // Legacy notification support (for backward compatibility)
     // Important: do NOT spam on force-check. Only notify on status transitions (down once, up once).
     // Special case: if email was enabled while already down, allow ONE pending down notification.
+    $legacyDisabledForMonitor = !empty($monitor['legacy_email_disabled']) && (int)$monitor['legacy_email_disabled'] === 1;
     $lastNotifiedStatus = $monitor['last_notified_status'] ?? null;
     if ($lastNotifiedStatus === '' || $lastNotifiedStatus === false) {
         $lastNotifiedStatus = null;
@@ -208,7 +209,9 @@ function performMonitorCheck($monitor) {
         ($legacyNotifyPending === 1 && $normalizedStatus === 'down')
     );
 
-    if ($shouldAttemptLegacyNotify) {
+    if ($legacyDisabledForMonitor) {
+        error_log("[EMAIL] Legacy notification skipped (disabled for monitor) for monitor {$monitor['id']}");
+    } elseif ($shouldAttemptLegacyNotify) {
         error_log("[EMAIL] Legacy notification check - email_notification: {$monitor['email_notification']}, statusChanged: " . ($statusChanged ? 'true' : 'false'));
         error_log("[EMAIL] Notification paused: " . (isNotificationPaused() ? 'YES' : 'NO'));
         error_log("[EMAIL] In maintenance window: " . (isInMaintenanceWindow($monitor) ? 'YES' : 'NO'));

@@ -21,6 +21,7 @@ export interface Monitor {
     legacy_email_from_email?: string | null;
     legacy_email_subject_template?: string | null;
     legacy_email_body_template?: string | null;
+    legacy_email_disabled?: number;
     last_checked_at: number;
     last_status: 'up' | 'down' | 'warning' | 'unknown' | null;
     last_response_time: number;
