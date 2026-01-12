@@ -483,16 +483,11 @@ class CloneService {
             if (is_dir($scriptsDir)) {
                 $logs = $this->addLog("Copying scripts...", $logs);
                 $targetScriptsDir = $targetDir . DIRECTORY_SEPARATOR . 'scripts';
-                $scriptFiles = glob($scriptsDir . DIRECTORY_SEPARATOR . '*.{bat,sh,php,md}', GLOB_BRACE);
-                $scriptCount = 0;
-                foreach ($scriptFiles as $scriptFile) {
-                    $scriptName = basename($scriptFile);
-                    $destScript = $targetScriptsDir . DIRECTORY_SEPARATOR . $scriptName;
-                    if (copy($scriptFile, $destScript)) {
-                        $scriptCount++;
-                    }
-                }
-                $logs = $this->addLog("Copied $scriptCount script files", $logs);
+                // Copy entire scripts directory to ensure Python workers (*.py) and other helper scripts are included
+                $scriptsCopyStart = microtime(true);
+                $logs = $this->copyDirectory($scriptsDir, $targetScriptsDir, $logs);
+                $scriptsCopyTime = number_format(microtime(true) - $scriptsCopyStart, 2);
+                $logs = $this->addLog("Scripts copied (took {$scriptsCopyTime}s)", $logs);
             }
             
             // Copy assets if requested
@@ -548,6 +543,19 @@ class CloneService {
                     $dbSize = filesize($srcDb);
                     $this->writeTraceLog("Database file found, size: " . $this->formatBytes($dbSize), 'INFO');
                     
+                    // If source DB is in WAL mode, checkpoint it so the copied DB is consistent.
+                    // This avoids cases where linknest.db-wal contains the latest changes that wouldn't be copied.
+                    try {
+                        $this->writeTraceLog("Attempting WAL checkpoint on source database before copy...", 'INFO');
+                        $sourceDbForCheckpoint = new PDO('sqlite:' . $srcDb);
+                        $sourceDbForCheckpoint->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+                        @$sourceDbForCheckpoint->exec('PRAGMA wal_checkpoint(TRUNCATE)');
+                        $sourceDbForCheckpoint = null;
+                        $this->writeTraceLog("WAL checkpoint attempt completed", 'INFO');
+                    } catch (Exception $e) {
+                        $this->writeTraceLog("WARNING: WAL checkpoint failed/skipped: " . $e->getMessage(), 'WARNING');
+                    }
+
                     // Step 1: Extract and decrypt LDAP password from source database
                     $plainLdapPassword = null;
                     try {
@@ -609,6 +617,12 @@ class CloneService {
                         $dbCopyTime = number_format(microtime(true) - $dbCopyStart, 2);
                         $this->writeTraceLog("Database copied successfully in {$dbCopyTime}s", 'INFO');
                         $logs = $this->addLog("Database copied successfully", $logs);
+
+                        // Remove any WAL/SHM files in the target (they may cause locks/corruption if copied or left stale)
+                        $destWal = $destDb . '-wal';
+                        $destShm = $destDb . '-shm';
+                        if (file_exists($destWal)) { @unlink($destWal); }
+                        if (file_exists($destShm)) { @unlink($destShm); }
                         
                         // Remove all clone records from target database
                         $this->writeTraceLog("Opening target database to remove clone records", 'DEBUG');
@@ -750,7 +764,14 @@ class CloneService {
                 $this->writeTraceLog("Database copy not requested (copyDatabase=false)", 'DEBUG');
             }
             
-            $this->updateProgress('configuring', 50, 'Creating configuration...', $logs);
+            // Ensure the cloned instance has an initialized/migrated DB so Python workers can run immediately
+            // (even if copyDatabase=false and before the UI is opened).
+            $this->writeTraceLog("STEP: Initializing/migrating target database schema", 'INFO');
+            $this->updateProgress('configuring', 50, 'Initializing database schema...', $logs);
+            $logs = $this->addLog("Initializing database schema in cloned instance...", $logs);
+            $this->initializeTargetDatabase($targetDir, $logs);
+
+            $this->updateProgress('configuring', 55, 'Creating configuration...', $logs);
             
             // Step 4: Create .env file
             $this->writeTraceLog("STEP 4: Creating configuration files", 'INFO');
@@ -1058,6 +1079,39 @@ class CloneService {
             error_log("Fatal error in getAllClones: " . $e->getMessage());
             return [];
         }
+    }
+
+    /**
+     * Run the cloned instance's own api/config.php initDatabase() via PHP CLI.
+     * This ensures schema migrations (including Python-related tables) are present immediately.
+     */
+    private function initializeTargetDatabase($targetDir, $logs = []) {
+        try {
+            $php = PHP_BINARY ?: 'php';
+            $targetDirNorm = str_replace('\\', '/', $targetDir);
+            // Use chdir so we can require relative paths without escaping backslashes.
+            $code = "chdir('" . str_replace("'", "\\'", $targetDirNorm) . "'); require 'api/config.php'; getDB(); echo \"DB_OK\\n\";";
+            $cmd = escapeshellarg($php) . ' -r ' . escapeshellarg($code) . ' 2>&1';
+            $this->writeTraceLog("Running DB init command: $cmd", 'DEBUG');
+            $out = [];
+            $rc = 0;
+            exec($cmd, $out, $rc);
+            $output = trim(implode("\n", $out));
+            if ($rc !== 0) {
+                $this->writeTraceLog("WARNING: Target DB init returned non-zero exit code: $rc", 'WARNING');
+                if ($output) {
+                    $this->writeTraceLog("DB init output: $output", 'WARNING');
+                }
+                return $logs;
+            }
+            $this->writeTraceLog("Target DB init completed successfully", 'INFO');
+            if ($output) {
+                $this->writeTraceLog("DB init output: $output", 'DEBUG');
+            }
+        } catch (Exception $e) {
+            $this->writeTraceLog("WARNING: Failed to initialize target DB: " . $e->getMessage(), 'WARNING');
+        }
+        return $logs;
     }
 }
 

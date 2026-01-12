@@ -106,6 +106,12 @@ if (empty($path) || $path === '/') {
 } elseif (strpos($path, '/monitors') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 9); // Remove '/monitors'
     require __DIR__ . '/monitors.php';
+} elseif (strpos($path, '/timezones') === 0) {
+    $_SERVER['PATH_INFO'] = substr($path, 10); // Remove '/timezones'
+    require __DIR__ . '/timezones.php';
+} elseif (strpos($path, '/alarms') === 0) {
+    $_SERVER['PATH_INFO'] = substr($path, 7); // Remove '/alarms'
+    require __DIR__ . '/alarms.php';
 } elseif (strpos($path, '/monitor-notifications') === 0) {
     // Remove '/monitor-notifications' prefix (22 characters)
     $prefixLength = strlen('/monitor-notifications');

@@ -87,6 +87,8 @@ function handleGetDatabaseInfo() {
                     'user_tile_permissions',
                     'style_profiles',
                     'user_preferences',
+                    'user_custom_timezones',
+                    'user_alarms',
                     'clones'
                 ];
                 $tableCounts = [];
@@ -150,7 +152,7 @@ function handleExportDatabase() {
             'users', 'tiles', 'tabs', 'sections', 'links', 'settings', 
             'tile_arrangements', 'category_arrangements', 'rich_text_content',
             'user_tile_favorites', 'user_link_favorites', 'user_tile_permissions',
-            'style_profiles', 'user_preferences', 'monitors', 'monitor_logs',
+            'style_profiles', 'user_preferences', 'user_custom_timezones', 'user_alarms', 'monitors', 'monitor_logs',
             'browser_list', 'browser_list_metadata'
         ];
 
@@ -201,7 +203,7 @@ function handleImportDatabase() {
             'monitor_logs', 'monitors', 'user_tile_permissions', 'user_link_favorites',
             'user_tile_favorites', 'user_preferences', 'rich_text_content',
             'category_arrangements', 'tile_arrangements', 'links', 'sections',
-            'tabs', 'tiles', 'style_profiles', 'settings', 'users',
+            'tabs', 'tiles', 'style_profiles', 'settings', 'users', 'user_custom_timezones', 'user_alarms',
             'browser_list', 'browser_list_metadata'
         ];
 

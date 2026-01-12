@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { customTimezoneService } from '../services/customTimezoneService';
+import { alarmService } from '../services/alarmService';
 
 // USA Timezones
 const USA_TIMEZONES = [
@@ -18,6 +21,14 @@ type AlarmItem = {
   label: string;
   enabled: boolean;
   lastTriggeredKey?: string; // e.g. "Mon Jan 12 2026 04:45 PM" (minute-level)
+  source?: 'db' | 'local';
+};
+
+type CustomTimezone = {
+  id: string; // stringified id (db id or local id)
+  name: string;
+  utcOffsetMinutes: number; // e.g. -300 for UTC-05:00
+  source?: 'db' | 'local';
 };
 
 const TOOLS_STORAGE_KEY = 'linknest.timeWidget.tools.v1';
@@ -38,6 +49,56 @@ function safeJsonParse<T>(raw: string | null): T | null {
   } catch {
     return null;
   }
+}
+
+function offsetMinutesToUtcString(offsetMinutes: number) {
+  if (!Number.isFinite(offsetMinutes)) return 'UTC+00:00';
+  const sign = offsetMinutes >= 0 ? '+' : '-';
+  const abs = Math.abs(offsetMinutes);
+  const hh = Math.floor(abs / 60).toString().padStart(2, '0');
+  const mm = (abs % 60).toString().padStart(2, '0');
+  return `UTC${sign}${hh}:${mm}`;
+}
+
+function parseUtcOffsetToMinutes(input: string): number | null {
+  const raw = (input || '').trim().toUpperCase();
+  if (!raw) return null;
+
+  if (raw === 'UTC' || raw === 'GMT' || raw === 'Z' || raw === 'UTCZ' || raw === 'GMTZ') return 0;
+
+  // Remove leading UTC/GMT prefix if present
+  const cleaned = raw.replace(/^(UTC|GMT)\s*/i, '');
+
+  // Accept: +H, +HH, +HHMM, +HH:MM, -...
+  const m = cleaned.match(/^([+-])\s*(\d{1,2})(?::?(\d{2}))?$/);
+  if (!m) return null;
+
+  const sign = m[1] === '-' ? -1 : 1;
+  const hours = Number.parseInt(m[2], 10);
+  const minutes = m[3] ? Number.parseInt(m[3], 10) : 0;
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  if (hours < 0 || hours > 14) return null;
+  if (minutes < 0 || minutes > 59) return null;
+  // Common UTC offset minimum is -12:00
+  if (sign === -1 && hours > 12) return null;
+
+  return sign * (hours * 60 + minutes);
+}
+
+function dateWithUtcOffset(date: Date, utcOffsetMinutes: number) {
+  // Interpret utcOffsetMinutes as "time at UTC + offset"
+  return new Date(date.getTime() + utcOffsetMinutes * 60 * 1000);
+}
+
+function formatTimeForUtcOffset(date: Date, utcOffsetMinutes: number) {
+  const d = dateWithUtcOffset(date, utcOffsetMinutes);
+  return d.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+    timeZone: 'UTC',
+  });
 }
 
 function playBeep(pattern: { count: number; durationMs: number; gapMs: number } = { count: 2, durationMs: 140, gapMs: 120 }) {
@@ -105,12 +166,18 @@ function startBeepLoop(
 const ClockFace: React.FC<{
   date: Date;
   timeZone?: string;
+  utcOffsetMinutes?: number;
   size?: number;
   showNumbers?: boolean;
-}> = ({ date, timeZone, size = 144, showNumbers = true }) => {
+}> = ({ date, timeZone, utcOffsetMinutes, size = 144, showNumbers = true }) => {
   // Get time for the specific timezone
   const getTime = () => {
     try {
+      if (typeof utcOffsetMinutes === 'number' && Number.isFinite(utcOffsetMinutes)) {
+        const d = dateWithUtcOffset(date, utcOffsetMinutes);
+        return { hour: d.getUTCHours() % 12, minute: d.getUTCMinutes(), second: d.getUTCSeconds() };
+      }
+
       const options: Intl.DateTimeFormatOptions = {
         hour: 'numeric',
         minute: 'numeric',
@@ -204,6 +271,7 @@ const ClockFace: React.FC<{
 };
 
 export const TimezoneDisplay: React.FC = () => {
+  const { isAuthenticated } = useAuth();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [timezone, setTimezone] = useState<string>('');
   const [timezoneOffset, setTimezoneOffset] = useState<string>('');
@@ -228,6 +296,12 @@ export const TimezoneDisplay: React.FC = () => {
   const [alarms, setAlarms] = useState<AlarmItem[]>([]);
   const [newAlarmTime, setNewAlarmTime] = useState('08:00');
   const [newAlarmLabel, setNewAlarmLabel] = useState('Alarm');
+
+  // Custom timezones (UTC offsets)
+  const [customTimezones, setCustomTimezones] = useState<CustomTimezone[]>([]);
+  const [newCustomTzName, setNewCustomTzName] = useState('Custom');
+  const [newCustomTzOffset, setNewCustomTzOffset] = useState('UTC+00:00');
+  const [customTzLoadedFromDb, setCustomTzLoadedFromDb] = useState(false);
 
   const [nowMs, setNowMs] = useState(Date.now());
 
@@ -308,11 +382,84 @@ export const TimezoneDisplay: React.FC = () => {
           label: typeof a.label === 'string' ? a.label : 'Alarm',
           enabled: a.enabled === true,
           lastTriggeredKey: typeof a.lastTriggeredKey === 'string' ? a.lastTriggeredKey : undefined,
+          source: 'local' as const,
         }));
       setAlarms(cleaned);
     }
+
+    if (Array.isArray(stored.customTimezones)) {
+      const cleaned: CustomTimezone[] = stored.customTimezones
+        .filter((t: any) => t && typeof t === 'object')
+        .map((t: any) => ({
+          id: typeof t.id === 'string' ? t.id : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          name: typeof t.name === 'string' ? t.name : 'Custom',
+          utcOffsetMinutes: typeof t.utcOffsetMinutes === 'number' ? t.utcOffsetMinutes : 0,
+          source: 'local' as const,
+        }))
+        .filter((t) => Number.isFinite(t.utcOffsetMinutes));
+      setCustomTimezones(cleaned);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Load alarms from DB when authenticated
+  useEffect(() => {
+    let cancelled = false;
+    if (!isAuthenticated) return;
+
+    (async () => {
+      try {
+        const rows = await alarmService.list();
+        if (cancelled) return;
+        setAlarms(
+          (rows || []).map((r) => ({
+            id: String(r.id),
+            time: r.time,
+            label: r.label,
+            enabled: !!r.enabled,
+            source: 'db' as const,
+          })),
+        );
+      } catch {
+        // ignore; keep local list
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
+
+  // Load custom timezones from DB when authenticated
+  useEffect(() => {
+    let cancelled = false;
+    if (!isAuthenticated) {
+      setCustomTzLoadedFromDb(false);
+      return;
+    }
+
+    (async () => {
+      try {
+        const rows = await customTimezoneService.list();
+        if (cancelled) return;
+        setCustomTimezones(
+          (rows || []).map((r) => ({
+            id: String(r.id),
+            name: r.name,
+            utcOffsetMinutes: r.utc_offset_minutes,
+            source: 'db' as const,
+          })),
+        );
+        setCustomTzLoadedFromDb(true);
+      } catch {
+        // ignore; keep local list
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
 
   // Persist tools state
   useEffect(() => {
@@ -324,12 +471,13 @@ export const TimezoneDisplay: React.FC = () => {
           stopwatch: { running: swRunning, elapsedMs: swElapsedMs, startAt: swStartAt },
           timer: { running: timerRunning, durationMs: timerDurationMs, remainingMs: timerRemainingMs, endAt: timerEndAt },
           alarms,
+          customTimezones,
         }),
       );
     } catch {
       // ignore
     }
-  }, [mode, swRunning, swElapsedMs, swStartAt, timerRunning, timerDurationMs, timerRemainingMs, timerEndAt, alarms]);
+  }, [mode, swRunning, swElapsedMs, swStartAt, timerRunning, timerDurationMs, timerRemainingMs, timerEndAt, alarms, customTimezones]);
 
   // Cleanup beep loop on unmount
   useEffect(() => {
@@ -504,8 +652,47 @@ export const TimezoneDisplay: React.FC = () => {
 
   const addAlarm = () => {
     if (!/^\d{2}:\d{2}$/.test(newAlarmTime)) return;
+    const time = newAlarmTime;
+    const label = newAlarmLabel.trim() || 'Alarm';
+    if (isAuthenticated) {
+      alarmService
+        .create(time, label, true)
+        .then((a) => {
+          setAlarms((prev) => [{ id: String(a.id), time: a.time, label: a.label, enabled: !!a.enabled, source: 'db' }, ...prev]);
+        })
+        .catch(() => {
+          // fallback to local if API fails
+          const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+          setAlarms((prev) => [{ id, time, label, enabled: true, source: 'local' }, ...prev]);
+        });
+      return;
+    }
+
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    setAlarms((prev) => [{ id, time: newAlarmTime, label: newAlarmLabel.trim() || 'Alarm', enabled: true }, ...prev]);
+    setAlarms((prev) => [{ id, time, label, enabled: true, source: 'local' }, ...prev]);
+  };
+
+  const addCustomTimezone = () => {
+    const offset = parseUtcOffsetToMinutes(newCustomTzOffset);
+    if (offset == null) return;
+    const name = (newCustomTzName || '').trim() || offsetMinutesToUtcString(offset);
+    if (isAuthenticated) {
+      // Save to DB for this user
+      customTimezoneService
+        .create(name, offset)
+        .then((tz) => {
+          setCustomTimezones((prev) => [{ id: String(tz.id), name: tz.name, utcOffsetMinutes: tz.utc_offset_minutes, source: 'db' }, ...prev]);
+        })
+        .catch(() => {
+          // fallback to local if API fails
+          const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+          setCustomTimezones((prev) => [{ id, name, utcOffsetMinutes: offset, source: 'local' }, ...prev]);
+        });
+      return;
+    }
+
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setCustomTimezones((prev) => [{ id, name, utcOffsetMinutes: offset, source: 'local' }, ...prev]);
   };
 
   return (
@@ -636,6 +823,83 @@ export const TimezoneDisplay: React.FC = () => {
                   </div>
                 );
               })}
+
+              {/* Custom timezones (UTC offsets) */}
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider opacity-70">Custom Timezones (UTC)</span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={newCustomTzName}
+                    onChange={(e) => setNewCustomTzName(e.target.value)}
+                    placeholder="Name"
+                    className="flex-1 min-w-0 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/40 text-slate-800 dark:text-slate-100"
+                  />
+                  <input
+                    type="text"
+                    value={newCustomTzOffset}
+                    onChange={(e) => setNewCustomTzOffset(e.target.value)}
+                    placeholder="UTC+05:30"
+                    title="Examples: UTC+05:30, +02:00, -0500, UTC"
+                    className="w-28 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/40 text-slate-800 dark:text-slate-100 font-mono text-[11px]"
+                  />
+                  <button
+                    type="button"
+                    onClick={addCustomTimezone}
+                    className="px-3 py-1.5 rounded-lg font-semibold bg-brand-500 text-white hover:bg-brand-600 transition-colors"
+                    title="Add custom timezone"
+                  >
+                    Add
+                  </button>
+                </div>
+
+                {customTimezones.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {customTimezones.map((ctz) => (
+                      <div
+                        key={ctz.id}
+                        className="flex items-center gap-3 px-2 py-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors"
+                      >
+                        <ClockFace date={currentTime} utcOffsetMinutes={ctz.utcOffsetMinutes} size={40} showNumbers={false} />
+                        <div className="flex flex-col leading-tight flex-1 overflow-hidden">
+                          <div className="flex justify-between items-baseline gap-2">
+                            <span className="font-bold text-[12px] truncate">{ctz.name}</span>
+                            <span className="text-[10px] font-mono whitespace-nowrap bg-slate-200 dark:bg-slate-700 px-1 rounded">
+                              {offsetMinutesToUtcString(ctz.utcOffsetMinutes)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center mt-0.5">
+                            <span className="text-[11px] font-medium text-slate-700 dark:text-slate-300">
+                              {formatTimeForUtcOffset(currentTime, ctz.utcOffsetMinutes)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (isAuthenticated && ctz.source === 'db' && /^\d+$/.test(ctz.id)) {
+                                  const idNum = Number.parseInt(ctz.id, 10);
+                                  customTimezoneService
+                                    .remove(idNum)
+                                    .then(() => setCustomTimezones((prev) => prev.filter((x) => x.id !== ctz.id)))
+                                    .catch(() => undefined);
+                                  return;
+                                }
+                                setCustomTimezones((prev) => prev.filter((x) => x.id !== ctz.id));
+                              }}
+                              className="px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 dark:bg-slate-700/60 hover:bg-red-100 dark:hover:bg-red-900/20 hover:text-red-600 transition-colors"
+                              title="Delete"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -744,7 +1008,20 @@ export const TimezoneDisplay: React.FC = () => {
                 >
                   <button
                     type="button"
-                    onClick={() => setAlarms((prev) => prev.map((x) => (x.id === a.id ? { ...x, enabled: !x.enabled } : x)))}
+                    onClick={() => {
+                      const nextEnabled = !a.enabled;
+                      if (isAuthenticated && a.source === 'db' && /^\d+$/.test(a.id)) {
+                        const idNum = Number.parseInt(a.id, 10);
+                        // optimistic UI
+                        setAlarms((prev) => prev.map((x) => (x.id === a.id ? { ...x, enabled: nextEnabled } : x)));
+                        alarmService.update(idNum, { enabled: nextEnabled }).catch(() => {
+                          // rollback on failure
+                          setAlarms((prev) => prev.map((x) => (x.id === a.id ? { ...x, enabled: !nextEnabled } : x)));
+                        });
+                        return;
+                      }
+                      setAlarms((prev) => prev.map((x) => (x.id === a.id ? { ...x, enabled: nextEnabled } : x)));
+                    }}
                     className={`w-10 px-2 py-1 rounded-md text-[11px] font-semibold transition-colors ${
                       a.enabled ? 'bg-emerald-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
                     }`}
@@ -760,7 +1037,17 @@ export const TimezoneDisplay: React.FC = () => {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setAlarms((prev) => prev.filter((x) => x.id !== a.id))}
+                    onClick={() => {
+                      if (isAuthenticated && a.source === 'db' && /^\d+$/.test(a.id)) {
+                        const idNum = Number.parseInt(a.id, 10);
+                        // optimistic UI
+                        const snapshot = alarms;
+                        setAlarms((prev) => prev.filter((x) => x.id !== a.id));
+                        alarmService.remove(idNum).catch(() => setAlarms(snapshot));
+                        return;
+                      }
+                      setAlarms((prev) => prev.filter((x) => x.id !== a.id));
+                    }}
                     className="px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 dark:bg-slate-700/60 hover:bg-red-100 dark:hover:bg-red-900/20 hover:text-red-600 transition-colors"
                     title="Delete"
                   >

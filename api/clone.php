@@ -998,6 +998,59 @@ function handlePrechecks() {
         'category' => 'System Commands',
         'items' => $systemChecks
     ];
+
+    // Python (for external worker scripts)
+    $pythonChecks = [];
+    $pythonVersion = null;
+    $pythonOk = false;
+    $pythonCmdUsed = null;
+    
+    // Try `python` first (common on Windows/Linux), then `py -V` (Windows launcher)
+    exec('python --version 2>&1', $pyOut, $pyRc);
+    if ($pyRc === 0 && !empty($pyOut)) {
+        $pythonOk = true;
+        $pythonCmdUsed = 'python';
+        $pythonVersion = trim(implode(' ', $pyOut));
+    } else {
+        exec('py -V 2>&1', $py2Out, $py2Rc);
+        if ($py2Rc === 0 && !empty($py2Out)) {
+            $pythonOk = true;
+            $pythonCmdUsed = 'py';
+            $pythonVersion = trim(implode(' ', $py2Out));
+        }
+    }
+    
+    // Require Python 3.9+ for workers
+    $pyStatus = 'fail';
+    $pyMessage = 'NOT FOUND';
+    if ($pythonOk) {
+        $pyStatus = 'pass';
+        $pyMessage = 'FOUND';
+        if (preg_match('/Python\s+(\d+)\.(\d+)/i', (string)$pythonVersion, $m)) {
+            $maj = (int)$m[1];
+            $min = (int)$m[2];
+            if ($maj < 3 || ($maj === 3 && $min < 9)) {
+                $pyStatus = 'fail';
+                $pyMessage = 'FOUND but too old (need 3.9+)';
+                $results['allGood'] = false;
+            }
+        }
+    } else {
+        $results['allGood'] = false;
+    }
+    
+    $pythonChecks[] = [
+        'name' => 'Python',
+        'value' => $pythonOk ? (($pythonCmdUsed ? $pythonCmdUsed . ' - ' : '') . ($pythonVersion ?: 'found')) : 'not found',
+        'status' => $pyStatus,
+        'message' => $pyMessage,
+        'description' => 'Required for LinkNest external workers (scripts/monitor_runner.py, scripts/email_sender.py)'
+    ];
+    
+    $results['checks'][] = [
+        'category' => 'Python Workers',
+        'items' => $pythonChecks
+    ];
     
     // File Permissions
     $permissionChecks = [];

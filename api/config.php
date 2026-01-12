@@ -771,6 +771,42 @@ function initDatabase() {
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )');
 
+        // Create user_custom_timezones table for storing user-specific custom UTC offset timezones
+        $db->exec('CREATE TABLE IF NOT EXISTS user_custom_timezones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            utc_offset_minutes INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )');
+
+        // Index for faster per-user lookup
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_user_custom_timezones_user_id ON user_custom_timezones(user_id)');
+        } catch (PDOException $e) {
+            // ignore if index creation fails
+        }
+
+        // Create user_alarms table for storing user-specific alarms
+        $db->exec('CREATE TABLE IF NOT EXISTS user_alarms (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            time TEXT NOT NULL, -- HH:MM (24-hour)
+            label TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )');
+
+        // Index for faster per-user lookup
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_user_alarms_user_id ON user_alarms(user_id)');
+        } catch (PDOException $e) {
+            // ignore if index creation fails
+        }
+
         // Create monitors table
         $db->exec('CREATE TABLE IF NOT EXISTS monitors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
