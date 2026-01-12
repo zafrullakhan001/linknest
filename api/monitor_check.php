@@ -154,25 +154,26 @@ function performMonitorCheck($monitor) {
     }
     
     // Legacy notification support (for backward compatibility)
-    // Important: allow first DOWN alert even if monitor was already down before email_notification was enabled
+    // Important: do NOT spam on force-check. Only notify on status transitions (down once, up once).
+    // Special case: if email was enabled while already down, allow ONE pending down notification.
     $lastNotifiedStatus = $monitor['last_notified_status'] ?? null;
     if ($lastNotifiedStatus === '' || $lastNotifiedStatus === false) {
         $lastNotifiedStatus = null;
     }
+    $legacyNotifyPending = (int)($monitor['legacy_notify_pending'] ?? 0);
 
-    $shouldAttemptLegacyNotify =
-        !empty($monitor['email_notification']) &&
-        (
-            // Normal behavior: only notify on state changes
-            $statusChanged ||
-            // Special case: status is DOWN but we've never successfully notified DOWN
-            ($normalizedStatus === 'down' && $lastNotifiedStatus !== 'down')
-        );
+    $shouldAttemptLegacyNotify = !empty($monitor['email_notification']) && (
+        // Normal behavior: only notify on state changes
+        $statusChanged ||
+        // One-shot pending notification when email was enabled while already down
+        ($legacyNotifyPending === 1 && $normalizedStatus === 'down')
+    );
 
     if ($shouldAttemptLegacyNotify) {
         error_log("[EMAIL] Legacy notification check - email_notification: {$monitor['email_notification']}, statusChanged: " . ($statusChanged ? 'true' : 'false'));
         error_log("[EMAIL] Notification paused: " . (isNotificationPaused() ? 'YES' : 'NO'));
         error_log("[EMAIL] In maintenance window: " . (isInMaintenanceWindow($monitor) ? 'YES' : 'NO'));
+        error_log("[EMAIL] Legacy notify pending: " . ($legacyNotifyPending === 1 ? 'YES' : 'NO'));
         
         // Skip notifications if in maintenance window or if global notifications are paused
         if (!isNotificationPaused() && !isInMaintenanceWindow($monitor)) {
@@ -188,6 +189,17 @@ function performMonitorCheck($monitor) {
                 sendNotification($monitor, "UP: {$monitor['name']} is back online.", 'up');
             } else {
                 error_log("[EMAIL] Legacy notification condition not met - normalized status: $normalizedStatus, normalized prevStatus: " . ($normalizedPrevStatus ?? 'null') . " (no notification sent)");
+            }
+
+            // Clear the one-shot pending flag after the first attempt (prevents force-check spam)
+            if ($legacyNotifyPending === 1) {
+                try {
+                    $dbTmp = getDB();
+                    $stmtTmp = $dbTmp->prepare('UPDATE monitors SET legacy_notify_pending = 0, updated_at = ? WHERE id = ?');
+                    $stmtTmp->execute([time(), $monitor['id']]);
+                } catch (Exception $e) {
+                    error_log("Failed to clear legacy_notify_pending for monitor {$monitor['id']}: " . $e->getMessage());
+                }
             }
         } else {
             error_log("[EMAIL] Notification skipped - paused or in maintenance window");
@@ -353,6 +365,12 @@ function checkPort($target, $port, $opts = []) {
  */
 function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, $responseTime) {
     error_log("[EMAIL] sendAdvancedNotifications called - monitor ID: {$monitor['id']}, status: $prevStatus -> $newStatus");
+
+    // Safety guard: never send if notifications are paused or monitor is in maintenance
+    if (isNotificationPaused() || isInMaintenanceWindow($monitor)) {
+        error_log("[EMAIL] Advanced notifications aborted - paused: " . (isNotificationPaused() ? 'YES' : 'NO') . ", maintenance: " . (isInMaintenanceWindow($monitor) ? 'YES' : 'NO'));
+        return;
+    }
     
     $db = getDB();
     
@@ -585,6 +603,12 @@ function sendNotificationEmail($to, $subject, $body, $fromName = null, $fromEmai
 
 function sendNotification($monitor, $message, $statusTrigger = 'both') {
     error_log("[EMAIL] sendNotification called for monitor ID: {$monitor['id']}, name: {$monitor['name']}");
+
+    // Safety guard: never send if notifications are paused or monitor is in maintenance
+    if (isNotificationPaused() || isInMaintenanceWindow($monitor)) {
+        error_log("[EMAIL] Legacy notification aborted - paused: " . (isNotificationPaused() ? 'YES' : 'NO') . ", maintenance: " . (isInMaintenanceWindow($monitor) ? 'YES' : 'NO'));
+        return;
+    }
     
     // Fetch admin email from users table
     $db = getDB();

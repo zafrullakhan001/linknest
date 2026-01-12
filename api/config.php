@@ -783,6 +783,7 @@ function initDatabase() {
             is_active INTEGER DEFAULT 1,
             email_notification INTEGER DEFAULT 0,
             last_notified_status TEXT, -- up/down/unknown/null: last status we successfully sent a notification for (legacy notifications)
+            legacy_notify_pending INTEGER DEFAULT 0, -- when email is enabled while already down; send one alert then clear
             legacy_email_to TEXT, -- optional override; comma-separated list. empty => send to admin email
             legacy_email_cc TEXT, -- optional CC; comma-separated list
             legacy_email_from_name TEXT, -- optional override; empty => use SMTP from_name
@@ -816,6 +817,7 @@ function initDatabase() {
         try {
             @$db->exec('ALTER TABLE monitors ADD COLUMN last_notified_status TEXT');
         } catch (PDOException $e) { /* ignore if column already exists */ }
+        try { @$db->exec('ALTER TABLE monitors ADD COLUMN legacy_notify_pending INTEGER DEFAULT 0'); } catch (PDOException $e) { /* ignore */ }
         try { @$db->exec('ALTER TABLE monitors ADD COLUMN legacy_email_to TEXT'); } catch (PDOException $e) { /* ignore */ }
         try { @$db->exec('ALTER TABLE monitors ADD COLUMN legacy_email_cc TEXT'); } catch (PDOException $e) { /* ignore */ }
         try { @$db->exec('ALTER TABLE monitors ADD COLUMN legacy_email_from_name TEXT'); } catch (PDOException $e) { /* ignore */ }

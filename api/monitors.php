@@ -131,9 +131,9 @@ function handleCreateMonitor() {
             name, type, target, port, keyword, interval, 
             is_active, email_notification, created_at, updated_at,
             tab_name, group_name, maintenance_start, maintenance_end,
-            legacy_email_to, legacy_email_cc, legacy_email_from_name, legacy_email_from_email,
+            legacy_notify_pending, legacy_email_to, legacy_email_cc, legacy_email_from_name, legacy_email_from_email,
             legacy_email_subject_template, legacy_email_body_template
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         $now = time();
         $stmt->execute([
@@ -151,6 +151,8 @@ function handleCreateMonitor() {
             $data['group_name'] ?? null,
             isset($data['maintenance_start']) ? (int)$data['maintenance_start'] : null,
             isset($data['maintenance_end']) ? (int)$data['maintenance_end'] : null,
+            // legacy_notify_pending: if user enables email immediately, allow one alert if monitor is already down later
+            (isset($data['email_notification']) && (int)$data['email_notification'] === 1) ? 1 : 0,
             $data['legacy_email_to'] ?? null,
             $data['legacy_email_cc'] ?? null,
             $data['legacy_email_from_name'] ?? null,
@@ -188,9 +190,10 @@ function handleUpdateMonitor($id) {
     $db = getDB();
     
     // Check if exists
-    $stmt = $db->prepare('SELECT id FROM monitors WHERE id = ?');
+    $stmt = $db->prepare('SELECT id, email_notification FROM monitors WHERE id = ?');
     $stmt->execute([$id]);
-    if (!$stmt->fetch()) {
+    $existing = $stmt->fetch();
+    if (!$existing) {
         sendJSON(['error' => 'Monitor not found'], 404);
         return;
     }
@@ -215,6 +218,20 @@ function handleUpdateMonitor($id) {
             }
         }
         
+        // If email_notification is being enabled (0 -> 1), set a one-shot pending flag.
+        if (isset($data['email_notification'])) {
+            $prev = (int)($existing['email_notification'] ?? 0);
+            $next = (int)$data['email_notification'];
+            if ($prev === 0 && $next === 1) {
+                $fields[] = "legacy_notify_pending = ?";
+                $values[] = 1;
+            } elseif ($prev === 1 && $next === 0) {
+                // If disabled, clear pending
+                $fields[] = "legacy_notify_pending = ?";
+                $values[] = 0;
+            }
+        }
+
         if (empty($fields)) {
             sendJSON(['error' => 'No fields to update'], 400);
             return;
