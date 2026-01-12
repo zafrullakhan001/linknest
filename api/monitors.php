@@ -16,6 +16,8 @@ switch ($method) {
     case 'GET':
         if ($path === '' || $path === '/') {
             handleGetMonitors();
+        } elseif ($path === '/export-bundle') {
+            handleExportMonitorsBundle();
         } elseif (preg_match('/^\/(\d+)$/', $path, $matches)) {
             handleGetMonitor($matches[1]);
         } elseif (preg_match('/^\/(\d+)\/logs$/', $path, $matches)) {
@@ -32,6 +34,8 @@ switch ($method) {
             handleImportMonitors();
         } elseif ($path === '/import-csv') {
             handleImportCSV();
+        } elseif ($path === '/import-bundle') {
+            handleImportMonitorsBundle();
         } elseif ($path === '/check-all') {
             handleCheckAllMonitors();
         } elseif (preg_match('/^\/(\d+)\/check$/', $path, $matches)) {
@@ -65,6 +69,268 @@ switch ($method) {
         
     default:
         sendJSON(['error' => 'Method not allowed'], 405);
+}
+
+function handleExportMonitorsBundle() {
+    $db = getDB();
+    $now = time();
+
+    // Fetch all monitors
+    $stmt = $db->prepare('SELECT * FROM monitors ORDER BY created_at DESC');
+    $stmt->execute();
+    $monitors = $stmt->fetchAll();
+
+    $bundleMonitors = [];
+    foreach ($monitors as $m) {
+        $monitorId = (int)$m['id'];
+
+        // Monitor uptime logs (cap to 500 like UI)
+        $stmt = $db->prepare('SELECT * FROM monitor_logs WHERE monitor_id = ? ORDER BY checked_at DESC LIMIT 500');
+        $stmt->execute([$monitorId]);
+        $monitorLogs = $stmt->fetchAll();
+
+        // Notification rules + recipients
+        $stmt = $db->prepare('SELECT * FROM monitor_notification_rules WHERE monitor_id = ? ORDER BY created_at DESC');
+        $stmt->execute([$monitorId]);
+        $rules = $stmt->fetchAll();
+        $rulesOut = [];
+        foreach ($rules as $r) {
+            $ruleId = (int)$r['id'];
+            $stmt = $db->prepare('SELECT email FROM monitor_notification_recipients WHERE rule_id = ?');
+            $stmt->execute([$ruleId]);
+            $recipients = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            $ccRaw = $r['cc_emails'] ?? null;
+            $cc = (!empty($ccRaw)) ? array_values(array_filter(array_map('trim', explode(',', $ccRaw)))) : [];
+            $r['recipients'] = $recipients;
+            $r['cc'] = $cc;
+            $rulesOut[] = $r;
+        }
+
+        // Email logs (cap to 500 like UI)
+        $stmt = $db->prepare('SELECT * FROM monitor_notification_logs WHERE monitor_id = ? ORDER BY sent_at DESC LIMIT 500');
+        $stmt->execute([$monitorId]);
+        $emailLogs = $stmt->fetchAll();
+
+        $bundleMonitors[] = [
+            'monitor' => $m,
+            'monitor_logs' => $monitorLogs,
+            'notification_rules' => $rulesOut,
+            'email_logs' => $emailLogs
+        ];
+    }
+
+    sendJSON([
+        'success' => true,
+        'bundle_version' => 1,
+        'exported_at' => $now,
+        'monitors' => $bundleMonitors
+    ]);
+}
+
+function handleImportMonitorsBundle() {
+    $data = getJSONInput();
+    if (!isset($data['monitors']) || !is_array($data['monitors'])) {
+        sendJSON(['error' => 'Invalid bundle format: monitors array required'], 400);
+        return;
+    }
+
+    $replace = isset($data['replace']) ? (bool)$data['replace'] : true;
+    $bundleMonitors = $data['monitors'];
+
+    $db = getDB();
+    try {
+        $db->beginTransaction();
+
+        if ($replace) {
+            // Clear related tables (bundle import is intended to restore full monitoring state)
+            $db->exec('DELETE FROM monitor_notification_recipients');
+            $db->exec('DELETE FROM monitor_notification_rules');
+            $db->exec('DELETE FROM monitor_notification_logs');
+            $db->exec('DELETE FROM monitor_logs');
+            $db->exec('DELETE FROM monitors');
+        }
+
+        // Prepared statements
+        $stmtInsertMonitor = $db->prepare('INSERT INTO monitors (
+            id, name, type, target, port, keyword, interval, is_active, email_notification,
+            last_notified_status, legacy_notify_pending,
+            legacy_email_to, legacy_email_cc, legacy_email_from_name, legacy_email_from_email,
+            legacy_email_subject_template, legacy_email_body_template,
+            last_checked_at, last_status, last_response_time,
+            created_at, updated_at, tab_name, group_name, maintenance_start, maintenance_end
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+
+        $stmtInsertMonitorLog = $db->prepare('INSERT INTO monitor_logs (monitor_id, status, response_time, details, checked_at) VALUES (?, ?, ?, ?, ?)');
+
+        $stmtInsertRule = $db->prepare('INSERT INTO monitor_notification_rules (
+            id, monitor_id, name, status_trigger, time_window_start, time_window_end, days_of_week,
+            subject_template, body_template, from_name, from_email, cc_emails, is_enabled, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+
+        $stmtInsertRecipient = $db->prepare('INSERT INTO monitor_notification_recipients (rule_id, email, created_at) VALUES (?, ?, ?)');
+
+        $stmtInsertEmailLog = $db->prepare('INSERT INTO monitor_notification_logs (
+            rule_id, monitor_id, recipient_email, status_trigger, sent_at, subject, success, error_message
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+
+        $now = time();
+
+        foreach ($bundleMonitors as $entry) {
+            // Support older/simple format: { monitors: [ {...monitor fields...} ] }
+            $m = $entry['monitor'] ?? $entry;
+            if (!isset($m['name'], $m['type'], $m['target'])) {
+                continue;
+            }
+
+            $monitorId = isset($m['id']) ? (int)$m['id'] : null;
+            if ($monitorId === null) {
+                // If no ID provided, let SQLite assign one (rare: older format)
+                $stmt = $db->prepare('INSERT INTO monitors (
+                    name, type, target, port, keyword, interval, is_active, email_notification,
+                    last_notified_status, legacy_notify_pending,
+                    legacy_email_to, legacy_email_cc, legacy_email_from_name, legacy_email_from_email,
+                    legacy_email_subject_template, legacy_email_body_template,
+                    last_checked_at, last_status, last_response_time,
+                    created_at, updated_at, tab_name, group_name, maintenance_start, maintenance_end
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                $stmt->execute([
+                    $m['name'],
+                    $m['type'],
+                    $m['target'],
+                    isset($m['port']) ? (int)$m['port'] : null,
+                    $m['keyword'] ?? null,
+                    isset($m['interval']) ? (int)$m['interval'] : 5,
+                    isset($m['is_active']) ? (int)$m['is_active'] : 1,
+                    isset($m['email_notification']) ? (int)$m['email_notification'] : 0,
+                    $m['last_notified_status'] ?? null,
+                    isset($m['legacy_notify_pending']) ? (int)$m['legacy_notify_pending'] : 0,
+                    $m['legacy_email_to'] ?? null,
+                    $m['legacy_email_cc'] ?? null,
+                    $m['legacy_email_from_name'] ?? null,
+                    $m['legacy_email_from_email'] ?? null,
+                    $m['legacy_email_subject_template'] ?? null,
+                    $m['legacy_email_body_template'] ?? null,
+                    isset($m['last_checked_at']) ? (int)$m['last_checked_at'] : null,
+                    $m['last_status'] ?? null,
+                    isset($m['last_response_time']) ? (int)$m['last_response_time'] : null,
+                    isset($m['created_at']) ? (int)$m['created_at'] : $now,
+                    isset($m['updated_at']) ? (int)$m['updated_at'] : $now,
+                    $m['tab_name'] ?? null,
+                    $m['group_name'] ?? null,
+                    isset($m['maintenance_start']) ? (int)$m['maintenance_start'] : null,
+                    isset($m['maintenance_end']) ? (int)$m['maintenance_end'] : null
+                ]);
+                $monitorId = (int)$db->lastInsertId();
+            } else {
+                $stmtInsertMonitor->execute([
+                    $monitorId,
+                    $m['name'],
+                    $m['type'],
+                    $m['target'],
+                    isset($m['port']) ? (int)$m['port'] : null,
+                    $m['keyword'] ?? null,
+                    isset($m['interval']) ? (int)$m['interval'] : 5,
+                    isset($m['is_active']) ? (int)$m['is_active'] : 1,
+                    isset($m['email_notification']) ? (int)$m['email_notification'] : 0,
+                    $m['last_notified_status'] ?? null,
+                    isset($m['legacy_notify_pending']) ? (int)$m['legacy_notify_pending'] : 0,
+                    $m['legacy_email_to'] ?? null,
+                    $m['legacy_email_cc'] ?? null,
+                    $m['legacy_email_from_name'] ?? null,
+                    $m['legacy_email_from_email'] ?? null,
+                    $m['legacy_email_subject_template'] ?? null,
+                    $m['legacy_email_body_template'] ?? null,
+                    isset($m['last_checked_at']) ? (int)$m['last_checked_at'] : null,
+                    $m['last_status'] ?? null,
+                    isset($m['last_response_time']) ? (int)$m['last_response_time'] : null,
+                    isset($m['created_at']) ? (int)$m['created_at'] : $now,
+                    isset($m['updated_at']) ? (int)$m['updated_at'] : $now,
+                    $m['tab_name'] ?? null,
+                    $m['group_name'] ?? null,
+                    isset($m['maintenance_start']) ? (int)$m['maintenance_start'] : null,
+                    isset($m['maintenance_end']) ? (int)$m['maintenance_end'] : null
+                ]);
+            }
+
+            // Monitor logs
+            $monitorLogs = $entry['monitor_logs'] ?? [];
+            if (is_array($monitorLogs)) {
+                foreach ($monitorLogs as $log) {
+                    if (!isset($log['status'], $log['checked_at'])) continue;
+                    $stmtInsertMonitorLog->execute([
+                        $monitorId,
+                        $log['status'],
+                        isset($log['response_time']) ? (int)$log['response_time'] : null,
+                        $log['details'] ?? null,
+                        (int)$log['checked_at']
+                    ]);
+                }
+            }
+
+            // Rules + recipients
+            $rules = $entry['notification_rules'] ?? [];
+            if (is_array($rules)) {
+                foreach ($rules as $r) {
+                    if (!isset($r['status_trigger'])) continue;
+                    $ruleId = isset($r['id']) ? (int)$r['id'] : null;
+                    if ($ruleId === null) continue;
+                    $cc = $r['cc'] ?? [];
+                    $ccStr = (is_array($cc) && !empty($cc)) ? implode(',', array_map('trim', $cc)) : ($r['cc_emails'] ?? null);
+
+                    $stmtInsertRule->execute([
+                        $ruleId,
+                        $monitorId,
+                        $r['name'] ?? 'Notification Rule',
+                        $r['status_trigger'],
+                        $r['time_window_start'] ?? null,
+                        $r['time_window_end'] ?? null,
+                        $r['days_of_week'] ?? null,
+                        $r['subject_template'] ?? '[LinkNest Monitor] {monitor_name} Status: {status}',
+                        $r['body_template'] ?? "Monitor: {monitor_name}\nStatus: {status}\nTime: {time}\nDetails: {details}",
+                        $r['from_name'] ?? null,
+                        $r['from_email'] ?? null,
+                        $ccStr,
+                        isset($r['is_enabled']) ? (int)$r['is_enabled'] : 1,
+                        isset($r['created_at']) ? (int)$r['created_at'] : $now,
+                        isset($r['updated_at']) ? (int)$r['updated_at'] : $now
+                    ]);
+
+                    $recipients = $r['recipients'] ?? [];
+                    if (is_array($recipients)) {
+                        foreach ($recipients as $email) {
+                            $email = trim((string)$email);
+                            if ($email === '') continue;
+                            $stmtInsertRecipient->execute([$ruleId, $email, $now]);
+                        }
+                    }
+                }
+            }
+
+            // Email logs
+            $emailLogs = $entry['email_logs'] ?? [];
+            if (is_array($emailLogs)) {
+                foreach ($emailLogs as $log) {
+                    if (!isset($log['recipient_email'], $log['sent_at'], $log['subject'])) continue;
+                    $stmtInsertEmailLog->execute([
+                        $log['rule_id'] ?? null,
+                        $monitorId,
+                        $log['recipient_email'],
+                        $log['status_trigger'] ?? 'both',
+                        (int)$log['sent_at'],
+                        $log['subject'],
+                        isset($log['success']) ? (int)$log['success'] : 1,
+                        $log['error_message'] ?? null
+                    ]);
+                }
+            }
+        }
+
+        $db->commit();
+        sendJSON(['success' => true, 'count' => count($bundleMonitors)]);
+    } catch (Exception $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        sendJSON(['error' => 'Import failed: ' . $e->getMessage()], 500);
+    }
 }
 
 function handleGetMonitors() {

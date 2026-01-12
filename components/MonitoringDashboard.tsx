@@ -325,14 +325,23 @@ export const MonitoringDashboard: React.FC = () => {
         }
     };
 
-    const handleExportJSON = () => {
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ monitors }, null, 2));
-        const downloadAnchorNode = document.createElement('a');
-        downloadAnchorNode.setAttribute("href", dataStr);
-        downloadAnchorNode.setAttribute("download", `linknest_monitors_${new Date().toISOString().split('T')[0]}.json`);
-        document.body.appendChild(downloadAnchorNode);
-        downloadAnchorNode.click();
-        downloadAnchorNode.remove();
+    const handleExportJSON = async () => {
+        try {
+            setIsLoading(true);
+            const bundle = await monitoringService.exportMonitorsBundle();
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(bundle, null, 2));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", `linknest_monitoring_bundle_${new Date().toISOString().split('T')[0]}.json`);
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        } catch (error) {
+            console.error('Failed to export monitoring bundle', error);
+            alert('Failed to export monitoring bundle.');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const handleExportCSV = () => {
@@ -546,16 +555,18 @@ export const MonitoringDashboard: React.FC = () => {
                 const content = e.target?.result as string;
                 const data = JSON.parse(content);
                 if (data.monitors && Array.isArray(data.monitors)) {
+                    const confirmReplace = confirm('Import will replace existing monitors, rules, and email logs. Continue?');
+                    if (!confirmReplace) return;
                     setIsLoading(true);
-                    await monitoringService.importMonitors(data.monitors);
+                    await monitoringService.importMonitorsBundle(data, true);
                     await fetchMonitors();
-                    alert('Monitors imported successfully!');
+                    alert('Monitoring bundle imported successfully!');
                 } else {
                     alert('Invalid file format. Must contain a "monitors" array.');
                 }
             } catch (err) {
                 console.error('Failed to import monitors', err);
-                alert('Failed to import monitors. Please check the file format.');
+                alert('Failed to import monitoring bundle. Please check the file format.');
             } finally {
                 setIsLoading(false);
                 if (fileInputRef.current) fileInputRef.current.value = '';

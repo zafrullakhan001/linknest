@@ -165,6 +165,26 @@ export const monitoringService = {
         return data.count;
     },
 
+    async exportMonitorsBundle(): Promise<any> {
+        const response = await fetch('api/monitors.php/export-bundle');
+        if (!response.ok) throw new Error('Failed to export monitors bundle');
+        return await response.json();
+    },
+
+    async importMonitorsBundle(bundle: any, replace: boolean = true): Promise<number> {
+        const response = await fetch('api/monitors.php/import-bundle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...bundle, replace })
+        });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error || 'Failed to import monitors bundle');
+        }
+        const data = await response.json();
+        return data.count || 0;
+    },
+
     async importMonitorsFromCSV(csvData: string): Promise<number> {
         const response = await fetch('api/monitors.php/import-csv', {
             method: 'POST',

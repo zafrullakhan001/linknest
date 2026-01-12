@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { Tile, Link } from './types';
 import { getTiles, saveTiles, createTile, deleteTile, cloneTile } from './services/storageService';
 import { settingsService } from './services/settingsService';
@@ -9,6 +9,7 @@ import { StyleProvider, useStyles } from './contexts/StyleContext';
 import { AuthModal } from './components/AuthModal';
 import { TimezoneDisplay } from './components/TimezoneDisplay';
 import { HelpAboutDialog } from './components/HelpAboutDialog';
+import { getDisabledTabsFromSettings } from './services/tabVisibilityService';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -59,6 +60,7 @@ const AppContent: React.FC = () => {
   const { user, isAuthenticated, loading: authLoading } = useAuth();
   const { updateStyles, styles, isLoading: stylesLoading } = useStyles();
   const { settings, loading: settingsLoading } = useSettings();
+  const disabledTabs = useMemo(() => getDisabledTabsFromSettings(settings), [settings?.disabled_tabs]);
 
   // Footer Details Toggle State
   const [showFooterDetails, setShowFooterDetails] = useState(() => {
@@ -208,6 +210,17 @@ const AppContent: React.FC = () => {
   };
 
   const handleTabClick = (tab: string) => {
+    // Respect admin-configured disabled tabs (applies to everyone, including admins)
+    const tabId = String(tab || '').toLowerCase().trim();
+    if (tabId === 'favorites' && disabledTabs.has('favorites')) return;
+    if (tabId === 'public' && disabledTabs.has('public')) return;
+    if (tabId === 'private' && disabledTabs.has('private')) return;
+    if (tabId === 'scheduled' && disabledTabs.has('scheduled')) return;
+    if (tabId === 'expired' && disabledTabs.has('expired')) return;
+    if (tabId === 'archive' && disabledTabs.has('archive')) return;
+    if (tabId === 'recycle-bin' && disabledTabs.has('recycle-bin')) return;
+    if (tabId === 'monitoring' && disabledTabs.has('monitoring')) return;
+
     // If we're not on the main grid, go there first
     if (window.location.hash !== '#/' && window.location.hash !== '') {
       window.location.hash = '#/';
@@ -451,6 +464,26 @@ const AppContent: React.FC = () => {
     );
   } else if (route === '#/admin') {
     if (user?.is_admin) {
+      if (disabledTabs.has('admin')) {
+        content = (
+          <div className="w-full max-w-2xl mx-auto">
+            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl p-8">
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Admin Panel Disabled</h2>
+              <p className="text-slate-600 dark:text-slate-400">
+                This feature has been disabled by your administrator.
+              </p>
+              <div className="mt-6">
+                <button
+                  onClick={() => (window.location.hash = '#/')}
+                  className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-semibold transition-colors"
+                >
+                  Back to Home
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      } else {
       content = (
         <Suspense fallback={<LoadingFallback />}>
           <AdminPanel
@@ -469,6 +502,7 @@ const AppContent: React.FC = () => {
           />
         </Suspense>
       );
+      }
     } else {
       window.location.hash = '#/';
       content = null;
@@ -541,40 +575,46 @@ const AppContent: React.FC = () => {
           <div className="flex flex-col items-center gap-6">
             {/* Quick Navigation Links */}
             <div className={`flex flex-wrap justify-center items-center gap-x-8 gap-y-4 text-slate-500 dark:text-slate-400 ${!showFooterDetails ? 'mb-0' : ''}`}>
-              <button
-                onClick={() => handleTabClick('public')}
-                className="hover:text-brand-600 dark:hover:text-brand-400 transition-colors flex items-center gap-1.5 font-medium"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                  <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
-                  <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
-                </svg>
-                Public
-              </button>
+              {!disabledTabs.has('public') && (
+                <button
+                  onClick={() => handleTabClick('public')}
+                  className="hover:text-brand-600 dark:hover:text-brand-400 transition-colors flex items-center gap-1.5 font-medium"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
+                    <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
+                  </svg>
+                  Public
+                </button>
+              )}
 
-              <button
-                onClick={() => handleTabClick('favorites')}
-                className="hover:text-amber-500 transition-colors flex items-center gap-1.5 font-medium"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                  <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
-                </svg>
-                Favorites
-              </button>
+              {!disabledTabs.has('favorites') && (
+                <button
+                  onClick={() => handleTabClick('favorites')}
+                  className="hover:text-amber-500 transition-colors flex items-center gap-1.5 font-medium"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
+                  </svg>
+                  Favorites
+                </button>
+              )}
 
               {isAuthenticated && (
                 <>
-                  <button
-                    onClick={() => handleTabClick('private')}
-                    className="hover:text-violet-500 transition-colors flex items-center gap-1.5 font-medium"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                      <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
-                    </svg>
-                    Private
-                  </button>
+                  {!disabledTabs.has('private') && (
+                    <button
+                      onClick={() => handleTabClick('private')}
+                      className="hover:text-violet-500 transition-colors flex items-center gap-1.5 font-medium"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                        <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
+                      </svg>
+                      Private
+                    </button>
+                  )}
 
-                  {user?.is_admin && (
+                  {user?.is_admin && !disabledTabs.has('monitoring') && (
                     <button
                       onClick={() => handleTabClick('monitoring')}
                       className="hover:text-emerald-500 transition-colors flex items-center gap-1.5 font-medium"
@@ -586,46 +626,54 @@ const AppContent: React.FC = () => {
                     </button>
                   )}
 
-                  <button
-                    onClick={() => handleTabClick('scheduled')}
-                    className="hover:text-blue-500 transition-colors flex items-center gap-1.5 font-medium"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
-                    </svg>
-                    Scheduled
-                  </button>
+                  {!disabledTabs.has('scheduled') && (
+                    <button
+                      onClick={() => handleTabClick('scheduled')}
+                      className="hover:text-blue-500 transition-colors flex items-center gap-1.5 font-medium"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
+                      </svg>
+                      Scheduled
+                    </button>
+                  )}
 
-                  <button
-                    onClick={() => handleTabClick('expired')}
-                    className="hover:text-orange-500 transition-colors flex items-center gap-1.5 font-medium"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
-                    </svg>
-                    Expired
-                  </button>
+                  {!disabledTabs.has('expired') && (
+                    <button
+                      onClick={() => handleTabClick('expired')}
+                      className="hover:text-orange-500 transition-colors flex items-center gap-1.5 font-medium"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                      </svg>
+                      Expired
+                    </button>
+                  )}
 
-                  <button
-                    onClick={() => handleTabClick('archive')}
-                    className="hover:text-amber-600 transition-colors flex items-center gap-1.5 font-medium"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                      <path d="M2 3a1 1 0 00-1 1v1a1 1 0 001 1h16a1 1 0 001-1V4a1 1 0 00-1-1H2z" />
-                      <path fillRule="evenodd" d="M2 7.5h16l-.811 7.71a2 2 0 01-1.99 1.79H4.801a2 2 0 01-1.99-1.79L2 7.5zm5.22 1.22a.75.75 0 011.06 0L10 10.94l1.72-1.22a.75.75 0 111.06 1.06L11 12.06l1.72 1.22a.75.75 0 11-1.06 1.06L10 13.06l-1.72 1.22a.75.75 0 01-1.06-1.06L9 12.06l-1.72-1.22a.75.75 0 010-1.06z" clipRule="evenodd" />
-                    </svg>
-                    Archive
-                  </button>
+                  {!disabledTabs.has('archive') && (
+                    <button
+                      onClick={() => handleTabClick('archive')}
+                      className="hover:text-amber-600 transition-colors flex items-center gap-1.5 font-medium"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                        <path d="M2 3a1 1 0 00-1 1v1a1 1 0 001 1h16a1 1 0 001-1V4a1 1 0 00-1-1H2z" />
+                        <path fillRule="evenodd" d="M2 7.5h16l-.811 7.71a2 2 0 01-1.99 1.79H4.801a2 2 0 01-1.99-1.79L2 7.5zm5.22 1.22a.75.75 0 011.06 0L10 10.94l1.72-1.22a.75.75 0 111.06 1.06L11 12.06l1.72 1.22a.75.75 0 11-1.06 1.06L10 13.06l-1.72 1.22a.75.75 0 01-1.06-1.06L9 12.06l-1.72-1.22a.75.75 0 010-1.06z" clipRule="evenodd" />
+                      </svg>
+                      Archive
+                    </button>
+                  )}
 
-                  <button
-                    onClick={() => handleTabClick('recycle-bin')}
-                    className="hover:text-red-500 transition-colors flex items-center gap-1.5 font-medium"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                      <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-                    </svg>
-                    Recycle Bin
-                  </button>
+                  {!disabledTabs.has('recycle-bin') && (
+                    <button
+                      onClick={() => handleTabClick('recycle-bin')}
+                      className="hover:text-red-500 transition-colors flex items-center gap-1.5 font-medium"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                        <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                      </svg>
+                      Recycle Bin
+                    </button>
+                  )}
                 </>
               )}
 

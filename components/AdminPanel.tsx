@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { authService, PendingUser, AllUser } from '../services/authService';
 import { settingsService, AppSettings } from '../services/settingsService';
 import { databaseService } from '../services/databaseService';
@@ -10,6 +10,7 @@ import { Tile } from '../types';
 import { getCategoryArrangement } from '../services/storageService';
 import { SecurePasswordInput } from './SecurePasswordInput';
 import { accessService, TilePermission } from '../services/accessService';
+import { APP_TABS, getDisabledTabsFromSettings, setToSortedJsonArray, type AppTabId } from '../services/tabVisibilityService';
 
 // Resolve API base dynamically based on current location
 // This ensures API calls work in both dev mode and runtime mode with any base path
@@ -49,9 +50,9 @@ interface AdminPanelProps {
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const { refreshSettings } = useSettings();
   // Initialize activeTab from localStorage or default to 'pending'
-  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'access' | 'clone' | 'browser'>(() => {
+  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser'>(() => {
     const savedTab = localStorage.getItem('adminPanelActiveTab');
-    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'access' | 'clone' | 'browser'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'footer', 'access', 'clone', 'browser'];
+    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'footer', 'tabVisibility', 'access', 'clone', 'browser'];
     return (savedTab && validTabs.includes(savedTab as any)) ? savedTab as any : 'pending';
   });
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
@@ -75,7 +76,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     logo_image: '',
     favicon: '',
     footer_text: '© 2025 Adventhealth - Designed and developed by AIT Architecture team',
-    show_database_path_in_footer: '1'
+    show_database_path_in_footer: '1',
+    disabled_tabs: '[]'
   });
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -302,6 +304,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   useEffect(() => {
     localStorage.setItem('adminPanelActiveTab', activeTab);
   }, [activeTab]);
+
+  const disabledTabs = useMemo(() => getDisabledTabsFromSettings(settings), [settings.disabled_tabs]);
+
+  const setTabDisabled = (tabId: AppTabId, disabled: boolean) => {
+    const next = new Set(disabledTabs);
+    if (disabled) next.add(tabId);
+    else next.delete(tabId);
+    setSettings(prev => ({ ...prev, disabled_tabs: setToSortedJsonArray(next) }));
+  };
 
   // Browser extension test state
   const [testUrl, setTestUrl] = useState('https://github.com');
@@ -978,6 +989,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             }`}
         >
           Footer
+        </button>
+        <button
+          onClick={() => setActiveTab('tabVisibility')}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'tabVisibility'
+            ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+            : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+        >
+          Enable/Disable Tabs
         </button>
         <button
           onClick={() => setActiveTab('access')}
@@ -2848,6 +2868,105 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       className="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
                     >
                       {settingsSaving ? 'Saving...' : 'Save Footer Text'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Enable/Disable Tabs Tab */}
+          {activeTab === 'tabVisibility' && (
+            <div className="space-y-6">
+              {settingsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                </div>
+              ) : (
+                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">Enable/Disable Tabs</h3>
+                      <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                        Control which app tabs are visible to users (including admins). Disabled tabs will be hidden and blocked from switching.
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-500 mt-2">
+                        Tip: If you disable all tabs for a user type (e.g., guests), they’ll see a friendly “feature disabled” message.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setSettings(prev => ({ ...prev, disabled_tabs: '[]' }))}
+                      className="px-3 py-2 text-sm font-medium bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg transition-colors"
+                      title="Enable all tabs"
+                      type="button"
+                    >
+                      Reset
+                    </button>
+                  </div>
+
+                  <div className="mt-6 space-y-3">
+                    {APP_TABS.map(tab => {
+                      const isDisabled = disabledTabs.has(tab.id);
+                      return (
+                        <label
+                          key={tab.id}
+                          className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 hover:bg-slate-100 dark:hover:bg-slate-900/50 transition-colors cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-1 h-4 w-4 accent-brand-600"
+                            checked={!isDisabled}
+                            onChange={(e) => setTabDisabled(tab.id, !e.target.checked)}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                                {tab.label}
+                              </div>
+                              {tab.requiresAdmin && (
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300">
+                                  Admin
+                                </span>
+                              )}
+                              {tab.requiresAuth && !tab.requiresAdmin && (
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200">
+                                  Login
+                                </span>
+                              )}
+                              <span className="text-[11px] text-slate-500 dark:text-slate-500 font-mono">
+                                {tab.id}
+                              </span>
+                            </div>
+                            <div className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                              {tab.description}
+                            </div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-6 flex justify-end">
+                    <button
+                      onClick={async () => {
+                        try {
+                          setSettingsSaving(true);
+                          setError('');
+                          await settingsService.updateSettings({ disabled_tabs: settings.disabled_tabs });
+                          await loadSettings();
+                          await refreshSettings();
+                          alert('Tab visibility updated successfully!');
+                        } catch (err: any) {
+                          setError(err.message || 'Failed to update tab visibility');
+                        } finally {
+                          setSettingsSaving(false);
+                        }
+                      }}
+                      disabled={settingsSaving}
+                      className="px-6 py-2.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors"
+                      type="button"
+                    >
+                      {settingsSaving ? 'Saving...' : 'Save'}
                     </button>
                   </div>
                 </div>

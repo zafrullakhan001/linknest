@@ -76,10 +76,12 @@ try {
             break;
             
         case 'DELETE':
-            if (preg_match('/^\/(\d+)$/', $path, $matches)) {
+            if (preg_match('/^\/monitor\/(\d+)\/logs$/', $path, $matches)) {
+                handleClearEmailLogs($matches[1]);
+            } elseif (preg_match('/^\/(\d+)$/', $path, $matches)) {
                 handleDeleteNotificationRule($matches[1]);
             } else {
-                sendJSON(['error' => 'Invalid endpoint. Use /{id}'], 404);
+                sendJSON(['error' => 'Invalid endpoint. Use /{id} or /monitor/{id}/logs'], 404);
             }
             break;
             
@@ -182,6 +184,26 @@ function handleGetEmailLogs($monitorId) {
     $logs = $stmt->fetchAll();
     
     sendJSON(['logs' => $logs]);
+}
+
+function handleClearEmailLogs($monitorId) {
+    $db = getDB();
+
+    // Verify monitor exists
+    $stmt = $db->prepare('SELECT id FROM monitors WHERE id = ?');
+    $stmt->execute([$monitorId]);
+    if (!$stmt->fetch()) {
+        sendJSON(['error' => 'Monitor not found'], 404);
+        return;
+    }
+
+    try {
+        $stmt = $db->prepare('DELETE FROM monitor_notification_logs WHERE monitor_id = ?');
+        $stmt->execute([$monitorId]);
+        sendJSON(['success' => true, 'deleted' => $stmt->rowCount()]);
+    } catch (PDOException $e) {
+        sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
+    }
 }
 
 function handleCreateNotificationRule() {

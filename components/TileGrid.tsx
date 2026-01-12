@@ -17,6 +17,7 @@ import { linkHealthService } from '../services/linkHealthService';
 import { favoriteLinkHealthService, LinkHealthCheckResult } from '../services/favoriteLinkHealthService';
 import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, getTileDecorationClass, TileAnimation, TileDecoration } from './TileAnimationSelector';
 import { MonitoringDashboard } from './MonitoringDashboard';
+import { getDisabledTabsFromSettings } from '../services/tabVisibilityService';
 
 
 interface TileGridProps {
@@ -842,6 +843,47 @@ export const TileGrid: React.FC<TileGridProps> = ({
 }) => {
   const { settings } = useSettings();
   const { user } = useAuth();
+
+  const disabledAppTabs = useMemo(() => getDisabledTabsFromSettings(settings), [settings?.disabled_tabs]);
+
+  const isTabDisabledBySettings = useCallback((tab: TabType) => {
+    // Favorites setting controls both favorites + public-favorites
+    if (tab === 'favorites' || tab === 'public-favorites') return disabledAppTabs.has('favorites');
+    if (tab === 'public') return disabledAppTabs.has('public');
+    if (tab === 'private') return disabledAppTabs.has('private');
+    if (tab === 'scheduled') return disabledAppTabs.has('scheduled');
+    if (tab === 'expired') return disabledAppTabs.has('expired');
+    if (tab === 'archive') return disabledAppTabs.has('archive');
+    if (tab === 'recycle-bin') return disabledAppTabs.has('recycle-bin');
+    if (tab === 'monitoring') return disabledAppTabs.has('monitoring');
+    return false;
+  }, [disabledAppTabs]);
+
+  const getFallbackTab = useCallback((): TabType | null => {
+    const candidates: TabType[] = isAuthenticated
+      ? ([
+          'public',
+          'favorites',
+          'private',
+          'scheduled',
+          'expired',
+          'archive',
+          'recycle-bin',
+          ...(user?.is_admin ? (['monitoring'] as TabType[]) : [])
+        ] as TabType[])
+      : (['public', 'public-favorites'] as TabType[]);
+
+    for (const c of candidates) {
+      // Auth restrictions
+      const restrictedTabs: TabType[] = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+      if (!isAuthenticated && restrictedTabs.includes(c)) continue;
+      if (c === 'monitoring' && (!user || !user.is_admin)) continue;
+      if (isTabDisabledBySettings(c)) continue;
+      return c;
+    }
+    return null;
+  }, [isAuthenticated, user, isTabDisabledBySettings]);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingTile, setEditingTile] = useState<Tile | null>(null);
@@ -866,6 +908,40 @@ export const TileGrid: React.FC<TileGridProps> = ({
     return 'public';
   });
 
+  const requestTab = useCallback((tab: TabType) => {
+    if (isTabDisabledBySettings(tab)) {
+      const fallback = getFallbackTab();
+      if (fallback) setActiveTab(fallback);
+      return;
+    }
+    // Preserve existing auth rules
+    const restrictedTabs: TabType[] = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+    if (!isAuthenticated && restrictedTabs.includes(tab)) {
+      setActiveTab('public');
+      return;
+    }
+    if (tab === 'monitoring' && (!user || !user.is_admin)) {
+      setActiveTab('public');
+      return;
+    }
+    setActiveTab(tab);
+  }, [getFallbackTab, isAuthenticated, isTabDisabledBySettings, user]);
+
+  // If the current tab becomes disabled (or unauthorized), fall back to the first allowed tab
+  useEffect(() => {
+    const restrictedTabs: TabType[] = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+    const unauthorized = (!isAuthenticated && restrictedTabs.includes(activeTab)) ||
+      (activeTab === 'monitoring' && (!user || !user.is_admin));
+    const disabled = isTabDisabledBySettings(activeTab);
+
+    if (unauthorized || disabled) {
+      const fallback = getFallbackTab();
+      if (fallback && fallback !== activeTab) {
+        setActiveTab(fallback);
+      }
+    }
+  }, [activeTab, getFallbackTab, isAuthenticated, isTabDisabledBySettings, user]);
+
   // Persist active tab changes
   useEffect(() => {
     try {
@@ -882,6 +958,11 @@ export const TileGrid: React.FC<TileGridProps> = ({
       const validTabs: TabType[] = ['favorites', 'public', 'public-favorites', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
 
       if (tab && validTabs.includes(tab)) {
+        if (isTabDisabledBySettings(tab)) {
+          const fallback = getFallbackTab();
+          if (fallback) setActiveTab(fallback);
+          return;
+        }
         // Handle guest vs auth favorites
         if (tab === 'favorites' && !isAuthenticated) {
           setActiveTab('public-favorites');
@@ -906,7 +987,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
     window.addEventListener('switchTab', handleSwitchTab);
     return () => window.removeEventListener('switchTab', handleSwitchTab);
-  }, [isAuthenticated, user]);
+  }, [getFallbackTab, isAuthenticated, isTabDisabledBySettings, user]);
 
   // Redirect away from monitoring tab if user is not admin
   useEffect(() => {
@@ -3258,16 +3339,18 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
       {/* Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700">
-        <button
-          onClick={() => setActiveTab('public')}
-          data-active={activeTab === 'public'}
-          className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'public' ? 'active' : ''}`}
-        >
-          Public
-        </button>
-        {!isAuthenticated && (
+        {!disabledAppTabs.has('public') && (
           <button
-            onClick={() => setActiveTab('public-favorites')}
+            onClick={() => requestTab('public')}
+            data-active={activeTab === 'public'}
+            className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'public' ? 'active' : ''}`}
+          >
+            Public
+          </button>
+        )}
+        {!isAuthenticated && !disabledAppTabs.has('favorites') && (
+          <button
+            onClick={() => requestTab('public-favorites')}
             data-active={activeTab === 'public-favorites'}
             className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'public-favorites' ? 'active' : ''}`}
           >
@@ -3289,7 +3372,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
           </button>
         )}
         {/* Export/Import buttons for public favorites - only show when favorites tab is active */}
-        {!isAuthenticated && activeTab === 'public-favorites' && (
+        {!isAuthenticated && !disabledAppTabs.has('favorites') && activeTab === 'public-favorites' && (
           <div className="flex items-center gap-1 ml-2 pl-2 border-l border-slate-300 dark:border-slate-600">
             <button
               onClick={handleExportPublicFavorites}
@@ -3331,97 +3414,109 @@ export const TileGrid: React.FC<TileGridProps> = ({
         )}
         {isAuthenticated && (
           <>
-            <button
-              onClick={() => setActiveTab('favorites')}
-              data-active={activeTab === 'favorites'}
-              className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'favorites' ? 'active' : ''}`}
-            >
-              Favorites
-              {(favoriteTilesCount + favoriteLinks.length) > 0 && (
-                <span className="ml-2 inline-flex items-center gap-1.5">
-                  {favoriteTilesCount > 0 && (
-                    <span className="px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
-                      {favoriteTilesCount} {favoriteTilesCount === 1 ? 'Space' : 'Spaces'}
-                    </span>
-                  )}
-                  {favoriteLinks.length > 0 && (
-                    <span className="px-1.5 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-full">
-                      {favoriteLinks.length} {favoriteLinks.length === 1 ? 'Link' : 'Links'}
-                    </span>
-                  )}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab('private')}
-              data-active={activeTab === 'private'}
-              className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'private' ? 'active' : ''}`}
-            >
-              Private
-              {privateTilesCount > 0 && (
-                <span className="ml-2 px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
-                  {privateTilesCount}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab('scheduled')}
-              data-active={activeTab === 'scheduled'}
-              className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'scheduled' ? 'active' : ''}`}
-            >
-              Scheduled
-              {scheduledTilesCount > 0 && (
-                <span className="ml-2 px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
-                  {scheduledTilesCount}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab('expired')}
-              data-active={activeTab === 'expired'}
-              className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'expired' ? 'active' : ''}`}
-            >
-              Expired
-              {expiredTilesCount > 0 && (
-                <span className="ml-2 px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
-                  {expiredTilesCount}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab('archive')}
-              data-active={activeTab === 'archive'}
-              className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'archive' ? 'active' : ''}`}
-            >
-              Archive
-              {isAuthenticated && (
-                <span className="ml-2 px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
-                  {archiveTiles.length}
-                </span>
-              )}
-            </button>
-            {user?.is_admin && (
+            {!disabledAppTabs.has('favorites') && (
               <button
-                onClick={() => setActiveTab('monitoring')}
+                onClick={() => requestTab('favorites')}
+                data-active={activeTab === 'favorites'}
+                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'favorites' ? 'active' : ''}`}
+              >
+                Favorites
+                {(favoriteTilesCount + favoriteLinks.length) > 0 && (
+                  <span className="ml-2 inline-flex items-center gap-1.5">
+                    {favoriteTilesCount > 0 && (
+                      <span className="px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
+                        {favoriteTilesCount} {favoriteTilesCount === 1 ? 'Space' : 'Spaces'}
+                      </span>
+                    )}
+                    {favoriteLinks.length > 0 && (
+                      <span className="px-1.5 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-full">
+                        {favoriteLinks.length} {favoriteLinks.length === 1 ? 'Link' : 'Links'}
+                      </span>
+                    )}
+                  </span>
+                )}
+              </button>
+            )}
+            {!disabledAppTabs.has('private') && (
+              <button
+                onClick={() => requestTab('private')}
+                data-active={activeTab === 'private'}
+                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'private' ? 'active' : ''}`}
+              >
+                Private
+                {privateTilesCount > 0 && (
+                  <span className="ml-2 px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
+                    {privateTilesCount}
+                  </span>
+                )}
+              </button>
+            )}
+            {!disabledAppTabs.has('scheduled') && (
+              <button
+                onClick={() => requestTab('scheduled')}
+                data-active={activeTab === 'scheduled'}
+                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'scheduled' ? 'active' : ''}`}
+              >
+                Scheduled
+                {scheduledTilesCount > 0 && (
+                  <span className="ml-2 px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
+                    {scheduledTilesCount}
+                  </span>
+                )}
+              </button>
+            )}
+            {!disabledAppTabs.has('expired') && (
+              <button
+                onClick={() => requestTab('expired')}
+                data-active={activeTab === 'expired'}
+                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'expired' ? 'active' : ''}`}
+              >
+                Expired
+                {expiredTilesCount > 0 && (
+                  <span className="ml-2 px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
+                    {expiredTilesCount}
+                  </span>
+                )}
+              </button>
+            )}
+            {!disabledAppTabs.has('archive') && (
+              <button
+                onClick={() => requestTab('archive')}
+                data-active={activeTab === 'archive'}
+                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'archive' ? 'active' : ''}`}
+              >
+                Archive
+                {isAuthenticated && (
+                  <span className="ml-2 px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
+                    {archiveTiles.length}
+                  </span>
+                )}
+              </button>
+            )}
+            {user?.is_admin && !disabledAppTabs.has('monitoring') && (
+              <button
+                onClick={() => requestTab('monitoring')}
                 className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'monitoring' ? 'active' : ''}`}
               >
                 Monitoring
               </button>
             )}
-            <button
-              onClick={() => setActiveTab('recycle-bin')}
-              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'recycle-bin'
-                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                }`}
-            >
-              Recycle Bin
-              {isAuthenticated && (
-                <span className="ml-2 px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
-                  {recycleBinTiles.length}
-                </span>
-              )}
-            </button>
+            {!disabledAppTabs.has('recycle-bin') && (
+              <button
+                onClick={() => requestTab('recycle-bin')}
+                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'recycle-bin'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+              >
+                Recycle Bin
+                {isAuthenticated && (
+                  <span className="ml-2 px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
+                    {recycleBinTiles.length}
+                  </span>
+                )}
+              </button>
+            )}
           </>
         )}
       </div>

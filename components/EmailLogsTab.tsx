@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getEmailLogs, EmailLog } from '../services/monitorNotificationService';
+import { getEmailLogs, clearEmailLogs, EmailLog } from '../services/monitorNotificationService';
 
 interface EmailLogsTabProps {
     monitorId: number;
@@ -24,6 +24,20 @@ export const EmailLogsTab: React.FC<EmailLogsTabProps> = ({ monitorId }) => {
             setLogs(data);
         } catch (err: any) {
             setError(err.message || 'Failed to load email logs');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleClearLogs = async () => {
+        if (!confirm('Clear all email logs for this monitor? This cannot be undone.')) return;
+        try {
+            setLoading(true);
+            setError(null);
+            await clearEmailLogs(monitorId);
+            await loadLogs();
+        } catch (err: any) {
+            setError(err.message || 'Failed to clear email logs');
         } finally {
             setLoading(false);
         }
@@ -58,16 +72,25 @@ export const EmailLogsTab: React.FC<EmailLogsTabProps> = ({ monitorId }) => {
                         View email notification history and delivery status for this monitor.
                     </p>
                 </div>
-                <button
-                    onClick={loadLogs}
-                    className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 transition-colors rounded-lg hover:bg-gray-100 border border-gray-300"
-                    title="Refresh logs"
-                >
-                    <svg className="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    Refresh
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleClearLogs}
+                        className="px-4 py-2 text-sm text-red-700 hover:text-red-800 transition-colors rounded-lg hover:bg-red-50 border border-red-200"
+                        title="Clear email logs"
+                    >
+                        Clear Logs
+                    </button>
+                    <button
+                        onClick={loadLogs}
+                        className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 transition-colors rounded-lg hover:bg-gray-100 border border-gray-300"
+                        title="Refresh logs"
+                    >
+                        <svg className="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Refresh
+                    </button>
+                </div>
             </div>
 
             {/* Statistics */}

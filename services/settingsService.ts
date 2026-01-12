@@ -44,6 +44,7 @@ export interface AppSettings {
   footer_text?: string; // Footer text displayed at the bottom of pages
   guest_access_enabled?: string; // '0' or '1' - controls whether guests can view spaces
   show_database_path_in_footer?: string; // '0' or '1' - controls whether database path is shown in footer
+  disabled_tabs?: string; // JSON array string of disabled app tabs (e.g. ["public","favorites"])
 
   // LDAP Settings
   ldap_enabled?: string;
@@ -111,6 +112,7 @@ export const settingsService = {
       footer_text: data.settings?.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team',
       guest_access_enabled: data.settings?.guest_access_enabled || '1', // Default to enabled
       show_database_path_in_footer: data.settings?.show_database_path_in_footer || '1', // Default to enabled
+      disabled_tabs: data.settings?.disabled_tabs || '[]',
 
       // LDAP defaults
       ldap_enabled: data.settings?.ldap_enabled || '0',

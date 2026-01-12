@@ -4,6 +4,14 @@
  * Does not depend on external libraries (PHPMailer etc)
  */
 
+function isValidEmailLocal($email) {
+    $email = trim((string)$email);
+    if ($email === '') return false;
+    if (filter_var($email, FILTER_VALIDATE_EMAIL)) return true;
+    // Allow localhost / loopback for local testing
+    return (bool)preg_match('/^[^\s@]+@([^\s@]+\.[^\s@]+|localhost|127\.0\.0\.1|::1)$/i', $email);
+}
+
 function normalizeEmailList($emails) {
     $list = [];
     if ($emails === null) return $list;
@@ -15,7 +23,7 @@ function normalizeEmailList($emails) {
     foreach ($emails as $email) {
         $email = trim((string)$email);
         if ($email === '') continue;
-        if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        if (isValidEmailLocal($email)) {
             $list[] = $email;
         }
     }

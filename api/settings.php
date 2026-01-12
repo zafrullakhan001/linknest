@@ -367,6 +367,7 @@ function handleUpdateSettings() {
                 'footer_text',
                 'guest_access_enabled',
                 'show_database_path_in_footer',
+                'disabled_tabs',
                 'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
                 'ldap_login_domain',
                 'ldap_bind_dn', 'ldap_bind_password',
@@ -417,6 +418,51 @@ function handleUpdateSettings() {
                     }
                     // If password already contains dots in the right format, assume it's already encrypted
                 }
+            }
+
+            // Normalize disabled_tabs - store as a JSON array string of allowed tab ids
+            if ($key === 'disabled_tabs') {
+                $allowedTabIds = [
+                    'public', 'favorites', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin',
+                    'monitoring', 'admin', 'style'
+                ];
+                $normalized = [];
+
+                if (is_string($value)) {
+                    $trimmed = trim($value);
+                    if ($trimmed === '') {
+                        $normalized = [];
+                    } else {
+                        // Try JSON array first
+                        $decoded = json_decode($trimmed, true);
+                        if (is_array($decoded)) {
+                            foreach ($decoded as $item) {
+                                $id = strtolower(trim((string)$item));
+                                if (in_array($id, $allowedTabIds, true)) {
+                                    $normalized[$id] = true;
+                                }
+                            }
+                        } else {
+                            // Fallback: comma-separated
+                            $parts = preg_split('/\s*,\s*/', $trimmed);
+                            foreach ($parts as $p) {
+                                $id = strtolower(trim((string)$p));
+                                if ($id !== '' && in_array($id, $allowedTabIds, true)) {
+                                    $normalized[$id] = true;
+                                }
+                            }
+                        }
+                    }
+                } else if (is_array($value)) {
+                    foreach ($value as $item) {
+                        $id = strtolower(trim((string)$item));
+                        if (in_array($id, $allowedTabIds, true)) {
+                            $normalized[$id] = true;
+                        }
+                    }
+                }
+
+                $value = json_encode(array_values(array_keys($normalized)));
             }
             
             $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');

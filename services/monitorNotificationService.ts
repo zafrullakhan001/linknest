@@ -160,3 +160,15 @@ export async function getEmailLogs(monitorId: number, days: number = 7): Promise
     const data = await response.json();
     return data.logs || [];
 }
+
+export async function clearEmailLogs(monitorId: number): Promise<number> {
+    const response = await fetch(`${API_BASE}/monitor/${monitorId}/logs`, {
+        method: 'DELETE'
+    });
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || `Failed to clear email logs: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.deleted || 0;
+}

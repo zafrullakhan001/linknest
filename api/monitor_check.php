@@ -610,11 +610,29 @@ function sendNotification($monitor, $message, $statusTrigger = 'both') {
         return;
     }
     
-    // Fetch admin email from users table
     $db = getDB();
-    $stmt = $db->prepare('SELECT email FROM users WHERE is_admin = 1 LIMIT 1');
-    $stmt->execute();
-    $admin = $stmt->fetch();
+
+    // Prefer current logged-in user (matches the UI/admin who enabled monitoring)
+    $currentUserEmail = null;
+    if (session_status() === PHP_SESSION_ACTIVE && isset($_SESSION['user_id'])) {
+        try {
+            $stmt = $db->prepare('SELECT email FROM users WHERE id = ? LIMIT 1');
+            $stmt->execute([(int)$_SESSION['user_id']]);
+            $currentUserEmail = $stmt->fetchColumn();
+        } catch (Exception $e) {
+            // ignore
+        }
+    }
+
+    // Fallback: first admin user (deterministic)
+    $adminEmail = null;
+    try {
+        $stmt = $db->prepare('SELECT email FROM users WHERE is_admin = 1 AND email IS NOT NULL AND TRIM(email) <> "" ORDER BY id ASC LIMIT 1');
+        $stmt->execute();
+        $adminEmail = $stmt->fetchColumn();
+    } catch (Exception $e) {
+        // ignore
+    }
     
     // Determine recipients (monitor override or admin email)
     $recipientsRaw = trim((string)($monitor['legacy_email_to'] ?? ''));
@@ -624,13 +642,19 @@ function sendNotification($monitor, $message, $statusTrigger = 'both') {
         foreach (preg_split('/[,\n]+/', $recipientsRaw) as $email) {
             $email = trim($email);
             if ($email === '') continue;
-            if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            if (function_exists('isValidEmailLocal') ? isValidEmailLocal($email) : filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $recipients[] = $email;
             }
         }
     }
-    if (empty($recipients) && $admin && !empty($admin['email'])) {
-        $recipients[] = $admin['email'];
+
+    if (empty($recipients)) {
+        // Use current user first (if valid), else admin
+        if (!empty($currentUserEmail) && (function_exists('isValidEmailLocal') ? isValidEmailLocal($currentUserEmail) : filter_var($currentUserEmail, FILTER_VALIDATE_EMAIL))) {
+            $recipients[] = $currentUserEmail;
+        } elseif (!empty($adminEmail) && (function_exists('isValidEmailLocal') ? isValidEmailLocal($adminEmail) : filter_var($adminEmail, FILTER_VALIDATE_EMAIL))) {
+            $recipients[] = $adminEmail;
+        }
     }
 
     // CC list (optional)
@@ -640,7 +664,7 @@ function sendNotification($monitor, $message, $statusTrigger = 'both') {
         foreach (preg_split('/[,\n]+/', $ccRaw) as $email) {
             $email = trim($email);
             if ($email === '') continue;
-            if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            if (function_exists('isValidEmailLocal') ? isValidEmailLocal($email) : filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $ccList[] = $email;
             }
         }
