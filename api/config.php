@@ -827,6 +827,66 @@ function initDatabase() {
         } catch (PDOException $e) {
             // Indices might already exist
         }
+
+        // Create monitor_notification_rules table
+        $db->exec('CREATE TABLE IF NOT EXISTS monitor_notification_rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            monitor_id INTEGER NOT NULL,
+            name TEXT,
+            status_trigger TEXT NOT NULL, -- up, down, or both
+            time_window_start TEXT, -- HH:MM format (24-hour), null means always active
+            time_window_end TEXT, -- HH:MM format (24-hour), null means always active
+            days_of_week TEXT, -- comma-separated: 0=Sunday, 1=Monday, etc. null means all days
+            subject_template TEXT NOT NULL,
+            body_template TEXT NOT NULL,
+            from_name TEXT,
+            from_email TEXT,
+            is_enabled INTEGER DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )');
+
+        // Migrate monitor_notification_rules to add name column if missing
+        try {
+            @$db->exec('ALTER TABLE monitor_notification_rules ADD COLUMN name TEXT');
+        } catch (PDOException $e) { /* ignore if column already exists */ }
+        try {
+            // Backfill empty names to a sensible default
+            @$db->exec("UPDATE monitor_notification_rules SET name = 'Notification Rule' WHERE name IS NULL OR TRIM(name) = ''");
+        } catch (PDOException $e) { /* ignore */ }
+
+        // Create monitor_notification_recipients table
+        $db->exec('CREATE TABLE IF NOT EXISTS monitor_notification_recipients (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rule_id INTEGER NOT NULL,
+            email TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        )');
+
+        // Create monitor_notification_logs table (for tracking sent notifications)
+        $db->exec('CREATE TABLE IF NOT EXISTS monitor_notification_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rule_id INTEGER NOT NULL,
+            monitor_id INTEGER NOT NULL,
+            recipient_email TEXT NOT NULL,
+            status_trigger TEXT NOT NULL,
+            sent_at INTEGER NOT NULL,
+            subject TEXT NOT NULL,
+            success INTEGER DEFAULT 1,
+            error_message TEXT
+        )');
+
+        // Create indexes for notification tables
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_notification_rules_monitor_id ON monitor_notification_rules(monitor_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_notification_rules_enabled ON monitor_notification_rules(is_enabled)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_notification_recipients_rule_id ON monitor_notification_recipients(rule_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_notification_logs_rule_id ON monitor_notification_logs(rule_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_notification_logs_monitor_id ON monitor_notification_logs(monitor_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_notification_logs_sent_at ON monitor_notification_logs(sent_at)');
+        } catch (PDOException $e) {
+            // Indices might already exist
+        }
         
         // Migrate existing tables if they exist with NULL user_id
         // SQLite doesn't allow NULL in composite PRIMARY KEY, so we need to migrate to use 0 instead

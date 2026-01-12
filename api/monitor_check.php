@@ -107,7 +107,15 @@ function performMonitorCheck($monitor) {
     $stmt = $db->prepare('INSERT INTO monitor_logs (monitor_id, status, response_time, details, checked_at) VALUES (?, ?, ?, ?, ?)');
     $stmt->execute([$monitor['id'], $status, $responseTime, $details, $now]);
     
-    // Send Notification if enabled and status changed to DOWN or recovered to UP
+    // Send notifications using the new advanced notification system
+    if ($statusChanged) {
+        // Skip notifications if in maintenance window or if global notifications are paused
+        if (!isNotificationPaused() && !isInMaintenanceWindow($monitor)) {
+            sendAdvancedNotifications($monitor, $status, $prevStatus, $details, $responseTime);
+        }
+    }
+    
+    // Legacy notification support (for backward compatibility)
     if ($monitor['email_notification'] && $statusChanged) {
         // Skip notifications if in maintenance window or if global notifications are paused
         if (!isNotificationPaused() && !isInMaintenanceWindow($monitor)) {
@@ -258,6 +266,183 @@ function checkPort($target, $port) {
     } else {
         return ['status' => 'down', 'details' => "Connection refused: $errstr ($errno)"];
     }
+}
+
+/**
+ * Send notifications using the advanced notification system
+ */
+function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, $responseTime) {
+    $db = getDB();
+    
+    // Determine which status triggers to check
+    $triggersToCheck = [];
+    if ($newStatus === 'down') {
+        $triggersToCheck[] = 'down';
+        $triggersToCheck[] = 'both';
+    } elseif ($newStatus === 'up' && $prevStatus === 'down') {
+        $triggersToCheck[] = 'up';
+        $triggersToCheck[] = 'both';
+    }
+    
+    if (empty($triggersToCheck)) {
+        return; // No relevant status change
+    }
+    
+    // Get all enabled notification rules for this monitor
+    $placeholders = implode(',', array_fill(0, count($triggersToCheck), '?'));
+    $stmt = $db->prepare("SELECT * FROM monitor_notification_rules WHERE monitor_id = ? AND is_enabled = 1 AND status_trigger IN ($placeholders)");
+    $params = array_merge([$monitor['id']], $triggersToCheck);
+    $stmt->execute($params);
+    $rules = $stmt->fetchAll();
+    
+    if (empty($rules)) {
+        return; // No rules configured
+    }
+    
+    $now = time();
+    $currentHour = (int)date('H');
+    $currentMinute = (int)date('i');
+    $currentDayOfWeek = (int)date('w'); // 0 = Sunday, 6 = Saturday
+    
+    foreach ($rules as $rule) {
+        // Check time window
+        if (!isTimeWindowActive($rule, $currentHour, $currentMinute)) {
+            continue; // Skip this rule, not in time window
+        }
+        
+        // Check days of week
+        if (!isDayOfWeekActive($rule, $currentDayOfWeek)) {
+            continue; // Skip this rule, not on active day
+        }
+        
+        // Get recipients for this rule
+        $stmt = $db->prepare('SELECT email FROM monitor_notification_recipients WHERE rule_id = ?');
+        $stmt->execute([$rule['id']]);
+        $recipients = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        if (empty($recipients)) {
+            continue; // No recipients configured
+        }
+        
+        // Prepare email content with template variables
+        $subject = replaceTemplateVariables($rule['subject_template'], $monitor, $newStatus, $details, $responseTime);
+        $body = replaceTemplateVariables($rule['body_template'], $monitor, $newStatus, $details, $responseTime);
+        
+        // Get from name and email (use rule-specific or fallback to SMTP settings)
+        $fromName = $rule['from_name'] ?? 'LinkNest Monitor';
+        $fromEmail = $rule['from_email'] ?? null;
+        
+        // Send to all recipients
+        foreach ($recipients as $recipientEmail) {
+            $result = sendNotificationEmail($recipientEmail, $subject, $body, $fromName, $fromEmail);
+            
+            // Log notification
+            $stmt = $db->prepare('INSERT INTO monitor_notification_logs (
+                rule_id, monitor_id, recipient_email, status_trigger, sent_at, 
+                subject, success, error_message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+            
+            $success = ($result === true) ? 1 : 0;
+            $errorMsg = ($result === true) ? null : $result;
+            
+            $stmt->execute([
+                $rule['id'],
+                $monitor['id'],
+                $recipientEmail,
+                $newStatus,
+                $now,
+                $subject,
+                $success,
+                $errorMsg
+            ]);
+        }
+    }
+}
+
+/**
+ * Check if current time is within the rule's time window
+ */
+function isTimeWindowActive($rule, $currentHour, $currentMinute) {
+    $start = $rule['time_window_start'];
+    $end = $rule['time_window_end'];
+    
+    // No time window means always active
+    if (empty($start) || empty($end)) {
+        return true;
+    }
+    
+    // Parse time window
+    list($startHour, $startMinute) = explode(':', $start);
+    list($endHour, $endMinute) = explode(':', $end);
+    
+    $startHour = (int)$startHour;
+    $startMinute = (int)$startMinute;
+    $endHour = (int)$endHour;
+    $endMinute = (int)$endMinute;
+    
+    $currentTimeMinutes = $currentHour * 60 + $currentMinute;
+    $startTimeMinutes = $startHour * 60 + $startMinute;
+    $endTimeMinutes = $endHour * 60 + $endMinute;
+    
+    // Handle time windows that span midnight (e.g., 22:00 to 06:00)
+    if ($endTimeMinutes < $startTimeMinutes) {
+        // Window spans midnight
+        return ($currentTimeMinutes >= $startTimeMinutes || $currentTimeMinutes <= $endTimeMinutes);
+    } else {
+        // Normal window
+        return ($currentTimeMinutes >= $startTimeMinutes && $currentTimeMinutes <= $endTimeMinutes);
+    }
+}
+
+/**
+ * Check if current day of week is active for the rule
+ */
+function isDayOfWeekActive($rule, $currentDayOfWeek) {
+    $daysOfWeek = $rule['days_of_week'];
+    
+    // No days specified means all days are active
+    if (empty($daysOfWeek)) {
+        return true;
+    }
+    
+    // Parse days (comma-separated)
+    $activeDays = array_map('trim', explode(',', $daysOfWeek));
+    $activeDays = array_map('intval', $activeDays);
+    
+    return in_array($currentDayOfWeek, $activeDays);
+}
+
+/**
+ * Replace template variables in email content
+ */
+function replaceTemplateVariables($template, $monitor, $status, $details, $responseTime) {
+    $replacements = [
+        '{monitor_name}' => $monitor['name'],
+        '{monitor_type}' => $monitor['type'],
+        '{monitor_target}' => $monitor['target'],
+        '{status}' => strtoupper($status),
+        '{details}' => $details ?? 'N/A',
+        '{response_time}' => $responseTime ? $responseTime . ' ms' : 'N/A',
+        '{time}' => date('Y-m-d H:i:s'),
+        '{date}' => date('Y-m-d'),
+        '{timestamp}' => time()
+    ];
+    
+    return str_replace(array_keys($replacements), array_values($replacements), $template);
+}
+
+/**
+ * Send notification email with custom from name/email support
+ */
+function sendNotificationEmail($to, $subject, $body, $fromName = null, $fromEmail = null) {
+    // If custom from email is provided, we need to modify the SMTP config
+    // For now, we'll use the standard sendEmail function
+    // In a more advanced implementation, we could pass custom from info
+    
+    // Use the standard sendEmail function (it will use SMTP settings from DB)
+    $result = sendEmail($to, $subject, $body);
+    
+    return $result;
 }
 
 function sendNotification($monitor, $message) {

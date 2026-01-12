@@ -69,7 +69,17 @@ switch ($method) {
 
 function handleGetMonitors() {
     $db = getDB();
-    $stmt = $db->prepare('SELECT * FROM monitors ORDER BY created_at DESC');
+    $stmt = $db->prepare('
+        SELECT 
+            m.*,
+            COALESCE((
+                SELECT COUNT(*) 
+                FROM monitor_notification_rules r 
+                WHERE r.monitor_id = m.id AND r.is_enabled = 1
+            ), 0) AS email_rules_count
+        FROM monitors m
+        ORDER BY m.created_at DESC
+    ');
     $stmt->execute();
     $monitors = $stmt->fetchAll();
     
@@ -78,7 +88,17 @@ function handleGetMonitors() {
 
 function handleGetMonitor($id) {
     $db = getDB();
-    $stmt = $db->prepare('SELECT * FROM monitors WHERE id = ?');
+    $stmt = $db->prepare('
+        SELECT 
+            m.*,
+            COALESCE((
+                SELECT COUNT(*) 
+                FROM monitor_notification_rules r 
+                WHERE r.monitor_id = m.id AND r.is_enabled = 1
+            ), 0) AS email_rules_count
+        FROM monitors m
+        WHERE m.id = ?
+    ');
     $stmt->execute([$id]);
     $monitor = $stmt->fetch();
     
@@ -134,7 +154,17 @@ function handleCreateMonitor() {
         $id = $db->lastInsertId();
         
         // Fetch created monitor
-        $stmt = $db->prepare('SELECT * FROM monitors WHERE id = ?');
+        $stmt = $db->prepare('
+            SELECT 
+                m.*,
+                COALESCE((
+                    SELECT COUNT(*) 
+                    FROM monitor_notification_rules r 
+                    WHERE r.monitor_id = m.id AND r.is_enabled = 1
+                ), 0) AS email_rules_count
+            FROM monitors m
+            WHERE m.id = ?
+        ');
         $stmt->execute([$id]);
         $monitor = $stmt->fetch();
         
@@ -184,7 +214,17 @@ function handleUpdateMonitor($id) {
         $stmt->execute($values);
         
         // Fetch updated monitor
-        $stmt = $db->prepare('SELECT * FROM monitors WHERE id = ?');
+        $stmt = $db->prepare('
+            SELECT 
+                m.*,
+                COALESCE((
+                    SELECT COUNT(*) 
+                    FROM monitor_notification_rules r 
+                    WHERE r.monitor_id = m.id AND r.is_enabled = 1
+                ), 0) AS email_rules_count
+            FROM monitors m
+            WHERE m.id = ?
+        ');
         $stmt->execute([$id]);
         $monitor = $stmt->fetch();
         

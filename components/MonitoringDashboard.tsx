@@ -646,6 +646,39 @@ export const MonitoringDashboard: React.FC = () => {
         }
     };
 
+    const getEmailIndicatorCount = (monitor: Monitor): number => {
+        const rulesCount = typeof monitor.email_rules_count === 'number' ? monitor.email_rules_count : 0;
+        const legacyEnabled = monitor.email_notification ? 1 : 0;
+        // Prefer advanced rules if present; otherwise fall back to legacy toggle
+        return rulesCount > 0 ? rulesCount : legacyEnabled;
+    };
+
+    const renderEmailIndicators = (monitor: Monitor, size: number) => {
+        const effectiveCount = getEmailIndicatorCount(monitor);
+        if (!effectiveCount) return null;
+
+        const iconCount = effectiveCount > 1 ? 2 : 1;
+        const isColored = monitor.last_status === 'up' || monitor.last_status === 'down';
+        const pillClass = isColored
+            ? 'bg-white/20'
+            : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400';
+        const iconStyle = isColored ? getTileTextStyle(monitor.last_status) : undefined;
+        const title = effectiveCount > 1
+            ? `Email notifications enabled (${effectiveCount} rules)`
+            : 'Email notifications enabled (1 rule)';
+
+        return (
+            <span
+                className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold ${pillClass}`}
+                title={title}
+            >
+                {Array.from({ length: iconCount }).map((_, idx) => (
+                    <FaEnvelope key={idx} size={size} style={iconStyle as any} />
+                ))}
+            </span>
+        );
+    };
+
     // Memoize formatLastChecked to avoid recalculation
     const formatLastChecked = useCallback((timestamp: number | string | null) => {
         if (!timestamp) return 'Never';
@@ -1052,6 +1085,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                 >
                                                     {monitor.name}
                                                 </span>
+                                                {renderEmailIndicators(monitor, 11)}
                                                 <div className="flex items-center gap-2 text-xs font-medium opacity-80">
                                                     <FaClock size={10} {...(monitor.last_status === 'up' || monitor.last_status === 'down' ? { style: getTileTextStyle(monitor.last_status) } : {})} />
                                                     <span style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : { color: 'inherit' }}>
@@ -1203,6 +1237,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                                 <span className="uppercase font-bold tracking-wider">Maintenance</span>
                                                             </div>
                                                         )}
+                                                        {renderEmailIndicators(monitor, viewMode === 'tiles' ? 10 : 9)}
                                                     </div>
                                                 </div>
                                             </div>
@@ -1253,6 +1288,7 @@ export const MonitoringDashboard: React.FC = () => {
                                         <thead>
                                             <tr className="bg-slate-50 dark:bg-[#252525] text-slate-500 dark:text-slate-400 text-[11px] font-bold uppercase tracking-wider">
                                                 <th className="px-6 py-4">Monitor</th>
+                                                <th className="px-6 py-4">Email</th>
                                                 <th className="px-6 py-4">Status</th>
                                                 <th className="px-6 py-4">Target</th>
                                                 <th className="px-6 py-4">Response Time</th>
@@ -1287,6 +1323,11 @@ export const MonitoringDashboard: React.FC = () => {
                                                                 {monitor.name}
                                                             </span>
                                                         </div>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        {renderEmailIndicators(monitor, 12) || (
+                                                            <span className="text-xs text-slate-400 dark:text-slate-600">-</span>
+                                                        )}
                                                     </td>
                                                     <td className="px-6 py-4">
                                                         <div 

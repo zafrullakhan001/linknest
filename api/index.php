@@ -103,6 +103,25 @@ if (empty($path) || $path === '/') {
 } elseif (strpos($path, '/uploads') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 8); // Remove '/uploads'
     require __DIR__ . '/uploads.php';
+} elseif (strpos($path, '/monitors') === 0) {
+    $_SERVER['PATH_INFO'] = substr($path, 9); // Remove '/monitors'
+    require __DIR__ . '/monitors.php';
+} elseif (strpos($path, '/monitor-notifications') === 0) {
+    // Remove '/monitor-notifications' prefix (22 characters)
+    $prefixLength = strlen('/monitor-notifications');
+    $remainingPath = substr($path, $prefixLength);
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        // Ensure remaining path starts with /
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    // Ensure JSON header is set before requiring the file
+    if (!headers_sent()) {
+        header('Content-Type: application/json; charset=utf-8');
+    }
+    require __DIR__ . '/monitor_notifications.php';
+    exit; // Prevent any further execution
 } elseif (strpos($path, '/ldap_test.php') === 0) {
     require __DIR__ . '/ldap_test.php';
 } else {

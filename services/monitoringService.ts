@@ -8,6 +8,7 @@ export interface Monitor {
     interval: number;
     is_active: number;
     email_notification: number;
+    email_rules_count?: number; // advanced notification rules count (enabled)
     last_checked_at: number;
     last_status: 'up' | 'down' | 'unknown' | null;
     last_response_time: number;
