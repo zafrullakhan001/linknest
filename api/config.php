@@ -866,7 +866,7 @@ function initDatabase() {
         // Create monitor_notification_logs table (for tracking sent notifications)
         $db->exec('CREATE TABLE IF NOT EXISTS monitor_notification_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            rule_id INTEGER NOT NULL,
+            rule_id INTEGER, -- NULL for legacy notifications, rule ID for advanced notifications
             monitor_id INTEGER NOT NULL,
             recipient_email TEXT NOT NULL,
             status_trigger TEXT NOT NULL,
@@ -875,6 +875,59 @@ function initDatabase() {
             success INTEGER DEFAULT 1,
             error_message TEXT
         )');
+        
+        // Migrate existing table to allow NULL rule_id (for legacy notifications)
+        // Only run migration once by checking a flag
+        try {
+            $migrationCheck = $db->query("SELECT value FROM settings WHERE key = 'monitor_notification_logs_migrated'")->fetch();
+            if (!$migrationCheck) {
+                // SQLite doesn't support ALTER COLUMN, so we need to recreate the table
+                // But we'll do this safely by checking if migration is needed
+                $stmt = $db->query("PRAGMA table_info(monitor_notification_logs)");
+                $columns = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                $ruleIdColumn = null;
+                foreach ($columns as $col) {
+                    if ($col['name'] === 'rule_id') {
+                        $ruleIdColumn = $col;
+                        break;
+                    }
+                }
+                // If rule_id is NOT NULL, we need to migrate
+                if ($ruleIdColumn && $ruleIdColumn['notnull'] == 1) {
+                    // Create new table with NULL allowed
+                    $db->exec('CREATE TABLE IF NOT EXISTS monitor_notification_logs_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        rule_id INTEGER,
+                        monitor_id INTEGER NOT NULL,
+                        recipient_email TEXT NOT NULL,
+                        status_trigger TEXT NOT NULL,
+                        sent_at INTEGER NOT NULL,
+                        subject TEXT NOT NULL,
+                        success INTEGER DEFAULT 1,
+                        error_message TEXT
+                    )');
+                    // Copy data
+                    $db->exec('INSERT INTO monitor_notification_logs_new SELECT * FROM monitor_notification_logs');
+                    // Drop old table
+                    $db->exec('DROP TABLE monitor_notification_logs');
+                    // Rename new table
+                    $db->exec('ALTER TABLE monitor_notification_logs_new RENAME TO monitor_notification_logs');
+                    // Recreate indexes
+                    $db->exec('CREATE INDEX IF NOT EXISTS idx_notification_logs_rule_id ON monitor_notification_logs(rule_id)');
+                    $db->exec('CREATE INDEX IF NOT EXISTS idx_notification_logs_monitor_id ON monitor_notification_logs(monitor_id)');
+                    $db->exec('CREATE INDEX IF NOT EXISTS idx_notification_logs_sent_at ON monitor_notification_logs(sent_at)');
+                    
+                    // Mark migration as complete
+                    $db->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('monitor_notification_logs_migrated', '1')");
+                } else {
+                    // Migration not needed, mark as done anyway
+                    $db->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('monitor_notification_logs_migrated', '1')");
+                }
+            }
+        } catch (PDOException $e) {
+            // Migration might have already been done or table doesn't exist yet
+            error_log("Monitor notification logs migration warning: " . $e->getMessage());
+        }
 
         // Create indexes for notification tables
         try {

@@ -45,6 +45,7 @@ export const MonitoringDashboard: React.FC = () => {
     });
     const [notificationsPaused, setNotificationsPaused] = useState<boolean>(false);
     const csvInputRef = useRef<HTMLInputElement>(null);
+    const [checkStatus, setCheckStatus] = useState<{ count: number; total: number; up: number; down: number; error: number } | null>(null);
     
     // Tile styles state
     const defaultTileStyles: TileStyle = {
@@ -205,13 +206,24 @@ export const MonitoringDashboard: React.FC = () => {
 
     const refreshAll = useCallback(async (isFullCheck = false) => {
         setIsLoading(true);
+        setCheckStatus(null); // Clear previous status
         try {
             if (isFullCheck) {
-                await monitoringService.checkAllMonitors();
+                const checkResult = await monitoringService.checkAllMonitors();
+                setCheckStatus({
+                    count: checkResult.count,
+                    total: checkResult.total,
+                    up: checkResult.up_count,
+                    down: checkResult.down_count,
+                    error: checkResult.error_count
+                });
+                // Clear status after 5 seconds
+                setTimeout(() => setCheckStatus(null), 5000);
             }
             await fetchMonitors();
         } catch (error) {
             console.error('Failed to refresh monitors', error);
+            setCheckStatus(null);
         } finally {
             setIsLoading(false);
         }
@@ -949,6 +961,41 @@ export const MonitoringDashboard: React.FC = () => {
                     </button>
                 </div>
             </div>
+
+            {/* Check Status Display - Below toolbar, right corner */}
+            {checkStatus && (
+                <div className="flex justify-end mb-2 transition-opacity duration-300">
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-xs font-medium shadow-sm">
+                        <span className="text-blue-700 dark:text-blue-300">
+                            Checked: {checkStatus.count}/{checkStatus.total}
+                        </span>
+                        {checkStatus.up > 0 && (
+                            <>
+                                <span className="text-slate-400 dark:text-slate-500">•</span>
+                                <span className="text-emerald-600 dark:text-emerald-400">
+                                    ✓ {checkStatus.up} UP
+                                </span>
+                            </>
+                        )}
+                        {checkStatus.down > 0 && (
+                            <>
+                                <span className="text-slate-400 dark:text-slate-500">•</span>
+                                <span className="text-red-600 dark:text-red-400">
+                                    ✗ {checkStatus.down} DOWN
+                                </span>
+                            </>
+                        )}
+                        {checkStatus.error > 0 && (
+                            <>
+                                <span className="text-slate-400 dark:text-slate-500">•</span>
+                                <span className="text-orange-600 dark:text-orange-400">
+                                    ⚠ {checkStatus.error} ERROR
+                                </span>
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {isLoading && monitors.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20">

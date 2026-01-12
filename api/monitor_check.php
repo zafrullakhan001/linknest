@@ -91,8 +91,17 @@ function performMonitorCheck($monitor) {
     $now = time();
     
     // Check if status changed
-    $prevStatus = $monitor['last_status'];
-    $statusChanged = ($prevStatus !== $status);
+    $prevStatus = $monitor['last_status'] ?? null;
+    // Normalize null/empty to null for comparison
+    if ($prevStatus === '' || $prevStatus === false) {
+        $prevStatus = null;
+    }
+    // Normalize status values (trim and lowercase for comparison)
+    $normalizedPrevStatus = $prevStatus ? strtolower(trim($prevStatus)) : null;
+    $normalizedStatus = strtolower(trim($status));
+    $statusChanged = ($normalizedPrevStatus !== $normalizedStatus);
+    
+    error_log("[MONITOR] Status check - Previous: " . ($prevStatus ?? 'null') . " (normalized: " . ($normalizedPrevStatus ?? 'null') . "), Current: $status (normalized: $normalizedStatus), Changed: " . ($statusChanged ? 'YES' : 'NO'));
     
     // Update monitor record
     $stmt = $db->prepare('UPDATE monitors SET 
@@ -109,21 +118,48 @@ function performMonitorCheck($monitor) {
     
     // Send notifications using the new advanced notification system
     if ($statusChanged) {
+        error_log("[EMAIL] Status changed detected - monitor {$monitor['id']}: $prevStatus -> $status");
         // Skip notifications if in maintenance window or if global notifications are paused
         if (!isNotificationPaused() && !isInMaintenanceWindow($monitor)) {
+            error_log("[EMAIL] Triggering advanced notifications for monitor {$monitor['id']}");
             sendAdvancedNotifications($monitor, $status, $prevStatus, $details, $responseTime);
+        } else {
+            error_log("[EMAIL] Advanced notifications skipped - paused: " . (isNotificationPaused() ? 'YES' : 'NO') . ", maintenance: " . (isInMaintenanceWindow($monitor) ? 'YES' : 'NO'));
         }
+    } else {
+        error_log("[EMAIL] No status change - monitor {$monitor['id']} status remains: $status");
     }
     
     // Legacy notification support (for backward compatibility)
     if ($monitor['email_notification'] && $statusChanged) {
+        error_log("[EMAIL] Legacy notification check - email_notification: {$monitor['email_notification']}, statusChanged: " . ($statusChanged ? 'true' : 'false'));
+        error_log("[EMAIL] Notification paused: " . (isNotificationPaused() ? 'YES' : 'NO'));
+        error_log("[EMAIL] In maintenance window: " . (isInMaintenanceWindow($monitor) ? 'YES' : 'NO'));
+        
         // Skip notifications if in maintenance window or if global notifications are paused
         if (!isNotificationPaused() && !isInMaintenanceWindow($monitor)) {
-            if ($status === 'down') {
+            // Send DOWN notification when status changes to 'down' (from any other status including null/unknown)
+            // Use normalized status for comparison
+            if ($normalizedStatus === 'down') {
+                error_log("[EMAIL] Triggering DOWN notification for monitor {$monitor['id']} - Previous status: " . ($prevStatus ?? 'null/unknown') . ", Current: $status");
                 sendNotification($monitor, "DOWN: {$monitor['name']} is unreachable. Error: $details");
-            } elseif ($prevStatus === 'down' && $status === 'up') {
+            } 
+            // Send UP notification when status changes from 'down' to 'up'
+            elseif ($normalizedPrevStatus === 'down' && $normalizedStatus === 'up') {
+                error_log("[EMAIL] Triggering UP notification for monitor {$monitor['id']} - Previous: " . ($prevStatus ?? 'null') . ", Current: $status");
                 sendNotification($monitor, "UP: {$monitor['name']} is back online.");
+            } else {
+                error_log("[EMAIL] Legacy notification condition not met - normalized status: $normalizedStatus, normalized prevStatus: " . ($normalizedPrevStatus ?? 'null') . " (no notification sent)");
             }
+        } else {
+            error_log("[EMAIL] Notification skipped - paused or in maintenance window");
+        }
+    } else {
+        if (!$monitor['email_notification']) {
+            error_log("[EMAIL] Legacy notification skipped - email_notification disabled for monitor {$monitor['id']}");
+        }
+        if (!$statusChanged) {
+            error_log("[EMAIL] Legacy notification skipped - status did not change (prev: $prevStatus, new: $status)");
         }
     }
     
@@ -272,21 +308,37 @@ function checkPort($target, $port) {
  * Send notifications using the advanced notification system
  */
 function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, $responseTime) {
+    error_log("[EMAIL] sendAdvancedNotifications called - monitor ID: {$monitor['id']}, status: $prevStatus -> $newStatus");
+    
     $db = getDB();
     
     // Determine which status triggers to check
     $triggersToCheck = [];
+    
+    // Normalize prevStatus for comparison
+    $normalizedPrevStatus = ($prevStatus === '' || $prevStatus === false || $prevStatus === null) ? null : $prevStatus;
+    
+    // Send notification when status changes to 'down' (from any status including null/unknown/up)
     if ($newStatus === 'down') {
         $triggersToCheck[] = 'down';
         $triggersToCheck[] = 'both';
-    } elseif ($newStatus === 'up' && $prevStatus === 'down') {
+        error_log("[EMAIL] Status changed to DOWN - checking 'down' and 'both' triggers");
+    } 
+    // Send notification when status changes from 'down' to 'up'
+    elseif ($newStatus === 'up' && $normalizedPrevStatus === 'down') {
         $triggersToCheck[] = 'up';
         $triggersToCheck[] = 'both';
+        error_log("[EMAIL] Status changed from DOWN to UP - checking 'up' and 'both' triggers");
+    } else {
+        error_log("[EMAIL] Status change not triggering notifications - prev: " . ($normalizedPrevStatus ?? 'null') . ", new: $newStatus");
     }
     
     if (empty($triggersToCheck)) {
+        error_log("[EMAIL] No triggers to check for status change: " . ($normalizedPrevStatus ?? 'null') . " -> $newStatus");
         return; // No relevant status change
     }
+    
+    error_log("[EMAIL] Checking triggers: " . implode(', ', $triggersToCheck));
     
     // Get all enabled notification rules for this monitor
     $placeholders = implode(',', array_fill(0, count($triggersToCheck), '?'));
@@ -295,7 +347,10 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
     $stmt->execute($params);
     $rules = $stmt->fetchAll();
     
+    error_log("[EMAIL] Found " . count($rules) . " notification rules for monitor {$monitor['id']}");
+    
     if (empty($rules)) {
+        error_log("[EMAIL] No notification rules configured for monitor {$monitor['id']}");
         return; // No rules configured
     }
     
@@ -305,13 +360,17 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
     $currentDayOfWeek = (int)date('w'); // 0 = Sunday, 6 = Saturday
     
     foreach ($rules as $rule) {
+        error_log("[EMAIL] Processing rule ID: {$rule['id']}, name: {$rule['name']}");
+        
         // Check time window
         if (!isTimeWindowActive($rule, $currentHour, $currentMinute)) {
+            error_log("[EMAIL] Rule {$rule['id']} skipped - not in time window");
             continue; // Skip this rule, not in time window
         }
         
         // Check days of week
         if (!isDayOfWeekActive($rule, $currentDayOfWeek)) {
+            error_log("[EMAIL] Rule {$rule['id']} skipped - not on active day");
             continue; // Skip this rule, not on active day
         }
         
@@ -320,7 +379,10 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
         $stmt->execute([$rule['id']]);
         $recipients = $stmt->fetchAll(PDO::FETCH_COLUMN);
         
+        error_log("[EMAIL] Rule {$rule['id']} has " . count($recipients) . " recipients");
+        
         if (empty($recipients)) {
+            error_log("[EMAIL] Rule {$rule['id']} skipped - no recipients configured");
             continue; // No recipients configured
         }
         
@@ -328,12 +390,15 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
         $subject = replaceTemplateVariables($rule['subject_template'], $monitor, $newStatus, $details, $responseTime);
         $body = replaceTemplateVariables($rule['body_template'], $monitor, $newStatus, $details, $responseTime);
         
+        error_log("[EMAIL] Prepared email - subject: $subject");
+        
         // Get from name and email (use rule-specific or fallback to SMTP settings)
         $fromName = $rule['from_name'] ?? 'LinkNest Monitor';
         $fromEmail = $rule['from_email'] ?? null;
         
         // Send to all recipients
         foreach ($recipients as $recipientEmail) {
+            error_log("[EMAIL] Sending email to recipient: $recipientEmail via rule {$rule['id']}");
             $result = sendNotificationEmail($recipientEmail, $subject, $body, $fromName, $fromEmail);
             
             // Log notification
@@ -435,17 +500,22 @@ function replaceTemplateVariables($template, $monitor, $status, $details, $respo
  * Send notification email with custom from name/email support
  */
 function sendNotificationEmail($to, $subject, $body, $fromName = null, $fromEmail = null) {
+    error_log("[EMAIL] sendNotificationEmail called - to: $to, subject: $subject");
+    
     // If custom from email is provided, we need to modify the SMTP config
     // For now, we'll use the standard sendEmail function
     // In a more advanced implementation, we could pass custom from info
     
     // Use the standard sendEmail function (it will use SMTP settings from DB)
     $result = sendEmail($to, $subject, $body);
+    error_log("[EMAIL] sendNotificationEmail result: " . ($result === true ? "SUCCESS" : "FAILED: " . $result));
     
     return $result;
 }
 
 function sendNotification($monitor, $message) {
+    error_log("[EMAIL] sendNotification called for monitor ID: {$monitor['id']}, name: {$monitor['name']}");
+    
     // Fetch admin email from users table
     $db = getDB();
     $stmt = $db->prepare('SELECT email FROM users WHERE is_admin = 1 LIMIT 1');
@@ -453,9 +523,48 @@ function sendNotification($monitor, $message) {
     $admin = $stmt->fetch();
     
     if ($admin && !empty($admin['email'])) {
+        $subject = "[LinkNest Monitor] " . $monitor['name'] . " Status Update";
+        error_log("[EMAIL] Preparing to send email to: {$admin['email']}, subject: $subject");
+        error_log("[EMAIL] Message preview: " . substr($message, 0, 100) . "...");
+        
         // Send email using our SMTP helper
         // It handles fetching settings and connection automatically if config is null
-        $result = sendEmail($admin['email'], "[LinkNest Monitor] " . $monitor['name'] . " Status Update", $message);
+        $result = sendEmail($admin['email'], $subject, $message);
+        error_log("[EMAIL] sendEmail result: " . ($result === true ? "SUCCESS" : "FAILED: " . $result));
+        
+        $now = time();
+        $success = ($result === true) ? 1 : 0;
+        $errorMsg = ($result === true) ? null : $result;
+        
+        // Determine status trigger from message
+        $statusTrigger = 'both'; // Default
+        if (stripos($message, 'DOWN:') !== false) {
+            $statusTrigger = 'down';
+        } elseif (stripos($message, 'UP:') !== false) {
+            $statusTrigger = 'up';
+        }
+        
+        // Log to monitor_notification_logs table (legacy notifications use NULL rule_id)
+        try {
+            $stmt = $db->prepare('INSERT INTO monitor_notification_logs (
+                rule_id, monitor_id, recipient_email, status_trigger, sent_at, 
+                subject, success, error_message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+            
+            $stmt->execute([
+                null, // Legacy notifications don't have a rule_id
+                $monitor['id'],
+                $admin['email'],
+                $statusTrigger,
+                $now,
+                $subject,
+                $success,
+                $errorMsg
+            ]);
+        } catch (Exception $e) {
+            // Log error but don't fail the notification
+            error_log("Failed to log notification for monitor {$monitor['id']}: " . $e->getMessage());
+        }
         
         // Log error if failed (optional, but good for debugging)
         if ($result !== true) {

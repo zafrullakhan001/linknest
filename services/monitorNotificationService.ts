@@ -132,7 +132,7 @@ export function getDayName(day: number): string {
 
 export interface EmailLog {
     id: number;
-    rule_id: number;
+    rule_id: number | null; // NULL for legacy notifications
     monitor_id: number;
     recipient_email: string;
     status_trigger: 'up' | 'down' | 'both';

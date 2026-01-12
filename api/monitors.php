@@ -331,32 +331,147 @@ function handleCheckMonitor($id) {
 }
 
 function handleCheckAllMonitors() {
-    // Set execution time limit to prevent hanging on multiple checks
-    // Allow more time for multiple monitors, but still limit it
-    set_time_limit(60); // Maximum 60 seconds for all checks
-    
-    $db = getDB();
-    $stmt = $db->prepare('SELECT * FROM monitors WHERE is_active = 1');
-    $stmt->execute();
-    $monitors = $stmt->fetchAll();
-    
-    $results = [];
-    $startTime = microtime(true);
-    $maxTime = 55; // Stop before script timeout
-    
-    foreach ($monitors as $monitor) {
-        // Check if we're running out of time
-        $elapsed = microtime(true) - $startTime;
-        if ($elapsed > $maxTime) {
-            // Time limit approaching - stop checking and return partial results
-            error_log("Monitor check stopped early due to time limit. Checked " . count($results) . " of " . count($monitors) . " monitors.");
-            break;
+    error_log("[MONITOR] handleCheckAllMonitors called");
+    try {
+        // Set execution time limit to prevent hanging on multiple checks
+        // Allow more time for multiple monitors - calculate based on number of monitors
+        $db = getDB();
+        if (!$db) {
+            throw new Exception("Failed to get database connection");
         }
         
-        $results[] = performMonitorCheck($monitor);
-    }
+        error_log("[MONITOR] Getting active monitor count");
+        $stmt = $db->prepare('SELECT COUNT(*) FROM monitors WHERE is_active = 1');
+        $stmt->execute();
+        $monitorCount = (int)$stmt->fetchColumn();
+        error_log("[MONITOR] Found $monitorCount active monitors");
+        
+        // Calculate time limit: 10 seconds per monitor, minimum 60 seconds, maximum 300 seconds (5 minutes)
+        $timeLimit = max(60, min(300, $monitorCount * 10));
+        set_time_limit($timeLimit);
+        error_log("[MONITOR] Set time limit to $timeLimit seconds");
+        
+        $stmt = $db->prepare('SELECT * FROM monitors WHERE is_active = 1');
+        $stmt->execute();
+        $monitors = $stmt->fetchAll();
+        error_log("[MONITOR] Retrieved " . count($monitors) . " monitors to check");
+        
+        $results = [];
+        $checkedCount = 0;
+        $totalCount = count($monitors);
+        $upCount = 0;      // Monitors that are UP (healthy)
+        $downCount = 0;    // Monitors that are DOWN (unhealthy)
+        $errorCount = 0;   // Monitors where the check itself failed (exceptions, unknown status)
+        
+        // Check if performMonitorCheck function exists
+        if (!function_exists('performMonitorCheck')) {
+            throw new Exception("performMonitorCheck function not found. monitor_check.php may not be loaded properly.");
+        }
+        
+        foreach ($monitors as $monitor) {
+            error_log("[MONITOR] Checking monitor ID: {$monitor['id']}, name: {$monitor['name']}");
+            try {
+                $result = performMonitorCheck($monitor);
+                $results[] = $result;
+                $checkedCount++;
+                
+                // Count monitor status
+                if (isset($result['status'])) {
+                    if ($result['status'] === 'up') {
+                        $upCount++;
+                    } elseif ($result['status'] === 'down') {
+                        $downCount++;
+                    } else {
+                        // Unknown status means check failed
+                        $errorCount++;
+                    }
+                } else {
+                    $errorCount++;
+                }
+            } catch (Exception $e) {
+                // Log error but continue checking other monitors
+                error_log("Error checking monitor {$monitor['id']}: " . $e->getMessage());
+                $results[] = [
+                    'id' => $monitor['id'],
+                    'status' => 'unknown',
+                    'response_time' => 0,
+                    'details' => 'Check failed: ' . $e->getMessage()
+                ];
+                $checkedCount++;
+                $errorCount++;
+            } catch (Error $e) {
+                // Log fatal error but continue checking other monitors
+                error_log("Fatal error checking monitor {$monitor['id']}: " . $e->getMessage());
+                $results[] = [
+                    'id' => $monitor['id'],
+                    'status' => 'unknown',
+                    'response_time' => 0,
+                    'details' => 'Check failed: ' . $e->getMessage()
+                ];
+                $checkedCount++;
+                $errorCount++;
+            }
+        }
     
-    sendJSON(['success' => true, 'count' => count($results), 'results' => $results]);
+        // Log if not all monitors were checked (shouldn't happen now, but good for debugging)
+        if ($checkedCount < $totalCount) {
+            error_log("Warning: Only checked $checkedCount of $totalCount monitors");
+        }
+        
+        error_log("[MONITOR] Check complete - Total: $totalCount, Checked: $checkedCount, UP: $upCount, DOWN: $downCount, Errors: $errorCount");
+        
+        sendJSON([
+            'success' => true, 
+            'count' => $checkedCount, 
+            'total' => $totalCount, 
+            'up_count' => $upCount,
+            'down_count' => $downCount,
+            'error_count' => $errorCount,
+            'results' => $results
+        ]);
+    } catch (Exception $e) {
+        $errorMsg = "Error in handleCheckAllMonitors: " . $e->getMessage() . " in " . $e->getFile() . " on line " . $e->getLine();
+        error_log($errorMsg);
+        error_log("Stack trace: " . $e->getTraceAsString());
+        
+        // Clean any output before sending JSON
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        
+        sendJSON([
+            'success' => false,
+            'error' => 'Failed to check all monitors: ' . $e->getMessage()
+        ], 500);
+    } catch (Error $e) {
+        $errorMsg = "Fatal error in handleCheckAllMonitors: " . $e->getMessage() . " in " . $e->getFile() . " on line " . $e->getLine();
+        error_log($errorMsg);
+        error_log("Stack trace: " . $e->getTraceAsString());
+        
+        // Clean any output before sending JSON
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        
+        sendJSON([
+            'success' => false,
+            'error' => 'Fatal error checking monitors: ' . $e->getMessage()
+        ], 500);
+    } catch (Throwable $e) {
+        $errorMsg = "Throwable in handleCheckAllMonitors: " . $e->getMessage() . " in " . $e->getFile() . " on line " . $e->getLine();
+        error_log($errorMsg);
+        error_log("Stack trace: " . $e->getTraceAsString());
+        
+        // Clean any output before sending JSON
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        
+        sendJSON([
+            'success' => false,
+            'error' => 'Error checking monitors: ' . $e->getMessage()
+        ], 500);
+    }
 }
 function handleDeleteAllMonitors() {
     $db = getDB();

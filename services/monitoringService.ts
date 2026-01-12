@@ -98,11 +98,46 @@ export const monitoringService = {
         return data.result;
     },
 
-    async checkAllMonitors(): Promise<void> {
-        const response = await fetch('api/monitors.php/check-all', {
-            method: 'POST'
-        });
-        if (!response.ok) throw new Error('Failed to check all monitors');
+    async checkAllMonitors(): Promise<{ count: number; total: number; up_count: number; down_count: number; error_count: number }> {
+        try {
+            const response = await fetch('api/monitors.php/check-all', {
+                method: 'POST'
+            });
+            
+            if (!response.ok) {
+                let errorMessage = 'Failed to check all monitors';
+                try {
+                    const errorData = await response.json();
+                    if (errorData.error) {
+                        errorMessage = errorData.error;
+                    } else if (errorData.message) {
+                        errorMessage = errorData.message;
+                    }
+                } catch (e) {
+                    // If response isn't JSON, use status text
+                    errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+                }
+                throw new Error(errorMessage);
+            }
+            
+            const data = await response.json();
+            
+            // Check if the response indicates failure
+            if (data.success === false) {
+                throw new Error(data.error || 'Failed to check all monitors');
+            }
+            
+            return {
+                count: data.count || 0,
+                total: data.total || 0,
+                up_count: data.up_count || 0,
+                down_count: data.down_count || 0,
+                error_count: data.error_count || 0
+            };
+        } catch (error: any) {
+            console.error('Error in checkAllMonitors:', error);
+            throw error;
+        }
     },
 
     async deleteAllMonitors(): Promise<void> {
