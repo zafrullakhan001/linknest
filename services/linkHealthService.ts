@@ -152,13 +152,13 @@ export const linkHealthService = {
   getHealthColor(status: string): string {
     switch (status) {
       case 'healthy':
-        return 'bg-emerald-500';
+      case 'accessible':
+      case 'restricted':
+        return 'bg-emerald-500'; // Show all accessible/online statuses as green
       case 'broken':
         return 'bg-red-500';
       case 'timeout':
         return 'bg-amber-500';
-      case 'restricted':
-        return 'bg-purple-500';
       case 'checking':
         return 'bg-blue-500 animate-pulse';
       default:
@@ -173,12 +173,14 @@ export const linkHealthService = {
     switch (status) {
       case 'healthy':
         return 'Link is working';
+      case 'accessible':
+        return 'Link is online (may require authentication)';
       case 'broken':
         return 'Link is broken';
       case 'timeout':
         return 'Link timed out';
       case 'restricted':
-        return 'Link is restricted (e.g. requires login, intranet, or region access)';
+        return 'Link is online (requires authentication)';
       case 'checking':
         return 'Checking...';
       default:

@@ -3706,7 +3706,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                           <div
                             className="absolute -top-2 -left-2 w-5 h-5 rotate-45"
                             style={{
-                              backgroundColor: healthStatus === 'healthy' ? '#10b981' :
+                              backgroundColor: (healthStatus === 'healthy' || healthStatus === 'accessible' || healthStatus === 'restricted') ? '#10b981' :
                                 healthStatus === 'timeout' ? '#f97316' :
                                   healthStatus === 'broken' ? '#ef4444' : '#94a3b8'
                             }}
@@ -4268,7 +4268,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                             <div
                               className="absolute -top-2 -left-2 w-5 h-5 rotate-45"
                               style={{
-                                backgroundColor: healthStatus === 'healthy' ? '#10b981' :
+                                backgroundColor: (healthStatus === 'healthy' || healthStatus === 'accessible' || healthStatus === 'restricted') ? '#10b981' :
                                   healthStatus === 'timeout' ? '#f97316' :
                                     healthStatus === 'broken' ? '#ef4444' : '#94a3b8'
                               }}

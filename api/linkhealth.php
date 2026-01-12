@@ -39,6 +39,68 @@ switch ($method) {
 }
 
 /**
+ * Determine health status from HTTP code, curl error, and error message
+ * This centralizes the status logic so both single and parallel checks use the same logic
+ */
+function determineHealthStatus($httpCode, $errno, $error) {
+    // Determine status based on response
+    if ($errno !== 0) {
+        // cURL error occurred
+        $status = 'broken';
+        if ($errno === CURLE_OPERATION_TIMEDOUT || $errno === CURLE_OPERATION_TIMEOUTED) {
+            $status = 'timeout';
+            $error = 'Connection timed out';
+        } elseif ($errno === CURLE_COULDNT_RESOLVE_HOST) {
+            $error = 'Could not resolve host';
+        } elseif ($errno === CURLE_COULDNT_CONNECT) {
+            $error = 'Could not connect to server';
+        } elseif ($errno === CURLE_SSL_CONNECT_ERROR) {
+            $error = 'SSL connection error';
+        }
+    } elseif ($httpCode >= 200 && $httpCode < 400) {
+        // Success (2xx) or Redirect (3xx)
+        $status = 'healthy';
+        $error = null;
+    } elseif ($httpCode >= 400 && $httpCode < 500) {
+        // Client error (4xx)
+        if ($httpCode === 404) {
+            // 404 could mean:
+            // 1. Page doesn't exist (broken)
+            // 2. Server is up but HEAD request not supported (common for some sites)
+            // 3. Internal/corporate site that requires specific path
+            // Since server responded (not timeout/connection error), treat as "unknown" rather than "broken"
+            // The link might work when clicked even if HEAD returns 404
+            $status = 'unknown';
+            $error = 'Page not found (404) - Server is reachable but page may not exist or HEAD not supported';
+        } elseif ($httpCode === 403 || $httpCode === 401) {
+            // Treat auth/permission errors as "accessible" - server is online, just requires authentication (SSO/proxy/SharePoint)
+            $status = 'accessible';
+            if ($httpCode === 403) {
+                $error = 'Access forbidden (403) - Server is online, authentication required';
+            } else { // 401
+                $error = 'Unauthorized (401) - Server is online, authentication required';
+            }
+        } else {
+            // All other 4xx codes (405, 406, 407, 408, etc.) indicate server is reachable and responding
+            // These are often behind SSO proxies, SharePoint, or require specific methods/headers
+            // Since the server responded, the link is accessible/online
+            $status = 'accessible';
+            $error = 'Server is online (HTTP ' . $httpCode . ') - May require authentication or specific access method';
+        }
+    } elseif ($httpCode >= 500) {
+        // Server error (5xx)
+        $status = 'broken';
+        $error = 'Server error: ' . $httpCode;
+    } else {
+        // Unknown status
+        $status = 'unknown';
+        $error = 'Unknown response code: ' . $httpCode;
+    }
+    
+    return ['status' => $status, 'error' => $error];
+}
+
+/**
  * Check if a URL is reachable and return health status
  */
 function checkUrlHealth($url) {
@@ -86,56 +148,10 @@ function checkUrlHealth($url) {
     $errno = curl_errno($ch);
     curl_close($ch);
 
-    // Determine status based on response
-    if ($errno !== 0) {
-        // cURL error occurred
-        $status = 'broken';
-        if ($errno === CURLE_OPERATION_TIMEDOUT || $errno === CURLE_OPERATION_TIMEOUTED) {
-            $status = 'timeout';
-            $error = 'Connection timed out';
-        } elseif ($errno === CURLE_COULDNT_RESOLVE_HOST) {
-            $error = 'Could not resolve host';
-        } elseif ($errno === CURLE_COULDNT_CONNECT) {
-            $error = 'Could not connect to server';
-        } elseif ($errno === CURLE_SSL_CONNECT_ERROR) {
-            $error = 'SSL connection error';
-        }
-    } elseif ($httpCode >= 200 && $httpCode < 400) {
-        // Success (2xx) or Redirect (3xx)
-        $status = 'healthy';
-        $error = null;
-    } elseif ($httpCode >= 400 && $httpCode < 500) {
-        // Client error (4xx)
-        if ($httpCode === 403 || $httpCode === 401) {
-            // Treat auth/permission errors as "restricted" instead of broken
-            $status = 'restricted';
-            if ($httpCode === 403) {
-                $error = 'Access forbidden (403)';
-            } else { // 401
-                $error = 'Unauthorized (401)';
-            }
-        } elseif ($httpCode === 404) {
-            // 404 could mean:
-            // 1. Page doesn't exist (broken)
-            // 2. Server is up but HEAD request not supported (common for some sites)
-            // 3. Internal/corporate site that requires specific path
-            // Since server responded (not timeout/connection error), treat as "unknown" rather than "broken"
-            // The link might work when clicked even if HEAD returns 404
-            $status = 'unknown';
-            $error = 'Page not found (404) - Server is reachable but page may not exist or HEAD not supported';
-        } else {
-            $status = 'broken';
-            $error = 'Client error: ' . $httpCode;
-        }
-    } elseif ($httpCode >= 500) {
-        // Server error (5xx)
-        $status = 'broken';
-        $error = 'Server error: ' . $httpCode;
-    } else {
-        // Unknown status
-        $status = 'unknown';
-        $error = 'Unknown response code: ' . $httpCode;
-    }
+    // Determine status using shared logic
+    $statusResult = determineHealthStatus($httpCode, $errno, $error);
+    $status = $statusResult['status'];
+    $error = $statusResult['error'];
 
     return [
         'status' => $status,
@@ -246,41 +262,10 @@ function checkUrlsParallel($urls, $maxConcurrent = 5) {
         $error = curl_error($ch);
         $errno = curl_errno($ch);
         
-        // Determine status (same logic as checkUrlHealth)
-        if ($errno !== 0) {
-            $status = 'broken';
-            if ($errno === CURLE_OPERATION_TIMEDOUT || $errno === CURLE_OPERATION_TIMEOUTED) {
-                $status = 'timeout';
-                $error = 'Connection timed out';
-            } elseif ($errno === CURLE_COULDNT_RESOLVE_HOST) {
-                $error = 'Could not resolve host';
-            } elseif ($errno === CURLE_COULDNT_CONNECT) {
-                $error = 'Could not connect to server';
-            } elseif ($errno === CURLE_SSL_CONNECT_ERROR) {
-                $error = 'SSL connection error';
-            }
-        } elseif ($httpCode >= 200 && $httpCode < 400) {
-            $status = 'healthy';
-            $error = null;
-            } elseif ($httpCode >= 400 && $httpCode < 500) {
-            if ($httpCode === 403 || $httpCode === 401) {
-                $status = 'restricted';
-                $error = $httpCode === 403 ? 'Access forbidden (403)' : 'Unauthorized (401)';
-            } elseif ($httpCode === 404) {
-                // 404 - Server is reachable but page may not exist or HEAD not supported
-                $status = 'unknown';
-                $error = 'Page not found (404) - Server is reachable but page may not exist or HEAD not supported';
-            } else {
-                $status = 'broken';
-                $error = 'Client error: ' . $httpCode;
-            }
-        } elseif ($httpCode >= 500) {
-            $status = 'broken';
-            $error = 'Server error: ' . $httpCode;
-        } else {
-            $status = 'unknown';
-            $error = 'Unknown response code: ' . $httpCode;
-        }
+        // Determine status using shared logic (same as checkUrlHealth)
+        $statusResult = determineHealthStatus($httpCode, $errno, $error);
+        $status = $statusResult['status'];
+        $error = $statusResult['error'];
         
         $results[$url] = [
             'status' => $status,
@@ -453,7 +438,7 @@ function handleGetHealthStats() {
             SUM(CASE WHEN health_status = "healthy" THEN 1 ELSE 0 END) as healthy,
             SUM(CASE WHEN health_status = "broken" THEN 1 ELSE 0 END) as broken,
             SUM(CASE WHEN health_status = "timeout" THEN 1 ELSE 0 END) as timeout,
-            SUM(CASE WHEN health_status = "restricted" THEN 1 ELSE 0 END) as restricted,
+            SUM(CASE WHEN health_status = "restricted" OR health_status = "accessible" THEN 1 ELSE 0 END) as accessible,
             SUM(CASE WHEN health_status = "unknown" OR health_status IS NULL THEN 1 ELSE 0 END) as unknown
         FROM links
     ');
@@ -466,7 +451,7 @@ function handleGetHealthStats() {
             'healthy' => (int)$stats['healthy'],
             'broken' => (int)$stats['broken'],
             'timeout' => (int)$stats['timeout'],
-            'restricted' => (int)($stats['restricted'] ?? 0),
+            'accessible' => (int)($stats['accessible'] ?? 0),
             'unknown' => (int)$stats['unknown']
         ]
     ]);
@@ -504,20 +489,8 @@ function handleCheckSingleLink() {
             return;
         }
         
-        // Skip checking if already marked as restricted (403) - it will always be restricted
-        if (($link['health_status'] ?? '') === 'restricted' && ($link['health_http_code'] ?? 0) == 403) {
-            sendJSON([
-                'success' => true,
-                'linkId' => $link['id'],
-                'health' => [
-                    'status' => 'restricted',
-                    'httpCode' => 403,
-                    'error' => 'Access forbidden (403)',
-                    'checkedAt' => time()
-                ]
-            ]);
-            return;
-        }
+        // Always perform a fresh check for individual link health checks
+        // This ensures consistent results with the "Check Links" button
         
         // Check the link (this should complete in ~1 second with our timeout)
         $checkStart = microtime(true);
@@ -633,25 +606,14 @@ function handleCheckTileLinks() {
             $currentStatus = $link['health_status'] ?? null;
             
             // If force is true, check all links regardless of when they were last checked
-            // Only skip restricted links (403) even when forcing, as they will always be restricted
             if ($force) {
-                // Force mode: check all links except permanently restricted ones
-                if ($currentStatus === 'restricted' && $link['health_http_code'] == 403) {
-                    // Already marked as restricted (403) - skip re-checking, it will always be 403
-                    $results[$link['id']] = [
-                        'status' => 'restricted',
-                        'httpCode' => 403,
-                        'error' => 'Access forbidden (403)',
-                        'checkedAt' => $lastChecked ?: $now
-                    ];
-                } else {
-                    // Add to check queue
-                    if (!isset($urlToLinkIds[$link['url']])) {
-                        $urlToLinkIds[$link['url']] = [];
-                        $linksToCheck[] = $link['url'];
-                    }
-                    $urlToLinkIds[$link['url']][] = $link['id'];
+                // Force mode: check all links to ensure fresh results
+                // Add to check queue
+                if (!isset($urlToLinkIds[$link['url']])) {
+                    $urlToLinkIds[$link['url']] = [];
+                    $linksToCheck[] = $link['url'];
                 }
+                $urlToLinkIds[$link['url']][] = $link['id'];
             } else {
                 // Non-force mode: skip recently checked links
                 if ($lastChecked !== null && ($now - $lastChecked) < $tileMaxAge && !empty($currentStatus)) {
@@ -661,14 +623,6 @@ function handleCheckTileLinks() {
                         'httpCode' => $link['health_http_code'] ? (int)$link['health_http_code'] : null,
                         'error' => $link['health_error'],
                         'checkedAt' => $lastChecked
-                    ];
-                } elseif ($currentStatus === 'restricted' && $link['health_http_code'] == 403) {
-                    // Already marked as restricted (403) - skip re-checking
-                    $results[$link['id']] = [
-                        'status' => 'restricted',
-                        'httpCode' => 403,
-                        'error' => 'Access forbidden (403)',
-                        'checkedAt' => $lastChecked ?: $now
                     ];
                 } else {
                     // Needs a fresh check - add to batch

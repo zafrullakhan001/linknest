@@ -164,13 +164,13 @@ class FavoriteLinkHealthService {
     getHealthColor(status: string): string {
         switch (status) {
             case 'healthy':
-                return 'bg-emerald-500';
+            case 'accessible':
+            case 'restricted':
+                return 'bg-emerald-500'; // Show all accessible/online statuses as green
             case 'broken':
                 return 'bg-red-500';
             case 'timeout':
                 return 'bg-orange-500';
-            case 'restricted':
-                return 'bg-purple-500';
             case 'checking':
                 return 'bg-blue-500 animate-pulse';
             default:

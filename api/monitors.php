@@ -110,8 +110,8 @@ function handleCreateMonitor() {
         $stmt = $db->prepare('INSERT INTO monitors (
             name, type, target, port, keyword, interval, 
             is_active, email_notification, created_at, updated_at,
-            tab_name, group_name
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            tab_name, group_name, maintenance_start, maintenance_end
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         $now = time();
         $stmt->execute([
@@ -126,7 +126,9 @@ function handleCreateMonitor() {
             $now,
             $now,
             $data['tab_name'] ?? null,
-            $data['group_name'] ?? null
+            $data['group_name'] ?? null,
+            isset($data['maintenance_start']) ? (int)$data['maintenance_start'] : null,
+            isset($data['maintenance_end']) ? (int)$data['maintenance_end'] : null
         ]);
         
         $id = $db->lastInsertId();
@@ -160,7 +162,7 @@ function handleUpdateMonitor($id) {
         $fields = [];
         $values = [];
         
-        $allowedFields = ['name', 'type', 'target', 'port', 'keyword', 'interval', 'is_active', 'email_notification', 'tab_name', 'group_name'];
+        $allowedFields = ['name', 'type', 'target', 'port', 'keyword', 'interval', 'is_active', 'email_notification', 'tab_name', 'group_name', 'maintenance_start', 'maintenance_end'];
         foreach ($allowedFields as $field) {
             if (isset($data[$field])) {
                 $fields[] = "$field = ?";
@@ -345,8 +347,8 @@ function handleImportMonitors() {
         $stmt = $db->prepare('INSERT INTO monitors (
             name, type, target, port, keyword, interval, 
             is_active, email_notification, created_at, updated_at,
-            tab_name, group_name
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            tab_name, group_name, maintenance_start, maintenance_end
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         foreach ($monitors as $m) {
             $stmt->execute([
@@ -361,7 +363,9 @@ function handleImportMonitors() {
                 $now,
                 $now,
                 $m['tab_name'] ?? null,
-                $m['group_name'] ?? null
+                $m['group_name'] ?? null,
+                isset($m['maintenance_start']) ? (int)$m['maintenance_start'] : null,
+                isset($m['maintenance_end']) ? (int)$m['maintenance_end'] : null
             ]);
             $count++;
         }
@@ -422,8 +426,8 @@ function handleImportCSV() {
         $stmt = $db->prepare('INSERT INTO monitors (
             name, type, target, port, keyword, interval, 
             is_active, email_notification, created_at, updated_at,
-            tab_name, group_name
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            tab_name, group_name, maintenance_start, maintenance_end
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         foreach ($monitors as $m) {
             $stmt->execute([
@@ -438,7 +442,9 @@ function handleImportCSV() {
                 $now,
                 $now,
                 $m['tab_name'],
-                $m['group_name']
+                $m['group_name'],
+                null, // maintenance_start
+                null  // maintenance_end
             ]);
             $count++;
         }

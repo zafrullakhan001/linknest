@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Monitor, MonitorLog, monitoringService } from '../services/monitoringService';
 import { MonitorForm } from './MonitorForm';
-import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaFileCsv, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress } from 'react-icons/fa';
+import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaFileCsv, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash } from 'react-icons/fa';
 import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from './TileAnimationSelector';
 import { SMTPSettingsModal } from './SMTPSettingsModal';
 import { MonitoringTileStyleModal, TileStyle } from './MonitoringTileStyleModal';
@@ -43,6 +43,7 @@ export const MonitoringDashboard: React.FC = () => {
         const saved = localStorage.getItem('linknest_monitor_fullscreen');
         return saved === 'true';
     });
+    const [notificationsPaused, setNotificationsPaused] = useState<boolean>(false);
     const csvInputRef = useRef<HTMLInputElement>(null);
     
     // Tile styles state
@@ -157,6 +158,12 @@ export const MonitoringDashboard: React.FC = () => {
         localStorage.setItem('linknest_monitor_fullscreen', isFullscreen.toString());
     }, [isFullscreen]);
 
+    // Load notification status on mount
+    useEffect(() => {
+        fetchNotificationStatus();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const fetchMonitors = useCallback(async () => {
         try {
             const data = await monitoringService.getMonitors();
@@ -165,6 +172,34 @@ export const MonitoringDashboard: React.FC = () => {
             console.error('Failed to load monitors', error);
         } finally {
             setIsLoading(false);
+        }
+    }, []);
+
+    const fetchNotificationStatus = useCallback(async () => {
+        try {
+            const response = await fetch('api/settings.php');
+            if (response.ok) {
+                const data = await response.json();
+                const isPaused = data.settings?.notifications_paused === '1' || data.settings?.notifications_paused === 'true';
+                setNotificationsPaused(isPaused);
+            }
+        } catch (error) {
+            console.error('Failed to fetch notification status', error);
+        }
+    }, []);
+
+    const toggleNotifications = useCallback(async () => {
+        try {
+            const response = await fetch('api/settings.php/toggle-notifications', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setNotificationsPaused(data.notifications_paused);
+            }
+        } catch (error) {
+            console.error('Failed to toggle notifications', error);
         }
     }, []);
 
@@ -586,6 +621,14 @@ export const MonitoringDashboard: React.FC = () => {
         }
     };
 
+    const isInMaintenance = (monitor: Monitor): boolean => {
+        if (!monitor.maintenance_start || !monitor.maintenance_end) {
+            return false;
+        }
+        const now = Math.floor(Date.now() / 1000);
+        return now >= monitor.maintenance_start && now <= monitor.maintenance_end;
+    };
+
     const getStatusIcon = (status: string | null) => {
         switch (status) {
             case 'up': return <FaCheck {...({ className: "text-green-500" } as any)} />;
@@ -753,6 +796,13 @@ export const MonitoringDashboard: React.FC = () => {
                             title="SMTP Settings"
                         >
                             <FaEnvelope size={14} />
+                        </button>
+                        <button
+                            onClick={toggleNotifications}
+                            className={`p-2 rounded-lg transition-all ${notificationsPaused ? 'text-red-500 bg-red-50 dark:bg-red-900/20' : 'text-slate-400 hover:text-green-500 hover:bg-white dark:hover:bg-[#333]'}`}
+                            title={notificationsPaused ? "Email Notifications Paused - Click to Resume" : "Email Notifications Active - Click to Pause"}
+                        >
+                            {notificationsPaused ? <FaBellSlash size={14} /> : <FaBell size={14} />}
                         </button>
                         <button
                             onClick={() => setShowTileStyleModal(true)}
@@ -1120,27 +1170,40 @@ export const MonitoringDashboard: React.FC = () => {
                                                     >
                                                         {monitor.name}
                                                     </h3>
-                                                    {viewMode === 'tiles' ? (
-                                                        <div 
-                                                            className={`flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full inline-flex ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-white/20' : 'text-slate-600 dark:text-gray-400 bg-slate-100 dark:bg-[#252525]'}`}
-                                                            style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
-                                                        >
-                                                            {React.cloneElement(getStatusIcon(monitor.last_status) as React.ReactElement, { 
-                                                                style: monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : undefined,
-                                                                size: 10 
-                                                            })}
-                                                            <span className="uppercase font-extrabold tracking-widest">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        {viewMode === 'tiles' ? (
+                                                            <div 
+                                                                className={`flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full inline-flex ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-white/20' : 'text-slate-600 dark:text-gray-400 bg-slate-100 dark:bg-[#252525]'}`}
+                                                                style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
+                                                            >
+                                                                {React.cloneElement(getStatusIcon(monitor.last_status) as React.ReactElement, { 
+                                                                    style: monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : undefined,
+                                                                    size: 10 
+                                                                })}
+                                                                <span className="uppercase font-extrabold tracking-widest">
+                                                                    {monitor.last_status || 'UNKNOWN'}
+                                                                </span>
+                                                            </div>
+                                                        ) : (
+                                                            <div 
+                                                                className={`text-[9px] font-black uppercase tracking-tighter ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : monitor.last_status === 'up' ? 'text-emerald-500' : 'text-red-500'}`}
+                                                                style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
+                                                            >
                                                                 {monitor.last_status || 'UNKNOWN'}
-                                                            </span>
-                                                        </div>
-                                                    ) : (
-                                                        <div 
-                                                            className={`text-[9px] font-black uppercase tracking-tighter ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : monitor.last_status === 'up' ? 'text-emerald-500' : 'text-red-500'}`}
-                                                            style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
-                                                        >
-                                                            {monitor.last_status || 'UNKNOWN'}
-                                                        </div>
-                                                    )}
+                                                            </div>
+                                                        )}
+                                                        {isInMaintenance(monitor) && (
+                                                            <div 
+                                                                className={`flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-amber-500/30 text-white border border-white/30' : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-700'}`}
+                                                                title={`Maintenance until ${new Date((monitor.maintenance_end || 0) * 1000).toLocaleString()}`}
+                                                            >
+                                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                </svg>
+                                                                <span className="uppercase font-bold tracking-wider">Maintenance</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
 

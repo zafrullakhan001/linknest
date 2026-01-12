@@ -44,6 +44,14 @@ switch ($method) {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
         break;
+    
+    case 'PATCH':
+        if ($path === '/toggle-notifications') {
+            handleToggleNotifications();
+        } else {
+            sendJSON(['error' => 'Invalid endpoint'], 404);
+        }
+        break;
         
     default:
         sendJSON(['error' => 'Method not allowed'], 405);
@@ -554,3 +562,19 @@ function handleUpdateUserPreferences() {
     }
 }
 
+function handleToggleNotifications() {
+    requireAuth();
+    $db = getDB();
+    try {
+        $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'notifications_paused'");
+        $stmt->execute();
+        $current = $stmt->fetchColumn();
+        $newState = ($current === '1' || $current === 'true') ? '0' : '1';
+        $stmt = $db->prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('notifications_paused', ?, ?)");
+        $stmt->execute([$newState, time()]);
+        $isPaused = $newState === '1';
+        sendJSON(['success' => true, 'notifications_paused' => $isPaused, 'message' => $isPaused ? 'Email notifications paused' : 'Email notifications resumed']);
+    } catch (Exception $e) {
+        sendJSON(['error' => 'Failed to toggle notifications: ' . $e->getMessage()], 500);
+    }
+}

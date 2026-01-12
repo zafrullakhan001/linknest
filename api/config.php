@@ -788,15 +788,23 @@ function initDatabase() {
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             tab_name TEXT,
-            group_name TEXT
+            group_name TEXT,
+            maintenance_start INTEGER,
+            maintenance_end INTEGER
         )');
 
-        // Migrate existing monitors table to add tab_name and group_name columns
+        // Migrate existing monitors table to add columns
         try {
             @$db->exec('ALTER TABLE monitors ADD COLUMN tab_name TEXT');
         } catch (PDOException $e) { /* ignore if column already exists */ }
         try {
             @$db->exec('ALTER TABLE monitors ADD COLUMN group_name TEXT');
+        } catch (PDOException $e) { /* ignore if column already exists */ }
+        try {
+            @$db->exec('ALTER TABLE monitors ADD COLUMN maintenance_start INTEGER');
+        } catch (PDOException $e) { /* ignore if column already exists */ }
+        try {
+            @$db->exec('ALTER TABLE monitors ADD COLUMN maintenance_end INTEGER');
         } catch (PDOException $e) { /* ignore if column already exists */ }
 
         // Create monitor_logs table

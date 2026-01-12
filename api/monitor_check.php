@@ -109,7 +109,8 @@ function performMonitorCheck($monitor) {
     
     // Send Notification if enabled and status changed to DOWN or recovered to UP
     if ($monitor['email_notification'] && $statusChanged) {
-        if (!isNotificationPaused()) {
+        // Skip notifications if in maintenance window or if global notifications are paused
+        if (!isNotificationPaused() && !isInMaintenanceWindow($monitor)) {
             if ($status === 'down') {
                 sendNotification($monitor, "DOWN: {$monitor['name']} is unreachable. Error: $details");
             } elseif ($prevStatus === 'down' && $status === 'up') {
@@ -279,10 +280,21 @@ function sendNotification($monitor, $message) {
 }
 
 /**
- * Check if notifications are currently paused based on SMTP settings
+ * Check if notifications are currently paused based on SMTP settings or global pause flag
  */
 function isNotificationPaused() {
     $db = getDB();
+    
+    // Check global pause flag first (simple boolean toggle)
+    $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'notifications_paused'");
+    $stmt->execute();
+    $globalPause = $stmt->fetchColumn();
+    
+    if ($globalPause === '1' || $globalPause === 'true') {
+        return true;
+    }
+    
+    // Check time-based pause window (legacy SMTP pause feature)
     $stmt = $db->prepare("SELECT key, value FROM settings WHERE key IN ('smtp_pause_start', 'smtp_pause_end')");
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
@@ -303,4 +315,22 @@ function isNotificationPaused() {
     }
     
     return ($now >= $startTime && $now <= $endTime);
+}
+
+/**
+ * Check if monitor is currently in a maintenance window
+ */
+function isInMaintenanceWindow($monitor) {
+    $maintenanceStart = $monitor['maintenance_start'] ?? null;
+    $maintenanceEnd = $monitor['maintenance_end'] ?? null;
+    
+    // No maintenance window set
+    if (empty($maintenanceStart) || empty($maintenanceEnd)) {
+        return false;
+    }
+    
+    $now = time();
+    
+    // Check if current time is within the maintenance window
+    return ($now >= $maintenanceStart && $now <= $maintenanceEnd);
 }

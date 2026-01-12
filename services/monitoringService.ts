@@ -15,6 +15,8 @@ export interface Monitor {
     updated_at: number;
     tab_name?: string;
     group_name?: string;
+    maintenance_start?: number | null;
+    maintenance_end?: number | null;
 }
 
 export interface MonitorLog {

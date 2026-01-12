@@ -229,6 +229,57 @@ export const SMTPSettingsModal: React.FC<SMTPSettingsModalProps> = ({ onClose })
                                     <p className="text-xs text-orange-700 dark:text-orange-400 mb-4">
                                         Configure a specific period (dates and times) during which email notifications will be paused. This is useful for extended maintenance windows.
                                     </p>
+                                    
+                                    {/* Quick Preset Buttons */}
+                                    <div className="mb-4">
+                                        <p className="text-xs font-semibold text-slate-600 dark:text-gray-400 mb-2">Quick Presets:</p>
+                                        <div className="grid grid-cols-3 gap-2 mb-3">
+                                            {[
+                                                { label: '1 Hour', hours: 1 },
+                                                { label: '2 Hours', hours: 2 },
+                                                { label: '4 Hours', hours: 4 },
+                                                { label: '8 Hours', hours: 8 },
+                                                { label: '12 Hours', hours: 12 },
+                                                { label: '24 Hours', hours: 24 }
+                                            ].map((preset) => (
+                                                <button
+                                                    key={preset.hours}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const now = new Date();
+                                                        const end = new Date(now.getTime() + preset.hours * 60 * 60 * 1000);
+                                                        // Format for datetime-local input: YYYY-MM-DDTHH:mm
+                                                        const formatDateTime = (date: Date) => {
+                                                            const year = date.getFullYear();
+                                                            const month = String(date.getMonth() + 1).padStart(2, '0');
+                                                            const day = String(date.getDate()).padStart(2, '0');
+                                                            const hours = String(date.getHours()).padStart(2, '0');
+                                                            const minutes = String(date.getMinutes()).padStart(2, '0');
+                                                            return `${year}-${month}-${day}T${hours}:${minutes}`;
+                                                        };
+                                                        setSettings({ 
+                                                            ...settings, 
+                                                            pause_start: formatDateTime(now),
+                                                            pause_end: formatDateTime(end)
+                                                        });
+                                                    }}
+                                                    className="px-3 py-2 text-xs bg-white dark:bg-[#252525] hover:bg-amber-50 dark:hover:bg-amber-900/20 border border-slate-300 dark:border-[#444] hover:border-amber-400 dark:hover:border-amber-600 rounded-lg transition-colors text-slate-700 dark:text-gray-300 hover:text-amber-700 dark:hover:text-amber-400 font-semibold"
+                                                >
+                                                    {preset.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setSettings({ ...settings, pause_start: '', pause_end: '' });
+                                            }}
+                                            className="w-full px-3 py-2 text-xs bg-slate-100 dark:bg-[#252525] hover:bg-slate-200 dark:hover:bg-[#333] border border-slate-300 dark:border-[#444] rounded-lg transition-colors text-slate-600 dark:text-gray-400 font-medium"
+                                        >
+                                            Clear Pause Window
+                                        </button>
+                                    </div>
+                                    
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                             <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 flex items-center gap-2">
@@ -254,8 +305,8 @@ export const SMTPSettingsModal: React.FC<SMTPSettingsModalProps> = ({ onClose })
                                         </div>
                                     </div>
                                     {settings.pause_start && settings.pause_end && (
-                                        <p className="mt-3 text-[10px] text-slate-500 italic">
-                                            Notifications will be suppressed from {new Date(settings.pause_start).toLocaleString()} to {new Date(settings.pause_end).toLocaleString()}.
+                                        <p className="mt-3 text-[10px] text-slate-500 dark:text-gray-400 italic bg-amber-50 dark:bg-amber-900/20 p-3 rounded-lg border border-amber-200 dark:border-amber-800">
+                                            ℹ️ Notifications will be suppressed from {new Date(settings.pause_start).toLocaleString()} to {new Date(settings.pause_end).toLocaleString()}.
                                         </p>
                                     )}
                                 </div>
