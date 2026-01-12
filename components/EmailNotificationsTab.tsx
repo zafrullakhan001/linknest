@@ -244,8 +244,8 @@ const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSav
             return;
         }
 
-        // Validate email addresses
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        // Validate email addresses (allow localhost for local testing)
+        const emailRegex = /^[^\s@]+@([^\s@]+\.[^\s@]+|localhost|127\.0\.0\.1|::1)$/i;
         for (const email of recipients) {
             if (!emailRegex.test(email)) {
                 setError(`Invalid email address: ${email}`);

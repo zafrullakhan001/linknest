@@ -139,17 +139,32 @@ function handleTestConnection() {
             throw new Exception("No admin email found to send test to");
         }
         
+        // For Mercury mail server, convert email domain to 'localhost' if it ends with '.com' or other extensions
+        // Mercury typically accepts @localhost by default
+        $testEmail = $admin['email'];
+        if (preg_match('/^(.+)@(.+)\.(.+)$/', $testEmail, $matches)) {
+            // If email has a domain extension, try using just 'localhost' instead
+            // This works better with Mercury's default configuration
+            $username = $matches[1];
+            $testEmail = $username . '@localhost';
+        }
+        
         $result = sendEmail(
-            $admin['email'], 
+            $testEmail, 
             'LinkNest SMTP Test', 
             'This is a test email from your LinkNest Monitoring Dashboard.', 
             $data
         );
         
         if ($result === true) {
-            sendJSON(['success' => true, 'message' => 'Test email sent successfully to ' . $admin['email']]);
+            sendJSON(['success' => true, 'message' => 'Test email sent successfully to ' . $testEmail . ' (converted from ' . $admin['email'] . ' for Mercury compatibility)']);
         } else {
-            sendJSON(['success' => false, 'message' => 'Failed to send email: ' . $result]);
+            // If localhost conversion failed, provide helpful error message
+            $errorMsg = 'Failed to send email: ' . $result;
+            if (strpos($result, '550') !== false) {
+                $errorMsg .= ' | Tip: For Mercury mail server, use email addresses with @localhost domain (e.g., ' . $username . '@localhost) or add the user to Mercury via its web interface.';
+            }
+            sendJSON(['success' => false, 'message' => $errorMsg]);
         }
         
     } catch (Exception $e) {

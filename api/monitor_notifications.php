@@ -160,9 +160,9 @@ function handleCreateNotificationRule() {
         return;
     }
     
-    // Validate email addresses
+    // Validate email addresses (allow localhost for local testing)
     foreach ($data['recipients'] as $email) {
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        if (!isValidEmail($email)) {
             sendJSON(['error' => "Invalid email address: $email"], 400);
             return;
         }
@@ -284,10 +284,10 @@ function handleUpdateNotificationRule($ruleId) {
         return;
     }
     
-    // Validate recipients if provided
+    // Validate recipients if provided (allow localhost for local testing)
     if (isset($data['recipients']) && is_array($data['recipients'])) {
         foreach ($data['recipients'] as $email) {
-            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            if (!isValidEmail($email)) {
                 sendJSON(['error' => "Invalid email address: $email"], 400);
                 return;
             }
@@ -400,4 +400,26 @@ function handleDeleteNotificationRule($ruleId) {
         if ($db->inTransaction()) $db->rollBack();
         sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
     }
+}
+
+/**
+ * Validate email address, allowing localhost domains for local testing
+ */
+function isValidEmail($email) {
+    // Standard email validation
+    if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return true;
+    }
+    
+    // Allow localhost domains for local testing (e.g., admin@localhost)
+    if (preg_match('/^[^\s@]+@localhost$/i', $email)) {
+        return true;
+    }
+    
+    // Allow 127.0.0.1 and localhost variants
+    if (preg_match('/^[^\s@]+@(localhost|127\.0\.0\.1|::1)$/i', $email)) {
+        return true;
+    }
+    
+    return false;
 }
