@@ -9,6 +9,13 @@ export interface Monitor {
     is_active: number;
     email_notification: number;
     email_rules_count?: number; // advanced notification rules count (enabled)
+    last_notified_status?: 'up' | 'down' | 'unknown' | null;
+    legacy_email_to?: string | null;
+    legacy_email_cc?: string | null;
+    legacy_email_from_name?: string | null;
+    legacy_email_from_email?: string | null;
+    legacy_email_subject_template?: string | null;
+    legacy_email_body_template?: string | null;
     last_checked_at: number;
     last_status: 'up' | 'down' | 'unknown' | null;
     last_response_time: number;

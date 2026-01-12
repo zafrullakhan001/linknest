@@ -4,8 +4,54 @@
  * Does not depend on external libraries (PHPMailer etc)
  */
 
- function sendEmail($to, $subject, $body, $config = null) {
-    error_log("[EMAIL] sendEmail called - to: $to, subject: $subject");
+function normalizeEmailList($emails) {
+    $list = [];
+    if ($emails === null) return $list;
+    if (is_string($emails)) {
+        $emails = preg_split('/[,\n]+/', $emails);
+    }
+    if (!is_array($emails)) return $list;
+
+    foreach ($emails as $email) {
+        $email = trim((string)$email);
+        if ($email === '') continue;
+        if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $list[] = $email;
+        }
+    }
+
+    // de-dupe (case-insensitive)
+    $deduped = [];
+    $seen = [];
+    foreach ($list as $e) {
+        $k = strtolower($e);
+        if (isset($seen[$k])) continue;
+        $seen[$k] = true;
+        $deduped[] = $e;
+    }
+    return $deduped;
+}
+
+function sendEmail($to, $subject, $body, $config = null, $cc = []) {
+    $toList = normalizeEmailList($to);
+    $ccList = normalizeEmailList($cc);
+    return sendEmailMulti($toList, $ccList, $subject, $body, $config);
+}
+
+/**
+ * Send email to multiple To recipients and CC recipients.
+ * - For SMTP: issues RCPT TO for each recipient (to+cc), and adds "To:" and "Cc:" headers.
+ * - For PHP mail(): passes combined To string and includes Cc header.
+ */
+function sendEmailMulti(array $toList, array $ccList, $subject, $body, $config = null) {
+    $toHeader = implode(', ', $toList);
+    $ccHeader = implode(', ', $ccList);
+    $allRecipients = array_values(array_unique(array_merge($toList, $ccList)));
+
+    error_log("[EMAIL] sendEmailMulti called - to: $toHeader, cc: $ccHeader, subject: $subject");
+    if (empty($allRecipients)) {
+        return "No valid recipients (To/CC)";
+    }
     
     // If config not provided, load from DB
     if ($config === null) {
@@ -33,8 +79,11 @@
             error_log("[EMAIL] SMTP disabled, falling back to PHP mail()");
             // SMTP disabled, fall back to mail()
             $headers = "From: noreply@linknest.local\r\n";
+            if (!empty($ccHeader)) {
+                $headers .= "Cc: $ccHeader\r\n";
+            }
             $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
-            $mailResult = @mail($to, $subject, $body, $headers);
+            $mailResult = @mail($toHeader, $subject, $body, $headers);
             error_log("[EMAIL] PHP mail() result: " . ($mailResult ? "SUCCESS" : "FAILED"));
             return $mailResult ? true : "PHP mail() failed";
         }
@@ -140,12 +189,14 @@
         return "MAIL FROM failed: $response";
     }
 
-    error_log("[EMAIL] Setting RCPT TO: $to");
-    $write("RCPT TO: <$to>");
-    $response = $read();
-    if (substr($response, 0, 3) != '250' && substr($response, 0, 3) != '251') {
-        error_log("[EMAIL] ERROR: RCPT TO failed: $response");
-        return "RCPT TO failed: $response";
+    foreach ($allRecipients as $rcpt) {
+        error_log("[EMAIL] Setting RCPT TO: $rcpt");
+        $write("RCPT TO: <$rcpt>");
+        $response = $read();
+        if (substr($response, 0, 3) != '250' && substr($response, 0, 3) != '251') {
+            error_log("[EMAIL] ERROR: RCPT TO failed for $rcpt: $response");
+            return "RCPT TO failed for $rcpt: $response";
+        }
     }
 
     error_log("[EMAIL] Sending DATA command");
@@ -157,7 +208,10 @@
     }
 
     $message  = "Date: " . date('r') . "\r\n";
-    $message .= "To: <$to>\r\n";
+    $message .= "To: $toHeader\r\n";
+    if (!empty($ccHeader)) {
+        $message .= "Cc: $ccHeader\r\n";
+    }
     $message .= "From: $fromName <$fromEmail>\r\n";
     $message .= "Subject: $subject\r\n";
     $message .= "MIME-Version: 1.0\r\n";

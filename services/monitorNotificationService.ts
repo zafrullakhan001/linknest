@@ -14,6 +14,7 @@ export interface NotificationRule {
     created_at?: number;
     updated_at?: number;
     recipients?: string[];
+    cc?: string[]; // CC recipients (optional)
 }
 
 // Resolve API base dynamically based on current location (matches other services)

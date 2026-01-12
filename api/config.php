@@ -782,6 +782,13 @@ function initDatabase() {
             interval INTEGER DEFAULT 5, -- in minutes
             is_active INTEGER DEFAULT 1,
             email_notification INTEGER DEFAULT 0,
+            last_notified_status TEXT, -- up/down/unknown/null: last status we successfully sent a notification for (legacy notifications)
+            legacy_email_to TEXT, -- optional override; comma-separated list. empty => send to admin email
+            legacy_email_cc TEXT, -- optional CC; comma-separated list
+            legacy_email_from_name TEXT, -- optional override; empty => use SMTP from_name
+            legacy_email_from_email TEXT, -- optional override; empty => use SMTP from_email
+            legacy_email_subject_template TEXT, -- optional; supports template variables
+            legacy_email_body_template TEXT, -- optional; supports template variables
             last_checked_at INTEGER,
             last_status TEXT, -- up, down, unknown
             last_response_time INTEGER, -- ms
@@ -806,6 +813,15 @@ function initDatabase() {
         try {
             @$db->exec('ALTER TABLE monitors ADD COLUMN maintenance_end INTEGER');
         } catch (PDOException $e) { /* ignore if column already exists */ }
+        try {
+            @$db->exec('ALTER TABLE monitors ADD COLUMN last_notified_status TEXT');
+        } catch (PDOException $e) { /* ignore if column already exists */ }
+        try { @$db->exec('ALTER TABLE monitors ADD COLUMN legacy_email_to TEXT'); } catch (PDOException $e) { /* ignore */ }
+        try { @$db->exec('ALTER TABLE monitors ADD COLUMN legacy_email_cc TEXT'); } catch (PDOException $e) { /* ignore */ }
+        try { @$db->exec('ALTER TABLE monitors ADD COLUMN legacy_email_from_name TEXT'); } catch (PDOException $e) { /* ignore */ }
+        try { @$db->exec('ALTER TABLE monitors ADD COLUMN legacy_email_from_email TEXT'); } catch (PDOException $e) { /* ignore */ }
+        try { @$db->exec('ALTER TABLE monitors ADD COLUMN legacy_email_subject_template TEXT'); } catch (PDOException $e) { /* ignore */ }
+        try { @$db->exec('ALTER TABLE monitors ADD COLUMN legacy_email_body_template TEXT'); } catch (PDOException $e) { /* ignore */ }
 
         // Create monitor_logs table
         $db->exec('CREATE TABLE IF NOT EXISTS monitor_logs (
@@ -841,6 +857,7 @@ function initDatabase() {
             body_template TEXT NOT NULL,
             from_name TEXT,
             from_email TEXT,
+            cc_emails TEXT, -- optional CC list (comma-separated)
             is_enabled INTEGER DEFAULT 1,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
@@ -849,6 +866,9 @@ function initDatabase() {
         // Migrate monitor_notification_rules to add name column if missing
         try {
             @$db->exec('ALTER TABLE monitor_notification_rules ADD COLUMN name TEXT');
+        } catch (PDOException $e) { /* ignore if column already exists */ }
+        try {
+            @$db->exec('ALTER TABLE monitor_notification_rules ADD COLUMN cc_emails TEXT');
         } catch (PDOException $e) { /* ignore if column already exists */ }
         try {
             // Backfill empty names to a sensible default

@@ -130,8 +130,10 @@ function handleCreateMonitor() {
         $stmt = $db->prepare('INSERT INTO monitors (
             name, type, target, port, keyword, interval, 
             is_active, email_notification, created_at, updated_at,
-            tab_name, group_name, maintenance_start, maintenance_end
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            tab_name, group_name, maintenance_start, maintenance_end,
+            legacy_email_to, legacy_email_cc, legacy_email_from_name, legacy_email_from_email,
+            legacy_email_subject_template, legacy_email_body_template
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         $now = time();
         $stmt->execute([
@@ -148,7 +150,13 @@ function handleCreateMonitor() {
             $data['tab_name'] ?? null,
             $data['group_name'] ?? null,
             isset($data['maintenance_start']) ? (int)$data['maintenance_start'] : null,
-            isset($data['maintenance_end']) ? (int)$data['maintenance_end'] : null
+            isset($data['maintenance_end']) ? (int)$data['maintenance_end'] : null,
+            $data['legacy_email_to'] ?? null,
+            $data['legacy_email_cc'] ?? null,
+            $data['legacy_email_from_name'] ?? null,
+            $data['legacy_email_from_email'] ?? null,
+            $data['legacy_email_subject_template'] ?? null,
+            $data['legacy_email_body_template'] ?? null
         ]);
         
         $id = $db->lastInsertId();
@@ -192,7 +200,14 @@ function handleUpdateMonitor($id) {
         $fields = [];
         $values = [];
         
-        $allowedFields = ['name', 'type', 'target', 'port', 'keyword', 'interval', 'is_active', 'email_notification', 'tab_name', 'group_name', 'maintenance_start', 'maintenance_end'];
+        $allowedFields = [
+            'name', 'type', 'target', 'port', 'keyword', 'interval',
+            'is_active', 'email_notification',
+            'tab_name', 'group_name', 'maintenance_start', 'maintenance_end',
+            'legacy_email_to', 'legacy_email_from_name', 'legacy_email_from_email',
+            'legacy_email_cc',
+            'legacy_email_subject_template', 'legacy_email_body_template'
+        ];
         foreach ($allowedFields as $field) {
             if (isset($data[$field])) {
                 $fields[] = "$field = ?";
@@ -346,8 +361,8 @@ function handleCheckAllMonitors() {
         $monitorCount = (int)$stmt->fetchColumn();
         error_log("[MONITOR] Found $monitorCount active monitors");
         
-        // Calculate time limit: 10 seconds per monitor, minimum 60 seconds, maximum 300 seconds (5 minutes)
-        $timeLimit = max(60, min(300, $monitorCount * 10));
+        // Calculate time limit: allow for retry confirmation on failures (up to ~20s per monitor), min 60s, max 300s
+        $timeLimit = max(60, min(300, $monitorCount * 20));
         set_time_limit($timeLimit);
         error_log("[MONITOR] Set time limit to $timeLimit seconds");
         

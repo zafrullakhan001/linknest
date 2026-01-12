@@ -56,26 +56,49 @@ function handleCheckDueMonitors() {
  */
 function performMonitorCheck($monitor) {
     // Set a maximum execution time for this check to prevent hanging
-    set_time_limit(10); // Maximum 10 seconds per check
+    set_time_limit(20); // Allow time for retry confirmation on failures
     
     $startTime = microtime(true);
     $status = 'down';
     $details = '';
     $checkRes = ['status' => 'down', 'details' => 'Unknown error'];
     
-    try {
+    $runCheck = function(array $opts = []) use ($monitor) {
         switch ($monitor['type']) {
             case 'url':
-                $checkRes = checkUrl($monitor['target']);
-                break;
+                return checkUrl($monitor['target'], $opts);
             case 'keyword':
-                $checkRes = checkKeyword($monitor['target'], $monitor['keyword']);
-                break;
+                return checkKeyword($monitor['target'], $monitor['keyword'], $opts);
             case 'port':
-                $checkRes = checkPort($monitor['target'], $monitor['port']);
-                break;
+                return checkPort($monitor['target'], $monitor['port'], $opts);
             default:
-                $checkRes = ['status' => 'down', 'details' => 'Invalid monitor type'];
+                return ['status' => 'down', 'details' => 'Invalid monitor type'];
+        }
+    };
+
+    try {
+        // Fast attempt (existing defaults)
+        $checkRes = $runCheck();
+
+        // Confirm DOWN with a slower retry to avoid false positives from short timeouts/DNS hiccups
+        if (($checkRes['status'] ?? 'down') === 'down') {
+            error_log("[MONITOR] First attempt DOWN for monitor {$monitor['id']} - retrying with relaxed timeouts");
+            usleep(500000); // 0.5s
+            $retryRes = $runCheck([
+                'timeout' => 10,
+                'connect_timeout' => 5,
+                'port_timeout' => 5
+            ]);
+
+            if (($retryRes['status'] ?? 'down') === 'up') {
+                $checkRes = [
+                    'status' => 'up',
+                    'details' => ($retryRes['details'] ?? 'Recovered on retry') . ' (recovered on retry)'
+                ];
+            } else {
+                // Keep DOWN, but include retry info for debugging
+                $checkRes['details'] = ($checkRes['details'] ?? 'DOWN') . ' | Retry: ' . ($retryRes['details'] ?? 'DOWN');
+            }
         }
     } catch (Exception $e) {
         $checkRes = ['status' => 'down', 'details' => 'Exception: ' . $e->getMessage()];
@@ -131,7 +154,22 @@ function performMonitorCheck($monitor) {
     }
     
     // Legacy notification support (for backward compatibility)
-    if ($monitor['email_notification'] && $statusChanged) {
+    // Important: allow first DOWN alert even if monitor was already down before email_notification was enabled
+    $lastNotifiedStatus = $monitor['last_notified_status'] ?? null;
+    if ($lastNotifiedStatus === '' || $lastNotifiedStatus === false) {
+        $lastNotifiedStatus = null;
+    }
+
+    $shouldAttemptLegacyNotify =
+        !empty($monitor['email_notification']) &&
+        (
+            // Normal behavior: only notify on state changes
+            $statusChanged ||
+            // Special case: status is DOWN but we've never successfully notified DOWN
+            ($normalizedStatus === 'down' && $lastNotifiedStatus !== 'down')
+        );
+
+    if ($shouldAttemptLegacyNotify) {
         error_log("[EMAIL] Legacy notification check - email_notification: {$monitor['email_notification']}, statusChanged: " . ($statusChanged ? 'true' : 'false'));
         error_log("[EMAIL] Notification paused: " . (isNotificationPaused() ? 'YES' : 'NO'));
         error_log("[EMAIL] In maintenance window: " . (isInMaintenanceWindow($monitor) ? 'YES' : 'NO'));
@@ -142,12 +180,12 @@ function performMonitorCheck($monitor) {
             // Use normalized status for comparison
             if ($normalizedStatus === 'down') {
                 error_log("[EMAIL] Triggering DOWN notification for monitor {$monitor['id']} - Previous status: " . ($prevStatus ?? 'null/unknown') . ", Current: $status");
-                sendNotification($monitor, "DOWN: {$monitor['name']} is unreachable. Error: $details");
+                sendNotification($monitor, "DOWN: {$monitor['name']} is unreachable. Error: $details", 'down');
             } 
             // Send UP notification when status changes from 'down' to 'up'
             elseif ($normalizedPrevStatus === 'down' && $normalizedStatus === 'up') {
                 error_log("[EMAIL] Triggering UP notification for monitor {$monitor['id']} - Previous: " . ($prevStatus ?? 'null') . ", Current: $status");
-                sendNotification($monitor, "UP: {$monitor['name']} is back online.");
+                sendNotification($monitor, "UP: {$monitor['name']} is back online.", 'up');
             } else {
                 error_log("[EMAIL] Legacy notification condition not met - normalized status: $normalizedStatus, normalized prevStatus: " . ($normalizedPrevStatus ?? 'null') . " (no notification sent)");
             }
@@ -171,18 +209,21 @@ function performMonitorCheck($monitor) {
     ];
 }
 
-function checkUrl($url) {
+function checkUrl($url, $opts = []) {
     if (!filter_var($url, FILTER_VALIDATE_URL)) {
         return ['status' => 'down', 'details' => 'Invalid URL'];
     }
     
+    $timeout = isset($opts['timeout']) ? (int)$opts['timeout'] : 5;
+    $connectTimeout = isset($opts['connect_timeout']) ? (int)$opts['connect_timeout'] : 3;
+
     $ch = curl_init();
     curl_setopt_array($ch, [
         CURLOPT_URL => $url,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_TIMEOUT => 5, // Reduced from 10 to 5 seconds - fail fast
-        CURLOPT_CONNECTTIMEOUT => 3, // 3 seconds to establish connection - prevents hanging
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_CONNECTTIMEOUT => $connectTimeout,
         CURLOPT_SSL_VERIFYPEER => false,
         CURLOPT_SSL_VERIFYHOST => 0,
         CURLOPT_NOBODY => true, // HEAD request for efficiency
@@ -218,7 +259,7 @@ function checkUrl($url) {
     }
 }
 
-function checkKeyword($url, $keyword) {
+function checkKeyword($url, $keyword, $opts = []) {
     if (!filter_var($url, FILTER_VALIDATE_URL)) {
         return ['status' => 'down', 'details' => 'Invalid URL'];
     }
@@ -226,13 +267,16 @@ function checkKeyword($url, $keyword) {
         return ['status' => 'down', 'details' => 'No keyword specified'];
     }
     
+    $timeout = isset($opts['timeout']) ? (int)$opts['timeout'] : 8;
+    $connectTimeout = isset($opts['connect_timeout']) ? (int)$opts['connect_timeout'] : 3;
+
     $ch = curl_init();
     curl_setopt_array($ch, [
         CURLOPT_URL => $url,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_TIMEOUT => 8, // Reduced from 15 to 8 seconds - fail faster
-        CURLOPT_CONNECTTIMEOUT => 3, // 3 seconds to establish connection
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_CONNECTTIMEOUT => $connectTimeout,
         CURLOPT_SSL_VERIFYPEER => false,
         CURLOPT_SSL_VERIFYHOST => 0,
         CURLOPT_NOBODY => false, // Need body for keyword search
@@ -272,7 +316,7 @@ function checkKeyword($url, $keyword) {
     }
 }
 
-function checkPort($target, $port) {
+function checkPort($target, $port, $opts = []) {
     // Validate inputs
     if (empty($target) || empty($port)) {
         return ['status' => 'down', 'details' => 'Target and port are required'];
@@ -293,8 +337,8 @@ function checkPort($target, $port) {
         }
     }
     
-    // Use 3 seconds timeout (reduced from 5) - fail faster
-    $connection = @fsockopen($host, $port, $errno, $errstr, 3);
+    $portTimeout = isset($opts['port_timeout']) ? (int)$opts['port_timeout'] : 3;
+    $connection = @fsockopen($host, $port, $errno, $errstr, $portTimeout);
     
     if (is_resource($connection)) {
         fclose($connection);
@@ -395,25 +439,25 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
         // Get from name and email (use rule-specific or fallback to SMTP settings)
         $fromName = $rule['from_name'] ?? 'LinkNest Monitor';
         $fromEmail = $rule['from_email'] ?? null;
+        $ccList = function_exists('normalizeEmailList') ? normalizeEmailList($rule['cc_emails'] ?? '') : [];
         
-        // Send to all recipients
-        foreach ($recipients as $recipientEmail) {
-            error_log("[EMAIL] Sending email to recipient: $recipientEmail via rule {$rule['id']}");
-            $result = sendNotificationEmail($recipientEmail, $subject, $body, $fromName, $fromEmail);
-            
-            // Log notification
-            $stmt = $db->prepare('INSERT INTO monitor_notification_logs (
-                rule_id, monitor_id, recipient_email, status_trigger, sent_at, 
-                subject, success, error_message
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-            
-            $success = ($result === true) ? 1 : 0;
-            $errorMsg = ($result === true) ? null : $result;
-            
+        // Send ONE email per rule with multiple To + CC (prevents CC getting duplicates)
+        $result = sendEmailMultiWithRuleFromOverride($recipients, $ccList, $subject, $body, $fromName, $fromEmail);
+        $success = ($result === true) ? 1 : 0;
+        $errorMsg = ($result === true) ? null : $result;
+
+        // Log notification for each recipient (to + cc)
+        $logRecipients = array_values(array_unique(array_merge($recipients, $ccList)));
+        $stmt = $db->prepare('INSERT INTO monitor_notification_logs (
+            rule_id, monitor_id, recipient_email, status_trigger, sent_at, 
+            subject, success, error_message
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+
+        foreach ($logRecipients as $email) {
             $stmt->execute([
                 $rule['id'],
                 $monitor['id'],
-                $recipientEmail,
+                $email,
                 $newStatus,
                 $now,
                 $subject,
@@ -422,6 +466,32 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
             ]);
         }
     }
+}
+
+function sendEmailMultiWithRuleFromOverride(array $toList, array $ccList, $subject, $body, $fromName = null, $fromEmail = null) {
+    // Load SMTP settings from DB and apply from overrides (if provided)
+    $db = getDB();
+    $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'smtp_%'");
+    $stmt->execute();
+    $rows = $stmt->fetchAll();
+
+    $config = [];
+    foreach ($rows as $row) {
+        $key = str_replace('smtp_', '', $row['key']);
+        $config[$key] = $row['value'];
+    }
+    if (isset($config['password'])) {
+        $config['password'] = base64_decode($config['password']);
+    }
+
+    if (!empty($fromName)) {
+        $config['from_name'] = $fromName;
+    }
+    if (!empty($fromEmail)) {
+        $config['from_email'] = $fromEmail;
+    }
+
+    return sendEmailMulti($toList, $ccList, $subject, $body, $config);
 }
 
 /**
@@ -513,7 +583,7 @@ function sendNotificationEmail($to, $subject, $body, $fromName = null, $fromEmai
     return $result;
 }
 
-function sendNotification($monitor, $message) {
+function sendNotification($monitor, $message, $statusTrigger = 'both') {
     error_log("[EMAIL] sendNotification called for monitor ID: {$monitor['id']}, name: {$monitor['name']}");
     
     // Fetch admin email from users table
@@ -522,55 +592,161 @@ function sendNotification($monitor, $message) {
     $stmt->execute();
     $admin = $stmt->fetch();
     
-    if ($admin && !empty($admin['email'])) {
-        $subject = "[LinkNest Monitor] " . $monitor['name'] . " Status Update";
-        error_log("[EMAIL] Preparing to send email to: {$admin['email']}, subject: $subject");
-        error_log("[EMAIL] Message preview: " . substr($message, 0, 100) . "...");
-        
-        // Send email using our SMTP helper
-        // It handles fetching settings and connection automatically if config is null
-        $result = sendEmail($admin['email'], $subject, $message);
-        error_log("[EMAIL] sendEmail result: " . ($result === true ? "SUCCESS" : "FAILED: " . $result));
-        
-        $now = time();
-        $success = ($result === true) ? 1 : 0;
-        $errorMsg = ($result === true) ? null : $result;
-        
-        // Determine status trigger from message
-        $statusTrigger = 'both'; // Default
-        if (stripos($message, 'DOWN:') !== false) {
-            $statusTrigger = 'down';
-        } elseif (stripos($message, 'UP:') !== false) {
-            $statusTrigger = 'up';
-        }
-        
-        // Log to monitor_notification_logs table (legacy notifications use NULL rule_id)
-        try {
-            $stmt = $db->prepare('INSERT INTO monitor_notification_logs (
-                rule_id, monitor_id, recipient_email, status_trigger, sent_at, 
-                subject, success, error_message
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-            
-            $stmt->execute([
-                null, // Legacy notifications don't have a rule_id
-                $monitor['id'],
-                $admin['email'],
-                $statusTrigger,
-                $now,
-                $subject,
-                $success,
-                $errorMsg
-            ]);
-        } catch (Exception $e) {
-            // Log error but don't fail the notification
-            error_log("Failed to log notification for monitor {$monitor['id']}: " . $e->getMessage());
-        }
-        
-        // Log error if failed (optional, but good for debugging)
-        if ($result !== true) {
-            error_log("Failed to send notification for monitor {$monitor['id']}: $result");
+    // Determine recipients (monitor override or admin email)
+    $recipientsRaw = trim((string)($monitor['legacy_email_to'] ?? ''));
+    $recipients = [];
+    if ($recipientsRaw !== '') {
+        // Allow comma-separated list
+        foreach (preg_split('/[,\n]+/', $recipientsRaw) as $email) {
+            $email = trim($email);
+            if ($email === '') continue;
+            if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $recipients[] = $email;
+            }
         }
     }
+    if (empty($recipients) && $admin && !empty($admin['email'])) {
+        $recipients[] = $admin['email'];
+    }
+
+    // CC list (optional)
+    $ccRaw = trim((string)($monitor['legacy_email_cc'] ?? ''));
+    $ccList = [];
+    if ($ccRaw !== '') {
+        foreach (preg_split('/[,\n]+/', $ccRaw) as $email) {
+            $email = trim($email);
+            if ($email === '') continue;
+            if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $ccList[] = $email;
+            }
+        }
+    }
+
+    if (!empty($recipients)) {
+        // Build templated subject/body (monitor overrides), fallback to existing message
+        $defaultSubjectTpl = "[LinkNest Monitor] {monitor_name} Status Update";
+        $defaultBodyTpl =
+            "{status}: {monitor_name}\n" .
+            "Target: {monitor_target}\n" .
+            "Details: {details}\n" .
+            "Response: {response_time}\n" .
+            "Time: {time}\n";
+
+        $subjectTpl = trim((string)($monitor['legacy_email_subject_template'] ?? ''));
+        $bodyTpl = trim((string)($monitor['legacy_email_body_template'] ?? ''));
+        $subjectTpl = $subjectTpl !== '' ? $subjectTpl : $defaultSubjectTpl;
+        $bodyTpl = $bodyTpl !== '' ? $bodyTpl : $defaultBodyTpl;
+
+        $effectiveStatus = ($statusTrigger === 'up' || $statusTrigger === 'down') ? $statusTrigger : 'both';
+        $detailsForTemplate = $message; // includes "DOWN/UP: ..." plus error; good fallback for {details}
+        $subject = replaceTemplateVariables($subjectTpl, $monitor, $effectiveStatus, $detailsForTemplate, null);
+        $body = replaceTemplateVariables($bodyTpl, $monitor, $effectiveStatus, $detailsForTemplate, null);
+
+        // Optional from overrides (override SMTP from_name/from_email)
+        $fromNameOverride = trim((string)($monitor['legacy_email_from_name'] ?? ''));
+        $fromEmailOverride = trim((string)($monitor['legacy_email_from_email'] ?? ''));
+        $emailConfig = null;
+        if ($fromNameOverride !== '' || $fromEmailOverride !== '') {
+            $emailConfig = [
+                // tell sendEmail() to use SMTP, but override from fields if provided
+                'enabled' => '1',
+                'from_name' => $fromNameOverride !== '' ? $fromNameOverride : null,
+                'from_email' => $fromEmailOverride !== '' ? $fromEmailOverride : null
+            ];
+        }
+
+        $now = time();
+        $anySuccess = false;
+
+        foreach ($recipients as $toEmail) {
+            error_log("[EMAIL] Preparing to send legacy email to: {$toEmail}, subject: $subject");
+            error_log("[EMAIL] Body preview: " . substr($body, 0, 120) . "...");
+
+            // Send email using our SMTP helper. If $emailConfig is set, sendEmail will still load missing SMTP settings from DB? (we merge below)
+            $result = sendEmailWithOptionalFromOverride($toEmail, $subject, $body, $emailConfig, $ccList);
+            error_log("[EMAIL] sendEmail result (to {$toEmail}): " . ($result === true ? "SUCCESS" : "FAILED: " . $result));
+        
+            $success = ($result === true) ? 1 : 0;
+            $errorMsg = ($result === true) ? null : $result;
+            if ($result === true) $anySuccess = true;
+        
+            // If not provided, try to infer from message (backward compatible)
+            $trigger = $statusTrigger;
+            if ($trigger === 'both') {
+                if (stripos($message, 'DOWN:') !== false) {
+                    $trigger = 'down';
+                } elseif (stripos($message, 'UP:') !== false) {
+                    $trigger = 'up';
+                }
+            }
+        
+            // Log to monitor_notification_logs table (legacy notifications use NULL rule_id)
+            try {
+                $stmt = $db->prepare('INSERT INTO monitor_notification_logs (
+                    rule_id, monitor_id, recipient_email, status_trigger, sent_at, 
+                    subject, success, error_message
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                
+                $stmt->execute([
+                    null, // Legacy notifications don't have a rule_id
+                    $monitor['id'],
+                    $toEmail,
+                    $trigger,
+                    $now,
+                    $subject,
+                    $success,
+                    $errorMsg
+                ]);
+            } catch (Exception $e) {
+                // Log error but don't fail the notification
+                error_log("Failed to log notification for monitor {$monitor['id']}: " . $e->getMessage());
+            }
+        }
+
+        // If send succeeded, remember that we notified this status (so enabling email later still triggers once)
+        if ($anySuccess && ($statusTrigger === 'down' || $statusTrigger === 'up')) {
+            try {
+                $stmt = $db->prepare('UPDATE monitors SET last_notified_status = ?, updated_at = ? WHERE id = ?');
+                $stmt->execute([$statusTrigger, $now, $monitor['id']]);
+            } catch (Exception $e) {
+                error_log("Failed to update last_notified_status for monitor {$monitor['id']}: " . $e->getMessage());
+            }
+        }
+    }
+}
+
+/**
+ * Helper: sendEmail but allow overriding from_name/from_email while still using DB SMTP settings.
+ * $overrides may contain from_name/from_email; other SMTP settings will still be loaded by sendEmail when config is null.
+ */
+function sendEmailWithOptionalFromOverride($to, $subject, $body, $overrides = null, $cc = []) {
+    if (empty($overrides) || (!isset($overrides['from_name']) && !isset($overrides['from_email']))) {
+        return sendEmail($to, $subject, $body, null, $cc);
+    }
+
+    // Load SMTP settings from DB and then apply overrides
+    $db = getDB();
+    $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'smtp_%'");
+    $stmt->execute();
+    $rows = $stmt->fetchAll();
+
+    $config = [];
+    foreach ($rows as $row) {
+        $key = str_replace('smtp_', '', $row['key']);
+        $config[$key] = $row['value'];
+    }
+    if (isset($config['password'])) {
+        $config['password'] = base64_decode($config['password']);
+    }
+
+    if (!empty($overrides['from_name'])) {
+        $config['from_name'] = $overrides['from_name'];
+    }
+    if (!empty($overrides['from_email'])) {
+        $config['from_email'] = $overrides['from_email'];
+    }
+
+    return sendEmail($to, $subject, $body, $config, $cc);
 }
 
 /**

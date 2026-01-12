@@ -130,6 +130,18 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
     const [tabName, setTabName] = useState(monitor?.tab_name || '');
     const [groupName, setGroupName] = useState(monitor?.group_name || '');
     const [emailNotification, setEmailNotification] = useState(!!monitor?.email_notification);
+    const [legacyEmailTo, setLegacyEmailTo] = useState(monitor?.legacy_email_to || '');
+    const [legacyEmailCc, setLegacyEmailCc] = useState(monitor?.legacy_email_cc || '');
+    const [legacyEmailFromName, setLegacyEmailFromName] = useState(monitor?.legacy_email_from_name || '');
+    const [legacyEmailFromEmail, setLegacyEmailFromEmail] = useState(monitor?.legacy_email_from_email || '');
+    const [legacyEmailSubjectTemplate, setLegacyEmailSubjectTemplate] = useState(
+        monitor?.legacy_email_subject_template || '[LinkNest Monitor] {monitor_name} Status Update'
+    );
+    const [legacyEmailBodyTemplate, setLegacyEmailBodyTemplate] = useState(
+        monitor?.legacy_email_body_template ||
+        "{status}: {monitor_name}\nTarget: {monitor_target}\nDetails: {details}\nResponse: {response_time}\nTime: {time}\n"
+    );
+    const [showLegacyEmailAdvanced, setShowLegacyEmailAdvanced] = useState<boolean>(false);
     const [isActive, setIsActive] = useState(monitor?.is_active !== undefined ? !!monitor?.is_active : true);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -245,7 +257,13 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                 tab_name: tabName || undefined,
                 group_name: groupName || undefined,
                 email_notification: emailNotification ? 1 : 0,
-                is_active: isActive ? 1 : 0
+                is_active: isActive ? 1 : 0,
+                legacy_email_to: legacyEmailTo.trim() || undefined,
+                legacy_email_cc: legacyEmailCc.trim() || undefined,
+                legacy_email_from_name: legacyEmailFromName.trim() || undefined,
+                legacy_email_from_email: legacyEmailFromEmail.trim() || undefined,
+                legacy_email_subject_template: legacyEmailSubjectTemplate.trim() || undefined,
+                legacy_email_body_template: legacyEmailBodyTemplate || undefined
             });
         } catch (err: any) {
             setError(err.message || 'Failed to save monitor');
@@ -591,6 +609,112 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                     <FieldHelp text="Receive email alerts when the monitor status changes from 'up' to 'down' or vice versa. Make sure SMTP settings are configured in the admin panel." />
                                 </div>
                             </div>
+
+                            {/* Legacy Email Customization */}
+                            {emailNotification && (
+                                <div className="p-4 bg-white rounded-lg border border-gray-200 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <div className="text-sm font-semibold text-gray-800">Legacy Email Customization</div>
+                                            <div className="text-xs text-gray-600 mt-1">
+                                                Customize To/From/Subject/Message for the built-in (legacy) email alerts.
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowLegacyEmailAdvanced(v => !v)}
+                                            className="text-sm text-blue-600 hover:text-blue-700"
+                                        >
+                                            {showLegacyEmailAdvanced ? 'Hide' : 'Show'} Advanced
+                                        </button>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            To (optional)
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={legacyEmailTo}
+                                            onChange={(e) => setLegacyEmailTo(e.target.value)}
+                                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                            placeholder="admin@example.com, ops@example.com"
+                                        />
+                                        <FieldHelp text="Comma-separated recipient emails. Leave blank to send to the admin user's email." />
+                                    </div>
+
+                                    {showLegacyEmailAdvanced && (
+                                        <>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    CC (optional)
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={legacyEmailCc}
+                                                    onChange={(e) => setLegacyEmailCc(e.target.value)}
+                                                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                                    placeholder="cc1@example.com, cc2@example.com"
+                                                />
+                                                <FieldHelp text="Comma-separated CC emails. CC recipients will receive a copy of the alert email." />
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                        From Name (optional)
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={legacyEmailFromName}
+                                                        onChange={(e) => setLegacyEmailFromName(e.target.value)}
+                                                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                                        placeholder="LinkNest Monitor"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                        From Email (optional)
+                                                    </label>
+                                                    <input
+                                                        type="email"
+                                                        value={legacyEmailFromEmail}
+                                                        onChange={(e) => setLegacyEmailFromEmail(e.target.value)}
+                                                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                                        placeholder="noreply@example.com"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Subject Template
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={legacyEmailSubjectTemplate}
+                                                    onChange={(e) => setLegacyEmailSubjectTemplate(e.target.value)}
+                                                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                                />
+                                                <FieldHelp text="Supports variables like {monitor_name}, {status}, {details}, {time}." />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Message Template
+                                                </label>
+                                                <textarea
+                                                    value={legacyEmailBodyTemplate}
+                                                    onChange={(e) => setLegacyEmailBodyTemplate(e.target.value)}
+                                                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors font-mono text-xs"
+                                                    rows={6}
+                                                />
+                                                <FieldHelp text="Supports variables like {monitor_target}, {response_time}, {details}. One email is sent per recipient." />
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {error && (

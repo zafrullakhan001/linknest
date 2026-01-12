@@ -116,6 +116,10 @@ function handleGetNotificationRules($monitorId) {
         $stmt->execute([$rule['id']]);
         $recipients = $stmt->fetchAll(PDO::FETCH_COLUMN);
         $rule['recipients'] = $recipients;
+
+        // Parse CC emails (comma-separated) into array
+        $ccRaw = $rule['cc_emails'] ?? null;
+        $rule['cc'] = (!empty($ccRaw)) ? array_values(array_filter(array_map('trim', explode(',', $ccRaw)))) : [];
     }
     
     sendJSON(['rules' => $rules]);
@@ -138,6 +142,10 @@ function handleGetNotificationRule($ruleId) {
     $stmt->execute([$ruleId]);
     $recipients = $stmt->fetchAll(PDO::FETCH_COLUMN);
     $rule['recipients'] = $recipients;
+
+    // Parse CC emails into array
+    $ccRaw = $rule['cc_emails'] ?? null;
+    $rule['cc'] = (!empty($ccRaw)) ? array_values(array_filter(array_map('trim', explode(',', $ccRaw)))) : [];
     
     sendJSON(['rule' => $rule]);
 }
@@ -203,6 +211,20 @@ function handleCreateNotificationRule() {
             return;
         }
     }
+
+    // Validate CC emails if provided
+    $ccEmails = [];
+    if (isset($data['cc']) && is_array($data['cc'])) {
+        foreach ($data['cc'] as $email) {
+            $email = trim((string)$email);
+            if ($email === '') continue;
+            if (!isValidEmail($email)) {
+                sendJSON(['error' => "Invalid CC email address: $email"], 400);
+                return;
+            }
+            $ccEmails[] = $email;
+        }
+    }
     
     // Validate time window if provided
     if (!empty($data['time_window_start']) && !preg_match('/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/', $data['time_window_start'])) {
@@ -243,9 +265,9 @@ function handleCreateNotificationRule() {
         $now = time();
         $stmt = $db->prepare('INSERT INTO monitor_notification_rules (
             monitor_id, name, status_trigger, time_window_start, time_window_end, days_of_week,
-            subject_template, body_template, from_name, from_email, is_enabled,
+            subject_template, body_template, from_name, from_email, cc_emails, is_enabled,
             created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         $daysOfWeek = !empty($data['days_of_week']) 
             ? (is_array($data['days_of_week']) ? implode(',', $data['days_of_week']) : $data['days_of_week'])
@@ -262,6 +284,7 @@ function handleCreateNotificationRule() {
             $data['body_template'] ?? "Monitor: {monitor_name}\nStatus: {status}\nTime: {time}\nDetails: {details}",
             $data['from_name'] ?? null,
             $data['from_email'] ?? null,
+            !empty($ccEmails) ? implode(',', $ccEmails) : null,
             isset($data['is_enabled']) ? (int)$data['is_enabled'] : 1,
             $now,
             $now
@@ -286,6 +309,7 @@ function handleCreateNotificationRule() {
         $stmt->execute([$ruleId]);
         $recipients = $stmt->fetchAll(PDO::FETCH_COLUMN);
         $rule['recipients'] = $recipients;
+        $rule['cc'] = $ccEmails;
         
         sendJSON(['success' => true, 'rule' => $rule], 201);
         
@@ -329,6 +353,18 @@ function handleUpdateNotificationRule($ruleId) {
             }
         }
     }
+
+    // Validate CC if provided
+    if (isset($data['cc']) && is_array($data['cc'])) {
+        foreach ($data['cc'] as $email) {
+            $email = trim((string)$email);
+            if ($email === '') continue;
+            if (!isValidEmail($email)) {
+                sendJSON(['error' => "Invalid CC email address: $email"], 400);
+                return;
+            }
+        }
+    }
     
     // Validate time window if provided
     if (isset($data['time_window_start']) && !empty($data['time_window_start']) && !preg_match('/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/', $data['time_window_start'])) {
@@ -360,6 +396,13 @@ function handleUpdateNotificationRule($ruleId) {
                     $values[] = $data[$field];
                 }
             }
+        }
+
+        // Update CC emails if provided (array)
+        if (isset($data['cc']) && is_array($data['cc'])) {
+            $cc = array_values(array_filter(array_map('trim', $data['cc']), function($v) { return $v !== ''; }));
+            $fields[] = "cc_emails = ?";
+            $values[] = !empty($cc) ? implode(',', $cc) : null;
         }
         
         if (!empty($fields)) {
@@ -397,6 +440,8 @@ function handleUpdateNotificationRule($ruleId) {
         $stmt->execute([$ruleId]);
         $recipients = $stmt->fetchAll(PDO::FETCH_COLUMN);
         $rule['recipients'] = $recipients;
+        $ccRaw = $rule['cc_emails'] ?? null;
+        $rule['cc'] = (!empty($ccRaw)) ? array_values(array_filter(array_map('trim', explode(',', $ccRaw)))) : [];
         
         sendJSON(['success' => true, 'rule' => $rule]);
         

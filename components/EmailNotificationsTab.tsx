@@ -37,7 +37,8 @@ export const EmailNotificationsTab: React.FC<EmailNotificationsTabProps> = ({ mo
             subject_template: '[LinkNest Monitor] {monitor_name} Status: {status}',
             body_template: "Monitor: {monitor_name}\nStatus: {status}\nTime: {time}\nDetails: {details}",
             is_enabled: 1,
-            recipients: []
+            recipients: [],
+            cc: []
         });
         setIsCreating(true);
     };
@@ -178,6 +179,11 @@ const NotificationRuleCard: React.FC<NotificationRuleCardProps> = ({ rule, onEdi
                         <div>
                             <strong>Recipients:</strong> {rule.recipients?.join(', ') || 'None'}
                         </div>
+                        {rule.cc && rule.cc.length > 0 && (
+                            <div>
+                                <strong>CC:</strong> {rule.cc.join(', ')}
+                            </div>
+                        )}
                         {hasTimeWindow && (
                             <div>
                                 <strong>Time Window:</strong> {rule.time_window_start} - {rule.time_window_end}
@@ -223,6 +229,7 @@ interface NotificationRuleFormProps {
 const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSave, onCancel, isCreating }) => {
     const [formData, setFormData] = useState<NotificationRule>(rule);
     const [recipientsText, setRecipientsText] = useState(rule.recipients?.join(', ') || '');
+    const [ccText, setCcText] = useState(rule.cc?.join(', ') || '');
     const [selectedDays, setSelectedDays] = useState<number[]>(parseDaysOfWeek(rule.days_of_week));
     const [error, setError] = useState<string | null>(null);
 
@@ -253,6 +260,15 @@ const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSav
             }
         }
 
+        // Validate CC emails (optional)
+        const cc = ccText.split(',').map(r => r.trim()).filter(r => r.length > 0);
+        for (const email of cc) {
+            if (!emailRegex.test(email)) {
+                setError(`Invalid CC email address: ${email}`);
+                return;
+            }
+        }
+
         // Validate time window if provided
         if (formData.time_window_start && formData.time_window_end) {
             const startMatch = formData.time_window_start.match(/^([01]?[0-9]|2[0-3]):([0-5][0-9])$/);
@@ -267,6 +283,7 @@ const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSav
             ...formData,
             name: ruleName,
             recipients,
+            cc,
             days_of_week: selectedDays.length > 0 ? formatDaysOfWeek(selectedDays) : null
         };
 
@@ -350,6 +367,19 @@ const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSav
                     required
                 />
                 <FieldHelp text="Enter email addresses separated by commas. All recipients will receive notifications for this rule." />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                    CC Emails (optional)
+                </label>
+                <input
+                    value={ccText}
+                    onChange={(e) => setCcText(e.target.value)}
+                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                    placeholder="cc1@example.com, cc2@example.com"
+                />
+                <FieldHelp text="Comma-separated CC emails. CC recipients will receive a copy of the notification." />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
