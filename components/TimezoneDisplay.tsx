@@ -10,6 +10,97 @@ const USA_TIMEZONES = [
   { name: 'Hawaii Time', tz: 'Pacific/Honolulu', abbrev: 'HST' },
 ];
 
+type ToolMode = 'clock' | 'stopwatch' | 'timer' | 'alarm';
+
+type AlarmItem = {
+  id: string;
+  time: string; // HH:MM (local time)
+  label: string;
+  enabled: boolean;
+  lastTriggeredKey?: string; // e.g. "Mon Jan 12 2026 04:45 PM" (minute-level)
+};
+
+const TOOLS_STORAGE_KEY = 'linknest.timeWidget.tools.v1';
+
+function formatDuration(ms: number) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function safeJsonParse<T>(raw: string | null): T | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function playBeep(pattern: { count: number; durationMs: number; gapMs: number } = { count: 2, durationMs: 140, gapMs: 120 }) {
+  try {
+    const AudioCtx = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext | undefined;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+
+    const beepOnce = (t: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 880;
+      gain.gain.value = 0.0001;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      // quick attack/decay to avoid clicks
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.25, t + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + pattern.durationMs / 1000);
+
+      osc.start(t);
+      osc.stop(t + pattern.durationMs / 1000 + 0.02);
+    };
+
+    for (let i = 0; i < pattern.count; i++) {
+      const t = now + i * (pattern.durationMs + pattern.gapMs) / 1000;
+      beepOnce(t);
+    }
+
+    const total = (pattern.count * pattern.durationMs + (pattern.count - 1) * pattern.gapMs) / 1000 + 0.25;
+    setTimeout(() => ctx.close().catch(() => undefined), total * 1000);
+  } catch {
+    // ignore (autoplay restrictions, etc.)
+  }
+}
+
+function startBeepLoop(
+  pattern: { count: number; durationMs: number; gapMs: number },
+  loopGapMs: number,
+): () => void {
+  let stopped = false;
+  let timeoutId: number | null = null;
+
+  const loop = () => {
+    if (stopped) return;
+    playBeep(pattern);
+    timeoutId = window.setTimeout(loop, loopGapMs);
+  };
+
+  loop();
+
+  return () => {
+    stopped = true;
+    if (timeoutId != null) {
+      window.clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+  };
+}
+
 // Reusable Analog Clock Face Component
 const ClockFace: React.FC<{
   date: Date;
@@ -119,6 +210,32 @@ export const TimezoneDisplay: React.FC = () => {
   const [isAnalog, setIsAnalog] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
 
+  // Tools
+  const [mode, setMode] = useState<ToolMode>('clock');
+
+  // Stopwatch state
+  const [swRunning, setSwRunning] = useState(false);
+  const [swElapsedMs, setSwElapsedMs] = useState(0);
+  const [swStartAt, setSwStartAt] = useState<number | null>(null); // epoch ms
+
+  // Timer state
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [timerDurationMs, setTimerDurationMs] = useState(5 * 60 * 1000);
+  const [timerRemainingMs, setTimerRemainingMs] = useState(5 * 60 * 1000);
+  const [timerEndAt, setTimerEndAt] = useState<number | null>(null); // epoch ms
+
+  // Alarm state
+  const [alarms, setAlarms] = useState<AlarmItem[]>([]);
+  const [newAlarmTime, setNewAlarmTime] = useState('08:00');
+  const [newAlarmLabel, setNewAlarmLabel] = useState('Alarm');
+
+  const [nowMs, setNowMs] = useState(Date.now());
+
+  // Ringing state (keep sounding until user dismisses)
+  const [timerRinging, setTimerRinging] = useState(false);
+  const [alarmRingingId, setAlarmRingingId] = useState<string | null>(null);
+  const stopBeepRef = React.useRef<(() => void) | null>(null);
+
   useEffect(() => {
     // Get timezone information
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -134,10 +251,161 @@ export const TimezoneDisplay: React.FC = () => {
     // Update time every second
     const interval = setInterval(() => {
       setCurrentTime(new Date());
+      setNowMs(Date.now());
     }, 1000);
 
     return () => clearInterval(interval);
   }, []);
+
+  // Extra ticks for smoother stopwatch/timer updates when running
+  useEffect(() => {
+    if (!swRunning && !timerRunning) return;
+    const interval = setInterval(() => setNowMs(Date.now()), 100);
+    return () => clearInterval(interval);
+  }, [swRunning, timerRunning]);
+
+  // Load persisted tools state once
+  useEffect(() => {
+    const stored = safeJsonParse<any>(localStorage.getItem(TOOLS_STORAGE_KEY));
+    if (!stored || typeof stored !== 'object') return;
+
+    if (stored.mode === 'clock' || stored.mode === 'stopwatch' || stored.mode === 'timer' || stored.mode === 'alarm') {
+      setMode(stored.mode);
+    }
+
+    if (stored.stopwatch && typeof stored.stopwatch === 'object') {
+      const elapsed = typeof stored.stopwatch.elapsedMs === 'number' ? stored.stopwatch.elapsedMs : 0;
+      const running = stored.stopwatch.running === true;
+      const startAt = typeof stored.stopwatch.startAt === 'number' ? stored.stopwatch.startAt : null;
+      setSwElapsedMs(Math.max(0, elapsed));
+      setSwRunning(running);
+      setSwStartAt(startAt);
+    }
+
+    if (stored.timer && typeof stored.timer === 'object') {
+      const duration = typeof stored.timer.durationMs === 'number' ? stored.timer.durationMs : 5 * 60 * 1000;
+      const remaining = typeof stored.timer.remainingMs === 'number' ? stored.timer.remainingMs : duration;
+      const running = stored.timer.running === true;
+      const endAt = typeof stored.timer.endAt === 'number' ? stored.timer.endAt : null;
+      setTimerDurationMs(Math.max(1000, duration));
+      setTimerRunning(running);
+      setTimerEndAt(endAt);
+
+      if (running && endAt) {
+        const rem = Math.max(0, endAt - Date.now());
+        setTimerRemainingMs(rem);
+      } else {
+        setTimerRemainingMs(Math.max(0, remaining));
+      }
+    }
+
+    if (Array.isArray(stored.alarms)) {
+      const cleaned: AlarmItem[] = stored.alarms
+        .filter((a: any) => a && typeof a === 'object')
+        .map((a: any) => ({
+          id: typeof a.id === 'string' ? a.id : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          time: typeof a.time === 'string' ? a.time : '08:00',
+          label: typeof a.label === 'string' ? a.label : 'Alarm',
+          enabled: a.enabled === true,
+          lastTriggeredKey: typeof a.lastTriggeredKey === 'string' ? a.lastTriggeredKey : undefined,
+        }));
+      setAlarms(cleaned);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist tools state
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        TOOLS_STORAGE_KEY,
+        JSON.stringify({
+          mode,
+          stopwatch: { running: swRunning, elapsedMs: swElapsedMs, startAt: swStartAt },
+          timer: { running: timerRunning, durationMs: timerDurationMs, remainingMs: timerRemainingMs, endAt: timerEndAt },
+          alarms,
+        }),
+      );
+    } catch {
+      // ignore
+    }
+  }, [mode, swRunning, swElapsedMs, swStartAt, timerRunning, timerDurationMs, timerRemainingMs, timerEndAt, alarms]);
+
+  // Cleanup beep loop on unmount
+  useEffect(() => {
+    return () => {
+      stopBeepRef.current?.();
+      stopBeepRef.current = null;
+    };
+  }, []);
+
+  const startRinging = (kind: 'timer' | 'alarm', alarmId?: string) => {
+    // Already ringing of same kind?
+    if (kind === 'timer' && timerRinging) return;
+    if (kind === 'alarm' && alarmId && alarmRingingId === alarmId) return;
+
+    stopBeepRef.current?.();
+    stopBeepRef.current = null;
+
+    if (kind === 'timer') {
+      setTimerRinging(true);
+      setAlarmRingingId(null);
+      stopBeepRef.current = startBeepLoop({ count: 3, durationMs: 180, gapMs: 120 }, 1200);
+    } else {
+      setAlarmRingingId(alarmId || null);
+      setTimerRinging(false);
+      stopBeepRef.current = startBeepLoop({ count: 4, durationMs: 200, gapMs: 140 }, 1400);
+    }
+  };
+
+  const dismissRinging = () => {
+    stopBeepRef.current?.();
+    stopBeepRef.current = null;
+    setTimerRinging(false);
+    setAlarmRingingId(null);
+  };
+
+  // Derived stopwatch elapsed
+  const swDisplayMs = swRunning && swStartAt != null ? Math.max(0, nowMs - swStartAt) : swElapsedMs;
+
+  // Derived timer remaining
+  const timerDisplayMs =
+    timerRunning && timerEndAt != null ? Math.max(0, timerEndAt - nowMs) : timerRemainingMs;
+
+  // Timer completion
+  useEffect(() => {
+    if (!timerRunning) return;
+    if (timerDisplayMs > 0) return;
+    setTimerRunning(false);
+    setTimerEndAt(null);
+    setTimerRemainingMs(0);
+    startRinging('timer');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timerRunning, timerDisplayMs]);
+
+  // Alarm triggering (minute-level, local time)
+  useEffect(() => {
+    const d = new Date(nowMs);
+    const hh = d.getHours().toString().padStart(2, '0');
+    const mm = d.getMinutes().toString().padStart(2, '0');
+    const minuteKey = `${d.toDateString()} ${hh}:${mm}`;
+    let didUpdate = false;
+
+    let triggeredAlarmId: string | null = null;
+    const updated = alarms.map((a) => {
+      if (!a.enabled) return a;
+      if (a.time !== `${hh}:${mm}`) return a;
+      if (a.lastTriggeredKey === minuteKey) return a;
+      didUpdate = true;
+      triggeredAlarmId = a.id;
+      return { ...a, lastTriggeredKey: minuteKey };
+    });
+
+    if (!didUpdate) return;
+    setAlarms(updated);
+    if (triggeredAlarmId) startRinging('alarm', triggeredAlarmId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nowMs]);
 
   // Format date and time
   const formatDateTime = (date: Date, timeZone?: string) => {
@@ -181,13 +449,111 @@ export const TimezoneDisplay: React.FC = () => {
     setIsExpanded(!isExpanded);
   };
 
+  const setModeSafe = (m: ToolMode) => {
+    setMode(m);
+    if (m !== 'clock') {
+      setIsExpanded(false);
+    }
+  };
+
+  const swStartStop = () => {
+    if (swRunning) {
+      // stop
+      setSwRunning(false);
+      setSwElapsedMs(swDisplayMs);
+      setSwStartAt(null);
+      return;
+    }
+    // start
+    setSwRunning(true);
+    setSwStartAt(Date.now() - swElapsedMs);
+  };
+
+  const swReset = () => {
+    setSwRunning(false);
+    setSwElapsedMs(0);
+    setSwStartAt(null);
+  };
+
+  const timerSetPreset = (ms: number) => {
+    setTimerRunning(false);
+    setTimerEndAt(null);
+    setTimerDurationMs(ms);
+    setTimerRemainingMs(ms);
+  };
+
+  const timerStartPause = () => {
+    if (timerRinging) dismissRinging();
+    if (timerRunning) {
+      setTimerRunning(false);
+      setTimerEndAt(null);
+      setTimerRemainingMs(timerDisplayMs);
+      return;
+    }
+    const nextRemaining = Math.max(0, timerDisplayMs);
+    setTimerRunning(true);
+    setTimerEndAt(Date.now() + nextRemaining);
+  };
+
+  const timerReset = () => {
+    if (timerRinging) dismissRinging();
+    setTimerRunning(false);
+    setTimerEndAt(null);
+    setTimerRemainingMs(timerDurationMs);
+  };
+
+  const addAlarm = () => {
+    if (!/^\d{2}:\d{2}$/.test(newAlarmTime)) return;
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setAlarms((prev) => [{ id, time: newAlarmTime, label: newAlarmLabel.trim() || 'Alarm', enabled: true }, ...prev]);
+  };
+
   return (
     <div
       className={`relative flex flex-col items-start gap-2 px-3 py-2 text-xs text-slate-600 dark:text-slate-400 bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm rounded-lg border border-slate-200 dark:border-slate-700 shadow-lg transition-all ${isAnalog ? 'py-4 px-4' : ''}`}
       style={{ zIndex: 1 }}
       title={`Click to switch to ${isAnalog ? 'digital' : 'analog'} clock - Timezone: ${timezone} (UTC${timezoneOffset})`}
     >
-      {isAnalog ? (
+      {(timerRinging || alarmRingingId) && (
+        <div className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg border border-red-200 dark:border-red-900/40 bg-red-50/80 dark:bg-red-900/20 text-red-700 dark:text-red-200">
+          <div className="flex flex-col leading-tight min-w-0">
+            <span className="text-[10px] font-bold uppercase tracking-wider">Alert</span>
+            <span className="text-[11px] font-semibold truncate">
+              {timerRinging
+                ? 'Timer finished'
+                : `Alarm: ${(alarms.find((a) => a.id === alarmRingingId)?.label || 'Alarm')}`}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={dismissRinging}
+            className="px-3 py-1 rounded-md font-semibold bg-red-600 text-white hover:bg-red-700 transition-colors"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Mode Switcher */}
+      <div className="flex items-center gap-1 w-full">
+        {(['clock', 'stopwatch', 'timer', 'alarm'] as ToolMode[]).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setModeSafe(m)}
+            className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+              mode === m
+                ? 'bg-brand-500 text-white'
+                : 'bg-slate-100/70 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-700'
+            }`}
+          >
+            {m === 'clock' ? 'Clock' : m === 'stopwatch' ? 'Stopwatch' : m === 'timer' ? 'Timer' : 'Alarm'}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'clock' ? (
+        isAnalog ? (
         // Analog Clock
         <div
           className="flex items-center gap-4 cursor-pointer hover:opacity-90 transition-opacity"
@@ -271,6 +637,138 @@ export const TimezoneDisplay: React.FC = () => {
                 );
               })}
             </div>
+          </div>
+        </div>
+      )
+      ) : mode === 'stopwatch' ? (
+        <div className="w-full flex flex-col gap-2">
+          <div className="w-full flex items-center justify-between">
+            <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70">Elapsed</span>
+            <span className="font-mono text-[16px] font-bold text-slate-800 dark:text-slate-100">
+              {formatDuration(swDisplayMs)}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 w-full">
+            <button
+              type="button"
+              onClick={swStartStop}
+              className={`flex-1 px-3 py-1.5 rounded-lg font-semibold transition-colors ${
+                swRunning ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-emerald-500 text-white hover:bg-emerald-600'
+              }`}
+            >
+              {swRunning ? 'Stop' : 'Start'}
+            </button>
+            <button
+              type="button"
+              onClick={swReset}
+              className="px-3 py-1.5 rounded-lg font-semibold bg-slate-100 dark:bg-slate-700/60 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+      ) : mode === 'timer' ? (
+        <div className="w-full flex flex-col gap-2">
+          <div className="w-full flex items-center justify-between">
+            <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70">Remaining</span>
+            <span className="font-mono text-[16px] font-bold text-slate-800 dark:text-slate-100">
+              {formatDuration(timerDisplayMs)}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {[60, 5 * 60, 10 * 60, 15 * 60, 30 * 60].map((sec) => (
+              <button
+                key={sec}
+                type="button"
+                onClick={() => timerSetPreset(sec * 1000)}
+                className="px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 dark:bg-slate-700/60 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              >
+                {sec >= 60 ? `${sec / 60}m` : `${sec}s`}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 w-full">
+            <button
+              type="button"
+              onClick={timerStartPause}
+              className={`flex-1 px-3 py-1.5 rounded-lg font-semibold transition-colors ${
+                timerRunning ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-brand-500 text-white hover:bg-brand-600'
+              }`}
+            >
+              {timerRunning ? 'Pause' : 'Start'}
+            </button>
+            <button
+              type="button"
+              onClick={timerReset}
+              className="px-3 py-1.5 rounded-lg font-semibold bg-slate-100 dark:bg-slate-700/60 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+      ) : (
+        // Alarm
+        <div className="w-full flex flex-col gap-2">
+          <div className="flex items-center gap-2 w-full">
+            <input
+              type="time"
+              value={newAlarmTime}
+              onChange={(e) => setNewAlarmTime(e.target.value)}
+              className="px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/40 text-slate-800 dark:text-slate-100"
+            />
+            <input
+              type="text"
+              value={newAlarmLabel}
+              onChange={(e) => setNewAlarmLabel(e.target.value)}
+              placeholder="Label"
+              className="flex-1 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/40 text-slate-800 dark:text-slate-100"
+            />
+            <button
+              type="button"
+              onClick={addAlarm}
+              className="px-3 py-1.5 rounded-lg font-semibold bg-emerald-500 text-white hover:bg-emerald-600 transition-colors"
+              title="Add alarm"
+            >
+              Add
+            </button>
+          </div>
+
+          <div className="max-h-40 overflow-y-auto w-full space-y-1">
+            {alarms.length === 0 ? (
+              <div className="text-[11px] opacity-70">No alarms set.</div>
+            ) : (
+              alarms.map((a) => (
+                <div
+                  key={a.id}
+                  className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-white/60 dark:bg-slate-900/30 border border-slate-200/60 dark:border-slate-700/50"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setAlarms((prev) => prev.map((x) => (x.id === a.id ? { ...x, enabled: !x.enabled } : x)))}
+                    className={`w-10 px-2 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+                      a.enabled ? 'bg-emerald-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
+                    }`}
+                    title={a.enabled ? 'Disable' : 'Enable'}
+                  >
+                    {a.enabled ? 'On' : 'Off'}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="font-mono font-bold text-[12px] text-slate-800 dark:text-slate-100">{a.time}</span>
+                      <span className="text-[10px] opacity-70 truncate">{a.label}</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAlarms((prev) => prev.filter((x) => x.id !== a.id))}
+                    className="px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 dark:bg-slate-700/60 hover:bg-red-100 dark:hover:bg-red-900/20 hover:text-red-600 transition-colors"
+                    title="Delete"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}
