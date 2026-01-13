@@ -19,6 +19,8 @@ switch ($method) {
             handleGetMonitors();
         } elseif ($path === '/export-bundle') {
             handleExportMonitorsBundle();
+        } elseif (preg_match('/^\/(\d+)\/export$/', $path, $matches)) {
+            handleExportMonitor($matches[1]);
         } elseif (preg_match('/^\/(\d+)$/', $path, $matches)) {
             handleGetMonitor($matches[1]);
         } elseif (preg_match('/^\/(\d+)\/logs$/', $path, $matches)) {
@@ -127,6 +129,49 @@ function validateMonitorType($type): bool {
     return in_array($type, ['url', 'keyword', 'port', 'ping'], true);
 }
 
+function handleExportMonitor($id) {
+    requireAdmin(); // export is admin-only
+    $db = getDB();
+    $now = time();
+    $monitorId = (int)$id;
+    
+    // Fetch the monitor
+    $stmt = $db->prepare('SELECT * FROM monitors WHERE id = ?');
+    $stmt->execute([$monitorId]);
+    $monitor = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$monitor) {
+        sendJSON(['error' => 'Monitor not found'], 404);
+        return;
+    }
+    
+    // Notification rules + recipients (preserve custom ordering)
+    $stmt = $db->prepare('SELECT * FROM monitor_notification_rules WHERE monitor_id = ? ORDER BY COALESCE(sort_order, 0) ASC, created_at DESC, id DESC');
+    $stmt->execute([$monitorId]);
+    $rules = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $rulesOut = [];
+    foreach ($rules as $r) {
+        $ruleId = (int)$r['id'];
+        $stmt = $db->prepare('SELECT email FROM monitor_notification_recipients WHERE rule_id = ?');
+        $stmt->execute([$ruleId]);
+        $recipients = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        $ccRaw = $r['cc_emails'] ?? null;
+        $cc = (!empty($ccRaw)) ? array_values(array_filter(array_map('trim', explode(',', $ccRaw)))) : [];
+        $r['recipients'] = $recipients;
+        $r['cc'] = $cc;
+        $rulesOut[] = $r;
+    }
+    
+    // Export format for single monitor (compatible with import)
+    sendJSON([
+        'success' => true,
+        'type' => 'single_monitor',
+        'exported_at' => $now,
+        'monitor' => $monitor,
+        'notification_rules' => $rulesOut
+    ]);
+}
+
 function handleExportMonitorsBundle() {
     requireAdmin(); // export is admin-only
     $db = getDB();
@@ -187,13 +232,32 @@ function handleExportMonitorsBundle() {
 function handleImportMonitorsBundle() {
     requireAdmin(); // import is admin-only
     $data = getJSONInput();
-    if (!isset($data['monitors']) || !is_array($data['monitors'])) {
-        sendJSON(['error' => 'Invalid bundle format: monitors array required'], 400);
-        return;
+    
+    // Check if this is a single monitor import or a bundle
+    $isSingleMonitor = isset($data['type']) && $data['type'] === 'single_monitor';
+    
+    if ($isSingleMonitor) {
+        // Single monitor import - don't replace, just add
+        if (!isset($data['monitor'])) {
+            sendJSON(['error' => 'Invalid single monitor format: monitor object required'], 400);
+            return;
+        }
+        $replace = false;
+        $bundleMonitors = [[
+            'monitor' => $data['monitor'],
+            'monitor_logs' => [],
+            'notification_rules' => $data['notification_rules'] ?? [],
+            'email_logs' => []
+        ]];
+    } else {
+        // Bundle import
+        if (!isset($data['monitors']) || !is_array($data['monitors'])) {
+            sendJSON(['error' => 'Invalid bundle format: monitors array required'], 400);
+            return;
+        }
+        $replace = isset($data['replace']) ? (bool)$data['replace'] : true;
+        $bundleMonitors = $data['monitors'];
     }
-
-    $replace = isset($data['replace']) ? (bool)$data['replace'] : true;
-    $bundleMonitors = $data['monitors'];
 
     $db = getDB();
     try {
@@ -241,7 +305,8 @@ function handleImportMonitorsBundle() {
                 continue;
             }
 
-            $monitorId = isset($m['id']) ? (int)$m['id'] : null;
+            // For single monitor imports, always generate new IDs (don't use original IDs)
+            $monitorId = ($isSingleMonitor || !isset($m['id'])) ? null : (int)$m['id'];
             if ($monitorId === null) {
                 // If no ID provided, let SQLite assign one (rare: older format)
                 $stmt = $db->prepare('INSERT INTO monitors (
@@ -334,29 +399,60 @@ function handleImportMonitorsBundle() {
             if (is_array($rules)) {
                 foreach ($rules as $r) {
                     if (!isset($r['status_trigger'])) continue;
-                    $ruleId = isset($r['id']) ? (int)$r['id'] : null;
-                    if ($ruleId === null) continue;
+                    
+                    // For single monitor imports, always generate new IDs
+                    $ruleId = ($isSingleMonitor || !isset($r['id'])) ? null : (int)$r['id'];
+                    
                     $cc = $r['cc'] ?? [];
                     $ccStr = (is_array($cc) && !empty($cc)) ? implode(',', array_map('trim', $cc)) : ($r['cc_emails'] ?? null);
 
-                    $stmtInsertRule->execute([
-                        $ruleId,
-                        $monitorId,
-                        $r['name'] ?? 'Notification Rule',
-                        isset($r['sort_order']) ? (int)$r['sort_order'] : 0,
-                        $r['status_trigger'],
-                        $r['time_window_start'] ?? null,
-                        $r['time_window_end'] ?? null,
-                        $r['days_of_week'] ?? null,
-                        $r['subject_template'] ?? '[LinkNest Monitor] {monitor_name} Status: {status}',
-                        $r['body_template'] ?? "Monitor: {monitor_name}\nStatus: {status}\nTime: {time}\nDetails: {details}",
-                        $r['from_name'] ?? null,
-                        $r['from_email'] ?? null,
-                        $ccStr,
-                        isset($r['is_enabled']) ? (int)$r['is_enabled'] : 1,
-                        isset($r['created_at']) ? (int)$r['created_at'] : $now,
-                        isset($r['updated_at']) ? (int)$r['updated_at'] : $now
-                    ]);
+                    if ($ruleId === null) {
+                        // Let database auto-generate ID
+                        $stmt = $db->prepare('INSERT INTO monitor_notification_rules (
+                            monitor_id, name, sort_order, status_trigger, time_window_start, time_window_end, days_of_week,
+                            subject_template, body_template, from_name, from_email, cc_emails, is_enabled, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                        
+                        $stmt->execute([
+                            $monitorId,
+                            $r['name'] ?? 'Notification Rule',
+                            isset($r['sort_order']) ? (int)$r['sort_order'] : 0,
+                            $r['status_trigger'],
+                            $r['time_window_start'] ?? null,
+                            $r['time_window_end'] ?? null,
+                            $r['days_of_week'] ?? null,
+                            $r['subject_template'] ?? '[LinkNest Monitor] {monitor_name} Status: {status}',
+                            $r['body_template'] ?? "Monitor: {monitor_name}\nStatus: {status}\nTime: {time}\nDetails: {details}",
+                            $r['from_name'] ?? null,
+                            $r['from_email'] ?? null,
+                            $ccStr,
+                            isset($r['is_enabled']) ? (int)$r['is_enabled'] : 1,
+                            isset($r['created_at']) ? (int)$r['created_at'] : $now,
+                            isset($r['updated_at']) ? (int)$r['updated_at'] : $now
+                        ]);
+                        
+                        $ruleId = (int)$db->lastInsertId();
+                    } else {
+                        // Use provided ID (bundle import with replace)
+                        $stmtInsertRule->execute([
+                            $ruleId,
+                            $monitorId,
+                            $r['name'] ?? 'Notification Rule',
+                            isset($r['sort_order']) ? (int)$r['sort_order'] : 0,
+                            $r['status_trigger'],
+                            $r['time_window_start'] ?? null,
+                            $r['time_window_end'] ?? null,
+                            $r['days_of_week'] ?? null,
+                            $r['subject_template'] ?? '[LinkNest Monitor] {monitor_name} Status: {status}',
+                            $r['body_template'] ?? "Monitor: {monitor_name}\nStatus: {status}\nTime: {time}\nDetails: {details}",
+                            $r['from_name'] ?? null,
+                            $r['from_email'] ?? null,
+                            $ccStr,
+                            isset($r['is_enabled']) ? (int)$r['is_enabled'] : 1,
+                            isset($r['created_at']) ? (int)$r['created_at'] : $now,
+                            isset($r['updated_at']) ? (int)$r['updated_at'] : $now
+                        ]);
+                    }
 
                     $recipients = $r['recipients'] ?? [];
                     if (is_array($recipients)) {

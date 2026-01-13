@@ -95,6 +95,12 @@ export const monitoringService = {
         return data.monitor;
     },
 
+    async exportMonitor(id: number): Promise<any> {
+        const response = await fetch(`api/monitors.php/${id}/export`);
+        if (!response.ok) throw new Error('Failed to export monitor');
+        return await response.json();
+    },
+
     async getMonitorLogs(id: number, options?: { days?: number, limit?: number, from?: number, to?: number }): Promise<MonitorLog[]> {
         let url = `api/monitors.php/${id}/logs`;
         if (options) {

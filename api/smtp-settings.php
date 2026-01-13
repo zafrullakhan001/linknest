@@ -148,7 +148,7 @@ function handleCreateServer() {
             $data['from_name'] ?? 'LinkNest Monitor',
             $data['encryption'] ?? 'tls',
             $isActive,
-            !empty($data['enabled']) ? 1 : 0,
+            !empty($data['is_enabled']) ? 1 : 0,
             $data['pause_start'] ?? null,
             $data['pause_end'] ?? null,
             $now,
@@ -183,7 +183,7 @@ function handleUpdateServer($serverId) {
             return;
         }
         
-        $fields = ['name', 'host', 'port', 'username', 'password', 'from_email', 'from_name', 'encryption', 'enabled', 'pause_start', 'pause_end'];
+        $fields = ['name', 'host', 'port', 'username', 'password', 'from_email', 'from_name', 'encryption', 'is_enabled', 'pause_start', 'pause_end'];
         $updates = [];
         $values = [];
         
@@ -197,7 +197,7 @@ function handleUpdateServer($serverId) {
                     $val = base64_encode($val);
                     $updates[] = 'password = ?';
                     $values[] = $val;
-                } elseif ($field === 'enabled') {
+                } elseif ($field === 'is_enabled') {
                     $updates[] = 'is_enabled = ?';
                     $values[] = $val ? 1 : 0;
                 } elseif ($field === 'port') {

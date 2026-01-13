@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Monitor, MonitorLog, monitoringService } from '../services/monitoringService';
 import { MonitorForm } from './MonitorForm';
-import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaFileCsv, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash } from 'react-icons/fa';
+import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaFileCsv, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash, FaFileExport } from 'react-icons/fa';
 import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from './TileAnimationSelector';
 import { SMTPSettingsModal } from './SMTPSettingsModal';
 import { MonitoringTileStyleModal, TileStyle } from './MonitoringTileStyleModal';
@@ -366,6 +366,26 @@ export const MonitoringDashboard: React.FC = () => {
         }
     };
 
+    const handleExportMonitor = async (monitor: Monitor) => {
+        if (!isAdmin) return;
+        try {
+            setIsLoading(true);
+            const data = await monitoringService.exportMonitor(monitor.id);
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", `monitor_${monitor.name.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.json`);
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        } catch (error) {
+            console.error('Failed to export monitor', error);
+            alert('Failed to export monitor. Please try again.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const handleCheckNow = async (id: number) => {
         setCheckingId(id);
         try {
@@ -612,19 +632,33 @@ export const MonitoringDashboard: React.FC = () => {
             try {
                 const content = e.target?.result as string;
                 const data = JSON.parse(content);
-                if (data.monitors && Array.isArray(data.monitors)) {
-                    const confirmReplace = confirm('Import will replace existing monitors, rules, and email logs. Continue?');
+                
+                // Check if it's a single monitor or bundle
+                const isSingleMonitor = data.type === 'single_monitor' && data.monitor;
+                const isBundle = data.monitors && Array.isArray(data.monitors);
+                
+                if (isSingleMonitor) {
+                    // Single monitor import - just add it
+                    const confirmImport = confirm(`Import monitor "${data.monitor.name}"?\n\nThis will add the monitor with all its notification rules to your dashboard.`);
+                    if (!confirmImport) return;
+                    setIsLoading(true);
+                    await monitoringService.importMonitorsBundle(data, false);
+                    await fetchMonitors();
+                    alert('Monitor imported successfully!');
+                } else if (isBundle) {
+                    // Bundle import - replace all
+                    const confirmReplace = confirm('Import will replace ALL existing monitors, rules, and email logs. Continue?');
                     if (!confirmReplace) return;
                     setIsLoading(true);
                     await monitoringService.importMonitorsBundle(data, true);
                     await fetchMonitors();
                     alert('Monitoring bundle imported successfully!');
                 } else {
-                    alert('Invalid file format. Must contain a "monitors" array.');
+                    alert('Invalid file format. Must be either a single monitor export or a monitors bundle.');
                 }
             } catch (err) {
                 console.error('Failed to import monitors', err);
-                alert('Failed to import monitoring bundle. Please check the file format.');
+                alert('Failed to import. Please check the file format.');
             } finally {
                 setIsLoading(false);
                 if (fileInputRef.current) fileInputRef.current.value = '';
@@ -1338,18 +1372,8 @@ export const MonitoringDashboard: React.FC = () => {
                                                     </div>
                                                 </>
                                             )}
+                                            {/* Top Right Controls - Frequently Used */}
                                             <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-y-1 group-hover:translate-y-0 z-10">
-                                                {isAdmin && (
-                                                    <div className="relative">
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); setMoveMenuId(moveMenuId === monitor.id ? null : monitor.id); }}
-                                                            className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400'}`}
-                                                            title="Move to Tab/Group"
-                                                        >
-                                                            <FaArrowsAlt size={10} />
-                                                        </button>
-                                                    </div>
-                                                )}
                                                 <button
                                                     onClick={() => handleCheckNow(monitor.id)}
                                                     disabled={checkingId === monitor.id}
@@ -1361,31 +1385,51 @@ export const MonitoringDashboard: React.FC = () => {
                                                 {isAdmin && (
                                                     <>
                                                         <button
-                                                            onClick={(e) => { e.stopPropagation(); handleDuplicate(monitor); }}
-                                                            className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
-                                                            title="Duplicate"
-                                                        >
-                                                            <FaCopy size={10} />
-                                                        </button>
-                                                        <button
                                                             onClick={() => { setSelectedMonitor(monitor); setIsDuplicate(false); setIsEditing(true); }}
                                                             className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
                                                             title="Edit"
                                                         >
                                                             <FaEdit size={10} />
                                                         </button>
+                                                        <button
+                                                            onClick={() => handleDelete(monitor.id)}
+                                                            className={`p-1.5 rounded-lg hover:bg-red-800 hover:text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400'}`}
+                                                            title="Delete"
+                                                        >
+                                                            <FaTrash size={10} />
+                                                        </button>
                                                     </>
                                                 )}
-                                                {isAdmin && (
-                                                    <button
-                                                        onClick={() => handleDelete(monitor.id)}
-                                                        className={`p-1.5 rounded-lg hover:bg-red-800 hover:text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400'}`}
-                                                        title="Delete"
-                                                    >
-                                                        <FaTrash size={10} />
-                                                    </button>
-                                                )}
                                             </div>
+
+                                            {/* Bottom Left Controls - Secondary Actions */}
+                                            {isAdmin && (
+                                                <div className="absolute bottom-2 left-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all transform -translate-y-1 group-hover:translate-y-0 z-10">
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); handleExportMonitor(monitor); }}
+                                                        className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                                                        title="Export to JSON"
+                                                    >
+                                                        <FaFileExport size={10} />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); handleDuplicate(monitor); }}
+                                                        className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                                                        title="Duplicate"
+                                                    >
+                                                        <FaCopy size={10} />
+                                                    </button>
+                                                    <div className="relative">
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); setMoveMenuId(moveMenuId === monitor.id ? null : monitor.id); }}
+                                                            className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400'}`}
+                                                            title="Move to Tab/Group"
+                                                        >
+                                                            <FaArrowsAlt size={10} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
 
                                             <div className={`flex items-start gap-3 ${viewMode === 'tiles' ? 'mb-5' : 'mb-2'}`}>
                                             <div className={`${viewMode === 'tiles' ? 'w-12 h-12 text-lg' : 'w-8 h-8 text-sm'} rounded-xl flex items-center justify-center ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-white/20' : 'bg-slate-100 dark:bg-[#2a2a2a]'} ${monitor.last_status === 'down' || monitor.last_status === 'warning' || monitor.last_status === 'up' ? 'border border-white/30' : 'border border-slate-200 dark:border-[#444]'}`}>
@@ -1582,6 +1626,14 @@ export const MonitoringDashboard: React.FC = () => {
                                                             </button>
                                                             {isAdmin && (
                                                                 <>
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); handleExportMonitor(monitor); }}
+                                                                        className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-white/20 hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-green-500'}`}
+                                                                        style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileTextStyle(monitor.last_status) : {}}
+                                                                        title="Export to JSON"
+                                                                    >
+                                                                        <FaFileExport size={12} />
+                                                                    </button>
                                                                     <button
                                                                         onClick={(e) => { e.stopPropagation(); handleDuplicate(monitor); }}
                                                                         className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-white/20 hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
