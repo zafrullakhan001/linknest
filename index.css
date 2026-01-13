@@ -104,7 +104,7 @@
     radial-gradient(circle at 40% 20%, rgba(59, 130, 246, 0.03) 0%, transparent 50%);
 }
 
-.linknest-app-container > :not(.linknest-overlay) {
+.linknest-app-container> :not(.linknest-overlay) {
   position: relative;
   z-index: 1;
 }
@@ -578,7 +578,7 @@ body {
 
   to {
     opacity: 1;
-    clip-path: inset(0 0 0 0);
+    clip-path: inset(-10%);
   }
 }
 
@@ -827,7 +827,7 @@ body {
   100% {
     opacity: 1;
     transform: translate(0);
-    clip-path: inset(0 0 0 0);
+    clip-path: inset(-10%);
   }
 }
 
@@ -1758,7 +1758,7 @@ body {
 
   to {
     opacity: 1;
-    clip-path: inset(0 0 0 0);
+    clip-path: inset(-10%);
     filter: contrast(1);
   }
 }
@@ -2303,6 +2303,7 @@ body {
   will-change: transform, opacity;
   backface-visibility: hidden;
   transform-style: preserve-3d;
+  overflow: hidden;
 }
 
 /* Ensure tiles stay visible after animation completes */
@@ -2384,7 +2385,7 @@ body {
 
   100% {
     opacity: 1;
-    clip-path: inset(0 0 0 0);
+    clip-path: inset(-10%);
   }
 }
 
@@ -2732,7 +2733,7 @@ body {
 
   100% {
     opacity: 1;
-    clip-path: inset(0 0 0 0);
+    clip-path: inset(-10%);
     border-top: none;
   }
 }
@@ -2819,7 +2820,7 @@ body {
 
   100% {
     opacity: 1;
-    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+    clip-path: polygon(-10% -10%, 110% -10%, 110% 110%, -10% 110%);
   }
 }
 
@@ -3259,7 +3260,7 @@ body {
 
   100% {
     opacity: 1;
-    clip-path: inset(0 0 0 0);
+    clip-path: inset(-10%);
   }
 }
 
@@ -3275,7 +3276,7 @@ body {
 
   100% {
     opacity: 1;
-    clip-path: inset(0 0 0 0);
+    clip-path: inset(-10%);
   }
 }
 
@@ -3341,7 +3342,7 @@ body {
 
   100% {
     opacity: 1;
-    clip-path: polygon(0 0, 200% 0, 0 200%);
+    clip-path: polygon(-20% -20%, 250% -20%, -20% 250%);
   }
 }
 
@@ -3362,7 +3363,7 @@ body {
 
   100% {
     opacity: 1;
-    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+    clip-path: polygon(-10% -10%, 110% -10%, 110% 110%, -10% 110%);
   }
 }
 
@@ -3378,7 +3379,7 @@ body {
 
   100% {
     opacity: 1;
-    clip-path: circle(100% at 50% 50%);
+    clip-path: circle(150% at 50% 50%);
   }
 }
 
@@ -3394,7 +3395,7 @@ body {
 
   100% {
     opacity: 1;
-    clip-path: inset(0 0 0 0);
+    clip-path: inset(-10%);
   }
 }
 
@@ -3412,7 +3413,7 @@ body {
   100% {
     opacity: 1;
     transform: scale(1);
-    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+    clip-path: polygon(-10% -10%, 110% -10%, 110% 110%, -10% 110%);
   }
 }
 
@@ -3728,7 +3729,7 @@ body {
 
   100% {
     opacity: 1;
-    clip-path: inset(0 0 0 0);
+    clip-path: inset(-10%);
   }
 }
 

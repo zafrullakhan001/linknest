@@ -73,6 +73,16 @@ const AppContent: React.FC = () => {
     localStorage.setItem('linknest_show_footer_details', showFooterDetails.toString());
   }, [showFooterDetails]);
 
+  // Clock Widget Visibility State
+  const [showClock, setShowClock] = useState(() => {
+    const saved = localStorage.getItem('linknest_show_clock_widget');
+    return saved !== null ? saved === 'true' : true; // Default to shown
+  });
+
+  useEffect(() => {
+    localStorage.setItem('linknest_show_clock_widget', showClock.toString());
+  }, [showClock]);
+
   // Theme State
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('linknest_theme');
@@ -208,6 +218,10 @@ const AppContent: React.FC = () => {
     setAutoSwitchEnabled(false);
     localStorage.setItem('linknest_auto_switch', 'false');
     setDarkMode(!darkMode);
+  };
+
+  const toggleClock = () => {
+    setShowClock(!showClock);
   };
 
   const handleTabClick = (tab: string) => {
@@ -485,24 +499,24 @@ const AppContent: React.FC = () => {
           </div>
         );
       } else {
-      content = (
-        <Suspense fallback={<LoadingFallback />}>
-          <AdminPanel
-            onUserApproved={() => {
-              // Refresh tiles if needed
-              const loadData = async () => {
-                try {
-                  const stored = await getTiles();
-                  setTiles(stored);
-                } catch (error) {
-                  console.error('Failed to load tiles:', error);
-                }
-              };
-              loadData();
-            }}
-          />
-        </Suspense>
-      );
+        content = (
+          <Suspense fallback={<LoadingFallback />}>
+            <AdminPanel
+              onUserApproved={() => {
+                // Refresh tiles if needed
+                const loadData = async () => {
+                  try {
+                    const stored = await getTiles();
+                    setTiles(stored);
+                  } catch (error) {
+                    console.error('Failed to load tiles:', error);
+                  }
+                };
+                loadData();
+              }}
+            />
+          </Suspense>
+        );
       }
     } else {
       window.location.hash = '#/';
@@ -549,6 +563,8 @@ const AppContent: React.FC = () => {
       <Navigation
         darkMode={darkMode}
         toggleTheme={toggleTheme}
+        showClock={showClock}
+        toggleClock={toggleClock}
         user={user}
         onLoginClick={() => setAuthModalOpen(true)}
         onHelpClick={() => setHelpAboutOpen(true)}
@@ -712,9 +728,11 @@ const AppContent: React.FC = () => {
           </div>
         </div>
       </footer>
-      <FloatingClock>
-        <TimezoneDisplay />
-      </FloatingClock>
+      {showClock && (
+        <FloatingClock>
+          <TimezoneDisplay />
+        </FloatingClock>
+      )}
       <AuthModal
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
