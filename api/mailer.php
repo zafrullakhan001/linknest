@@ -65,21 +65,47 @@ function sendEmailMulti(array $toList, array $ccList, $subject, $body, $config =
     if ($config === null) {
         error_log("[EMAIL] Loading SMTP config from database");
         $db = getDB();
-        $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'smtp_%'");
+        
+        // Try to load from new smtp_servers table first
+        $stmt = $db->prepare("SELECT * FROM smtp_servers WHERE is_active = 1 LIMIT 1");
         $stmt->execute();
-        $rows = $stmt->fetchAll();
+        $server = $stmt->fetch();
         
-        $config = [];
-        foreach ($rows as $row) {
-            $key = str_replace('smtp_', '', $row['key']);
-            $config[$key] = $row['value'];
-        }
-        
-        error_log("[EMAIL] SMTP config loaded - enabled: " . ($config['enabled'] ?? 'not set') . ", host: " . ($config['host'] ?? 'not set'));
-        
-        // Decoding password
-        if (isset($config['password'])) {
-            $config['password'] = base64_decode($config['password']);
+        if ($server) {
+            // Use the active SMTP server from smtp_servers table
+            $config = [
+                'host' => $server['host'],
+                'port' => $server['port'],
+                'username' => $server['username'],
+                'password' => base64_decode($server['password']),
+                'from_email' => $server['from_email'],
+                'from_name' => $server['from_name'],
+                'encryption' => $server['encryption'],
+                'enabled' => $server['is_enabled'] ? '1' : '0',
+                'pause_start' => $server['pause_start'],
+                'pause_end' => $server['pause_end']
+            ];
+            
+            error_log("[EMAIL] SMTP config loaded from smtp_servers - enabled: " . $config['enabled'] . ", host: " . $config['host']);
+        } else {
+            // Fallback to legacy settings table (for backward compatibility during migration)
+            error_log("[EMAIL] No active SMTP server found in smtp_servers table, checking legacy settings");
+            $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'smtp_%'");
+            $stmt->execute();
+            $rows = $stmt->fetchAll();
+            
+            $config = [];
+            foreach ($rows as $row) {
+                $key = str_replace('smtp_', '', $row['key']);
+                $config[$key] = $row['value'];
+            }
+            
+            error_log("[EMAIL] SMTP config loaded from legacy settings - enabled: " . ($config['enabled'] ?? 'not set') . ", host: " . ($config['host'] ?? 'not set'));
+            
+            // Decoding password
+            if (isset($config['password'])) {
+                $config['password'] = base64_decode($config['password']);
+            }
         }
         
         // Check if enabled

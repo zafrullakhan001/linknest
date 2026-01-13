@@ -1002,6 +1002,70 @@ function initDatabase() {
             // Ignore backfill issues; API/UI will still function using created_at ordering.
         }
 
+        // Create smtp_servers table for multiple SMTP server support
+        $db->exec('CREATE TABLE IF NOT EXISTS smtp_servers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            host TEXT NOT NULL,
+            port INTEGER NOT NULL DEFAULT 587,
+            username TEXT,
+            password TEXT,
+            from_email TEXT NOT NULL,
+            from_name TEXT NOT NULL DEFAULT "LinkNest Monitor",
+            encryption TEXT NOT NULL DEFAULT "tls",
+            is_active INTEGER DEFAULT 0,
+            is_enabled INTEGER DEFAULT 1,
+            pause_start TEXT,
+            pause_end TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )');
+
+        // Migrate existing SMTP settings from settings table to smtp_servers table
+        try {
+            // Check if we need to migrate (smtp_servers table is empty but settings table has smtp data)
+            $count = $db->query('SELECT COUNT(*) FROM smtp_servers')->fetchColumn();
+            if ($count == 0) {
+                // Check if we have old settings
+                $oldSettings = [];
+                $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'smtp_%'");
+                $stmt->execute();
+                while ($row = $stmt->fetch()) {
+                    $key = str_replace('smtp_', '', $row['key']);
+                    $oldSettings[$key] = $row['value'];
+                }
+                
+                // If we have old settings, migrate them
+                if (!empty($oldSettings) && isset($oldSettings['host'])) {
+                    $now = time();
+                    $insertStmt = $db->prepare('INSERT INTO smtp_servers 
+                        (name, host, port, username, password, from_email, from_name, encryption, is_active, is_enabled, pause_start, pause_end, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    
+                    $insertStmt->execute([
+                        'Primary SMTP Server',
+                        $oldSettings['host'] ?? '',
+                        (int)($oldSettings['port'] ?? 587),
+                        $oldSettings['username'] ?? '',
+                        $oldSettings['password'] ?? '', // Already base64 encoded
+                        $oldSettings['from_email'] ?? '',
+                        $oldSettings['from_name'] ?? 'LinkNest Monitor',
+                        $oldSettings['encryption'] ?? 'tls',
+                        1, // is_active
+                        ($oldSettings['enabled'] ?? '0') === '1' ? 1 : 0,
+                        $oldSettings['pause_start'] ?? null,
+                        $oldSettings['pause_end'] ?? null,
+                        $now,
+                        $now
+                    ]);
+                    
+                    error_log('[SMTP Migration] Migrated existing SMTP settings to smtp_servers table');
+                }
+            }
+        } catch (PDOException $e) {
+            error_log('[SMTP Migration] Warning: ' . $e->getMessage());
+        }
+
         // Create monitor_notification_recipients table
         $db->exec('CREATE TABLE IF NOT EXISTS monitor_notification_recipients (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
