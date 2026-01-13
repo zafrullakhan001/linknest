@@ -823,8 +823,14 @@ function handleCheckMonitor($id) {
         return;
     }
     
-    // Perform check immediately
-    $result = performMonitorCheck($monitor);
+    // Perform check immediately.
+    // Optional: force notify rules even when status did not change (used by "force refresh" mode in UI).
+    $forceNotifyRules = false;
+    if (isset($_GET['force_notify_rules'])) {
+        $v = strtolower(trim((string)$_GET['force_notify_rules']));
+        $forceNotifyRules = in_array($v, ['1', 'true', 'yes', 'on'], true);
+    }
+    $result = performMonitorCheck($monitor, ['force_notify_rules' => $forceNotifyRules]);
     
     sendJSON(['success' => true, 'result' => $result]);
 }

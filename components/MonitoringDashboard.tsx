@@ -64,11 +64,20 @@ export const MonitoringDashboard: React.FC = () => {
         upUseGradient: false,
         upGradientStart: '#10b981',
         upGradientEnd: '#059669',
+        upFontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
         downBackgroundColor: '#dc2626',
         downTextColor: '#ffffff',
         downUseGradient: false,
         downGradientStart: '#dc2626',
         downGradientEnd: '#b91c1c',
+        downFontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
+        warningBackgroundColor: '#f59e0b',
+        warningTextColor: '#ffffff',
+        warningUseGradient: true,
+        warningGradientStart: '#f59e0b',
+        warningGradientEnd: '#d97706',
+        warningFontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
+        borderRadius: 16,
     };
     
     const [tileStyles, setTileStyles] = useState<TileStyle>(defaultTileStyles);
@@ -253,11 +262,22 @@ export const MonitoringDashboard: React.FC = () => {
                 upUseGradient: preferences['monitor_tile_up_gradient'] === 'true' || preferences['monitor_tile_up_gradient'] === true,
                 upGradientStart: preferences['monitor_tile_up_gradient_start'] as string || defaultTileStyles.upGradientStart,
                 upGradientEnd: preferences['monitor_tile_up_gradient_end'] as string || defaultTileStyles.upGradientEnd,
+                upFontFamily: preferences['monitor_tile_up_font'] as string || defaultTileStyles.upFontFamily,
                 downBackgroundColor: preferences['monitor_tile_down_bg'] as string || defaultTileStyles.downBackgroundColor,
                 downTextColor: preferences['monitor_tile_down_text'] as string || defaultTileStyles.downTextColor,
                 downUseGradient: preferences['monitor_tile_down_gradient'] === 'true' || preferences['monitor_tile_down_gradient'] === true,
                 downGradientStart: preferences['monitor_tile_down_gradient_start'] as string || defaultTileStyles.downGradientStart,
                 downGradientEnd: preferences['monitor_tile_down_gradient_end'] as string || defaultTileStyles.downGradientEnd,
+                downFontFamily: preferences['monitor_tile_down_font'] as string || defaultTileStyles.downFontFamily,
+                warningBackgroundColor: preferences['monitor_tile_warning_bg'] as string || defaultTileStyles.warningBackgroundColor,
+                warningTextColor: preferences['monitor_tile_warning_text'] as string || defaultTileStyles.warningTextColor,
+                warningUseGradient: preferences['monitor_tile_warning_gradient'] === 'true' || preferences['monitor_tile_warning_gradient'] === true,
+                warningGradientStart: preferences['monitor_tile_warning_gradient_start'] as string || defaultTileStyles.warningGradientStart,
+                warningGradientEnd: preferences['monitor_tile_warning_gradient_end'] as string || defaultTileStyles.warningGradientEnd,
+                warningFontFamily: preferences['monitor_tile_warning_font'] as string || defaultTileStyles.warningFontFamily,
+                borderRadius: Number.isFinite(parseFloat(preferences['monitor_tile_radius'] as any))
+                    ? Math.max(0, Math.min(48, parseFloat(preferences['monitor_tile_radius'] as any)))
+                    : defaultTileStyles.borderRadius,
             };
             setTileStyles(loadedStyles);
         } catch (error) {
@@ -341,7 +361,8 @@ export const MonitoringDashboard: React.FC = () => {
     const handleCheckNow = async (id: number) => {
         setCheckingId(id);
         try {
-            await monitoringService.checkMonitor(id);
+            // In "force" mode, also trigger all notification rules serially (even if status is unchanged).
+            await monitoringService.checkMonitor(id, { forceNotifyRules: autoRefreshMode === 'force' });
             fetchMonitors(); // Reload to get updated status
         } catch (error) {
             console.error('Failed to check monitor', error);
@@ -786,9 +807,12 @@ export const MonitoringDashboard: React.FC = () => {
                 backgroundColor: tileStyles.downBackgroundColor,
             };
         } else if (status === 'warning') {
-            return {
-                background: `linear-gradient(135deg, #f59e0b, #d97706)`,
-            };
+            if (tileStyles.warningUseGradient) {
+                return {
+                    background: `linear-gradient(135deg, ${tileStyles.warningGradientStart}, ${tileStyles.warningGradientEnd})`,
+                };
+            }
+            return { backgroundColor: tileStyles.warningBackgroundColor };
         }
         return {};
     }, [tileStyles]);
@@ -799,8 +823,15 @@ export const MonitoringDashboard: React.FC = () => {
         } else if (status === 'down') {
             return tileStyles.downTextColor;
         } else if (status === 'warning') {
-            return '#ffffff';
+            return tileStyles.warningTextColor;
         }
+        return '';
+    }, [tileStyles]);
+
+    const getTileFontFamily = useCallback((status: 'up' | 'down' | 'warning' | 'unknown' | null): string => {
+        if (status === 'up') return tileStyles.upFontFamily;
+        if (status === 'down') return tileStyles.downFontFamily;
+        if (status === 'warning') return tileStyles.warningFontFamily;
         return '';
     }, [tileStyles]);
     
@@ -818,7 +849,7 @@ export const MonitoringDashboard: React.FC = () => {
         } else if (status === 'down') {
             return tileStyles.downUseGradient ? tileStyles.downGradientStart : tileStyles.downBackgroundColor;
         } else if (status === 'warning') {
-            return '#f59e0b';
+            return tileStyles.warningUseGradient ? tileStyles.warningGradientStart : tileStyles.warningBackgroundColor;
         }
         return '';
     }, [tileStyles]);
@@ -1220,7 +1251,9 @@ export const MonitoringDashboard: React.FC = () => {
                                             onClick={(e) => handleTileClick(e, monitor)}
                                             style={{
                                                 ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileStyle(monitor.last_status) : {}),
-                                                ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? { borderColor: getTileBorderColor(monitor.last_status) } : {})
+                                                ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning'
+                                                    ? { borderColor: getTileBorderColor(monitor.last_status), fontFamily: getTileFontFamily(monitor.last_status) }
+                                                    : {})
                                             }}
                                             className={`inline-flex items-center gap-3 px-4 py-2 rounded-full border cursor-pointer transition-all hover:shadow-lg group relative ${fullAnimClass} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border-slate-200 dark:border-[#333]'}`}
                                         >
@@ -1257,7 +1290,10 @@ export const MonitoringDashboard: React.FC = () => {
                                             style={{
                                                 animationDelay: `${index * 50}ms`,
                                                 ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileStyle(monitor.last_status) : {}),
-                                                ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? { borderColor: getTileBorderColor(monitor.last_status) } : {})
+                                                ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning'
+                                                    ? { borderColor: getTileBorderColor(monitor.last_status), fontFamily: getTileFontFamily(monitor.last_status) }
+                                                    : {}),
+                                                borderRadius: tileStyles.borderRadius,
                                             }}
                                             className={`border rounded-2xl shadow-lg hover:shadow-xl transition-all group relative cursor-pointer ${fullAnimClass} 
                                                 ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border-slate-200 dark:border-[#333] hover:border-slate-300 dark:hover:border-[#444]'}
@@ -1374,8 +1410,8 @@ export const MonitoringDashboard: React.FC = () => {
                                                             </div>
                                                         ) : (
                                                             <div 
-                                                                className={`text-[9px] font-black uppercase tracking-tighter ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : monitor.last_status === 'up' ? 'text-emerald-500' : 'text-red-500'}`}
-                                                                style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
+                                                                className="text-[9px] font-black uppercase tracking-wider"
+                                                                style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileTextStyle(monitor.last_status) : {}}
                                                             >
                                                                 {monitor.last_status || 'UNKNOWN'}
                                                             </div>
@@ -1427,8 +1463,8 @@ export const MonitoringDashboard: React.FC = () => {
                                                     </div>
                                                 </div>
                                                 <div 
-                                                    className={`text-[9px] text-right font-medium ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-slate-400 dark:text-gray-600'}`}
-                                                    style={monitor.last_status === 'up' || monitor.last_status === 'down' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.6 } : {}}
+                                                    className={`text-[9px] text-right font-medium ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'text-slate-400 dark:text-gray-600'}`}
+                                                    style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.6 } : {}}
                                                 >
                                                     {formatLastChecked(monitor.last_checked_at)}
                                                 </div>

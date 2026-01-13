@@ -55,7 +55,7 @@ function handleCheckDueMonitors() {
 /**
  * Perform a check for a single monitor
  */
-function performMonitorCheck($monitor) {
+function performMonitorCheck($monitor, $options = []) {
     // Set a maximum execution time for this check to prevent hanging
     set_time_limit(20); // Allow time for retry confirmation on failures
     
@@ -180,12 +180,15 @@ function performMonitorCheck($monitor) {
     $stmt->execute([$monitor['id'], $status, $responseTime, $details, $now]);
     
     // Send notifications using the new advanced notification system
-    if ($statusChanged) {
+    // Default: only notify on status transitions (prevents force-check spam).
+    // Optional: if explicitly requested, evaluate rule-based notifications even when status is unchanged.
+    $forceNotifyRules = (is_array($options) && !empty($options['force_notify_rules']));
+    if ($statusChanged || $forceNotifyRules) {
         error_log("[EMAIL] Status changed detected - monitor {$monitor['id']}: $prevStatus -> $status");
         // Skip notifications if in maintenance window or if global notifications are paused
         if (!isNotificationPaused() && !isInMaintenanceWindow($monitor)) {
             error_log("[EMAIL] Triggering advanced notifications for monitor {$monitor['id']}");
-            sendAdvancedNotifications($monitor, $status, $prevStatus, $details, $responseTime);
+            sendAdvancedNotifications($monitor, $status, $prevStatus, $details, $responseTime, $forceNotifyRules);
         } else {
             error_log("[EMAIL] Advanced notifications skipped - paused: " . (isNotificationPaused() ? 'YES' : 'NO') . ", maintenance: " . (isInMaintenanceWindow($monitor) ? 'YES' : 'NO'));
         }
@@ -493,7 +496,7 @@ function checkPing($target, $opts = []) {
 /**
  * Send notifications using the advanced notification system
  */
-function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, $responseTime) {
+function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, $responseTime, $forceNotifyRules = false) {
     error_log("[EMAIL] sendAdvancedNotifications called - monitor ID: {$monitor['id']}, status: $prevStatus -> $newStatus");
 
     // Safety guard: never send if notifications are paused or monitor is in maintenance
@@ -510,8 +513,20 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
     // Normalize prevStatus for comparison
     $normalizedPrevStatus = ($prevStatus === '' || $prevStatus === false || $prevStatus === null) ? null : $prevStatus;
     
-    // Send notification when status changes to 'down' (from any status including null/unknown/up)
-    if ($newStatus === 'down') {
+    // Force-notify mode: evaluate rules based on current status even if it did not change.
+    if ($forceNotifyRules) {
+        if ($newStatus === 'down' || $newStatus === 'warning') {
+            $triggersToCheck[] = 'down';
+            $triggersToCheck[] = 'both';
+            error_log("[EMAIL] Force notify - checking 'down' and 'both' triggers");
+        } elseif ($newStatus === 'up') {
+            $triggersToCheck[] = 'up';
+            $triggersToCheck[] = 'both';
+            error_log("[EMAIL] Force notify - checking 'up' and 'both' triggers");
+        }
+    }
+    // Normal mode: Send notification when status changes to 'down' (from any status including null/unknown/up)
+    elseif ($newStatus === 'down') {
         $triggersToCheck[] = 'down';
         $triggersToCheck[] = 'both';
         error_log("[EMAIL] Status changed to DOWN - checking 'down' and 'both' triggers");
@@ -535,7 +550,7 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
     
     // Get all enabled notification rules for this monitor
     $placeholders = implode(',', array_fill(0, count($triggersToCheck), '?'));
-    $stmt = $db->prepare("SELECT * FROM monitor_notification_rules WHERE monitor_id = ? AND is_enabled = 1 AND status_trigger IN ($placeholders)");
+    $stmt = $db->prepare("SELECT * FROM monitor_notification_rules WHERE monitor_id = ? AND is_enabled = 1 AND status_trigger IN ($placeholders) ORDER BY COALESCE(sort_order, 0) ASC, created_at DESC, id DESC");
     $params = array_merge([$monitor['id']], $triggersToCheck);
     $stmt->execute($params);
     $rules = $stmt->fetchAll();
@@ -572,10 +587,13 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
         $stmt->execute([$rule['id']]);
         $recipients = $stmt->fetchAll(PDO::FETCH_COLUMN);
         
-        error_log("[EMAIL] Rule {$rule['id']} has " . count($recipients) . " recipients");
+        // CC list (optional) - CC recipients should also receive the email even if To list is empty
+        $ccList = function_exists('normalizeEmailList') ? normalizeEmailList($rule['cc_emails'] ?? '') : [];
+
+        error_log("[EMAIL] Rule {$rule['id']} has " . count($recipients) . " recipients and " . count($ccList) . " CC recipients");
         
-        if (empty($recipients)) {
-            error_log("[EMAIL] Rule {$rule['id']} skipped - no recipients configured");
+        if (empty($recipients) && empty($ccList)) {
+            error_log("[EMAIL] Rule {$rule['id']} skipped - no recipients configured (To/CC empty)");
             continue; // No recipients configured
         }
         
@@ -588,7 +606,6 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
         // Get from name and email (use rule-specific or fallback to SMTP settings)
         $fromName = $rule['from_name'] ?? 'LinkNest Monitor';
         $fromEmail = $rule['from_email'] ?? null;
-        $ccList = function_exists('normalizeEmailList') ? normalizeEmailList($rule['cc_emails'] ?? '') : [];
         
         // Send ONE email per rule with multiple To + CC (prevents CC getting duplicates)
         $result = sendEmailMultiWithRuleFromOverride($recipients, $ccList, $subject, $body, $fromName, $fromEmail, $monitor, $newStatus, $details, $responseTime);

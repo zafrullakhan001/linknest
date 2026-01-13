@@ -102,8 +102,9 @@ export const monitoringService = {
         return data.logs;
     },
 
-    async checkMonitor(id: number): Promise<any> {
-        const response = await fetch(`api/monitors.php/${id}/check`, {
+    async checkMonitor(id: number, options?: { forceNotifyRules?: boolean }): Promise<any> {
+        const qs = options?.forceNotifyRules ? '?force_notify_rules=1' : '';
+        const response = await fetch(`api/monitors.php/${id}/check${qs}`, {
             method: 'POST'
         });
         if (!response.ok) throw new Error('Failed to check monitor');
