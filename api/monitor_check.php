@@ -635,20 +635,8 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
 }
 
 function sendEmailMultiWithRuleFromOverride(array $toList, array $ccList, $subject, $body, $fromName = null, $fromEmail = null, $monitor = null, $status = null, $details = null, $responseTime = null) {
-    // Load SMTP settings from DB and apply from overrides (if provided)
-    $db = getDB();
-    $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'smtp_%'");
-    $stmt->execute();
-    $rows = $stmt->fetchAll();
-
-    $config = [];
-    foreach ($rows as $row) {
-        $key = str_replace('smtp_', '', $row['key']);
-        $config[$key] = $row['value'];
-    }
-    if (isset($config['password'])) {
-        $config['password'] = base64_decode($config['password']);
-    }
+    // Load SMTP settings from DB (supports new smtp_servers table)
+    $config = getSMTPConfig();
 
     if (!empty($fromName)) {
         $config['from_name'] = $fromName;
@@ -964,20 +952,8 @@ function sendEmailWithOptionalFromOverride($to, $subject, $body, $overrides = nu
         return sendEmail($to, $subject, $body, null, $cc, $options);
     }
 
-    // Load SMTP settings from DB and then apply overrides
-    $db = getDB();
-    $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'smtp_%'");
-    $stmt->execute();
-    $rows = $stmt->fetchAll();
-
-    $config = [];
-    foreach ($rows as $row) {
-        $key = str_replace('smtp_', '', $row['key']);
-        $config[$key] = $row['value'];
-    }
-    if (isset($config['password'])) {
-        $config['password'] = base64_decode($config['password']);
-    }
+    // Load SMTP settings from DB (supports new smtp_servers table)
+    $config = getSMTPConfig();
 
     if (!empty($overrides['from_name'])) {
         $config['from_name'] = $overrides['from_name'];
@@ -1004,13 +980,11 @@ function isNotificationPaused() {
         return true;
     }
     
-    // Check time-based pause window (legacy SMTP pause feature)
-    $stmt = $db->prepare("SELECT key, value FROM settings WHERE key IN ('smtp_pause_start', 'smtp_pause_end')");
-    $stmt->execute();
-    $rows = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+    // Check time-based pause window from active SMTP server
+    $config = getSMTPConfig();
     
-    $start = $rows['smtp_pause_start'] ?? null;
-    $end = $rows['smtp_pause_end'] ?? null;
+    $start = $config['pause_start'] ?? null;
+    $end = $config['pause_end'] ?? null;
     
     if (empty($start) || empty($end)) {
         return false;

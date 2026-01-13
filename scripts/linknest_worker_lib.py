@@ -169,8 +169,38 @@ def load_settings(conn: sqlite3.Connection, prefix: str) -> Dict[str, str]:
 
 
 def get_smtp_config(conn: sqlite3.Connection) -> Dict[str, Any]:
+    """
+    Mirror PHP getSMTPConfig():
+    Prioritize the active server in 'smtp_servers' table, fallback to legacy 'settings' table.
+    """
+    try:
+        # Check if table exists first (in case migration didn't run yet)
+        table_check = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='smtp_servers'").fetchone()
+        if table_check:
+            row = conn.execute("SELECT * FROM smtp_servers WHERE is_active = 1 LIMIT 1").fetchone()
+            if row:
+                cfg = {
+                    "host": row["host"],
+                    "port": row["port"],
+                    "username": row["username"],
+                    "password": row["password"],
+                    "from_email": row["from_email"],
+                    "from_name": row["from_name"],
+                    "encryption": row["encryption"],
+                    "enabled": "1" if int(row["is_enabled"] or 0) == 1 else "0",
+                    "pause_start": row["pause_start"],
+                    "pause_end": row["pause_end"]
+                }
+                if cfg.get("password"):
+                    with contextlib.suppress(Exception):
+                        cfg["password"] = base64.b64decode(cfg["password"]).decode("utf-8", errors="replace")
+                return cfg
+    except Exception:
+        pass
+
+    # Fallback to legacy settings table
     raw = load_settings(conn, "smtp_")
-    cfg: Dict[str, Any] = {}
+    cfg = {}
     for k, v in raw.items():
         cfg[k.replace("smtp_", "", 1)] = v
     if "password" in cfg and cfg["password"]:
@@ -189,27 +219,35 @@ def notifications_paused(conn: sqlite3.Connection, *, default_on_error: bool = T
     accidentally sending/queueing notifications, while still allowing monitoring status updates.
     """
     try:
+        # Check global pause flag first (simple boolean toggle)
         row = conn.execute("SELECT value FROM settings WHERE key = 'notifications_paused'").fetchone()
         if row:
             v = str(row["value"]).strip().lower()
             if v in ("1", "true", "yes", "on"):
                 return True
 
-        rows = conn.execute(
-            "SELECT key, value FROM settings WHERE key IN ('smtp_pause_start', 'smtp_pause_end')"
-        ).fetchall()
-        kv = {str(r["key"]): (None if r["value"] is None else str(r["value"])) for r in rows}
-        start = kv.get("smtp_pause_start")
-        end = kv.get("smtp_pause_end")
+        # Check time-based pause window from active SMTP server
+        # Mirroring PHP logic: getSMTPConfig() -> check pause_start/pause_end
+        cfg = get_smtp_config(conn)
+        start = cfg.get("pause_start")
+        end = cfg.get("pause_end")
+        
         if not start or not end:
             return False
+            
         try:
-            start_ts = int(time.mktime(time.strptime(start, "%Y-%m-%d %H:%M:%S")))
-            end_ts = int(time.mktime(time.strptime(end, "%Y-%m-%d %H:%M:%S")))
+            # Format: 'YYYY-MM-DD HH:MM:SS' or just 'HH:MM'
+            # If it's a date-time string:
+            if len(start) > 5:
+                start_ts = int(time.mktime(time.strptime(start, "%Y-%m-%d %H:%M:%S")))
+                end_ts = int(time.mktime(time.strptime(end, "%Y-%m-%d %H:%M:%S")))
+                t = now_ts()
+                return start_ts <= t <= end_ts
+            else:
+                # If it's just HH:MM (unlikely but possible based on some UI iterations)
+                return time_window_active(start, end)
         except Exception:
             return False
-        t = now_ts()
-        return start_ts <= t <= end_ts
     except Exception:
         return bool(default_on_error)
 
