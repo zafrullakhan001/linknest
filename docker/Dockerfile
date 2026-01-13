@@ -134,6 +134,10 @@ COPY docker/php-config.ini /usr/local/etc/php/conf.d/linknest.ini
 COPY docker/verify-php.sh /usr/local/bin/verify-php.sh
 RUN chmod +x /usr/local/bin/verify-php.sh
 
+# Copy container entrypoint (starts workers + apache)
+COPY docker/linknest-entrypoint.sh /usr/local/bin/linknest-entrypoint.sh
+RUN chmod +x /usr/local/bin/linknest-entrypoint.sh
+
 # Verify PHP and SQLite are working
 RUN /usr/local/bin/verify-php.sh
 
@@ -144,8 +148,8 @@ ENV PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d
 # Expose ports (HTTP and HTTPS)
 EXPOSE 80 443
 
-# Start Apache
-CMD ["apache2-foreground"]
+# Start workers (optional) + Apache
+CMD ["/usr/local/bin/linknest-entrypoint.sh"]
 
 
 

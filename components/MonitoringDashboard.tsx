@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Monitor, MonitorLog, monitoringService } from '../services/monitoringService';
 import { MonitorForm } from './MonitorForm';
-import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaFileCsv, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash } from 'react-icons/fa';
+import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaFileCsv, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash } from 'react-icons/fa';
 import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from './TileAnimationSelector';
 import { SMTPSettingsModal } from './SMTPSettingsModal';
 import { MonitoringTileStyleModal, TileStyle } from './MonitoringTileStyleModal';
@@ -31,7 +31,14 @@ export const MonitoringDashboard: React.FC = () => {
         return (saved === 'tiles' || saved === 'grid' || saved === 'compact' || saved === 'capsule') ? saved : 'tiles';
     });
     const [autoRefreshInterval, setAutoRefreshInterval] = useState<number>(30); // Default 30s
-    const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(false);
+    const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(() => {
+        const saved = localStorage.getItem('linknest_monitor_auto_refresh_enabled');
+        return saved !== null ? saved === 'true' : true; // Default: enabled
+    });
+    const [autoRefreshMode, setAutoRefreshMode] = useState<'normal' | 'force'>(() => {
+        const saved = localStorage.getItem('linknest_monitor_auto_refresh_mode');
+        return saved === 'force' ? 'force' : 'normal';
+    });
     const [refreshCountdown, setRefreshCountdown] = useState<number>(30);
     const { animation, decoration } = useTileAnimation();
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -270,7 +277,7 @@ export const MonitoringDashboard: React.FC = () => {
             timer = setInterval(() => {
                 setRefreshCountdown(prev => {
                     if (prev <= 1) {
-                        refreshAll(true); // Auto-refresh triggers a full check
+                        refreshAll(autoRefreshMode === 'force');
                         return autoRefreshInterval;
                     }
                     return prev - 1;
@@ -278,12 +285,22 @@ export const MonitoringDashboard: React.FC = () => {
             }, 1000);
         }
         return () => clearInterval(timer);
-    }, [isAutoRefreshEnabled, autoRefreshInterval, refreshAll]);
+    }, [isAutoRefreshEnabled, autoRefreshInterval, autoRefreshMode, refreshAll]);
 
     // Reset countdown when interval changes
     useEffect(() => {
         setRefreshCountdown(autoRefreshInterval);
     }, [autoRefreshInterval]);
+
+    // Persist auto refresh toggle
+    useEffect(() => {
+        localStorage.setItem('linknest_monitor_auto_refresh_enabled', isAutoRefreshEnabled.toString());
+    }, [isAutoRefreshEnabled]);
+
+    // Persist auto refresh mode
+    useEffect(() => {
+        localStorage.setItem('linknest_monitor_auto_refresh_mode', autoRefreshMode);
+    }, [autoRefreshMode]);
 
     const handleSave = async (data: Partial<Monitor>) => {
         if (!isAdmin) {
@@ -971,6 +988,14 @@ export const MonitoringDashboard: React.FC = () => {
                     {/* Refresh Controls */}
                     <div className="flex items-center gap-2">
                         <button
+                            onClick={() => refreshAll(false)}
+                            className="flex items-center justify-center w-9 h-9 text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 bg-slate-100 dark:bg-[#252525] rounded-xl transition-all"
+                            title="Refresh list (no checks)"
+                        >
+                            <FaSyncAlt size={14} {...({ className: isLoading ? 'animate-spin' : '' } as any)} />
+                        </button>
+
+                        <button
                             onClick={() => refreshAll(true)}
                             className="flex items-center justify-center w-9 h-9 text-slate-600 dark:text-slate-400 hover:text-blue-500 dark:hover:text-blue-400 bg-slate-100 dark:bg-[#252525] rounded-xl transition-all"
                             title="Force refresh all monitors"
@@ -982,12 +1007,20 @@ export const MonitoringDashboard: React.FC = () => {
                             <div className="relative w-7 h-7 flex items-center justify-center">
                                 <svg className="w-6 h-6 rotate-[-90deg]">
                                     <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="transparent" className="text-slate-200 dark:text-slate-800" />
-                                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="transparent" strokeDasharray={2 * Math.PI * 10} strokeDashoffset={isAutoRefreshEnabled ? (2 * Math.PI * 10) * (1 - refreshCountdown / autoRefreshInterval) : (2 * Math.PI * 10)} className={`${isAutoRefreshEnabled ? 'text-emerald-500' : 'text-slate-400'} transition-all duration-1000 ease-linear`} strokeLinecap="round" />
+                                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="transparent" strokeDasharray={2 * Math.PI * 10} strokeDashoffset={isAutoRefreshEnabled ? (2 * Math.PI * 10) * (1 - refreshCountdown / autoRefreshInterval) : (2 * Math.PI * 10)} className={`${isAutoRefreshEnabled ? (autoRefreshMode === 'force' ? 'text-blue-500' : 'text-emerald-500') : 'text-slate-400'} transition-all duration-1000 ease-linear`} strokeLinecap="round" />
                                 </svg>
                                 <button onClick={() => setIsAutoRefreshEnabled(!isAutoRefreshEnabled)} className="absolute inset-0 flex items-center justify-center" title={isAutoRefreshEnabled ? "Disable auto-refresh" : "Enable auto-refresh"}>
-                                    <div className={`w-1.5 h-1.5 rounded-full ${isAutoRefreshEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></div>
+                                    <div className={`w-1.5 h-1.5 rounded-full ${isAutoRefreshEnabled ? (autoRefreshMode === 'force' ? 'bg-blue-500 animate-pulse' : 'bg-emerald-500 animate-pulse') : 'bg-slate-400'}`}></div>
                                 </button>
                             </div>
+                            <button
+                                onClick={() => setAutoRefreshMode(m => (m === 'normal' ? 'force' : 'normal'))}
+                                disabled={!isAutoRefreshEnabled}
+                                className={`flex items-center justify-center w-7 h-7 rounded-lg transition-all disabled:opacity-50 ${autoRefreshMode === 'force' ? 'text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300' : 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300'}`}
+                                title={autoRefreshMode === 'force' ? "Auto-refresh mode: Force check (click to switch to normal refresh)" : "Auto-refresh mode: Normal refresh (click to switch to force check)"}
+                            >
+                                {autoRefreshMode === 'force' ? <FaRedo size={12} /> : <FaSyncAlt size={12} />}
+                            </button>
                             <select
                                 value={autoRefreshInterval}
                                 onChange={(e) => setAutoRefreshInterval(Number(e.target.value))}

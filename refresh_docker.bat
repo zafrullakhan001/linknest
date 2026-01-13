@@ -185,6 +185,11 @@ echo      %COMPOSE_CMD% -f docker/docker-compose.yml logs --tail=200 linknest
 :python_check_done
 echo.
 
+REM 3c. Monitoring/email workers run INSIDE the container (see docker/linknest-entrypoint.sh)
+echo Step 3c: Python monitoring workers are started inside the container.
+echo    Configure via docker/docker-compose.yml environment variables (LINKNEST_WORKERS_*).
+echo.
+
 REM 4. Cleanup
 echo Step 4: Cleaning up intermediate build artifacts...
 echo    Removing dangling images...

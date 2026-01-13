@@ -111,7 +111,9 @@ def queue_advanced_notifications(conn, monitor_row, new_status: str, prev_status
     norm_prev = None if prev_status in (None, "", False) else str(prev_status)
     if new_status == "down":
         triggers = ["down", "both"]
-    elif new_status == "up" and (norm_prev == "down"):
+    # Treat WARNING as a down-like transitional state (below threshold),
+    # so WARNING->UP should trigger "up" notifications too.
+    elif new_status == "up" and (norm_prev in ("down", "warning")):
         triggers = ["up", "both"]
     else:
         return 0
@@ -172,7 +174,7 @@ def queue_advanced_notifications(conn, monitor_row, new_status: str, prev_status
     return queued
 
 
-def queue_legacy_notification(conn, monitor_row, new_status: str, prev_status: Optional[str], details: str, verbose: bool) -> int:
+def queue_legacy_notification(conn, monitor_row, new_status: str, prev_status: Optional[str], details: str, response_ms: int, verbose: bool) -> int:
     if int(monitor_row["email_notification"] or 0) != 1:
         return 0
 
@@ -191,7 +193,9 @@ def queue_legacy_notification(conn, monitor_row, new_status: str, prev_status: O
         trigger = "down"
         subject_status = "down"
         message_details = f"DOWN: {monitor_row['name']} is unreachable. Error: {details}"
-    elif norm_prev == "down" and norm_new == "up":
+    # Treat WARNING as a down-like transitional state (below threshold),
+    # so WARNING->UP should trigger legacy "up" notification too.
+    elif norm_prev in ("down", "warning") and norm_new == "up":
         trigger = "up"
         subject_status = "up"
         message_details = f"UP: {monitor_row['name']} is back online."
@@ -222,8 +226,8 @@ def queue_legacy_notification(conn, monitor_row, new_status: str, prev_status: O
     subject_tpl = (monitor_row["legacy_email_subject_template"] or "").strip() or default_subject_tpl
     body_tpl = (monitor_row["legacy_email_body_template"] or "").strip() or default_body_tpl
 
-    subject = replace_template_vars(subject_tpl, monitor_row, subject_status, message_details or "", None)
-    body = replace_template_vars(body_tpl, monitor_row, subject_status, message_details or "", None)
+    subject = replace_template_vars(subject_tpl, monitor_row, subject_status, message_details or "", int(response_ms))
+    body = replace_template_vars(body_tpl, monitor_row, subject_status, message_details or "", int(response_ms))
 
     from_name = (monitor_row["legacy_email_from_name"] or "").strip() or None
     from_email = (monitor_row["legacy_email_from_email"] or "").strip() or None
@@ -371,7 +375,7 @@ def main() -> int:
                 queued_emails += queue_advanced_notifications(conn, m, eff_status, prev, eff_details, r.response_ms, args.verbose)
 
             if (not notifications_paused(conn)) and (not is_in_maintenance_window(m)):
-                queued_emails += queue_legacy_notification(conn, m, eff_status, prev, eff_details, args.verbose)
+                queued_emails += queue_legacy_notification(conn, m, eff_status, prev, eff_details, r.response_ms, args.verbose)
 
             updated += 1
 

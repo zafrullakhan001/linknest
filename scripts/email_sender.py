@@ -52,12 +52,41 @@ def _compute_backoff_seconds(attempts: int) -> int:
         attempts = 1
     return min(3600, 60 * (2 ** (attempts - 1)))
 
+def _get_int_setting(conn, key: str, default: int) -> int:
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = ? LIMIT 1", (str(key),)).fetchone()
+        if not row:
+            return int(default)
+        v = row["value"]
+        if v is None:
+            return int(default)
+        return int(str(v).strip())
+    except Exception:
+        return int(default)
+
+def _get_dedupe_window_seconds(conn) -> int:
+    """
+    Duplicate suppression window in seconds.
+    - Env override: LINKNEST_EMAIL_DEDUPE_WINDOW_SECONDS
+    - DB setting:  email_dedupe_window_seconds
+    - Default:     0 (disabled)
+    """
+    env = os.getenv("LINKNEST_EMAIL_DEDUPE_WINDOW_SECONDS")
+    if env is not None and str(env).strip() != "":
+        try:
+            return max(0, int(str(env).strip()))
+        except Exception:
+            return 0
+    return max(0, _get_int_setting(conn, "email_dedupe_window_seconds", 0))
+
 def _should_suppress_duplicate(conn, *, monitor_id: int, status_trigger: str, subject: str, recipients: Sequence[str], window_seconds: int = 300) -> bool:
     """
     Basic spam protection:
     If any recipient already has a SUCCESS log with same monitor_id + trigger + subject
     within the last window, suppress sending this message.
     """
+    if int(window_seconds) <= 0:
+        return False
     since = now_ts() - int(window_seconds)
     for email in recipients:
         row = conn.execute(
@@ -89,6 +118,7 @@ def main() -> int:
     conn = open_db(db_path)
     ensure_outbox_schema(conn)
     smtp_cfg = get_smtp_config(conn)
+    dedupe_window_seconds = _get_dedupe_window_seconds(conn)
 
     if notifications_paused(conn):
         if args.verbose:
@@ -114,7 +144,7 @@ def main() -> int:
         ).fetchall()
 
         if args.verbose:
-            print(f"[INFO] pending={len(rows)} db={db_path}")
+            print(f"[INFO] pending={len(rows)} db={db_path} dedupe_window_seconds={dedupe_window_seconds}")
 
         if not rows:
             conn.execute("COMMIT")
@@ -208,11 +238,16 @@ def main() -> int:
 
             # Duplicate suppression (short window). This helps prevent accidental inbox spam if duplicates were queued.
             if monitor_id is not None and _should_suppress_duplicate(
-                conn, monitor_id=int(monitor_id), status_trigger=status_trigger, subject=subject, recipients=all_rcpt
+                conn,
+                monitor_id=int(monitor_id),
+                status_trigger=status_trigger,
+                subject=subject,
+                recipients=all_rcpt,
+                window_seconds=dedupe_window_seconds,
             ):
                 conn.execute(
                     "UPDATE email_outbox SET sent_at = ?, success = 1, last_error = ? WHERE id = ?",
-                    (now_ts(), "suppressed: duplicate within window", outbox_id),
+                    (now_ts(), f"suppressed: duplicate within window ({dedupe_window_seconds}s)", outbox_id),
                 )
                 continue
 
