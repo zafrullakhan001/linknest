@@ -298,6 +298,16 @@ def main() -> int:
     if not due:
         return 0
 
+    # Determine notification pause state once per run.
+    # Even if this check fails (locked/missing settings), we MUST still update monitor statuses.
+    paused = True
+    try:
+        paused = bool(notifications_paused(conn, default_on_error=True))
+    except Exception as e:
+        paused = True
+        if args.verbose:
+            print(f"[WARN] notifications_paused() failed; treating as paused. err={e}")
+
     # Run network checks concurrently, but keep DB writes single-threaded.
     results: Dict[int, CheckResult] = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, int(args.max_workers))) as ex:
@@ -371,11 +381,16 @@ def main() -> int:
             )
 
             changed = status_changed(prev, eff_status)
-            if changed and (not notifications_paused(conn)) and (not is_in_maintenance_window(m)):
-                queued_emails += queue_advanced_notifications(conn, m, eff_status, prev, eff_details, r.response_ms, args.verbose)
-
-            if (not notifications_paused(conn)) and (not is_in_maintenance_window(m)):
-                queued_emails += queue_legacy_notification(conn, m, eff_status, prev, eff_details, r.response_ms, args.verbose)
+            # Email queueing is best-effort and MUST NOT block monitor status updates.
+            # If notifications are paused (email pause), we skip queueing only.
+            try:
+                if changed and (not paused) and (not is_in_maintenance_window(m)):
+                    queued_emails += queue_advanced_notifications(conn, m, eff_status, prev, eff_details, r.response_ms, args.verbose)
+                if (not paused) and (not is_in_maintenance_window(m)):
+                    queued_emails += queue_legacy_notification(conn, m, eff_status, prev, eff_details, r.response_ms, args.verbose)
+            except Exception as e:
+                if args.verbose:
+                    print(f"[WARN] email queueing failed; continuing. monitor={mid} err={e}")
 
             updated += 1
 

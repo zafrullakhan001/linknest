@@ -163,29 +163,38 @@ def get_smtp_config(conn: sqlite3.Connection) -> Dict[str, Any]:
     return cfg
 
 
-def notifications_paused(conn: sqlite3.Connection) -> bool:
-    # Mirror PHP: global boolean + legacy pause window
-    row = conn.execute("SELECT value FROM settings WHERE key = 'notifications_paused'").fetchone()
-    if row:
-        v = str(row["value"]).strip().lower()
-        if v in ("1", "true", "yes", "on"):
-            return True
+def notifications_paused(conn: sqlite3.Connection, *, default_on_error: bool = True) -> bool:
+    """
+    Mirror PHP: global boolean + legacy pause window.
 
-    rows = conn.execute(
-        "SELECT key, value FROM settings WHERE key IN ('smtp_pause_start', 'smtp_pause_end')"
-    ).fetchall()
-    kv = {str(r["key"]): (None if r["value"] is None else str(r["value"])) for r in rows}
-    start = kv.get("smtp_pause_start")
-    end = kv.get("smtp_pause_end")
-    if not start or not end:
-        return False
+    IMPORTANT: This function is used by both monitor and email workers. If the settings table
+    is missing/locked/unavailable, we default to "paused" (default_on_error=True) to avoid
+    accidentally sending/queueing notifications, while still allowing monitoring status updates.
+    """
     try:
-        start_ts = int(time.mktime(time.strptime(start, "%Y-%m-%d %H:%M:%S")))
-        end_ts = int(time.mktime(time.strptime(end, "%Y-%m-%d %H:%M:%S")))
+        row = conn.execute("SELECT value FROM settings WHERE key = 'notifications_paused'").fetchone()
+        if row:
+            v = str(row["value"]).strip().lower()
+            if v in ("1", "true", "yes", "on"):
+                return True
+
+        rows = conn.execute(
+            "SELECT key, value FROM settings WHERE key IN ('smtp_pause_start', 'smtp_pause_end')"
+        ).fetchall()
+        kv = {str(r["key"]): (None if r["value"] is None else str(r["value"])) for r in rows}
+        start = kv.get("smtp_pause_start")
+        end = kv.get("smtp_pause_end")
+        if not start or not end:
+            return False
+        try:
+            start_ts = int(time.mktime(time.strptime(start, "%Y-%m-%d %H:%M:%S")))
+            end_ts = int(time.mktime(time.strptime(end, "%Y-%m-%d %H:%M:%S")))
+        except Exception:
+            return False
+        t = now_ts()
+        return start_ts <= t <= end_ts
     except Exception:
-        return False
-    t = now_ts()
-    return start_ts <= t <= end_ts
+        return bool(default_on_error)
 
 
 def is_in_maintenance_window(monitor_row: sqlite3.Row) -> bool:
