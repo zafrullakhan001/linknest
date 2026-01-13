@@ -2307,7 +2307,10 @@ body {
 
 /* Ensure tiles stay visible after animation completes */
 .linknest-tile-animated[class*="tile-anim-"] {
-  animation-fill-mode: forwards !important;
+  /* "both" = backwards + forwards.
+     Backwards prevents a visual snap/jump at the end of animation-delay by
+     applying the 0% keyframe styles during the delay. */
+  animation-fill-mode: both !important;
 }
 
 

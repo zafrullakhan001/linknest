@@ -478,6 +478,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
     animationDelay: `${animationDelay}ms`,
   };
 
+  const tileAnimatedClass = animationClass ? 'linknest-tile-animated' : '';
+
   return (
     <div
       style={style}
@@ -491,7 +493,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
         }
       }}
       className={`
-        linknest-tile linknest-tile-animated ${animationClass} group relative rounded-xl border border-slate-200 dark:border-slate-700/50
+        linknest-tile ${tileAnimatedClass} ${animationClass} group relative rounded-xl border border-slate-200 dark:border-slate-700/50
         hover:border-brand-300 dark:hover:border-brand-500/50
         transition-all duration-200 
         flex flex-col h-full min-h-[140px] cursor-pointer
@@ -3743,6 +3745,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                   const decorationClass = getTileDecorationClass(currentDecoration);
                   const fullAnimationClass = `${animationClass} ${decorationClass}`.trim();
                   const animationDelay = (linkIndex * 50);
+                  const tileAnimatedClass = animationClass ? 'linknest-tile-animated' : '';
 
                   // Get health check result for this link
                   const healthResult = linkHealthResults.get(link.id);
@@ -3753,7 +3756,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                   return (
                     <div
                       key={link.id}
-                      className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} linknest-tile-animated overflow-hidden`}
+                      className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} ${tileAnimatedClass} overflow-hidden`}
                       style={{ animationDelay: `${animationDelay}ms` }}
                       onClick={(e) => {
                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
@@ -4073,11 +4076,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
                   const decorationClass = getTileDecorationClass(currentDecoration);
                   const fullAnimationClass = `${animationClass} ${decorationClass}`.trim();
                   const animationDelay = (linkIndex * 50);
+                  const tileAnimatedClass = animationClass ? 'linknest-tile-animated' : '';
 
                   return (
                     <div
                       key={link.id}
-                      className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-brand-300 dark:hover:border-brand-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} linknest-tile-animated`}
+                      className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-brand-300 dark:hover:border-brand-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} ${tileAnimatedClass}`}
                       style={{ animationDelay: `${animationDelay}ms` }}
                       onClick={(e) => {
                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
@@ -4305,6 +4309,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                     const decorationClass = getTileDecorationClass(currentDecoration);
                     const fullAnimationClass = `${animationClass} ${decorationClass}`.trim();
                     const animationDelay = (linkIndex * 50);
+                  const tileAnimatedClass = animationClass ? 'linknest-tile-animated' : '';
 
                     // Get health check result for this link
                     const healthResult = linkHealthResults.get(link.id);
@@ -4315,7 +4320,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                     return (
                       <div
                         key={link.id}
-                        className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} linknest-tile-animated overflow-hidden`}
+                        className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} ${tileAnimatedClass} overflow-hidden`}
                         style={{ animationDelay: `${animationDelay}ms` }}
                         onClick={(e) => {
                           // If Ctrl/Cmd key is held, always open in default browser (override configured browser)

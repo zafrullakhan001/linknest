@@ -828,7 +828,15 @@ export const MonitoringDashboard: React.FC = () => {
 
     const animationClass = getTileAnimationClass(animation);
     const decorationClass = getTileDecorationClass(decoration);
-    const fullAnimClass = useMemo(() => `${animationClass} ${decorationClass} linknest-tile-animated`.trim(), [animationClass, decorationClass]);
+    // Only apply `linknest-tile-animated` when an actual tile animation is selected.
+    // If animation is "none", `getTileAnimationClass` returns "", and applying
+    // `linknest-tile-animated` would incorrectly keep tiles at opacity: 0.
+    const fullAnimClass = useMemo(() => {
+        const parts: string[] = [];
+        if (animationClass) parts.push('linknest-tile-animated', animationClass);
+        if (decorationClass) parts.push(decorationClass);
+        return parts.join(' ');
+    }, [animationClass, decorationClass]);
 
     const content = (
         <>
