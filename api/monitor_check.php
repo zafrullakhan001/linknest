@@ -226,8 +226,9 @@ function performMonitorCheck($monitor) {
                 error_log("[EMAIL] Triggering DOWN notification for monitor {$monitor['id']} - Previous status: " . ($prevStatus ?? 'null/unknown') . ", Current: $status");
                 sendNotification($monitor, "DOWN: {$monitor['name']} is unreachable. Error: $details", 'down', $responseTime, $now);
             } 
-            // Send UP notification when status changes from 'down' to 'up'
-            elseif ($normalizedPrevStatus === 'down' && $normalizedStatus === 'up') {
+            // Send UP notification when status changes from a "not up" state back to UP
+            // WARNING is a down-like transitional state (below threshold), so treat WARNING->UP as recovery too.
+            elseif (($normalizedPrevStatus === 'down' || $normalizedPrevStatus === 'warning') && $normalizedStatus === 'up') {
                 error_log("[EMAIL] Triggering UP notification for monitor {$monitor['id']} - Previous: " . ($prevStatus ?? 'null') . ", Current: $status");
                 sendNotification($monitor, "UP: {$monitor['name']} is back online.", 'up', $responseTime, $now);
             } else {
@@ -515,11 +516,12 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
         $triggersToCheck[] = 'both';
         error_log("[EMAIL] Status changed to DOWN - checking 'down' and 'both' triggers");
     } 
-    // Send notification when status changes from 'down' to 'up'
-    elseif ($newStatus === 'up' && $normalizedPrevStatus === 'down') {
+    // Send notification when status changes from a "not up" state to 'up'
+    // WARNING is a down-like transitional state (below threshold), so treat WARNING->UP as recovery too.
+    elseif ($newStatus === 'up' && ($normalizedPrevStatus === 'down' || $normalizedPrevStatus === 'warning')) {
         $triggersToCheck[] = 'up';
         $triggersToCheck[] = 'both';
-        error_log("[EMAIL] Status changed from DOWN to UP - checking 'up' and 'both' triggers");
+        error_log("[EMAIL] Status changed from DOWN/WARNING to UP - checking 'up' and 'both' triggers");
     } else {
         error_log("[EMAIL] Status change not triggering notifications - prev: " . ($normalizedPrevStatus ?? 'null') . ", new: $newStatus");
     }
