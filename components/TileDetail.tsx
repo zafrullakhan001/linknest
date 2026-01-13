@@ -305,10 +305,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     useEffect(() => {
         if (linkSearchTerm) {
             const allLinks = editTabs.flatMap(tab => tab.sections.flatMap(section => section.links));
-            const firstMatch = allLinks.find(link =>
-                link.label.toLowerCase().includes(linkSearchTerm.toLowerCase()) ||
-                link.url.toLowerCase().includes(linkSearchTerm.toLowerCase())
+            const allRichText = editTabs.flatMap(tab => tab.sections.flatMap(section => section.richTextContent || []));
+
+            const firstLinkMatch = allLinks.find(link =>
+                link.label.toLowerCase().includes(linkSearchTerm.toLowerCase())
             );
+
+            const firstRichTextMatch = allRichText.find(rt =>
+                rt.content.toLowerCase().includes(linkSearchTerm.toLowerCase())
+            );
+
+            // Prioritize link match if both exist, or use whichever comes first in the document would be better but let's just pick one
+            const firstMatch = firstLinkMatch || firstRichTextMatch;
             if (firstMatch) {
                 setTimeout(() => {
                     const element = document.getElementById(`link-${firstMatch.id}`);
@@ -4173,36 +4181,44 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             if (item.itemType === 'rich-text') {
                                                                                 const richText = item;
                                                                                 const isEditing = editingRichTextId[section.id] === richText.id;
+                                                                                const matchesSearch = linkSearchTerm
+                                                                                    ? richText.content.toLowerCase().includes(linkSearchTerm.toLowerCase())
+                                                                                    : true;
+
                                                                                 return (
-                                                                                    <RichTextContentItem
+                                                                                    <div
                                                                                         key={richText.id}
-                                                                                        content={richText}
-                                                                                        sectionId={section.id}
-                                                                                        tabId={tab.id}
-                                                                                        onUpdate={(id, content) => handleUpdateRichText(tab.id, section.id, id, content)}
-                                                                                        onDelete={(id) => handleDeleteRichText(tab.id, section.id, id)}
-                                                                                        onMoveUp={() => handleMoveItem(tab.id, section.id, richText.id, 'up')}
-                                                                                        onMoveDown={() => handleMoveItem(tab.id, section.id, richText.id, 'down')}
-                                                                                        canMoveUp={!isFirst}
-                                                                                        canMoveDown={!isLast}
-                                                                                        isEditing={isEditing}
-                                                                                        onEdit={() => setEditingRichTextId(prev => ({ ...prev, [section.id]: richText.id }))}
-                                                                                        onCancel={() => setEditingRichTextId(prev => ({ ...prev, [section.id]: null }))}
-                                                                                        onSave={() => setEditingRichTextId(prev => ({ ...prev, [section.id]: null }))}
-                                                                                        onClone={() => handleCloneRichText(tab.id, section.id, richText.id)}
-                                                                                        onSchedule={() => setSchedulingDialogRichText({ tabId: tab.id, sectionId: section.id, richTextId: richText.id })}
-                                                                                        onVisibilityChange={(visibility) => handleUpdateRichTextVisibility(tab.id, section.id, richText.id, visibility)}
-                                                                                        visibility={richText.visibility || 'public'}
-                                                                                        visibleFrom={richText.visibleFrom}
-                                                                                        expiresAt={richText.expiresAt}
-                                                                                    />
+                                                                                        id={`link-${richText.id}`} // Using link- prefix for scroll compatibility
+                                                                                        className={`transition-opacity duration-200 ${matchesSearch ? 'opacity-100' : 'opacity-40'}`}
+                                                                                    >
+                                                                                        <RichTextContentItem
+                                                                                            content={richText}
+                                                                                            sectionId={section.id}
+                                                                                            tabId={tab.id}
+                                                                                            onUpdate={(id, content) => handleUpdateRichText(tab.id, section.id, id, content)}
+                                                                                            onDelete={(id) => handleDeleteRichText(tab.id, section.id, id)}
+                                                                                            onMoveUp={() => handleMoveItem(tab.id, section.id, richText.id, 'up')}
+                                                                                            onMoveDown={() => handleMoveItem(tab.id, section.id, richText.id, 'down')}
+                                                                                            canMoveUp={!isFirst}
+                                                                                            canMoveDown={!isLast}
+                                                                                            isEditing={isEditing}
+                                                                                            onEdit={() => setEditingRichTextId(prev => ({ ...prev, [section.id]: richText.id }))}
+                                                                                            onCancel={() => setEditingRichTextId(prev => ({ ...prev, [section.id]: null }))}
+                                                                                            onSave={() => setEditingRichTextId(prev => ({ ...prev, [section.id]: null }))}
+                                                                                            onClone={() => handleCloneRichText(tab.id, section.id, richText.id)}
+                                                                                            onSchedule={() => setSchedulingDialogRichText({ tabId: tab.id, sectionId: section.id, richTextId: richText.id })}
+                                                                                            onVisibilityChange={(visibility) => handleUpdateRichTextVisibility(tab.id, section.id, richText.id, visibility)}
+                                                                                            visibility={richText.visibility || 'public'}
+                                                                                            visibleFrom={richText.visibleFrom}
+                                                                                            expiresAt={richText.expiresAt}
+                                                                                        />
+                                                                                    </div>
                                                                                 );
                                                                             }
 
                                                                             const link = item as Link;
                                                                             const matchesSearch = linkSearchTerm
-                                                                                ? link.label.toLowerCase().includes(linkSearchTerm.toLowerCase()) ||
-                                                                                link.url.toLowerCase().includes(linkSearchTerm.toLowerCase())
+                                                                                ? link.label.toLowerCase().includes(linkSearchTerm.toLowerCase())
                                                                                 : true;
                                                                             const isHovered = hoveredLinkId === link.id;
 

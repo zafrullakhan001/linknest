@@ -469,7 +469,26 @@ const SortableTile: React.FC<SortableTileProps> = ({
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
 
   const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
-  const linkCount = tile.isHyperlink ? 0 : (tile.sections?.reduce((acc, section) => acc + section.links.length, 0) || 0);
+  const linkCount = tile.isHyperlink ? 0 : (() => {
+    const uniqueLinks = new Set<string>();
+    const processLink = (link: any) => {
+      const key = `${(link.label || '').toLowerCase()}|${(link.url || '').toLowerCase()}`;
+      uniqueLinks.add(key);
+    };
+
+    if (tile.tabs && tile.tabs.length > 0) {
+      tile.tabs.forEach(tab => {
+        tab.sections?.forEach(section => {
+          section.links?.forEach(processLink);
+        });
+      });
+    } else {
+      tile.sections?.forEach(section => {
+        section.links?.forEach(processLink);
+      });
+    }
+    return uniqueLinks.size;
+  })();
   const currentCategory = tile.group || 'General';
 
   const animationDelay = (groupIndex * 80) + (tileIndex * 50);
@@ -864,15 +883,15 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const getFallbackTab = useCallback((): TabType | null => {
     const candidates: TabType[] = isAuthenticated
       ? ([
-          'public',
-          'favorites',
-          'private',
-          'scheduled',
-          'expired',
-          'archive',
-          'recycle-bin',
-          ...(isAuthenticated ? (['monitoring'] as TabType[]) : [])
-        ] as TabType[])
+        'public',
+        'favorites',
+        'private',
+        'scheduled',
+        'expired',
+        'archive',
+        'recycle-bin',
+        ...(isAuthenticated ? (['monitoring'] as TabType[]) : [])
+      ] as TabType[])
       : (['public', 'public-favorites'] as TabType[]);
 
     for (const c of candidates) {
@@ -1847,32 +1866,77 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
     const searchLower = searchTerm.toLowerCase();
 
-    // Global search: check title, description, group, section titles, link labels, and link URLs
+    // Global search: check title, description, tab titles, section titles, link labels, link URLs, notes, and tooltips
     const filtered = filteredTiles.filter(t => {
-      // Check tile-level properties
+      // Check tile-level properties (but NOT the group/category name to avoid irrelevant results when searching)
       if (
         t.title.toLowerCase().includes(searchLower) ||
-        t.description.toLowerCase().includes(searchLower) ||
-        (t.group || '').toLowerCase().includes(searchLower)
+        t.description.toLowerCase().includes(searchLower)
       ) {
         return true;
       }
 
-      // Check sections and links within the tile
+      // Check tabs, sections and links within the tile
+      const allSections = [
+        ...(t.sections || []),
+        ...(t.tabs?.flatMap(tab => {
+          // Also match tab title
+          if (tab.title.toLowerCase().includes(searchLower)) return tab.sections; // If tab matches, we should probably return true for the tile
+          return tab.sections;
+        }) || [])
+      ];
+
+      // A better way to check tabs/sections/links comprehensively
+
+      // 1. Check Tabs
+      if (t.tabs && t.tabs.length > 0) {
+        for (const tab of t.tabs) {
+          if (tab.title.toLowerCase().includes(searchLower)) return true;
+
+          if (tab.sections && tab.sections.length > 0) {
+            for (const section of tab.sections) {
+              if (section.title.toLowerCase().includes(searchLower)) return true;
+
+              if (section.links && section.links.length > 0) {
+                for (const link of section.links) {
+                  if (
+                    link.label.toLowerCase().includes(searchLower)
+                  ) {
+                    return true;
+                  }
+                }
+              }
+
+              if (section.richTextContent && section.richTextContent.length > 0) {
+                for (const rt of section.richTextContent) {
+                  if (rt.content.toLowerCase().includes(searchLower)) {
+                    return true;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // 2. Check Sections (backward compatibility)
       if (t.sections && t.sections.length > 0) {
         for (const section of t.sections) {
-          // Check section title
-          if (section.title.toLowerCase().includes(searchLower)) {
-            return true;
-          }
+          if (section.title.toLowerCase().includes(searchLower)) return true;
 
-          // Check links in this section
           if (section.links && section.links.length > 0) {
             for (const link of section.links) {
               if (
-                link.label.toLowerCase().includes(searchLower) ||
-                link.url.toLowerCase().includes(searchLower)
+                link.label.toLowerCase().includes(searchLower)
               ) {
+                return true;
+              }
+            }
+          }
+
+          if (section.richTextContent && section.richTextContent.length > 0) {
+            for (const rt of section.richTextContent) {
+              if (rt.content.toLowerCase().includes(searchLower)) {
                 return true;
               }
             }
@@ -3611,7 +3675,27 @@ export const TileGrid: React.FC<TileGridProps> = ({
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-violet-500"></div>
-            <span>{Object.values(groupedTiles).flat().reduce((acc: number, t: Tile) => acc + (t.sections?.reduce((s: number, sec: LinkSection) => s + sec.links.length, 0) || 0), 0)} Links</span>
+            <span>{Object.values(groupedTiles).flat().reduce((acc: number, t: Tile) => {
+              if (t.isHyperlink) return acc;
+              const uniqueLinks = new Set<string>();
+              const processLink = (link: any) => {
+                const key = `${(link.label || '').toLowerCase()}|${(link.url || '').toLowerCase()}`;
+                uniqueLinks.add(key);
+              };
+
+              if (t.tabs && t.tabs.length > 0) {
+                t.tabs.forEach(tab => {
+                  tab.sections?.forEach(section => {
+                    section.links?.forEach(processLink);
+                  });
+                });
+              } else {
+                t.sections?.forEach(section => {
+                  section.links?.forEach(processLink);
+                });
+              }
+              return acc + uniqueLinks.size;
+            }, 0)} Links</span>
           </div>
         </div>
       )}
@@ -4006,7 +4090,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       {
         activeTab !== 'monitoring' && searchTerm.trim() && (() => {
           const searchLower = searchTerm.toLowerCase();
-          const matchingLinks: Array<{
+          type MatchingLink = {
             id: string;
             label: string;
             url: string;
@@ -4020,38 +4104,62 @@ export const TileGrid: React.FC<TileGridProps> = ({
               themeColor: string;
               browser?: string | null;
             };
-          }> = [];
+          };
 
-          // Collect all links that match the search term
+          // Collect all links that match the search term across both tabs and sections
+          // Use a Map to ensure unique links based on label and URL
+          const uniqueLinksMap = new Map<string, MatchingLink>();
+
           Object.values(groupedTiles).forEach((groupTiles: Tile[]) => {
             groupTiles.forEach(tile => {
-              tile.sections?.forEach(section => {
-                section.links?.forEach(link => {
-                  if (
-                    link.label.toLowerCase().includes(searchLower) ||
-                    link.url.toLowerCase().includes(searchLower)
-                  ) {
-                    matchingLinks.push({
-                      id: link.id,
-                      label: link.label,
-                      url: link.url,
-                      icon: link.icon,
-                      browser: link.browser,
-                      health: link.health,
-                      tile: {
-                        id: tile.id,
-                        title: tile.title,
-                        emoji: tile.emoji || '✨',
-                        themeColor: tile.themeColor || 'blue',
-                        browser: tile.browser
-                      }
-                    });
+              // Helper to process a list of sections
+              const processSections = (sections: LinkSection[]) => {
+                sections.forEach(section => {
+                  section.links?.forEach(link => {
+                    const uniqueKey = `${link.label.toLowerCase()}|${link.url.toLowerCase()}`;
+
+                    // Only process/add if we haven't seen this specific link yet
+                    if (
+                      !uniqueLinksMap.has(uniqueKey) &&
+                      (link.label.toLowerCase().includes(searchLower))
+                    ) {
+                      uniqueLinksMap.set(uniqueKey, {
+                        id: link.id,
+                        label: link.label,
+                        url: link.url,
+                        icon: link.icon,
+                        browser: link.browser,
+                        health: link.health,
+                        tile: {
+                          id: tile.id,
+                          title: tile.title,
+                          emoji: tile.emoji || '✨',
+                          themeColor: tile.themeColor || 'blue',
+                          browser: tile.browser
+                        }
+                      });
+                    }
+                  });
+                });
+              };
+
+              // Process deprecated sections
+              if (tile.sections) {
+                processSections(tile.sections);
+              }
+              // Process sections within tabs
+              if (tile.tabs) {
+                tile.tabs.forEach(tab => {
+                  if (tab.sections) {
+                    processSections(tab.sections);
                   }
                 });
-              });
+              }
             });
           });
 
+          // Convert back to array
+          const matchingLinks = Array.from(uniqueLinksMap.values());
           if (matchingLinks.length === 0) return null;
 
           return (
@@ -4309,7 +4417,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                     const decorationClass = getTileDecorationClass(currentDecoration);
                     const fullAnimationClass = `${animationClass} ${decorationClass}`.trim();
                     const animationDelay = (linkIndex * 50);
-                  const tileAnimatedClass = animationClass ? 'linknest-tile-animated' : '';
+                    const tileAnimatedClass = animationClass ? 'linknest-tile-animated' : '';
 
                     // Get health check result for this link
                     const healthResult = linkHealthResults.get(link.id);
