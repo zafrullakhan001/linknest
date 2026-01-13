@@ -22,6 +22,7 @@ from linknest_worker_lib import (
     DEFAULT_DB_PATH,
     day_of_week_active,
     ensure_outbox_schema,
+    ensure_monitors_schema,
     get_smtp_config,
     is_in_maintenance_window,
     normalize_email_list,
@@ -79,18 +80,37 @@ def _get_dedupe_window_seconds(conn) -> int:
             return 0
     return max(0, _get_int_setting(conn, "email_dedupe_window_seconds", 0))
 
-def _should_suppress_duplicate(conn, *, monitor_id: int, status_trigger: str, subject: str, recipients: Sequence[str], window_seconds: int = 300) -> bool:
+def _should_suppress_duplicate(
+    conn,
+    *,
+    monitor_id: int,
+    rule_id: Optional[int],
+    status_trigger: str,
+    subject: str,
+    recipients: Sequence[str],
+    window_seconds: int = 300,
+) -> bool:
     """
     Basic spam protection:
-    If any recipient already has a SUCCESS log with same monitor_id + trigger + subject
+    If any recipient already has a SUCCESS log with same monitor_id + rule_id + trigger + subject
     within the last window, suppress sending this message.
+
+    Important: include rule_id so multiple *different* rules can fire even if they produce the same
+    subject/recipients (users may intentionally create overlapping rules).
     """
     if int(window_seconds) <= 0:
         return False
     since = now_ts() - int(window_seconds)
     for email in recipients:
+        rule_clause = "AND rule_id IS NULL"
+        params: Tuple[object, ...]
+        if rule_id is not None:
+            rule_clause = "AND rule_id = ?"
+            params = (int(monitor_id), str(status_trigger), str(subject), str(email), int(since), int(rule_id))
+        else:
+            params = (int(monitor_id), str(status_trigger), str(subject), str(email), int(since))
         row = conn.execute(
-            """
+            f"""
             SELECT 1
             FROM monitor_notification_logs
             WHERE monitor_id = ?
@@ -99,9 +119,10 @@ def _should_suppress_duplicate(conn, *, monitor_id: int, status_trigger: str, su
               AND recipient_email = ?
               AND success = 1
               AND sent_at >= ?
+              {rule_clause}
             LIMIT 1
             """,
-            (int(monitor_id), str(status_trigger), str(subject), str(email), int(since)),
+            params,
         ).fetchone()
         if row:
             return True
@@ -117,6 +138,7 @@ def main() -> int:
 
     conn = open_db(db_path)
     ensure_outbox_schema(conn)
+    ensure_monitors_schema(conn)
     smtp_cfg = get_smtp_config(conn)
     dedupe_window_seconds = _get_dedupe_window_seconds(conn)
 
@@ -200,6 +222,18 @@ def main() -> int:
                     continue
 
                 # Legacy: if user disabled legacy notifications after it was queued, suppress.
+                if rule_id is None:
+                    try:
+                        if int(m["legacy_email_disabled"] or 0) == 1:
+                            conn.execute(
+                                "UPDATE email_outbox SET sent_at = ?, success = 1, last_error = ? WHERE id = ?",
+                                (now_ts(), "suppressed: legacy notifications disabled (rule-based only)", outbox_id),
+                            )
+                            continue
+                    except Exception:
+                        # Column may not exist; fall back to email_notification guard below.
+                        pass
+
                 if rule_id is None and int(m["email_notification"] or 0) != 1:
                     conn.execute(
                         "UPDATE email_outbox SET sent_at = ?, success = 1, last_error = ? WHERE id = ?",
@@ -240,6 +274,7 @@ def main() -> int:
             if monitor_id is not None and _should_suppress_duplicate(
                 conn,
                 monitor_id=int(monitor_id),
+                rule_id=(int(rule_id) if rule_id is not None else None),
                 status_trigger=status_trigger,
                 subject=subject,
                 recipients=all_rcpt,

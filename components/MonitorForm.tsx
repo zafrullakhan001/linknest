@@ -155,6 +155,8 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
     const [error, setError] = useState<string | null>(null);
     const [showPresets, setShowPresets] = useState(!monitor && name === '');
     const [activeTab, setActiveTab] = useState<'settings' | 'notifications' | 'logs'>('settings');
+    const [pendingSubmitAfterTabSwitch, setPendingSubmitAfterTabSwitch] = useState(false);
+    const monitorFormRef = useRef<HTMLFormElement>(null);
 
     // Permissions (admin only)
     const [usersList, setUsersList] = useState<UserListItem[]>([]);
@@ -192,6 +194,21 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [onCancel]);
+
+    // If user clicks "Update Monitor" from another tab, switch to Settings and submit.
+    useEffect(() => {
+        if (!pendingSubmitAfterTabSwitch) return;
+        if (activeTab !== 'settings') return;
+        // Wait a tick so the form is mounted.
+        const t = window.setTimeout(() => {
+            const form = monitorFormRef.current || (document.getElementById('monitor-form') as HTMLFormElement | null);
+            if (form) {
+                form.requestSubmit();
+            }
+            setPendingSubmitAfterTabSwitch(false);
+        }, 0);
+        return () => window.clearTimeout(t);
+    }, [pendingSubmitAfterTabSwitch, activeTab]);
 
     // Load user list (admin only, for monitor visibility assignments)
     useEffect(() => {
@@ -308,6 +325,17 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
         } finally {
             setIsSubmitting(false);
         }
+    };
+
+    const handleFooterSaveClick = () => {
+        if (isSubmitting) return;
+        if (activeTab !== 'settings') {
+            setPendingSubmitAfterTabSwitch(true);
+            setActiveTab('settings');
+            return;
+        }
+        const form = monitorFormRef.current || (document.getElementById('monitor-form') as HTMLFormElement | null);
+        form?.requestSubmit();
     };
 
     const FieldHelp: React.FC<{ text: string }> = ({ text }) => (
@@ -448,7 +476,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                         </div>
                     )}
 
-                    <form id="monitor-form" onSubmit={handleSubmit} className="space-y-5">
+                    <form ref={monitorFormRef} id="monitor-form" onSubmit={handleSubmit} className="space-y-5">
                         {/* Basic Information Section */}
                         <div className="space-y-4">
                             <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide border-b border-gray-200 pb-2">
@@ -912,26 +940,24 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                 </div>
 
                 {/* Footer with Actions */}
-                {activeTab === 'settings' && (
-                    <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3">
-                        <button
-                            type="button"
-                            onClick={onCancel}
-                            className="px-5 py-2 text-gray-700 hover:text-gray-900 transition-colors rounded-lg hover:bg-gray-100 border border-gray-300"
-                            disabled={isSubmitting}
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            form="monitor-form"
-                            disabled={isSubmitting}
-                            className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-                        >
-                            {isSubmitting ? 'Saving...' : monitor ? 'Update Monitor' : 'Create Monitor'}
-                        </button>
-                    </div>
-                )}
+                <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3">
+                    <button
+                        type="button"
+                        onClick={onCancel}
+                        className="px-5 py-2 text-gray-700 hover:text-gray-900 transition-colors rounded-lg hover:bg-gray-100 border border-gray-300"
+                        disabled={isSubmitting}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleFooterSaveClick}
+                        disabled={isSubmitting}
+                        className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                    >
+                        {isSubmitting ? 'Saving...' : monitor ? 'Update Monitor' : 'Create Monitor'}
+                    </button>
+                </div>
             </div>
         </div>
     );

@@ -945,6 +945,7 @@ function initDatabase() {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             monitor_id INTEGER NOT NULL,
             name TEXT,
+            sort_order INTEGER DEFAULT 0,
             status_trigger TEXT NOT NULL, -- up, down, or both
             time_window_start TEXT, -- HH:MM format (24-hour), null means always active
             time_window_end TEXT, -- HH:MM format (24-hour), null means always active
@@ -967,9 +968,39 @@ function initDatabase() {
             @$db->exec('ALTER TABLE monitor_notification_rules ADD COLUMN cc_emails TEXT');
         } catch (PDOException $e) { /* ignore if column already exists */ }
         try {
+            @$db->exec('ALTER TABLE monitor_notification_rules ADD COLUMN sort_order INTEGER DEFAULT 0');
+        } catch (PDOException $e) { /* ignore if column already exists */ }
+        try {
             // Backfill empty names to a sensible default
             @$db->exec("UPDATE monitor_notification_rules SET name = 'Notification Rule' WHERE name IS NULL OR TRIM(name) = ''");
         } catch (PDOException $e) { /* ignore */ }
+
+        // One-time backfill for sort_order to preserve previous UI ordering (created_at DESC).
+        // We do it once and store a flag in settings to avoid doing this work every request.
+        try {
+            $migrationCheck = $db->query("SELECT value FROM settings WHERE key = 'monitor_notification_rules_sort_migrated'")->fetch();
+            if (!$migrationCheck) {
+                $stmt = $db->query("SELECT id, monitor_id FROM monitor_notification_rules ORDER BY monitor_id ASC, created_at DESC, id DESC");
+                $all = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+                $curMonitor = null;
+                $pos = 0;
+                // Only set sort_order for rows that haven't been assigned yet.
+                // This prevents accidentally overwriting user-defined ordering if this migration runs again.
+                $upd = $db->prepare("UPDATE monitor_notification_rules SET sort_order = ? WHERE id = ? AND COALESCE(sort_order, 0) = 0");
+                foreach ($all as $r) {
+                    $mid = (int)($r['monitor_id'] ?? 0);
+                    if ($curMonitor === null || $curMonitor !== $mid) {
+                        $curMonitor = $mid;
+                        $pos = 0;
+                    }
+                    $pos++;
+                    $upd->execute([$pos, (int)$r['id']]);
+                }
+                $db->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('monitor_notification_rules_sort_migrated', '1')");
+            }
+        } catch (Exception $e) {
+            // Ignore backfill issues; API/UI will still function using created_at ordering.
+        }
 
         // Create monitor_notification_recipients table
         $db->exec('CREATE TABLE IF NOT EXISTS monitor_notification_recipients (
@@ -1074,6 +1105,7 @@ function initDatabase() {
         try {
             $db->exec('CREATE INDEX IF NOT EXISTS idx_notification_rules_monitor_id ON monitor_notification_rules(monitor_id)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_notification_rules_enabled ON monitor_notification_rules(is_enabled)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_notification_rules_monitor_sort ON monitor_notification_rules(monitor_id, sort_order)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_notification_recipients_rule_id ON monitor_notification_recipients(rule_id)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_notification_logs_rule_id ON monitor_notification_logs(rule_id)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_notification_logs_monitor_id ON monitor_notification_logs(monitor_id)');
@@ -1463,6 +1495,10 @@ function sendJSON($data, $statusCode = 200) {
     
     http_response_code($statusCode);
     header('Content-Type: application/json; charset=utf-8');
+    // Prevent stale API responses due to HTTP caching (important for rule reordering, etc.)
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+    header('Expires: 0');
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }

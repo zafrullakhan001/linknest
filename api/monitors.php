@@ -144,8 +144,8 @@ function handleExportMonitorsBundle() {
         $stmt->execute([$monitorId]);
         $monitorLogs = $stmt->fetchAll();
 
-        // Notification rules + recipients
-        $stmt = $db->prepare('SELECT * FROM monitor_notification_rules WHERE monitor_id = ? ORDER BY created_at DESC');
+        // Notification rules + recipients (preserve custom ordering)
+        $stmt = $db->prepare('SELECT * FROM monitor_notification_rules WHERE monitor_id = ? ORDER BY COALESCE(sort_order, 0) ASC, created_at DESC, id DESC');
         $stmt->execute([$monitorId]);
         $rules = $stmt->fetchAll();
         $rulesOut = [];
@@ -215,14 +215,14 @@ function handleImportMonitorsBundle() {
             legacy_email_subject_template, legacy_email_body_template,
             last_checked_at, last_status, last_response_time,
             created_at, updated_at, tab_name, group_name, maintenance_start, maintenance_end
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
 
         $stmtInsertMonitorLog = $db->prepare('INSERT INTO monitor_logs (monitor_id, status, response_time, details, checked_at) VALUES (?, ?, ?, ?, ?)');
 
         $stmtInsertRule = $db->prepare('INSERT INTO monitor_notification_rules (
-            id, monitor_id, name, status_trigger, time_window_start, time_window_end, days_of_week,
+            id, monitor_id, name, sort_order, status_trigger, time_window_start, time_window_end, days_of_week,
             subject_template, body_template, from_name, from_email, cc_emails, is_enabled, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
 
         $stmtInsertRecipient = $db->prepare('INSERT INTO monitor_notification_recipients (rule_id, email, created_at) VALUES (?, ?, ?)');
 
@@ -341,6 +341,7 @@ function handleImportMonitorsBundle() {
                         $ruleId,
                         $monitorId,
                         $r['name'] ?? 'Notification Rule',
+                        isset($r['sort_order']) ? (int)$r['sort_order'] : 0,
                         $r['status_trigger'],
                         $r['time_window_start'] ?? null,
                         $r['time_window_end'] ?? null,

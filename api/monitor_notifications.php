@@ -60,7 +60,11 @@ try {
             break;
             
         case 'POST':
-            if ($path === '/' || $path === '') {
+            if (preg_match('/^\/monitor\/(\d+)\/import$/', $path, $matches)) {
+                handleImportNotificationRules($matches[1]);
+            } elseif (preg_match('/^\/rule\/(\d+)\/move$/', $path, $matches)) {
+                handleMoveNotificationRule($matches[1]);
+            } elseif ($path === '/' || $path === '') {
                 handleCreateNotificationRule();
             } else {
                 sendJSON(['error' => 'Invalid endpoint'], 404);
@@ -108,12 +112,15 @@ function handleGetNotificationRules($monitorId) {
     }
     
     // Get all rules for this monitor
-    $stmt = $db->prepare('SELECT * FROM monitor_notification_rules WHERE monitor_id = ? ORDER BY created_at DESC');
+    $stmt = $db->prepare('SELECT * FROM monitor_notification_rules WHERE monitor_id = ? ORDER BY COALESCE(sort_order, 0) ASC, created_at DESC, id DESC');
     $stmt->execute([$monitorId]);
-    $rules = $stmt->fetchAll();
+    $rules = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    // Get recipients for each rule
+    // Get recipients for each rule and ensure sort_order is an integer
     foreach ($rules as &$rule) {
+        // Ensure sort_order is an integer
+        $rule['sort_order'] = isset($rule['sort_order']) ? (int)$rule['sort_order'] : 0;
+        
         $stmt = $db->prepare('SELECT email FROM monitor_notification_recipients WHERE rule_id = ?');
         $stmt->execute([$rule['id']]);
         $recipients = $stmt->fetchAll(PDO::FETCH_COLUMN);
@@ -285,11 +292,17 @@ function handleCreateNotificationRule() {
         $db->beginTransaction();
         
         $now = time();
+        // Append to end of list for this monitor
+        $maxStmt = $db->prepare('SELECT COALESCE(MAX(sort_order), 0) AS m FROM monitor_notification_rules WHERE monitor_id = ?');
+        $maxStmt->execute([$data['monitor_id']]);
+        $maxRow = $maxStmt->fetch(PDO::FETCH_ASSOC);
+        $nextSort = (int)($maxRow['m'] ?? 0) + 1;
+
         $stmt = $db->prepare('INSERT INTO monitor_notification_rules (
-            monitor_id, name, status_trigger, time_window_start, time_window_end, days_of_week,
+            monitor_id, name, sort_order, status_trigger, time_window_start, time_window_end, days_of_week,
             subject_template, body_template, from_name, from_email, cc_emails, is_enabled,
             created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         $daysOfWeek = !empty($data['days_of_week']) 
             ? (is_array($data['days_of_week']) ? implode(',', $data['days_of_week']) : $data['days_of_week'])
@@ -298,6 +311,7 @@ function handleCreateNotificationRule() {
         $stmt->execute([
             $data['monitor_id'],
             $ruleName,
+            $nextSort,
             $data['status_trigger'],
             $data['time_window_start'] ?? null,
             $data['time_window_end'] ?? null,
@@ -499,6 +513,387 @@ function handleDeleteNotificationRule($ruleId) {
         
         sendJSON(['success' => true]);
         
+    } catch (PDOException $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleImportNotificationRules($monitorId) {
+    $data = getJSONInput();
+    $db = getDB();
+
+    // Verify monitor exists
+    $stmt = $db->prepare('SELECT id FROM monitors WHERE id = ?');
+    $stmt->execute([$monitorId]);
+    if (!$stmt->fetch()) {
+        sendJSON(['error' => 'Monitor not found'], 404);
+        return;
+    }
+
+    $replace = !empty($data['replace']) ? true : false;
+    $rules = $data['rules'] ?? null;
+    if (!is_array($rules)) {
+        sendJSON(['error' => 'Invalid payload: rules must be an array'], 400);
+        return;
+    }
+
+    // Reasonable safety limits
+    if (count($rules) > 200) {
+        sendJSON(['error' => 'Too many rules in import (max 200)'], 400);
+        return;
+    }
+
+    $now = time();
+    $imported = 0;
+
+    try {
+        $db->beginTransaction();
+
+        if ($replace) {
+            // Delete existing recipients and rules for this monitor
+            $stmt = $db->prepare('SELECT id FROM monitor_notification_rules WHERE monitor_id = ?');
+            $stmt->execute([$monitorId]);
+            $existingRuleIds = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            if (!empty($existingRuleIds)) {
+                $delRec = $db->prepare('DELETE FROM monitor_notification_recipients WHERE rule_id = ?');
+                foreach ($existingRuleIds as $rid) {
+                    $delRec->execute([(int)$rid]);
+                }
+            }
+            $delRules = $db->prepare('DELETE FROM monitor_notification_rules WHERE monitor_id = ?');
+            $delRules->execute([$monitorId]);
+        }
+
+        $insertRule = $db->prepare('INSERT INTO monitor_notification_rules (
+            monitor_id, name, sort_order, status_trigger, time_window_start, time_window_end, days_of_week,
+            subject_template, body_template, from_name, from_email, cc_emails, is_enabled,
+            created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+
+        $insertRecipient = $db->prepare('INSERT INTO monitor_notification_recipients (rule_id, email, created_at) VALUES (?, ?, ?)');
+
+        $sort = 0;
+        foreach ($rules as $idx => $r) {
+            if (!is_array($r)) {
+                continue;
+            }
+            $sort++;
+
+            $ruleName = trim((string)($r['name'] ?? ''));
+            if ($ruleName === '') {
+                // allow empty? keep strict to avoid broken rules
+                throw new Exception('Rule name cannot be empty (item #' . ($idx + 1) . ')');
+            }
+
+            $statusTrigger = $r['status_trigger'] ?? null;
+            if (!in_array($statusTrigger, ['up', 'down', 'both'], true)) {
+                throw new Exception('Invalid status_trigger (item #' . ($idx + 1) . ')');
+            }
+
+            // Recipients
+            $recipients = $r['recipients'] ?? [];
+            if (!is_array($recipients) || count($recipients) === 0) {
+                throw new Exception('At least one recipient is required (item #' . ($idx + 1) . ')');
+            }
+            if (count($recipients) > 100) {
+                throw new Exception('Too many recipients (max 100) (item #' . ($idx + 1) . ')');
+            }
+            $recipientsClean = [];
+            foreach ($recipients as $email) {
+                $email = trim((string)$email);
+                if ($email === '') continue;
+                if (!isValidEmail($email)) {
+                    throw new Exception('Invalid recipient email: ' . $email . ' (item #' . ($idx + 1) . ')');
+                }
+                $recipientsClean[] = $email;
+            }
+            if (empty($recipientsClean)) {
+                throw new Exception('At least one valid recipient is required (item #' . ($idx + 1) . ')');
+            }
+
+            // CC
+            $ccEmails = [];
+            $cc = $r['cc'] ?? [];
+            if (is_array($cc)) {
+                foreach ($cc as $email) {
+                    $email = trim((string)$email);
+                    if ($email === '') continue;
+                    if (!isValidEmail($email)) {
+                        throw new Exception('Invalid CC email: ' . $email . ' (item #' . ($idx + 1) . ')');
+                    }
+                    $ccEmails[] = $email;
+                }
+            }
+
+            // Time window (optional)
+            $twStart = $r['time_window_start'] ?? null;
+            $twEnd = $r['time_window_end'] ?? null;
+            if ($twStart !== null && $twStart !== '' && !preg_match('/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/', (string)$twStart)) {
+                throw new Exception('Invalid time_window_start (item #' . ($idx + 1) . ')');
+            }
+            if ($twEnd !== null && $twEnd !== '' && !preg_match('/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/', (string)$twEnd)) {
+                throw new Exception('Invalid time_window_end (item #' . ($idx + 1) . ')');
+            }
+            $twStart = ($twStart === '' ? null : $twStart);
+            $twEnd = ($twEnd === '' ? null : $twEnd);
+
+            // Days of week (optional, allow csv or array)
+            $daysOfWeek = null;
+            if (isset($r['days_of_week']) && $r['days_of_week'] !== null && $r['days_of_week'] !== '') {
+                $days = is_array($r['days_of_week']) ? $r['days_of_week'] : explode(',', (string)$r['days_of_week']);
+                $cleanDays = [];
+                foreach ($days as $day) {
+                    $day = trim((string)$day);
+                    if ($day === '') continue;
+                    if (!is_numeric($day) || (int)$day < 0 || (int)$day > 6) {
+                        throw new Exception('Invalid day_of_week (item #' . ($idx + 1) . ')');
+                    }
+                    $cleanDays[] = (string)((int)$day);
+                }
+                $daysOfWeek = !empty($cleanDays) ? implode(',', $cleanDays) : null;
+            }
+
+            $subjectTpl = (string)($r['subject_template'] ?? '[LinkNest Monitor] {monitor_name} Status: {status}');
+            $bodyTpl = (string)($r['body_template'] ?? "Monitor: {monitor_name}\nStatus: {status}\nTime: {time}\nDetails: {details}");
+            if (trim($subjectTpl) === '' || trim($bodyTpl) === '') {
+                throw new Exception('Subject/body template cannot be empty (item #' . ($idx + 1) . ')');
+            }
+
+            $fromName = isset($r['from_name']) ? (string)$r['from_name'] : null;
+            $fromEmail = isset($r['from_email']) ? (string)$r['from_email'] : null;
+            $fromName = ($fromName !== null && trim($fromName) === '') ? null : $fromName;
+            $fromEmail = ($fromEmail !== null && trim($fromEmail) === '') ? null : $fromEmail;
+            if ($fromEmail !== null && $fromEmail !== '' && !isValidEmail($fromEmail)) {
+                throw new Exception('Invalid from_email (item #' . ($idx + 1) . ')');
+            }
+
+            $isEnabled = isset($r['is_enabled']) ? (int)$r['is_enabled'] : 1;
+            $isEnabled = ($isEnabled === 0) ? 0 : 1;
+
+            $insertRule->execute([
+                (int)$monitorId,
+                $ruleName,
+                $sort,
+                $statusTrigger,
+                $twStart,
+                $twEnd,
+                $daysOfWeek,
+                $subjectTpl,
+                $bodyTpl,
+                $fromName,
+                $fromEmail,
+                !empty($ccEmails) ? implode(',', $ccEmails) : null,
+                $isEnabled,
+                $now,
+                $now
+            ]);
+
+            $ruleId = (int)$db->lastInsertId();
+            foreach ($recipientsClean as $email) {
+                $insertRecipient->execute([$ruleId, $email, $now]);
+            }
+
+            $imported++;
+        }
+
+        $db->commit();
+        sendJSON(['success' => true, 'imported' => $imported, 'replaced' => $replace]);
+    } catch (Exception $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        sendJSON(['error' => 'Import failed: ' . $e->getMessage()], 400);
+    } catch (PDOException $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleMoveNotificationRule($ruleId) {
+    $data = getJSONInput();
+    $direction = strtolower(trim((string)($data['direction'] ?? '')));
+    if (!in_array($direction, ['up', 'down'], true)) {
+        sendJSON(['error' => "Invalid direction. Use 'up' or 'down'."], 400);
+        return;
+    }
+
+    $db = getDB();
+    try {
+        $db->beginTransaction();
+
+        $stmt = $db->prepare('SELECT id, monitor_id, COALESCE(sort_order, 0) AS sort_order FROM monitor_notification_rules WHERE id = ?');
+        $stmt->execute([(int)$ruleId]);
+        $rule = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$rule) {
+            $db->rollBack();
+            sendJSON(['error' => 'Notification rule not found'], 404);
+            return;
+        }
+
+        $monitorId = (int)$rule['monitor_id'];
+
+        // If sort_order wasn't initialized (0), backfill this monitor in legacy order.
+        if ((int)$rule['sort_order'] <= 0) {
+            $q = $db->prepare('SELECT id FROM monitor_notification_rules WHERE monitor_id = ? ORDER BY created_at DESC, id DESC');
+            $q->execute([$monitorId]);
+            $ids = $q->fetchAll(PDO::FETCH_COLUMN);
+            $pos = 0;
+            $upd = $db->prepare('UPDATE monitor_notification_rules SET sort_order = ? WHERE id = ?');
+            foreach ($ids as $rid) {
+                $pos++;
+                $upd->execute([$pos, (int)$rid]);
+            }
+            // Re-fetch
+            $stmt->execute([(int)$ruleId]);
+            $rule = $stmt->fetch(PDO::FETCH_ASSOC);
+        }
+
+        // Get all rules in display order to find adjacent rule
+        $allStmt = $db->prepare('SELECT id, COALESCE(sort_order, 0) AS sort_order FROM monitor_notification_rules WHERE monitor_id = ? ORDER BY COALESCE(sort_order, 0) ASC, created_at DESC, id DESC');
+        $allStmt->execute([$monitorId]);
+        $allRules = $allStmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Debug: log the current order
+        $debugOrder = array_map(function($r) { return ['id' => (int)$r['id'], 'sort_order' => (int)$r['sort_order']]; }, $allRules);
+        error_log('Current rules order: ' . json_encode($debugOrder));
+        
+        // Find current rule index
+        $currentIndex = -1;
+        for ($i = 0; $i < count($allRules); $i++) {
+            if ((int)$allRules[$i]['id'] === (int)$ruleId) {
+                $currentIndex = $i;
+                break;
+            }
+        }
+        
+        if ($currentIndex === -1) {
+            $db->rollBack();
+            sendJSON(['error' => 'Rule not found in list'], 500);
+            return;
+        }
+        
+        // Determine target index
+        $targetIndex = $direction === 'up' ? $currentIndex - 1 : $currentIndex + 1;
+        
+        if ($targetIndex < 0 || $targetIndex >= count($allRules)) {
+            // Already at boundary
+            $db->commit();
+            sendJSON(['success' => true, 'moved' => false]);
+            return;
+        }
+        
+        $currentId = (int)$allRules[$currentIndex]['id'];
+        $currentSort = (int)$allRules[$currentIndex]['sort_order'];
+        $targetId = (int)$allRules[$targetIndex]['id'];
+        $targetSort = (int)$allRules[$targetIndex]['sort_order'];
+        
+        // Calculate new sort_order values for the swap
+        // When moving down: current goes to target's position (higher sort_order)
+        // When moving up: current goes to target's position (lower sort_order)
+        // We always swap: current gets target's position value, target gets current's position value
+        
+        // If both have same sort_order (or 0), assign proper values based on target positions
+        if ($currentSort === $targetSort || $currentSort === 0 || $targetSort === 0) {
+            // Assign based on the positions they should occupy after swap
+            // Current rule moves to targetIndex position, so gets sort_order = targetIndex + 1
+            // Target rule moves to currentIndex position, so gets sort_order = currentIndex + 1
+            $newCurrentSort = $targetIndex + 1;
+            $newTargetSort = $currentIndex + 1;
+        } else {
+            // Both have different non-zero values, just swap them
+            $newCurrentSort = $targetSort;
+            $newTargetSort = $currentSort;
+        }
+        
+        // Update both rules atomically
+        $u1 = $db->prepare('UPDATE monitor_notification_rules SET sort_order = ?, updated_at = ? WHERE id = ?');
+        $result1 = $u1->execute([$newCurrentSort, time(), $currentId]);
+        $rowsAffected1 = $u1->rowCount();
+        $result2 = $u1->execute([$newTargetSort, time(), $targetId]);
+        $rowsAffected2 = $u1->rowCount();
+        
+        if (!$result1 || !$result2) {
+            $db->rollBack();
+            sendJSON(['error' => 'Failed to update sort_order', 'debug' => [
+                'result1' => $result1,
+                'result2' => $result2,
+                'rows1' => $rowsAffected1,
+                'rows2' => $rowsAffected2
+            ]], 500);
+            return;
+        }
+        
+        if ($rowsAffected1 === 0 || $rowsAffected2 === 0) {
+            $db->rollBack();
+            sendJSON(['error' => 'No rows updated', 'debug' => [
+                'rows1' => $rowsAffected1,
+                'rows2' => $rowsAffected2,
+                'currentId' => $currentId,
+                'targetId' => $targetId
+            ]], 500);
+            return;
+        }
+        
+        // Verify the swap by reading back the values
+        $verifyStmt = $db->prepare('SELECT id, sort_order FROM monitor_notification_rules WHERE id IN (?, ?)');
+        $verifyStmt->execute([$currentId, $targetId]);
+        $verified = $verifyStmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Log the swap
+        error_log(sprintf("Move %s: Rule %d (index %d, old sort %d) -> sort_order %d, Rule %d (index %d, old sort %d) -> sort_order %d", 
+            $direction, $currentId, $currentIndex, $currentSort, $newCurrentSort, $targetId, $targetIndex, $targetSort, $newTargetSort));
+        
+        // Log verified values
+        foreach ($verified as $v) {
+            error_log(sprintf("Verified: Rule %d has sort_order %d", $v['id'], $v['sort_order']));
+        }
+
+        $db->commit();
+        
+        // Return updated sort_order values for debugging (use verified values)
+        $verifiedCurrent = null;
+        $verifiedTarget = null;
+        foreach ($verified as $v) {
+            if ((int)$v['id'] === $currentId) {
+                $verifiedCurrent = ['id' => (int)$v['id'], 'sort_order' => (int)$v['sort_order']];
+            } else {
+                $verifiedTarget = ['id' => (int)$v['id'], 'sort_order' => (int)$v['sort_order']];
+            }
+        }
+        
+        // Get all rules again after update to see new order
+        $afterStmt = $db->prepare('SELECT id, COALESCE(sort_order, 0) AS sort_order FROM monitor_notification_rules WHERE monitor_id = ? ORDER BY COALESCE(sort_order, 0) ASC, created_at DESC, id DESC');
+        $afterStmt->execute([$monitorId]);
+        $afterRules = $afterStmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Always return the new order so the UI can update immediately without re-fetching (avoids flicker).
+        $orderAfter = array_map(function($r) { return ['id' => (int)$r['id'], 'sort_order' => (int)$r['sort_order']]; }, $afterRules);
+
+        $response = [
+            'success' => true,
+            'moved' => true,
+            'current_rule' => $verifiedCurrent ?: ['id' => $currentId, 'sort_order' => $newCurrentSort],
+            'target_rule' => $verifiedTarget ?: ['id' => $targetId, 'sort_order' => $newTargetSort],
+            'order_after' => $orderAfter,
+        ];
+
+        // Optional verbose debug (enable with ?debug=1)
+        if (isset($_GET['debug']) && $_GET['debug'] === '1') {
+            $response['debug'] = [
+                'before' => [
+                    'current' => ['id' => $currentId, 'index' => $currentIndex, 'sort_order' => $currentSort],
+                    'target' => ['id' => $targetId, 'index' => $targetIndex, 'sort_order' => $targetSort],
+                    'all_rules' => array_map(function($r) { return ['id' => (int)$r['id'], 'sort_order' => (int)$r['sort_order']]; }, $allRules)
+                ],
+                'after' => [
+                    'current' => ['id' => $currentId, 'sort_order' => $newCurrentSort],
+                    'target' => ['id' => $targetId, 'sort_order' => $newTargetSort],
+                    'verified' => array_map(function($v) { return ['id' => (int)$v['id'], 'sort_order' => (int)$v['sort_order']]; }, $verified),
+                    'all_rules_after' => $orderAfter
+                ]
+            ];
+        }
+
+        sendJSON($response);
     } catch (PDOException $e) {
         if ($db->inTransaction()) $db->rollBack();
         sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);

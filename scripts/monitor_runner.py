@@ -120,7 +120,14 @@ def queue_advanced_notifications(conn, monitor_row, new_status: str, prev_status
 
     placeholders = ",".join(["?"] * len(triggers))
     rules = conn.execute(
-        f"SELECT * FROM monitor_notification_rules WHERE monitor_id = ? AND is_enabled = 1 AND status_trigger IN ({placeholders})",
+        f"""
+        SELECT *
+        FROM monitor_notification_rules
+        WHERE monitor_id = ?
+          AND is_enabled = 1
+          AND status_trigger IN ({placeholders})
+        ORDER BY COALESCE(sort_order, 0) ASC, created_at ASC, id ASC
+        """,
         (int(monitor_row["id"]), *triggers),
     ).fetchall()
 
@@ -175,6 +182,14 @@ def queue_advanced_notifications(conn, monitor_row, new_status: str, prev_status
 
 
 def queue_legacy_notification(conn, monitor_row, new_status: str, prev_status: Optional[str], details: str, response_ms: int, verbose: bool) -> int:
+    # Rule-based only mode (disable legacy emails)
+    try:
+        if int(monitor_row["legacy_email_disabled"] or 0) == 1:
+            return 0
+    except Exception:
+        # Column may not exist on very old DBs; ignore and proceed with legacy logic.
+        pass
+
     if int(monitor_row["email_notification"] or 0) != 1:
         return 0
 

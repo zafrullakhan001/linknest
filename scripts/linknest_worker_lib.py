@@ -79,6 +79,8 @@ def ensure_outbox_schema(conn: sqlite3.Connection) -> None:
 def ensure_monitors_schema(conn: sqlite3.Connection) -> None:
     # Make sure new monitor fields exist (safe to call multiple times).
     # Older DBs may not have these columns/tables yet.
+    # Note: PHP migrations also add these columns; we mirror them here so the
+    # standalone Python workers remain compatible with older databases.
     with contextlib.suppress(Exception):
         conn.execute("ALTER TABLE monitors ADD COLUMN warning_threshold INTEGER DEFAULT 1")
     with contextlib.suppress(Exception):
@@ -87,6 +89,20 @@ def ensure_monitors_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE monitors ADD COLUMN timeout INTEGER")
     with contextlib.suppress(Exception):
         conn.execute("ALTER TABLE monitors ADD COLUMN permissions_mode INTEGER DEFAULT 0")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN legacy_email_disabled INTEGER DEFAULT 0")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN legacy_email_to TEXT")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN legacy_email_cc TEXT")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN legacy_email_from_name TEXT")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN legacy_email_from_email TEXT")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN legacy_email_subject_template TEXT")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN legacy_email_body_template TEXT")
 
     with contextlib.suppress(Exception):
         conn.execute(

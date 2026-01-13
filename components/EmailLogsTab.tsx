@@ -48,6 +48,47 @@ export const EmailLogsTab: React.FC<EmailLogsTabProps> = ({ monitorId }) => {
         return date.toLocaleString();
     };
 
+    const downloadFile = (filename: string, content: BlobPart, mime: string) => {
+        const blob = new Blob([content], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    };
+
+    const toCsv = (rows: string[][]) => {
+        const esc = (v: string) => {
+            const s = (v ?? '').toString();
+            if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+            return s;
+        };
+        return rows.map(r => r.map(esc).join(',')).join('\r\n') + '\r\n';
+    };
+
+    const handleExportCsv = () => {
+        const rows: string[][] = [];
+        rows.push(['id', 'rule_id', 'monitor_id', 'recipient_email', 'status_trigger', 'sent_at', 'subject', 'success', 'error_message']);
+        for (const log of filteredLogs) {
+            rows.push([
+                String(log.id),
+                log.rule_id === null || log.rule_id === undefined ? '' : String(log.rule_id),
+                String(log.monitor_id),
+                String(log.recipient_email || ''),
+                String(log.status_trigger || ''),
+                new Date((log.sent_at || 0) * 1000).toISOString(),
+                String(log.subject || ''),
+                String(log.success ?? ''),
+                String(log.error_message || ''),
+            ]);
+        }
+        const csv = toCsv(rows);
+        downloadFile(`email-logs-monitor-${monitorId}-last-${daysFilter}d.csv`, csv, 'text/csv;charset=utf-8');
+    };
+
     const filteredLogs = logs.filter(log => {
         if (filter === 'success') return log.success === 1;
         if (filter === 'failed') return log.success === 0;
@@ -74,21 +115,31 @@ export const EmailLogsTab: React.FC<EmailLogsTabProps> = ({ monitorId }) => {
                 </div>
                 <div className="flex items-center gap-2">
                     <button
+                        onClick={handleExportCsv}
+                        className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors border border-blue-200"
+                        title="Export logs to CSV"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                    </button>
+                    <button
                         onClick={handleClearLogs}
-                        className="px-4 py-2 text-sm text-red-700 hover:text-red-800 transition-colors rounded-lg hover:bg-red-50 border border-red-200"
+                        className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors border border-red-200"
                         title="Clear email logs"
                     >
-                        Clear Logs
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
                     </button>
                     <button
                         onClick={loadLogs}
-                        className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 transition-colors rounded-lg hover:bg-gray-100 border border-gray-300"
+                        className="p-2 text-gray-700 hover:text-gray-900 transition-colors rounded-lg hover:bg-gray-100 border border-gray-300"
                         title="Refresh logs"
                     >
-                        <svg className="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
-                        Refresh
                     </button>
                 </div>
             </div>

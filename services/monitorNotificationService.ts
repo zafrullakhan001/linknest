@@ -2,6 +2,7 @@ export interface NotificationRule {
     id?: number;
     name: string;
     monitor_id: number;
+    sort_order?: number;
     status_trigger: 'up' | 'down' | 'both';
     time_window_start?: string | null; // HH:MM format
     time_window_end?: string | null; // HH:MM format
@@ -37,7 +38,8 @@ function resolveApiBase(): string {
 const API_BASE = `${resolveApiBase()}/monitor-notifications`;
 
 export async function getNotificationRules(monitorId: number): Promise<NotificationRule[]> {
-    const response = await fetch(`${API_BASE}/monitor/${monitorId}`);
+    // Bust any intermediary/browser caching (important after reordering)
+    const response = await fetch(`${API_BASE}/monitor/${monitorId}?t=${Date.now()}`, { cache: 'no-store' });
     if (!response.ok) {
         let errorMessage = `Failed to fetch notification rules: ${response.statusText}`;
         try {
@@ -112,6 +114,71 @@ export async function deleteNotificationRule(ruleId: number): Promise<void> {
         const error = await response.json();
         throw new Error(error.error || `Failed to delete notification rule: ${response.statusText}`);
     }
+}
+
+export async function importNotificationRules(
+    monitorId: number,
+    payload: { replace?: boolean; rules: Array<Omit<NotificationRule, 'id' | 'monitor_id' | 'created_at' | 'updated_at'> & { recipients?: string[]; cc?: string[] }> }
+): Promise<{ success: true; imported: number; replaced: boolean }> {
+    const response = await fetch(`${API_BASE}/monitor/${monitorId}/import`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || `Failed to import notification rules: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return {
+        success: true,
+        imported: data.imported || 0,
+        replaced: !!data.replaced,
+    };
+}
+
+export async function moveNotificationRule(
+    ruleId: number,
+    direction: 'up' | 'down'
+): Promise<{
+    moved: boolean;
+    current_rule?: { id: number; sort_order: number };
+    target_rule?: { id: number; sort_order: number };
+    order_after?: Array<{ id: number; sort_order: number }>;
+    debug?: any;
+}> {
+    const url = `${API_BASE}/rule/${ruleId}/move`;
+    console.log('[moveNotificationRule] Calling:', url, 'Direction:', direction);
+    
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ direction }),
+    });
+
+    console.log('[moveNotificationRule] Response status:', response.status, response.statusText);
+
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        console.error('[moveNotificationRule] Error response:', error);
+        throw new Error(error.error || `Failed to move notification rule: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    console.log('[moveNotificationRule] Success response:', JSON.stringify(data, null, 2));
+    return {
+        moved: !!data.moved,
+        current_rule: data.current_rule,
+        target_rule: data.target_rule,
+        order_after: data.order_after,
+        debug: data.debug
+    };
 }
 
 // Helper function to parse days of week

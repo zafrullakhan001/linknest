@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { NotificationRule, getNotificationRules, createNotificationRule, updateNotificationRule, deleteNotificationRule, parseDaysOfWeek, formatDaysOfWeek, getDayName } from '../services/monitorNotificationService';
+import React, { useRef, useState, useEffect } from 'react';
+import { NotificationRule, getNotificationRules, createNotificationRule, updateNotificationRule, deleteNotificationRule, importNotificationRules, moveNotificationRule, parseDaysOfWeek, formatDaysOfWeek, getDayName } from '../services/monitorNotificationService';
 
 interface EmailNotificationsTabProps {
     monitorId: number;
@@ -7,25 +7,33 @@ interface EmailNotificationsTabProps {
 
 export const EmailNotificationsTab: React.FC<EmailNotificationsTabProps> = ({ monitorId }) => {
     const [rules, setRules] = useState<NotificationRule[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(true); // initial load only
     const [error, setError] = useState<string | null>(null);
     const [editingRule, setEditingRule] = useState<NotificationRule | null>(null);
     const [isCreating, setIsCreating] = useState(false);
+    const importFileRef = useRef<HTMLInputElement>(null);
+    const [movingRuleId, setMovingRuleId] = useState<number | null>(null);
 
     useEffect(() => {
-        loadRules();
+        loadRules(true);
     }, [monitorId]);
 
-    const loadRules = async () => {
+    useEffect(() => {
+        console.log('[EmailNotificationsTab] Rules state updated:', JSON.stringify(rules.map(r => ({ id: r.id, name: r.name, sort_order: (r as any).sort_order })), null, 2));
+    }, [rules]);
+
+    const loadRules = async (showSpinner = false) => {
         try {
-            setLoading(true);
+            if (showSpinner) setLoading(true);
             setError(null);
             const data = await getNotificationRules(monitorId);
-            setRules(data);
+            console.log('[loadRules] Loaded rules:', JSON.stringify(data.map(r => ({ id: r.id, name: r.name, sort_order: (r as any).sort_order })), null, 2));
+            // API already returns rules in correct order (sorted by sort_order ASC)
+            setRules(data.map(r => ({ ...r })));
         } catch (err: any) {
             setError(err.message || 'Failed to load notification rules');
         } finally {
-            setLoading(false);
+            if (showSpinner) setLoading(false);
         }
     };
 
@@ -60,6 +68,49 @@ export const EmailNotificationsTab: React.FC<EmailNotificationsTabProps> = ({ mo
         }
     };
 
+    const handleMove = async (ruleId: number, direction: 'up' | 'down') => {
+        try {
+            console.log(`[handleMove] Moving rule ${ruleId} ${direction}`);
+            const beforeMove = rules.map(r => ({ id: r.id, name: r.name, sort_order: (r as any).sort_order }));
+            console.log('[handleMove] Current rules before move:', JSON.stringify(beforeMove, null, 2));
+            setError(null);
+            setMovingRuleId(ruleId);
+            const result = await moveNotificationRule(ruleId, direction);
+            console.log('[handleMove] Move result:', JSON.stringify(result, null, 2));
+            if (result.moved && result.current_rule && result.target_rule) {
+                console.log(`[handleMove] Backend updated: Rule ${result.current_rule.id} -> sort_order ${result.current_rule.sort_order}, Rule ${result.target_rule.id} -> sort_order ${result.target_rule.sort_order}`);
+                if (result.debug) {
+                    console.log('[handleMove] Debug info:', JSON.stringify(result.debug, null, 2));
+                }
+            }
+            // Update UI immediately using server-provided order (prevents flicker + avoids re-fetch)
+            if (result.order_after && Array.isArray(result.order_after)) {
+                const byId = new Map<number, NotificationRule>();
+                for (const r of rules) {
+                    if (r.id != null) byId.set(r.id, { ...r });
+                }
+                // apply new sort_order values and ordering
+                const next = result.order_after
+                    .map(o => {
+                        const r = byId.get(o.id);
+                        if (!r) return null;
+                        (r as any).sort_order = o.sort_order;
+                        return r;
+                    })
+                    .filter(Boolean) as NotificationRule[];
+                if (next.length > 0) setRules(next);
+            } else {
+                // Fallback: re-fetch (silent, no spinner)
+                await loadRules(false);
+            }
+        } catch (err: any) {
+            console.error('[handleMove] Error:', err);
+            setError(err.message || 'Failed to move notification rule');
+        } finally {
+            setMovingRuleId(null);
+        }
+    };
+
     const handleSave = async (ruleData: NotificationRule) => {
         try {
             setError(null);
@@ -79,6 +130,68 @@ export const EmailNotificationsTab: React.FC<EmailNotificationsTabProps> = ({ mo
     const handleCancel = () => {
         setEditingRule(null);
         setIsCreating(false);
+    };
+
+    const downloadFile = (filename: string, content: BlobPart, mime: string) => {
+        const blob = new Blob([content], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    };
+
+    const handleExportJson = () => {
+        const exported = {
+            version: 1,
+            monitor_id: monitorId,
+            exported_at: new Date().toISOString(),
+            rules: (rules || []).map(r => ({
+                name: r.name,
+                status_trigger: r.status_trigger,
+                time_window_start: r.time_window_start ?? null,
+                time_window_end: r.time_window_end ?? null,
+                days_of_week: r.days_of_week ?? null,
+                subject_template: r.subject_template,
+                body_template: r.body_template,
+                from_name: r.from_name ?? null,
+                from_email: r.from_email ?? null,
+                is_enabled: r.is_enabled ?? 1,
+                recipients: r.recipients ?? [],
+                cc: r.cc ?? [],
+            })),
+        };
+        downloadFile(`notification-rules-monitor-${monitorId}.json`, JSON.stringify(exported, null, 2), 'application/json;charset=utf-8');
+    };
+
+    const handleImportClick = () => {
+        importFileRef.current?.click();
+    };
+
+    const handleImportFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const f = e.target.files?.[0];
+        // Reset input so selecting same file twice triggers change
+        e.target.value = '';
+        if (!f) return;
+
+        try {
+            setError(null);
+            const text = await f.text();
+            const parsed = JSON.parse(text);
+            const importedRules = Array.isArray(parsed?.rules) ? parsed.rules : Array.isArray(parsed) ? parsed : null;
+            if (!importedRules || !Array.isArray(importedRules)) {
+                throw new Error('Invalid JSON file: expected { rules: [...] } or [...]');
+            }
+
+            const replace = confirm('Replace existing rules? Click OK to replace all current rules, or Cancel to add/merge.');
+            await importNotificationRules(monitorId, { replace, rules: importedRules });
+            await loadRules();
+        } catch (err: any) {
+            setError(err.message || 'Failed to import notification rules');
+        }
     };
 
     if (loading) {
@@ -107,12 +220,42 @@ export const EmailNotificationsTab: React.FC<EmailNotificationsTabProps> = ({ mo
                         Configure advanced email notifications with time windows, multiple recipients, and custom templates.
                     </p>
                 </div>
-                <button
-                    onClick={handleCreate}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium"
-                >
-                    + Add Notification Rule
-                </button>
+                <div className="flex items-center gap-2">
+                    <input
+                        ref={importFileRef}
+                        type="file"
+                        accept="application/json,.json"
+                        onChange={handleImportFileSelected}
+                        className="hidden"
+                    />
+                    <button
+                        onClick={handleExportJson}
+                        className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors border border-blue-200"
+                        title="Export notification rules to JSON"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                    </button>
+                    <button
+                        onClick={handleImportClick}
+                        className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors border border-blue-200"
+                        title="Import notification rules from JSON"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                    </button>
+                    <button
+                        onClick={handleCreate}
+                        className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                        title="Add new notification rule"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                    </button>
+                </div>
             </div>
 
             {error && (
@@ -128,14 +271,21 @@ export const EmailNotificationsTab: React.FC<EmailNotificationsTabProps> = ({ mo
                 </div>
             ) : (
                 <div className="space-y-3">
-                    {rules.map((rule) => (
-                        <NotificationRuleCard
-                            key={rule.id}
-                            rule={rule}
-                            onEdit={handleEdit}
-                            onDelete={handleDelete}
-                        />
-                    ))}
+                    {rules.map((rule, idx) => {
+                        const sortOrder = (rule as any).sort_order ?? 0;
+                        return (
+                            <NotificationRuleCard
+                                key={`rule-${rule.id}-${sortOrder}-${idx}`}
+                                rule={rule}
+                                onEdit={handleEdit}
+                                onDelete={handleDelete}
+                                onMove={handleMove}
+                                index={idx}
+                                total={rules.length}
+                                movingRuleId={movingRuleId}
+                            />
+                        );
+                    })}
                 </div>
             )}
         </div>
@@ -146,16 +296,23 @@ interface NotificationRuleCardProps {
     rule: NotificationRule;
     onEdit: (rule: NotificationRule) => void;
     onDelete: (ruleId: number) => void;
+    onMove: (ruleId: number, direction: 'up' | 'down') => void;
+    index: number;
+    total: number;
+    movingRuleId: number | null;
 }
 
-const NotificationRuleCard: React.FC<NotificationRuleCardProps> = ({ rule, onEdit, onDelete }) => {
+const NotificationRuleCard: React.FC<NotificationRuleCardProps> = ({ rule, onEdit, onDelete, onMove, index, total, movingRuleId }) => {
     const days = parseDaysOfWeek(rule.days_of_week);
     const hasTimeWindow = rule.time_window_start && rule.time_window_end;
     const hasDaysFilter = days.length > 0;
+    const canMoveUp = index > 0;
+    const canMoveDown = index < total - 1;
+    const isMoving = !!rule.id && movingRuleId === rule.id;
 
     return (
-        <div className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between">
+        <div className="relative border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
+            <div className="flex items-start justify-between mb-2">
                 <div className="flex-1">
                     <div className="font-semibold text-gray-900 mb-1">
                         {rule.name || 'Notification Rule'}
@@ -200,20 +357,58 @@ const NotificationRuleCard: React.FC<NotificationRuleCardProps> = ({ rule, onEdi
                     </div>
                 </div>
 
-                <div className="flex gap-2 ml-4">
+                <div className="flex items-center gap-2 ml-4">
                     <button
                         onClick={() => onEdit(rule)}
-                        className="px-3 py-1 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+                        className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors border border-blue-200"
+                        title="Edit rule"
                     >
-                        Edit
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
                     </button>
                     <button
                         onClick={() => rule.id && onDelete(rule.id)}
-                        className="px-3 py-1 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                        className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors border border-red-200"
+                        title="Delete rule"
                     >
-                        Delete
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
                     </button>
                 </div>
+            </div>
+
+            {/* Move controls in lower-right corner */}
+            <div className="absolute bottom-3 right-3 flex items-center gap-1">
+                <button
+                    type="button"
+                    onClick={() => {
+                        console.log('[Move Up] Rule ID:', rule.id, 'Can Move:', canMoveUp);
+                        if (rule.id && canMoveUp) onMove(rule.id, 'up');
+                    }}
+                    disabled={!canMoveUp || isMoving}
+                    className="flex items-center justify-center w-7 h-7 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors disabled:text-gray-300 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                    title={isMoving ? "Moving..." : "Move rule up"}
+                >
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" strokeWidth={2} stroke="currentColor" />
+                    </svg>
+                </button>
+                <button
+                    type="button"
+                    onClick={() => {
+                        console.log('[Move Down] Rule ID:', rule.id, 'Can Move:', canMoveDown);
+                        if (rule.id && canMoveDown) onMove(rule.id, 'down');
+                    }}
+                    disabled={!canMoveDown || isMoving}
+                    className="flex items-center justify-center w-7 h-7 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors disabled:text-gray-300 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                    title={isMoving ? "Moving..." : "Move rule down"}
+                >
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" strokeWidth={2} stroke="currentColor" />
+                    </svg>
+                </button>
             </div>
         </div>
     );

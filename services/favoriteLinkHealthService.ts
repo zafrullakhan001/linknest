@@ -96,6 +96,7 @@ class FavoriteLinkHealthService {
 
         // Create new abort controller
         this.abortController = new AbortController();
+        const controller = this.abortController; // capture locally to avoid races when cancelCheck() sets this.abortController = null
         this.checkingInProgress = true;
 
         const results = new Map<string, LinkHealthCheckResult>();
@@ -105,7 +106,7 @@ class FavoriteLinkHealthService {
             const batchSize = 3; // Smaller batch size for backend requests
             for (let i = 0; i < links.length; i += batchSize) {
                 // Check if cancelled
-                if (this.abortController.signal.aborted) {
+                if (!controller || controller.signal.aborted) {
                     break;
                 }
 
@@ -113,7 +114,7 @@ class FavoriteLinkHealthService {
                 const batchPromises = batch.map(link =>
                     this.checkSingleLink(link.id)
                         .then(result => {
-                            if (onProgress && !this.abortController?.signal.aborted) {
+                            if (onProgress && controller && !controller.signal.aborted) {
                                 onProgress(link.id, result);
                             }
                             return result;
@@ -128,13 +129,16 @@ class FavoriteLinkHealthService {
                 });
 
                 // Small delay between batches to prevent overwhelming the browser
-                if (i + batchSize < links.length && !this.abortController.signal.aborted) {
+                if (i + batchSize < links.length && controller && !controller.signal.aborted) {
                     await new Promise(resolve => setTimeout(resolve, 100));
                 }
             }
         } finally {
             this.checkingInProgress = false;
-            this.abortController = null;
+            // Only clear if we're still the active controller (a newer run may have started)
+            if (this.abortController === controller) {
+                this.abortController = null;
+            }
         }
 
         return results;

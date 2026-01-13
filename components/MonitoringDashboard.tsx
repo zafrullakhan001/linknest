@@ -710,25 +710,22 @@ export const MonitoringDashboard: React.FC = () => {
         }
     };
 
-    const getEmailIndicatorCount = (monitor: Monitor): number => {
-        const rulesCount = typeof monitor.email_rules_count === 'number' ? monitor.email_rules_count : 0;
-        const legacyEnabled = monitor.email_notification ? 1 : 0;
-        // Prefer advanced rules if present; otherwise fall back to legacy toggle
-        return rulesCount > 0 ? rulesCount : legacyEnabled;
-    };
-
     const renderEmailIndicators = (monitor: Monitor, size: number) => {
-        const effectiveCount = getEmailIndicatorCount(monitor);
-        if (!effectiveCount) return null;
+        const rulesCount = typeof monitor.email_rules_count === 'number' ? monitor.email_rules_count : 0;
+        const legacyEnabled = !!monitor.email_notification;
+        const hasRules = rulesCount > 0;
+        const isEnabled = hasRules || legacyEnabled;
+        if (!isEnabled) return null;
 
-        const iconCount = effectiveCount > 1 ? 2 : 1;
+        // If monitor uses rule-based (business rules) notifications, show two mail icons
+        const iconCount = hasRules ? 2 : 1;
         const isColored = monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning';
         const pillClass = isColored
             ? 'bg-white/20'
             : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400';
         const iconStyle = isColored ? getTileTextStyle(monitor.last_status) : undefined;
-        const title = effectiveCount > 1
-            ? `Email notifications enabled (${effectiveCount} rules)`
+        const title = hasRules
+            ? `Email notifications enabled (${rulesCount} rules)`
             : 'Email notifications enabled (1 rule)';
 
         return (
@@ -997,7 +994,7 @@ export const MonitoringDashboard: React.FC = () => {
                     <div className="flex items-center gap-2">
                         <button
                             onClick={() => refreshAll(false)}
-                            className="flex items-center justify-center w-9 h-9 text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 bg-slate-100 dark:bg-[#252525] rounded-xl transition-all"
+                            className="flex items-center justify-center w-9 h-9 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 bg-slate-100 dark:bg-[#252525] rounded-xl transition-all"
                             title="Refresh list (no checks)"
                         >
                             <FaSyncAlt size={14} {...({ className: isLoading ? 'animate-spin' : '' } as any)} />
@@ -1005,7 +1002,7 @@ export const MonitoringDashboard: React.FC = () => {
 
                         <button
                             onClick={() => refreshAll(true)}
-                            className="flex items-center justify-center w-9 h-9 text-slate-600 dark:text-slate-400 hover:text-blue-500 dark:hover:text-blue-400 bg-slate-100 dark:bg-[#252525] rounded-xl transition-all"
+                            className="flex items-center justify-center w-9 h-9 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 bg-slate-100 dark:bg-[#252525] rounded-xl transition-all"
                             title="Force refresh all monitors"
                         >
                             <FaRedo size={14} {...({ className: isLoading ? 'animate-spin' : '' } as any)} />
@@ -1015,16 +1012,16 @@ export const MonitoringDashboard: React.FC = () => {
                             <div className="relative w-7 h-7 flex items-center justify-center">
                                 <svg className="w-6 h-6 rotate-[-90deg]">
                                     <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="transparent" className="text-slate-200 dark:text-slate-800" />
-                                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="transparent" strokeDasharray={2 * Math.PI * 10} strokeDashoffset={isAutoRefreshEnabled ? (2 * Math.PI * 10) * (1 - refreshCountdown / autoRefreshInterval) : (2 * Math.PI * 10)} className={`${isAutoRefreshEnabled ? (autoRefreshMode === 'force' ? 'text-blue-500' : 'text-emerald-500') : 'text-slate-400'} transition-all duration-1000 ease-linear`} strokeLinecap="round" />
+                                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="transparent" strokeDasharray={2 * Math.PI * 10} strokeDashoffset={isAutoRefreshEnabled ? (2 * Math.PI * 10) * (1 - refreshCountdown / autoRefreshInterval) : (2 * Math.PI * 10)} className={`${isAutoRefreshEnabled ? (autoRefreshMode === 'force' ? 'text-red-500' : 'text-blue-500') : 'text-slate-400'} transition-all duration-1000 ease-linear`} strokeLinecap="round" />
                                 </svg>
                                 <button onClick={() => setIsAutoRefreshEnabled(!isAutoRefreshEnabled)} className="absolute inset-0 flex items-center justify-center" title={isAutoRefreshEnabled ? "Disable auto-refresh" : "Enable auto-refresh"}>
-                                    <div className={`w-1.5 h-1.5 rounded-full ${isAutoRefreshEnabled ? (autoRefreshMode === 'force' ? 'bg-blue-500 animate-pulse' : 'bg-emerald-500 animate-pulse') : 'bg-slate-400'}`}></div>
+                                    <div className={`w-1.5 h-1.5 rounded-full ${isAutoRefreshEnabled ? (autoRefreshMode === 'force' ? 'bg-red-500 animate-pulse' : 'bg-blue-500 animate-pulse') : 'bg-slate-400'}`}></div>
                                 </button>
                             </div>
                             <button
                                 onClick={() => setAutoRefreshMode(m => (m === 'normal' ? 'force' : 'normal'))}
                                 disabled={!isAutoRefreshEnabled}
-                                className={`flex items-center justify-center w-7 h-7 rounded-lg transition-all disabled:opacity-50 ${autoRefreshMode === 'force' ? 'text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300' : 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300'}`}
+                                className={`flex items-center justify-center w-7 h-7 rounded-lg transition-all disabled:opacity-50 ${autoRefreshMode === 'force' ? 'text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300' : 'text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300'}`}
                                 title={autoRefreshMode === 'force' ? "Auto-refresh mode: Force check (click to switch to normal refresh)" : "Auto-refresh mode: Normal refresh (click to switch to force check)"}
                             >
                                 {autoRefreshMode === 'force' ? <FaRedo size={12} /> : <FaSyncAlt size={12} />}
