@@ -351,11 +351,19 @@ export const MonitoringDashboard: React.FC = () => {
         }
     };
 
-    const handleDuplicate = (monitor: Monitor) => {
+    const handleDuplicate = async (monitor: Monitor) => {
         if (!isAdmin) return;
-        setSelectedMonitor(monitor);
-        setIsDuplicate(true);
-        setIsEditing(true);
+        try {
+            setIsLoading(true);
+            // Call backend to duplicate monitor with all its rules and recipients
+            await monitoringService.duplicateMonitor(monitor.id);
+            await fetchMonitors();
+        } catch (error) {
+            console.error('Failed to duplicate monitor', error);
+            alert('Failed to duplicate monitor. Please try again.');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const handleCheckNow = async (id: number) => {
@@ -1353,7 +1361,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                 {isAdmin && (
                                                     <>
                                                         <button
-                                                            onClick={() => handleDuplicate(monitor)}
+                                                            onClick={(e) => { e.stopPropagation(); handleDuplicate(monitor); }}
                                                             className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
                                                             title="Duplicate"
                                                         >
@@ -1575,7 +1583,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                             {isAdmin && (
                                                                 <>
                                                                     <button
-                                                                        onClick={() => handleDuplicate(monitor)}
+                                                                        onClick={(e) => { e.stopPropagation(); handleDuplicate(monitor); }}
                                                                         className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-white/20 hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
                                                                         style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileTextStyle(monitor.last_status) : {}}
                                                                         title="Duplicate"
@@ -1614,7 +1622,7 @@ export const MonitoringDashboard: React.FC = () => {
 
             {isEditing && (
                 <MonitorForm
-                    monitor={isDuplicate ? { ...selectedMonitor!, id: 0 } as any : selectedMonitor}
+                    monitor={selectedMonitor}
                     onSave={handleSave}
                     onCancel={() => { setIsEditing(false); setIsDuplicate(false); }}
                 />

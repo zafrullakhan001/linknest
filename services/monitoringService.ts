@@ -86,6 +86,15 @@ export const monitoringService = {
         if (!response.ok) throw new Error('Failed to delete monitor');
     },
 
+    async duplicateMonitor(id: number): Promise<Monitor> {
+        const response = await fetch(`api/monitors.php/${id}/duplicate`, {
+            method: 'POST'
+        });
+        if (!response.ok) throw new Error('Failed to duplicate monitor');
+        const data = await response.json();
+        return data.monitor;
+    },
+
     async getMonitorLogs(id: number, options?: { days?: number, limit?: number, from?: number, to?: number }): Promise<MonitorLog[]> {
         let url = `api/monitors.php/${id}/logs`;
         if (options) {

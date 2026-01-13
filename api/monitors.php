@@ -41,6 +41,8 @@ switch ($method) {
             handleCheckAllMonitors();
         } elseif (preg_match('/^\/(\d+)\/check$/', $path, $matches)) {
             handleCheckMonitor($matches[1]);
+        } elseif (preg_match('/^\/(\d+)\/duplicate$/', $path, $matches)) {
+            handleDuplicateMonitor($matches[1]);
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -587,6 +589,161 @@ function handleCreateMonitor() {
         $db->commit();
         
         sendJSON(['success' => true, 'monitor' => $monitor], 201);
+        
+    } catch (PDOException $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleDuplicateMonitor($id) {
+    requireAdmin(); // Only admins can duplicate monitors
+    $db = getDB();
+    
+    // Fetch the original monitor
+    $stmt = $db->prepare('SELECT * FROM monitors WHERE id = ?');
+    $stmt->execute([$id]);
+    $original = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$original) {
+        sendJSON(['error' => 'Monitor not found'], 404);
+        return;
+    }
+    
+    try {
+        $db->beginTransaction();
+        $now = time();
+        
+        // Create the duplicate monitor with " (Copy)" appended to name
+        $newName = $original['name'] . ' (Copy)';
+        
+        $stmt = $db->prepare('INSERT INTO monitors (
+            name, type, target, port, keyword, interval,
+            warning_threshold, consecutive_failures, timeout, permissions_mode,
+            is_active, email_notification, created_at, updated_at,
+            tab_name, group_name, maintenance_start, maintenance_end,
+            legacy_notify_pending, legacy_email_disabled, legacy_email_to, legacy_email_cc, 
+            legacy_email_from_name, legacy_email_from_email,
+            legacy_email_subject_template, legacy_email_body_template
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        
+        $stmt->execute([
+            $newName,
+            $original['type'],
+            $original['target'],
+            $original['port'],
+            $original['keyword'],
+            $original['interval'],
+            $original['warning_threshold'],
+            0, // Reset consecutive_failures
+            $original['timeout'],
+            $original['permissions_mode'],
+            $original['is_active'],
+            $original['email_notification'],
+            $now,
+            $now,
+            $original['tab_name'],
+            $original['group_name'],
+            $original['maintenance_start'],
+            $original['maintenance_end'],
+            $original['legacy_notify_pending'],
+            $original['legacy_email_disabled'],
+            $original['legacy_email_to'],
+            $original['legacy_email_cc'],
+            $original['legacy_email_from_name'],
+            $original['legacy_email_from_email'],
+            $original['legacy_email_subject_template'],
+            $original['legacy_email_body_template']
+        ]);
+        
+        $newMonitorId = $db->lastInsertId();
+        
+        // Copy user permissions if any
+        if ((int)$original['permissions_mode'] === 1) {
+            $permStmt = $db->prepare('SELECT user_id FROM user_monitor_permissions WHERE monitor_id = ?');
+            $permStmt->execute([$id]);
+            $permissions = $permStmt->fetchAll(PDO::FETCH_COLUMN);
+            
+            if (!empty($permissions)) {
+                $insertPermStmt = $db->prepare('INSERT INTO user_monitor_permissions (user_id, monitor_id, can_view, created_at, updated_at) VALUES (?, ?, 1, ?, ?)');
+                foreach ($permissions as $userId) {
+                    $insertPermStmt->execute([$userId, $newMonitorId, $now, $now]);
+                }
+            }
+        }
+        
+        // Copy notification rules
+        $rulesStmt = $db->prepare('SELECT * FROM monitor_notification_rules WHERE monitor_id = ? ORDER BY sort_order');
+        $rulesStmt->execute([$id]);
+        $rules = $rulesStmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        $insertRuleStmt = $db->prepare('INSERT INTO monitor_notification_rules (
+            monitor_id, name, sort_order, status_trigger, time_window_start, time_window_end, 
+            days_of_week, subject_template, body_template, from_name, from_email, cc_emails, 
+            is_enabled, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        
+        foreach ($rules as $rule) {
+            $insertRuleStmt->execute([
+                $newMonitorId,
+                $rule['name'],
+                $rule['sort_order'],
+                $rule['status_trigger'],
+                $rule['time_window_start'],
+                $rule['time_window_end'],
+                $rule['days_of_week'],
+                $rule['subject_template'],
+                $rule['body_template'],
+                $rule['from_name'],
+                $rule['from_email'],
+                $rule['cc_emails'],
+                $rule['is_enabled'],
+                $now,
+                $now
+            ]);
+            
+            $newRuleId = $db->lastInsertId();
+            
+            // Copy recipients for this rule
+            $recipientsStmt = $db->prepare('SELECT email FROM monitor_notification_recipients WHERE rule_id = ?');
+            $recipientsStmt->execute([$rule['id']]);
+            $recipients = $recipientsStmt->fetchAll(PDO::FETCH_COLUMN);
+            
+            if (!empty($recipients)) {
+                $insertRecipientStmt = $db->prepare('INSERT INTO monitor_notification_recipients (rule_id, email, created_at) VALUES (?, ?, ?)');
+                foreach ($recipients as $email) {
+                    $insertRecipientStmt->execute([$newRuleId, $email, $now]);
+                }
+            }
+        }
+        
+        // Fetch the newly created monitor with all details
+        $stmt = $db->prepare('
+            SELECT 
+                m.*,
+                COALESCE((
+                    SELECT COUNT(*) 
+                    FROM monitor_notification_rules r 
+                    WHERE r.monitor_id = m.id AND r.is_enabled = 1
+                ), 0) AS email_rules_count
+            FROM monitors m
+            WHERE m.id = ?
+        ');
+        $stmt->execute([$newMonitorId]);
+        $newMonitor = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Get allowed user IDs if permissions mode is 1
+        if ((int)$newMonitor['permissions_mode'] === 1) {
+            $permStmt = $db->prepare('SELECT user_id FROM user_monitor_permissions WHERE monitor_id = ?');
+            $permStmt->execute([$newMonitorId]);
+            $newMonitor['allowed_user_ids'] = $permStmt->fetchAll(PDO::FETCH_COLUMN);
+        } else {
+            $newMonitor['allowed_user_ids'] = [];
+        }
+        
+        $db->commit();
+        
+        sendJSON(['success' => true, 'monitor' => $newMonitor], 201);
         
     } catch (PDOException $e) {
         if ($db->inTransaction()) $db->rollBack();
