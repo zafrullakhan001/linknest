@@ -11,6 +11,7 @@ import base64
 import contextlib
 import datetime as _dt
 import email.utils
+import html as _html
 import json
 import os
 import sys
@@ -438,6 +439,7 @@ def send_smtp_email(
     cc_list: Sequence[str],
     subject: str,
     body: str,
+    html_body: Optional[str] = None,
     from_name: Optional[str],
     from_email: Optional[str],
     timeout_seconds: int = 20,
@@ -471,6 +473,9 @@ def send_smtp_email(
         msg["Cc"] = ", ".join(cc_list)
     msg["Subject"] = subject
     msg.set_content(body or "")
+    if html_body:
+        # Provide an HTML alternative (many clients prefer this), while keeping the plain-text fallback.
+        msg.add_alternative(str(html_body), subtype="html")
 
     try:
         import smtplib
@@ -495,4 +500,132 @@ def send_smtp_email(
         return True, None
     except Exception as e:
         return False, str(e) or e.__class__.__name__
+
+
+def _ln_accent_for_status(status: str) -> str:
+    s = (status or "").strip().lower()
+    if s == "up":
+        return "#10b981"
+    if s == "down":
+        return "#ef4444"
+    if s == "warning":
+        return "#f59e0b"
+    return "#0ea5e9"
+
+
+def _ln_html_escape(v: object) -> str:
+    return _html.escape("" if v is None else str(v), quote=True)
+
+
+def _ln_nl2br_escaped(text: str) -> str:
+    # Escape first, then convert line breaks
+    return _ln_html_escape(text).replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br/>")
+
+
+def ln_email_base_layout(title: str, subtitle: str, accent_hex: str, inner_html: str, preheader: str = "") -> str:
+    accent = accent_hex if re.match(r"^#[0-9a-fA-F]{6}$", accent_hex or "") else "#4f46e5"
+    safe_title = _ln_html_escape(title)
+    safe_subtitle = _ln_html_escape(subtitle)
+    safe_preheader = _ln_html_escape(preheader)
+    # Table-based layout for wide email client support (mirrors PHP template styling)
+    return f"""<!doctype html>
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{safe_title}</title>
+</head>
+<body style="margin:0;padding:0;background:#f6f7fb;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">{safe_preheader}</div>
+  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f6f7fb;padding:24px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="600" style="width:600px;max-width:100%;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 10px 25px rgba(15,23,42,0.06);">
+          <tr>
+            <td style="background:{accent};padding:28px 28px 22px 28px;">
+              <div style="font-family:Segoe UI,Arial,sans-serif;color:#ffffff;font-size:20px;font-weight:800;letter-spacing:0.2px;line-height:1.2;">{safe_title}</div>
+              <div style="font-family:Segoe UI,Arial,sans-serif;color:rgba(255,255,255,0.9);font-size:13px;font-weight:600;margin-top:6px;line-height:1.4;">{safe_subtitle}</div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px 28px 10px 28px;">
+              {inner_html}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:18px 28px 24px 28px;border-top:1px solid #eef2ff;">
+              <div style="font-family:Segoe UI,Arial,sans-serif;color:#64748b;font-size:12px;line-height:1.4;">
+                Sent by LinkNest Monitoring • {_ln_html_escape(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))}
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+
+
+def ln_render_monitor_notification_html(
+    *,
+    monitor_name: str,
+    target: str,
+    status: str,
+    subject: str,
+    message_text: str,
+    response_time_ms: Optional[object] = None,
+) -> str:
+    """
+    Render a styled HTML email similar to the PHP legacy template.
+    Works for both legacy and rule-based notifications by placing the template-rendered message
+    into a "Message" section.
+    """
+    status_label = (status or "").strip().upper() or "UNKNOWN"
+    accent = _ln_accent_for_status(status)
+    pill_bg = accent
+
+    safe_message = _ln_nl2br_escaped(message_text or "")
+    safe_subject = _ln_html_escape(subject)
+
+    # Basic "details card" with monitor metadata + message block
+    inner = f"""
+      <div style="font-family:Segoe UI,Arial,sans-serif;color:#0f172a;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <div style="font-size:18px;font-weight:900;margin:0;">{_ln_html_escape(monitor_name or "Monitor")}</div>
+          <div>
+            <span style="display:inline-block;background:{pill_bg};color:#fff;padding:6px 12px;border-radius:999px;font-weight:900;font-size:12px;letter-spacing:0.6px;">{_ln_html_escape(status_label)}</span>
+          </div>
+        </div>
+
+        <div style="margin-top:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:14px 16px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+            <tr>
+              <td style="font-size:13px;color:#334155;padding:4px 0;"><strong>Target</strong></td>
+              <td style="font-size:13px;color:#334155;padding:4px 0;" align="right">{_ln_html_escape(target or "N/A")}</td>
+            </tr>
+            <tr>
+              <td style="font-size:13px;color:#334155;padding:4px 0;"><strong>Response time</strong></td>
+              <td style="font-size:13px;color:#334155;padding:4px 0;" align="right">{_ln_html_escape(str(response_time_ms) if response_time_ms not in (None, "") else "N/A")}</td>
+            </tr>
+            <tr>
+              <td style="font-size:13px;color:#334155;padding:4px 0;"><strong>Time</strong></td>
+              <td style="font-size:13px;color:#334155;padding:4px 0;" align="right">{_ln_html_escape(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))}</td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="margin-top:16px;">
+          <div style="font-size:13px;font-weight:900;color:#0f172a;margin-bottom:8px;">Subject</div>
+          <div style="background:#ffffff;border:1px solid #e2e8f0;border-left:5px solid {accent};border-radius:14px;padding:12px 14px;font-size:13px;line-height:1.6;color:#334155;">{safe_subject}</div>
+        </div>
+
+        <div style="margin-top:16px;">
+          <div style="font-size:13px;font-weight:900;color:#0f172a;margin-bottom:8px;">Message</div>
+          <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;font-size:12px;line-height:1.6;color:#0f172a;">{safe_message}</div>
+        </div>
+      </div>
+    """
+    pre = f"{status_label} - {monitor_name}"
+    return ln_email_base_layout("Monitor Status Update", "Rule-based notification email", accent, inner, preheader=pre)
 

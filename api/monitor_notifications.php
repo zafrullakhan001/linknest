@@ -25,7 +25,8 @@ if (empty($path) || $path === '/') {
 
 // Require authentication for all notification operations
 try {
-    requireAuth();
+    $AUTH_USER = requireAuth();
+    $GLOBALS['AUTH_USER'] = $AUTH_USER;
 } catch (Exception $e) {
     sendJSON(['error' => 'Authentication failed: ' . $e->getMessage()], 401);
 } catch (Error $e) {
@@ -100,8 +101,31 @@ try {
     sendJSON(['error' => 'A fatal error occurred'], 500);
 }
 
+function getAuthUserFromGlobals() {
+    return $GLOBALS['AUTH_USER'] ?? getAuthenticatedUser();
+}
+
+function ensureCanViewMonitor($monitorId, $db): void {
+    $user = getAuthUserFromGlobals();
+    if (!$user) {
+        sendJSON(['error' => 'Authentication required'], 401);
+        exit;
+    }
+    if (!empty($user['is_admin'])) {
+        return;
+    }
+    $stmt = $db->prepare('SELECT can_view FROM user_monitor_permissions WHERE user_id = ? AND monitor_id = ?');
+    $stmt->execute([(int)$user['id'], (int)$monitorId]);
+    $can = (int)$stmt->fetchColumn();
+    if ($can !== 1) {
+        sendJSON(['error' => 'Monitor not found'], 404);
+        exit;
+    }
+}
+
 function handleGetNotificationRules($monitorId) {
     $db = getDB();
+    ensureCanViewMonitor($monitorId, $db);
     
     // Verify monitor exists
     $stmt = $db->prepare('SELECT id FROM monitors WHERE id = ?');
@@ -161,6 +185,7 @@ function handleGetNotificationRule($ruleId) {
 
 function handleGetEmailLogs($monitorId) {
     $db = getDB();
+    ensureCanViewMonitor($monitorId, $db);
     
     // Verify monitor exists
     $stmt = $db->prepare('SELECT id FROM monitors WHERE id = ?');

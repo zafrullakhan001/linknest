@@ -854,7 +854,7 @@ function initDatabase() {
             warning_threshold INTEGER DEFAULT 1, -- consecutive failures required before declaring DOWN
             consecutive_failures INTEGER DEFAULT 0, -- current consecutive failures counter
             timeout INTEGER, -- seconds (used for url/keyword; optional for others)
-            permissions_mode INTEGER DEFAULT 0, -- 0=public(all authenticated users), 1=restricted to selected users
+            permissions_mode INTEGER DEFAULT 0, -- 0=admin-only(default), 1=shared to selected users (via user_monitor_permissions)
             is_active INTEGER DEFAULT 1,
             email_notification INTEGER DEFAULT 0,
             last_notified_status TEXT, -- up/down/unknown/null: last status we successfully sent a notification for (legacy notifications)

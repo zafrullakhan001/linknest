@@ -82,7 +82,7 @@ function getAuthUserFromGlobals() {
 function userCanViewMonitorRow(array $monitor, array $user, $db): bool {
     if (!empty($user['is_admin'])) return true;
     $mode = isset($monitor['permissions_mode']) ? (int)$monitor['permissions_mode'] : 0;
-    if ($mode === 0) return true; // public to all authenticated users
+    if ($mode === 0) return false; // admin-only by default
 
     $stmt = $db->prepare('SELECT can_view FROM user_monitor_permissions WHERE user_id = ? AND monitor_id = ?');
     $stmt->execute([(int)$user['id'], (int)$monitor['id']]);
@@ -104,7 +104,7 @@ function fetchMonitorForView($id, array $user, $db) {
         LEFT JOIN user_monitor_permissions ump
           ON ump.monitor_id = m.id AND ump.user_id = ?
         WHERE m.id = ?
-          AND (COALESCE(m.permissions_mode, 0) = 0 OR COALESCE(ump.can_view, 0) = 1)
+          AND COALESCE(ump.can_view, 0) = 1
         LIMIT 1
     ');
     $stmt->execute([(int)$user['id'], $id]);
@@ -424,7 +424,7 @@ function handleGetMonitors() {
             FROM monitors m
             LEFT JOIN user_monitor_permissions ump
               ON ump.monitor_id = m.id AND ump.user_id = ?
-            WHERE (COALESCE(m.permissions_mode, 0) = 0 OR COALESCE(ump.can_view, 0) = 1)
+            WHERE COALESCE(ump.can_view, 0) = 1
             ORDER BY m.created_at DESC
         ');
         $stmt->execute([(int)$user['id']]);
@@ -851,7 +851,7 @@ function handleCheckAllMonitors() {
                 FROM monitors m
                 LEFT JOIN user_monitor_permissions ump
                   ON ump.monitor_id = m.id AND ump.user_id = ?
-                WHERE m.is_active = 1 AND (COALESCE(m.permissions_mode, 0) = 0 OR COALESCE(ump.can_view, 0) = 1)
+                WHERE m.is_active = 1 AND COALESCE(ump.can_view, 0) = 1
             ');
             $stmt->execute([(int)$user['id']]);
             $monitorCount = (int)$stmt->fetchColumn();
@@ -873,7 +873,7 @@ function handleCheckAllMonitors() {
                 FROM monitors m
                 LEFT JOIN user_monitor_permissions ump
                   ON ump.monitor_id = m.id AND ump.user_id = ?
-                WHERE m.is_active = 1 AND (COALESCE(m.permissions_mode, 0) = 0 OR COALESCE(ump.can_view, 0) = 1)
+                WHERE m.is_active = 1 AND COALESCE(ump.can_view, 0) = 1
             ');
             $stmt->execute([(int)$user['id']]);
             $monitors = $stmt->fetchAll();

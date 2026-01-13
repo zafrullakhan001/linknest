@@ -31,6 +31,7 @@ from linknest_worker_lib import (
     open_db,
     time_window_active,
     send_smtp_email,
+    ln_render_monitor_notification_html,
 )
 
 
@@ -287,12 +288,36 @@ def main() -> int:
                 continue
 
             # Now we can attempt a send.
+            html_body = None
+            try:
+                # Use LinkNest HTML template (like legacy PHP emails) for BOTH legacy and rule-based notifications.
+                mrow = None
+                if monitor_id is not None:
+                    mrow = conn.execute("SELECT * FROM monitors WHERE id = ? LIMIT 1", (int(monitor_id),)).fetchone()
+                monitor_name = str(mrow["name"]) if mrow and mrow["name"] is not None else "Monitor"
+                target = str(mrow["target"]) if mrow and mrow["target"] is not None else ""
+                rt = None
+                if mrow is not None:
+                    rt = mrow["last_response_time"]
+                html_body = ln_render_monitor_notification_html(
+                    monitor_name=monitor_name,
+                    target=target,
+                    status=str(status_trigger or ""),
+                    subject=str(subject or ""),
+                    message_text=str(r["body"] or ""),
+                    response_time_ms=(f"{int(rt)} ms" if rt not in (None, "", False) else None),
+                )
+            except Exception:
+                # Never fail sending because of HTML rendering issues; plain-text fallback will still send.
+                html_body = None
+
             ok, err = send_smtp_email(
                 smtp_cfg=smtp_cfg,
                 to_list=to_list,
                 cc_list=cc_list,
                 subject=subject,
                 body=str(r["body"]),
+                html_body=html_body,
                 from_name=(str(r["from_name"]) if r["from_name"] is not None else None),
                 from_email=(str(r["from_email"]) if r["from_email"] is not None else None),
                 timeout_seconds=int(args.smtp_timeout),

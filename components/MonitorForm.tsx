@@ -702,7 +702,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                     <div className="flex items-center justify-between mb-3">
                                         <div>
                                             <div className="text-sm font-semibold text-gray-800">Visible to selected users</div>
-                                            <div className="text-xs text-gray-600 mt-1">If you select users, only they (and admins) will see this monitor.</div>
+                                                <div className="text-xs text-gray-600 mt-1">If you select users, only they (and admins) will see this monitor. If none selected, only admins will see it.</div>
                                         </div>
                                         <button
                                             type="button"
