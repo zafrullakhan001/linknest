@@ -2346,9 +2346,15 @@ function handleToggleLinkFavorite($linkId) {
         $deleteStmt->execute([$user['id'], $linkId]);
         sendJSON(['success' => true, 'isFavorite' => false]);
     } else {
-        // Add to favorites
-        $insertStmt = $db->prepare('INSERT INTO user_link_favorites (user_id, link_id, created_at) VALUES (?, ?, ?)');
-        $insertStmt->execute([$user['id'], $linkId, time()]);
+        // Add to favorites - get the maximum position for this user and add 1
+        $maxPosStmt = $db->prepare('SELECT COALESCE(MAX(position), -1) as max_position FROM user_link_favorites WHERE user_id = ?');
+        $maxPosStmt->execute([$user['id']]);
+        $maxPosRow = $maxPosStmt->fetch();
+        $nextPosition = ($maxPosRow['max_position'] ?? -1) + 1;
+        
+        // Add to favorites with position
+        $insertStmt = $db->prepare('INSERT INTO user_link_favorites (user_id, link_id, created_at, position) VALUES (?, ?, ?, ?)');
+        $insertStmt->execute([$user['id'], $linkId, time(), $nextPosition]);
         sendJSON(['success' => true, 'isFavorite' => true]);
     }
 }
@@ -2601,6 +2607,7 @@ function handleGetFavoriteLinks() {
         $db = getDB();
         
         // Get all favorited links with their parent tile information
+        // Order by position ASC (with created_at as fallback for backward compatibility)
         $stmt = $db->prepare('
             SELECT 
                 l.*,
@@ -2616,7 +2623,7 @@ function handleGetFavoriteLinks() {
             WHERE ulf.user_id = ?
             AND (t.deleted_at IS NULL OR t.id IS NULL)
             AND (t.archived_at IS NULL OR t.id IS NULL)
-            ORDER BY ulf.created_at DESC
+            ORDER BY ulf.position ASC, ulf.created_at ASC
         ');
         $stmt->execute([$user['id']]);
         

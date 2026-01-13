@@ -593,8 +593,15 @@ function handleUpdateUserPreferences() {
                 continue; // Skip invalid keys
             }
             
-            // Store preference value as JSON string if it's an array/object, otherwise as string
-            $preferenceValue = is_array($value) || is_object($value) ? json_encode($value) : (string)$value;
+            // Store preference value - handle different types correctly
+            if (is_array($value) || is_object($value)) {
+                $preferenceValue = json_encode($value);
+            } elseif (is_bool($value)) {
+                // Convert boolean to string "true" or "false" (not "1" or "")
+                $preferenceValue = $value ? 'true' : 'false';
+            } else {
+                $preferenceValue = (string)$value;
+            }
             
             $stmt = $db->prepare('INSERT OR REPLACE INTO user_preferences (user_id, preference_key, preference_value, updated_at) VALUES (?, ?, ?, ?)');
             $stmt->execute([$userId, $key, $preferenceValue, time()]);

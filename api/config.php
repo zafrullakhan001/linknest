@@ -728,6 +728,41 @@ function initDatabase() {
             FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE
         )');
         
+        // Migrate existing user_link_favorites table to add position column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(user_link_favorites)")->fetchAll();
+            $hasPosition = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'position') {
+                    $hasPosition = true;
+                    break;
+                }
+            }
+            if (!$hasPosition) {
+                $db->exec('ALTER TABLE user_link_favorites ADD COLUMN position INTEGER DEFAULT 0');
+                
+                // Initialize positions for existing favorites
+                // Current order is created_at DESC (newest first), so we initialize positions
+                // to match: newest gets position 0, older ones get higher positions
+                // When ordered by position ASC, this maintains the same display order
+                $users = $db->query('SELECT DISTINCT user_id FROM user_link_favorites')->fetchAll();
+                foreach ($users as $userRow) {
+                    $userId = $userRow['user_id'];
+                    // Get favorites ordered by created_at DESC (newest first) to match current behavior
+                    $favs = $db->prepare('SELECT link_id FROM user_link_favorites WHERE user_id = ? ORDER BY created_at DESC');
+                    $favs->execute([$userId]);
+                    $position = 0;
+                    $updateStmt = $db->prepare('UPDATE user_link_favorites SET position = ? WHERE user_id = ? AND link_id = ?');
+                    while ($fav = $favs->fetch()) {
+                        $updateStmt->execute([$position, $userId, $fav['link_id']]);
+                        $position++;
+                    }
+                }
+            }
+        } catch (PDOException $e) {
+            error_log('user_link_favorites position migration warning: ' . $e->getMessage());
+        }
+        
         // Create user_tile_permissions table for managing tile access permissions
         $db->exec('CREATE TABLE IF NOT EXISTS user_tile_permissions (
             user_id INTEGER NOT NULL,
