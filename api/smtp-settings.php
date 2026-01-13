@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/mailer.php';
+require_once __DIR__ . '/email_templates.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -152,8 +153,13 @@ function handleTestConnection() {
         $result = sendEmail(
             $testEmail, 
             'LinkNest SMTP Test', 
-            'This is a test email from your LinkNest Monitoring Dashboard.', 
-            $data
+            ln_render_smtp_test_email_text($testEmail),
+            $data,
+            [],
+            [
+                'html' => ln_render_smtp_test_email_html($testEmail),
+                'text' => ln_render_smtp_test_email_text($testEmail)
+            ]
         );
         
         if ($result === true) {

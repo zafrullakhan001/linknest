@@ -2,6 +2,7 @@
 // This script can be called via CLI (cron) or web request (check-all)
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/mailer.php';
+require_once __DIR__ . '/email_templates.php';
 
 
 // If running from CLI or direct execution, ensure we don't time out
@@ -223,12 +224,12 @@ function performMonitorCheck($monitor) {
             // Use normalized status for comparison
             if ($normalizedStatus === 'down') {
                 error_log("[EMAIL] Triggering DOWN notification for monitor {$monitor['id']} - Previous status: " . ($prevStatus ?? 'null/unknown') . ", Current: $status");
-                sendNotification($monitor, "DOWN: {$monitor['name']} is unreachable. Error: $details", 'down');
+                sendNotification($monitor, "DOWN: {$monitor['name']} is unreachable. Error: $details", 'down', $responseTime, $now);
             } 
             // Send UP notification when status changes from 'down' to 'up'
             elseif ($normalizedPrevStatus === 'down' && $normalizedStatus === 'up') {
                 error_log("[EMAIL] Triggering UP notification for monitor {$monitor['id']} - Previous: " . ($prevStatus ?? 'null') . ", Current: $status");
-                sendNotification($monitor, "UP: {$monitor['name']} is back online.", 'up');
+                sendNotification($monitor, "UP: {$monitor['name']} is back online.", 'up', $responseTime, $now);
             } else {
                 error_log("[EMAIL] Legacy notification condition not met - normalized status: $normalizedStatus, normalized prevStatus: " . ($normalizedPrevStatus ?? 'null') . " (no notification sent)");
             }
@@ -588,7 +589,7 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
         $ccList = function_exists('normalizeEmailList') ? normalizeEmailList($rule['cc_emails'] ?? '') : [];
         
         // Send ONE email per rule with multiple To + CC (prevents CC getting duplicates)
-        $result = sendEmailMultiWithRuleFromOverride($recipients, $ccList, $subject, $body, $fromName, $fromEmail);
+        $result = sendEmailMultiWithRuleFromOverride($recipients, $ccList, $subject, $body, $fromName, $fromEmail, $monitor, $newStatus, $details, $responseTime);
         $success = ($result === true) ? 1 : 0;
         $errorMsg = ($result === true) ? null : $result;
 
@@ -614,7 +615,7 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
     }
 }
 
-function sendEmailMultiWithRuleFromOverride(array $toList, array $ccList, $subject, $body, $fromName = null, $fromEmail = null) {
+function sendEmailMultiWithRuleFromOverride(array $toList, array $ccList, $subject, $body, $fromName = null, $fromEmail = null, $monitor = null, $status = null, $details = null, $responseTime = null) {
     // Load SMTP settings from DB and apply from overrides (if provided)
     $db = getDB();
     $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'smtp_%'");
@@ -637,7 +638,29 @@ function sendEmailMultiWithRuleFromOverride(array $toList, array $ccList, $subje
         $config['from_email'] = $fromEmail;
     }
 
-    return sendEmailMulti($toList, $ccList, $subject, $body, $config);
+    // Render nice HTML while keeping the rule body as the plain-text part
+    $mName = is_array($monitor) ? (string)($monitor['name'] ?? 'Monitor') : 'Monitor';
+    $target = is_array($monitor) ? (string)($monitor['target'] ?? '') : '';
+    if (is_array($monitor) && !empty($monitor['port'])) {
+        $target .= ':' . (int)$monitor['port'];
+    }
+    $status = $status ?: 'both';
+    $details = $details ?? (string)$body;
+
+    $html = ln_render_monitor_status_email_html(
+        $mName,
+        $target,
+        (string)$status,
+        (string)$details,
+        $responseTime,
+        time(),
+        (string)$body
+    );
+
+    return sendEmailMulti($toList, $ccList, $subject, $body, $config, [
+        'html' => $html,
+        'text' => (string)$body
+    ]);
 }
 
 /**
@@ -697,13 +720,17 @@ function isDayOfWeekActive($rule, $currentDayOfWeek) {
  * Replace template variables in email content
  */
 function replaceTemplateVariables($template, $monitor, $status, $details, $responseTime) {
+    $rt = null;
+    if ($responseTime !== null && $responseTime !== '' && is_numeric($responseTime)) {
+        $rt = (int)round((float)$responseTime);
+    }
     $replacements = [
         '{monitor_name}' => $monitor['name'],
         '{monitor_type}' => $monitor['type'],
         '{monitor_target}' => $monitor['target'],
         '{status}' => strtoupper($status),
         '{details}' => $details ?? 'N/A',
-        '{response_time}' => $responseTime ? $responseTime . ' ms' : 'N/A',
+        '{response_time}' => ($rt !== null) ? ($rt . ' ms') : 'N/A',
         '{time}' => date('Y-m-d H:i:s'),
         '{date}' => date('Y-m-d'),
         '{timestamp}' => time()
@@ -729,7 +756,7 @@ function sendNotificationEmail($to, $subject, $body, $fromName = null, $fromEmai
     return $result;
 }
 
-function sendNotification($monitor, $message, $statusTrigger = 'both') {
+function sendNotification($monitor, $message, $statusTrigger = 'both', $responseTime = null, $checkedAt = null) {
     error_log("[EMAIL] sendNotification called for monitor ID: {$monitor['id']}, name: {$monitor['name']}");
 
     // Safety guard: never send if notifications are paused or monitor is in maintenance
@@ -815,8 +842,23 @@ function sendNotification($monitor, $message, $statusTrigger = 'both') {
 
         $effectiveStatus = ($statusTrigger === 'up' || $statusTrigger === 'down') ? $statusTrigger : 'both';
         $detailsForTemplate = $message; // includes "DOWN/UP: ..." plus error; good fallback for {details}
-        $subject = replaceTemplateVariables($subjectTpl, $monitor, $effectiveStatus, $detailsForTemplate, null);
-        $body = replaceTemplateVariables($bodyTpl, $monitor, $effectiveStatus, $detailsForTemplate, null);
+        $subject = replaceTemplateVariables($subjectTpl, $monitor, $effectiveStatus, $detailsForTemplate, $responseTime);
+        $bodyText = replaceTemplateVariables($bodyTpl, $monitor, $effectiveStatus, $detailsForTemplate, $responseTime);
+
+        $ts = is_int($checkedAt) ? $checkedAt : time();
+        $target = (string)($monitor['target'] ?? '');
+        if (!empty($monitor['port'])) {
+            $target .= ':' . (int)$monitor['port'];
+        }
+        $html = ln_render_monitor_status_email_html(
+            (string)($monitor['name'] ?? 'Monitor'),
+            $target,
+            $effectiveStatus,
+            $detailsForTemplate,
+            $responseTime,
+            $ts,
+            $bodyText
+        );
 
         // Optional from overrides (override SMTP from_name/from_email)
         $fromNameOverride = trim((string)($monitor['legacy_email_from_name'] ?? ''));
@@ -836,10 +878,13 @@ function sendNotification($monitor, $message, $statusTrigger = 'both') {
 
         foreach ($recipients as $toEmail) {
             error_log("[EMAIL] Preparing to send legacy email to: {$toEmail}, subject: $subject");
-            error_log("[EMAIL] Body preview: " . substr($body, 0, 120) . "...");
+            error_log("[EMAIL] Body preview: " . substr($bodyText, 0, 120) . "...");
 
             // Send email using our SMTP helper. If $emailConfig is set, sendEmail will still load missing SMTP settings from DB? (we merge below)
-            $result = sendEmailWithOptionalFromOverride($toEmail, $subject, $body, $emailConfig, $ccList);
+            $result = sendEmailWithOptionalFromOverride($toEmail, $subject, $bodyText, $emailConfig, $ccList, [
+                'html' => $html,
+                'text' => $bodyText
+            ]);
             error_log("[EMAIL] sendEmail result (to {$toEmail}): " . ($result === true ? "SUCCESS" : "FAILED: " . $result));
         
             $success = ($result === true) ? 1 : 0;
@@ -895,9 +940,9 @@ function sendNotification($monitor, $message, $statusTrigger = 'both') {
  * Helper: sendEmail but allow overriding from_name/from_email while still using DB SMTP settings.
  * $overrides may contain from_name/from_email; other SMTP settings will still be loaded by sendEmail when config is null.
  */
-function sendEmailWithOptionalFromOverride($to, $subject, $body, $overrides = null, $cc = []) {
+function sendEmailWithOptionalFromOverride($to, $subject, $body, $overrides = null, $cc = [], $options = []) {
     if (empty($overrides) || (!isset($overrides['from_name']) && !isset($overrides['from_email']))) {
-        return sendEmail($to, $subject, $body, null, $cc);
+        return sendEmail($to, $subject, $body, null, $cc, $options);
     }
 
     // Load SMTP settings from DB and then apply overrides
@@ -922,7 +967,7 @@ function sendEmailWithOptionalFromOverride($to, $subject, $body, $overrides = nu
         $config['from_email'] = $overrides['from_email'];
     }
 
-    return sendEmail($to, $subject, $body, $config, $cc);
+    return sendEmail($to, $subject, $body, $config, $cc, $options);
 }
 
 /**

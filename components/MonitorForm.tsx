@@ -595,7 +595,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                     className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
                                     required
                                 />
-                                <FieldHelp text="How often the monitor should check the target (in minutes). Lower values provide faster alerts but use more resources. Recommended: 5-15 minutes for critical services." />
+                                <FieldHelp text="How often the monitor should check the target on its normal schedule (cron/worker). Lower values provide faster alerts but use more resources. Note: 'Check Now' / 'Force refresh' runs immediately and does not wait for this interval." />
                             </div>
 
                             <div>

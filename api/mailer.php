@@ -40,10 +40,10 @@ function normalizeEmailList($emails) {
     return $deduped;
 }
 
-function sendEmail($to, $subject, $body, $config = null, $cc = []) {
+function sendEmail($to, $subject, $body, $config = null, $cc = [], $options = []) {
     $toList = normalizeEmailList($to);
     $ccList = normalizeEmailList($cc);
-    return sendEmailMulti($toList, $ccList, $subject, $body, $config);
+    return sendEmailMulti($toList, $ccList, $subject, $body, $config, $options);
 }
 
 /**
@@ -51,7 +51,7 @@ function sendEmail($to, $subject, $body, $config = null, $cc = []) {
  * - For SMTP: issues RCPT TO for each recipient (to+cc), and adds "To:" and "Cc:" headers.
  * - For PHP mail(): passes combined To string and includes Cc header.
  */
-function sendEmailMulti(array $toList, array $ccList, $subject, $body, $config = null) {
+function sendEmailMulti(array $toList, array $ccList, $subject, $body, $config = null, $options = []) {
     $toHeader = implode(', ', $toList);
     $ccHeader = implode(', ', $ccList);
     $allRecipients = array_values(array_unique(array_merge($toList, $ccList)));
@@ -86,12 +86,35 @@ function sendEmailMulti(array $toList, array $ccList, $subject, $body, $config =
         if (empty($config['enabled']) || ($config['enabled'] !== '1' && $config['enabled'] !== 'true')) {
             error_log("[EMAIL] SMTP disabled, falling back to PHP mail()");
             // SMTP disabled, fall back to mail()
-            $headers = "From: noreply@linknest.local\r\n";
+            $headers = "MIME-Version: 1.0\r\n";
+            $headers .= "From: noreply@linknest.local\r\n";
             if (!empty($ccHeader)) {
                 $headers .= "Cc: $ccHeader\r\n";
             }
-            $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
-            $mailResult = @mail($toHeader, $subject, $body, $headers);
+
+            $contentType = "text/plain; charset=UTF-8";
+            $mailBody = (string)$body;
+            if (is_array($options)) {
+                if (!empty($options['html'])) {
+                    $boundary = 'ln_' . bin2hex(random_bytes(8));
+                    $contentType = 'multipart/alternative; boundary="' . $boundary . '"';
+                    $textPart = (string)($options['text'] ?? $body);
+                    $htmlPart = (string)$options['html'];
+                    $mailBody =
+                        "--{$boundary}\r\n" .
+                        "Content-Type: text/plain; charset=UTF-8\r\n\r\n" .
+                        $textPart . "\r\n" .
+                        "--{$boundary}\r\n" .
+                        "Content-Type: text/html; charset=UTF-8\r\n\r\n" .
+                        $htmlPart . "\r\n" .
+                        "--{$boundary}--\r\n";
+                } elseif (!empty($options['is_html'])) {
+                    $contentType = "text/html; charset=UTF-8";
+                }
+            }
+
+            $headers .= "Content-Type: {$contentType}\r\n";
+            $mailResult = @mail($toHeader, $subject, $mailBody, $headers);
             error_log("[EMAIL] PHP mail() result: " . ($mailResult ? "SUCCESS" : "FAILED"));
             return $mailResult ? true : "PHP mail() failed";
         }
@@ -154,7 +177,8 @@ function sendEmailMulti(array $toList, array $ccList, $subject, $body, $config =
     $read(); // Read greeting
     error_log("[EMAIL] Received SMTP greeting");
 
-    $write('EHLO ' . $_SERVER['SERVER_NAME']);
+    $ehloHost = $_SERVER['SERVER_NAME'] ?? 'localhost';
+    $write('EHLO ' . $ehloHost);
     $read();
     error_log("[EMAIL] Sent EHLO command");
 
@@ -168,7 +192,7 @@ function sendEmailMulti(array $toList, array $ccList, $subject, $body, $config =
         }
         stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT);
         error_log("[EMAIL] TLS encryption enabled");
-        $write('EHLO ' . $_SERVER['SERVER_NAME']);
+        $write('EHLO ' . $ehloHost);
         $read();
     }
 
@@ -215,6 +239,31 @@ function sendEmailMulti(array $toList, array $ccList, $subject, $body, $config =
         return "DATA failed: $response";
     }
 
+    $contentType = "text/plain; charset=UTF-8";
+    $smtpBody = (string)$body;
+
+    if (is_array($options)) {
+        if (!empty($options['html'])) {
+            $boundary = 'ln_' . bin2hex(random_bytes(8));
+            $contentType = 'multipart/alternative; boundary="' . $boundary . '"';
+            $textPart = (string)($options['text'] ?? $body);
+            $htmlPart = (string)$options['html'];
+            $smtpBody =
+                "--{$boundary}\r\n" .
+                "Content-Type: text/plain; charset=UTF-8\r\n\r\n" .
+                $textPart . "\r\n" .
+                "--{$boundary}\r\n" .
+                "Content-Type: text/html; charset=UTF-8\r\n\r\n" .
+                $htmlPart . "\r\n" .
+                "--{$boundary}--\r\n";
+        } elseif (!empty($options['is_html'])) {
+            $contentType = "text/html; charset=UTF-8";
+        }
+    }
+
+    // Dot-stuffing (SMTP transparency)
+    $smtpBody = preg_replace("/(^|\\r\\n)\\./", "$1..", $smtpBody);
+
     $message  = "Date: " . date('r') . "\r\n";
     $message .= "To: $toHeader\r\n";
     if (!empty($ccHeader)) {
@@ -223,9 +272,9 @@ function sendEmailMulti(array $toList, array $ccList, $subject, $body, $config =
     $message .= "From: $fromName <$fromEmail>\r\n";
     $message .= "Subject: $subject\r\n";
     $message .= "MIME-Version: 1.0\r\n";
-    $message .= "Content-Type: text/plain; charset=UTF-8\r\n";
+    $message .= "Content-Type: {$contentType}\r\n";
     $message .= "\r\n";
-    $message .= $body;
+    $message .= $smtpBody;
     $message .= "\r\n.";
 
     error_log("[EMAIL] Sending email message body");
