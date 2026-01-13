@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { customTimezoneService } from '../services/customTimezoneService';
 import { alarmService } from '../services/alarmService';
+import { userPreferencesService } from '../services/userPreferencesService';
 
-// USA Timezones
+// USA Timezones (for quick access)
 const USA_TIMEZONES = [
   { name: 'Eastern Time', tz: 'America/New_York', abbrev: 'ET' },
   { name: 'Central Time', tz: 'America/Chicago', abbrev: 'CT' },
@@ -11,6 +12,18 @@ const USA_TIMEZONES = [
   { name: 'Pacific Time', tz: 'America/Los_Angeles', abbrev: 'PT' },
   { name: 'Alaska Time', tz: 'America/Anchorage', abbrev: 'AKT' },
   { name: 'Hawaii Time', tz: 'Pacific/Honolulu', abbrev: 'HST' },
+];
+
+// Common World Timezones
+const WORLD_TIMEZONES = [
+  { name: 'London (GMT)', tz: 'Europe/London', abbrev: 'GMT' },
+  { name: 'Paris (CET)', tz: 'Europe/Paris', abbrev: 'CET' },
+  { name: 'Dubai (GST)', tz: 'Asia/Dubai', abbrev: 'GST' },
+  { name: 'India (IST)', tz: 'Asia/Kolkata', abbrev: 'IST' },
+  { name: 'Singapore (SGT)', tz: 'Asia/Singapore', abbrev: 'SGT' },
+  { name: 'Tokyo (JST)', tz: 'Asia/Tokyo', abbrev: 'JST' },
+  { name: 'Sydney (AEDT)', tz: 'Australia/Sydney', abbrev: 'AEDT' },
+  { name: 'Auckland (NZDT)', tz: 'Pacific/Auckland', abbrev: 'NZDT' },
 ];
 
 type ToolMode = 'clock' | 'stopwatch' | 'timer' | 'alarm';
@@ -31,7 +44,15 @@ type CustomTimezone = {
   source?: 'db' | 'local';
 };
 
+type MainClockConfig = {
+  type: 'system' | 'custom' | 'predefined'; // 'system' = use browser's timezone, 'custom' = use a custom timezone, 'predefined' = use a USA/World timezone
+  customTimezoneId?: string; // if type is 'custom', this is the id of the custom timezone
+  predefinedTimezone?: string; // if type is 'predefined', this is the IANA timezone string (e.g., 'America/New_York')
+  predefinedName?: string; // display name for the predefined timezone
+};
+
 const TOOLS_STORAGE_KEY = 'linknest.timeWidget.tools.v1';
+const MAIN_CLOCK_STORAGE_KEY = 'linknest.mainClock.config.v1';
 
 function formatDuration(ms: number) {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -40,6 +61,20 @@ function formatDuration(ms: number) {
   const s = totalSeconds % 60;
   if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function formatDurationWithMs(ms: number) {
+  const totalMs = Math.max(0, ms);
+  const totalSeconds = Math.floor(totalMs / 1000);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const centiseconds = Math.floor((totalMs % 1000) / 10); // Show centiseconds (hundredths)
+  
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${centiseconds.toString().padStart(2, '0')}`;
+  }
+  return `${m}:${s.toString().padStart(2, '0')}.${centiseconds.toString().padStart(2, '0')}`;
 }
 
 function safeJsonParse<T>(raw: string | null): T | null {
@@ -291,6 +326,7 @@ export const TimezoneDisplay: React.FC = () => {
   const [timerDurationMs, setTimerDurationMs] = useState(5 * 60 * 1000);
   const [timerRemainingMs, setTimerRemainingMs] = useState(5 * 60 * 1000);
   const [timerEndAt, setTimerEndAt] = useState<number | null>(null); // epoch ms
+  const [customTimerMinutes, setCustomTimerMinutes] = useState<string>(''); // custom timer input
 
   // Alarm state
   const [alarms, setAlarms] = useState<AlarmItem[]>([]);
@@ -303,6 +339,10 @@ export const TimezoneDisplay: React.FC = () => {
   const [newCustomTzOffset, setNewCustomTzOffset] = useState('UTC+00:00');
   const [customTzLoadedFromDb, setCustomTzLoadedFromDb] = useState(false);
 
+  // Main clock configuration
+  const [mainClockConfig, setMainClockConfig] = useState<MainClockConfig>({ type: 'system' });
+  const [expandedSection, setExpandedSection] = useState<'usa' | 'world' | 'custom' | null>(null);
+
   const [nowMs, setNowMs] = useState(Date.now());
 
   // Ringing state (keep sounding until user dismisses)
@@ -311,17 +351,6 @@ export const TimezoneDisplay: React.FC = () => {
   const stopBeepRef = React.useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    // Get timezone information
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    setTimezone(tz);
-
-    // Get timezone offset
-    const offset = -new Date().getTimezoneOffset();
-    const offsetHours = Math.floor(Math.abs(offset) / 60);
-    const offsetMinutes = Math.abs(offset) % 60;
-    const offsetSign = offset >= 0 ? '+' : '-';
-    setTimezoneOffset(`${offsetSign}${offsetHours.toString().padStart(2, '0')}:${offsetMinutes.toString().padStart(2, '0')}`);
-
     // Update time every second
     const interval = setInterval(() => {
       setCurrentTime(new Date());
@@ -331,6 +360,36 @@ export const TimezoneDisplay: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Update timezone information based on main clock config
+  useEffect(() => {
+    if (mainClockConfig.type === 'custom' && mainClockConfig.customTimezoneId) {
+      const customTz = customTimezones.find(tz => tz.id === mainClockConfig.customTimezoneId);
+      if (customTz) {
+        setTimezone(customTz.name);
+        setTimezoneOffset(offsetMinutesToUtcString(customTz.utcOffsetMinutes).replace('UTC', ''));
+        return;
+      }
+    }
+
+    if (mainClockConfig.type === 'predefined' && mainClockConfig.predefinedTimezone) {
+      setTimezone(mainClockConfig.predefinedName || mainClockConfig.predefinedTimezone);
+      const tzOffset = getTimezoneOffsetValue(mainClockConfig.predefinedTimezone);
+      setTimezoneOffset(tzOffset);
+      return;
+    }
+
+    // Default: use system timezone
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    setTimezone(tz);
+
+    // Get timezone offset
+    const offset = -new Date().getTimezoneOffset();
+    const offsetHours = Math.floor(Math.abs(offset) / 60);
+    const offsetMinutes = Math.abs(offset) % 60;
+    const offsetSign = offset >= 0 ? '+' : '-';
+    setTimezoneOffset(`${offsetSign}${offsetHours.toString().padStart(2, '0')}:${offsetMinutes.toString().padStart(2, '0')}`);
+  }, [mainClockConfig, customTimezones]);
+
   // Extra ticks for smoother stopwatch/timer updates when running
   useEffect(() => {
     if (!swRunning && !timerRunning) return;
@@ -338,69 +397,133 @@ export const TimezoneDisplay: React.FC = () => {
     return () => clearInterval(interval);
   }, [swRunning, timerRunning]);
 
-  // Load persisted tools state once
+  // Load main clock configuration once
   useEffect(() => {
-    const stored = safeJsonParse<any>(localStorage.getItem(TOOLS_STORAGE_KEY));
-    if (!stored || typeof stored !== 'object') return;
-
-    if (stored.mode === 'clock' || stored.mode === 'stopwatch' || stored.mode === 'timer' || stored.mode === 'alarm') {
-      setMode(stored.mode);
-    }
-
-    if (stored.stopwatch && typeof stored.stopwatch === 'object') {
-      const elapsed = typeof stored.stopwatch.elapsedMs === 'number' ? stored.stopwatch.elapsedMs : 0;
-      const running = stored.stopwatch.running === true;
-      const startAt = typeof stored.stopwatch.startAt === 'number' ? stored.stopwatch.startAt : null;
-      setSwElapsedMs(Math.max(0, elapsed));
-      setSwRunning(running);
-      setSwStartAt(startAt);
-    }
-
-    if (stored.timer && typeof stored.timer === 'object') {
-      const duration = typeof stored.timer.durationMs === 'number' ? stored.timer.durationMs : 5 * 60 * 1000;
-      const remaining = typeof stored.timer.remainingMs === 'number' ? stored.timer.remainingMs : duration;
-      const running = stored.timer.running === true;
-      const endAt = typeof stored.timer.endAt === 'number' ? stored.timer.endAt : null;
-      setTimerDurationMs(Math.max(1000, duration));
-      setTimerRunning(running);
-      setTimerEndAt(endAt);
-
-      if (running && endAt) {
-        const rem = Math.max(0, endAt - Date.now());
-        setTimerRemainingMs(rem);
-      } else {
-        setTimerRemainingMs(Math.max(0, remaining));
+    if (isAuthenticated) {
+      // Load from database for authenticated users
+      userPreferencesService.getPreference('clock_main_config').then((value) => {
+        if (value) {
+          const stored = safeJsonParse<any>(value);
+          if (stored && typeof stored === 'object') {
+            if (stored.type === 'system' || stored.type === 'custom' || stored.type === 'predefined') {
+              setMainClockConfig(stored);
+            }
+          }
+        }
+      }).catch(() => {
+        // Ignore errors - will use default config
+      });
+    } else {
+      // Load from localStorage for unauthenticated users
+      const stored = safeJsonParse<any>(localStorage.getItem(MAIN_CLOCK_STORAGE_KEY));
+      if (stored && typeof stored === 'object') {
+        if (stored.type === 'system' || stored.type === 'custom' || stored.type === 'predefined') {
+          setMainClockConfig(stored);
+        }
       }
     }
+  }, [isAuthenticated]);
 
-    if (Array.isArray(stored.alarms)) {
-      const cleaned: AlarmItem[] = stored.alarms
-        .filter((a: any) => a && typeof a === 'object')
-        .map((a: any) => ({
-          id: typeof a.id === 'string' ? a.id : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-          time: typeof a.time === 'string' ? a.time : '08:00',
-          label: typeof a.label === 'string' ? a.label : 'Alarm',
-          enabled: a.enabled === true,
-          lastTriggeredKey: typeof a.lastTriggeredKey === 'string' ? a.lastTriggeredKey : undefined,
-          source: 'local' as const,
-        }));
-      setAlarms(cleaned);
+  // Persist main clock configuration
+  useEffect(() => {
+    if (isAuthenticated) {
+      // Save to database for authenticated users
+      userPreferencesService.updatePreference('clock_main_config', JSON.stringify(mainClockConfig)).catch(() => {
+        // Ignore errors
+      });
+    } else {
+      // Save to localStorage for unauthenticated users
+      try {
+        localStorage.setItem(MAIN_CLOCK_STORAGE_KEY, JSON.stringify(mainClockConfig));
+      } catch {
+        // ignore
+      }
     }
+  }, [mainClockConfig, isAuthenticated]);
 
-    if (Array.isArray(stored.customTimezones)) {
-      const cleaned: CustomTimezone[] = stored.customTimezones
-        .filter((t: any) => t && typeof t === 'object')
-        .map((t: any) => ({
-          id: typeof t.id === 'string' ? t.id : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-          name: typeof t.name === 'string' ? t.name : 'Custom',
-          utcOffsetMinutes: typeof t.utcOffsetMinutes === 'number' ? t.utcOffsetMinutes : 0,
-          source: 'local' as const,
-        }))
-        .filter((t) => Number.isFinite(t.utcOffsetMinutes));
-      setCustomTimezones(cleaned);
-    }
+  // Load persisted tools state once
+  useEffect(() => {
+    const loadToolsState = async () => {
+      let stored: any = null;
+      
+      if (isAuthenticated) {
+        // Load from database for authenticated users
+        try {
+          const value = await userPreferencesService.getPreference('clock_tools_state');
+          if (value) {
+            stored = safeJsonParse<any>(value);
+          }
+        } catch {
+          // Ignore errors
+        }
+      } else {
+        // Load from localStorage for unauthenticated users
+        stored = safeJsonParse<any>(localStorage.getItem(TOOLS_STORAGE_KEY));
+      }
+
+      if (!stored || typeof stored !== 'object') return;
+
+      if (stored.mode === 'clock' || stored.mode === 'stopwatch' || stored.mode === 'timer' || stored.mode === 'alarm') {
+        setMode(stored.mode);
+      }
+
+      if (stored.stopwatch && typeof stored.stopwatch === 'object') {
+        const elapsed = typeof stored.stopwatch.elapsedMs === 'number' ? stored.stopwatch.elapsedMs : 0;
+        const running = stored.stopwatch.running === true;
+        const startAt = typeof stored.stopwatch.startAt === 'number' ? stored.stopwatch.startAt : null;
+        setSwElapsedMs(Math.max(0, elapsed));
+        setSwRunning(running);
+        setSwStartAt(startAt);
+      }
+
+      if (stored.timer && typeof stored.timer === 'object') {
+        const duration = typeof stored.timer.durationMs === 'number' ? stored.timer.durationMs : 5 * 60 * 1000;
+        const remaining = typeof stored.timer.remainingMs === 'number' ? stored.timer.remainingMs : duration;
+        const running = stored.timer.running === true;
+        const endAt = typeof stored.timer.endAt === 'number' ? stored.timer.endAt : null;
+        setTimerDurationMs(Math.max(1000, duration));
+        setTimerRunning(running);
+        setTimerEndAt(endAt);
+
+        if (running && endAt) {
+          const rem = Math.max(0, endAt - Date.now());
+          setTimerRemainingMs(rem);
+        } else {
+          setTimerRemainingMs(Math.max(0, remaining));
+        }
+      }
+
+      if (Array.isArray(stored.alarms)) {
+        const cleaned: AlarmItem[] = stored.alarms
+          .filter((a: any) => a && typeof a === 'object')
+          .map((a: any) => ({
+            id: typeof a.id === 'string' ? a.id : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            time: typeof a.time === 'string' ? a.time : '08:00',
+            label: typeof a.label === 'string' ? a.label : 'Alarm',
+            enabled: a.enabled === true,
+            lastTriggeredKey: typeof a.lastTriggeredKey === 'string' ? a.lastTriggeredKey : undefined,
+            source: 'local' as const,
+          }));
+        setAlarms(cleaned);
+      }
+
+      if (Array.isArray(stored.customTimezones)) {
+        const cleaned: CustomTimezone[] = stored.customTimezones
+          .filter((t: any) => t && typeof t === 'object')
+          .map((t: any) => ({
+            id: typeof t.id === 'string' ? t.id : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            name: typeof t.name === 'string' ? t.name : 'Custom',
+            utcOffsetMinutes: typeof t.utcOffsetMinutes === 'number' ? t.utcOffsetMinutes : 0,
+            source: 'local' as const,
+          }))
+          .filter((t) => Number.isFinite(t.utcOffsetMinutes));
+        setCustomTimezones(cleaned);
+      }
+    };
+
+    loadToolsState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isAuthenticated]);
 
   // Load alarms from DB when authenticated
   useEffect(() => {
@@ -463,21 +586,28 @@ export const TimezoneDisplay: React.FC = () => {
 
   // Persist tools state
   useEffect(() => {
-    try {
-      localStorage.setItem(
-        TOOLS_STORAGE_KEY,
-        JSON.stringify({
-          mode,
-          stopwatch: { running: swRunning, elapsedMs: swElapsedMs, startAt: swStartAt },
-          timer: { running: timerRunning, durationMs: timerDurationMs, remainingMs: timerRemainingMs, endAt: timerEndAt },
-          alarms,
-          customTimezones,
-        }),
-      );
-    } catch {
-      // ignore
+    const toolsState = {
+      mode,
+      stopwatch: { running: swRunning, elapsedMs: swElapsedMs, startAt: swStartAt },
+      timer: { running: timerRunning, durationMs: timerDurationMs, remainingMs: timerRemainingMs, endAt: timerEndAt },
+      alarms,
+      customTimezones,
+    };
+
+    if (isAuthenticated) {
+      // Save to database for authenticated users
+      userPreferencesService.updatePreference('clock_tools_state', JSON.stringify(toolsState)).catch(() => {
+        // Ignore errors
+      });
+    } else {
+      // Save to localStorage for unauthenticated users
+      try {
+        localStorage.setItem(TOOLS_STORAGE_KEY, JSON.stringify(toolsState));
+      } catch {
+        // ignore
+      }
     }
-  }, [mode, swRunning, swElapsedMs, swStartAt, timerRunning, timerDurationMs, timerRemainingMs, timerEndAt, alarms, customTimezones]);
+  }, [mode, swRunning, swElapsedMs, swStartAt, timerRunning, timerDurationMs, timerRemainingMs, timerEndAt, alarms, customTimezones, isAuthenticated]);
 
   // Cleanup beep loop on unmount
   useEffect(() => {
@@ -630,6 +760,23 @@ export const TimezoneDisplay: React.FC = () => {
     setTimerRemainingMs(ms);
   };
 
+  const setCustomTimer = () => {
+    const minutes = parseInt(customTimerMinutes, 10);
+    if (Number.isFinite(minutes) && minutes > 0) {
+      const ms = minutes * 60 * 1000;
+      timerSetPreset(ms);
+      setCustomTimerMinutes('');
+    }
+  };
+
+  const handleCustomTimerInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    // Only allow numbers
+    if (value === '' || /^\d+$/.test(value)) {
+      setCustomTimerMinutes(value);
+    }
+  };
+
   const timerStartPause = () => {
     if (timerRinging) dismissRinging();
     if (timerRunning) {
@@ -682,17 +829,100 @@ export const TimezoneDisplay: React.FC = () => {
         .create(name, offset)
         .then((tz) => {
           setCustomTimezones((prev) => [{ id: String(tz.id), name: tz.name, utcOffsetMinutes: tz.utc_offset_minutes, source: 'db' }, ...prev]);
+          setNewCustomTzName('Custom');
+          setNewCustomTzOffset('UTC+00:00');
         })
         .catch(() => {
           // fallback to local if API fails
           const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
           setCustomTimezones((prev) => [{ id, name, utcOffsetMinutes: offset, source: 'local' }, ...prev]);
+          setNewCustomTzName('Custom');
+          setNewCustomTzOffset('UTC+00:00');
         });
       return;
     }
 
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     setCustomTimezones((prev) => [{ id, name, utcOffsetMinutes: offset, source: 'local' }, ...prev]);
+    setNewCustomTzName('Custom');
+    setNewCustomTzOffset('UTC+00:00');
+  };
+
+  const exportCustomTimezones = () => {
+    const data = JSON.stringify(customTimezones, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `linknest-custom-timezones-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const importCustomTimezones = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const imported = JSON.parse(e.target?.result as string);
+        if (!Array.isArray(imported)) {
+          alert('Invalid file format. Expected an array of timezones.');
+          return;
+        }
+
+        const validated: CustomTimezone[] = imported
+          .filter((tz: any) => tz && typeof tz === 'object')
+          .map((tz: any) => ({
+            id: `imported-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            name: typeof tz.name === 'string' ? tz.name : 'Imported',
+            utcOffsetMinutes: typeof tz.utcOffsetMinutes === 'number' ? tz.utcOffsetMinutes : 0,
+            source: 'local' as const,
+          }))
+          .filter((tz) => Number.isFinite(tz.utcOffsetMinutes));
+
+        if (validated.length === 0) {
+          alert('No valid timezones found in the file.');
+          return;
+        }
+
+        setCustomTimezones((prev) => [...validated, ...prev]);
+        alert(`Successfully imported ${validated.length} timezone(s).`);
+      } catch (err) {
+        alert('Failed to parse the file. Please ensure it is a valid JSON file.');
+      }
+    };
+    reader.readAsText(file);
+    // Reset the input so the same file can be selected again
+    event.target.value = '';
+  };
+
+  const setAsMainClock = (timezoneId: string) => {
+    setMainClockConfig({ type: 'custom', customTimezoneId: timezoneId });
+  };
+
+  const setAsPredefinedMainClock = (timezone: string, name: string) => {
+    setMainClockConfig({ type: 'predefined', predefinedTimezone: timezone, predefinedName: name });
+  };
+
+  const resetToSystemClock = () => {
+    setMainClockConfig({ type: 'system' });
+  };
+
+  const getMainClockDisplay = () => {
+    if (mainClockConfig.type === 'custom' && mainClockConfig.customTimezoneId) {
+      const customTz = customTimezones.find(tz => tz.id === mainClockConfig.customTimezoneId);
+      if (customTz) {
+        return formatTimeForUtcOffset(currentTime, customTz.utcOffsetMinutes);
+      }
+    }
+    if (mainClockConfig.type === 'predefined' && mainClockConfig.predefinedTimezone) {
+      return formatDateTime(currentTime, mainClockConfig.predefinedTimezone);
+    }
+    return formatDateTime(currentTime);
   };
 
   return (
@@ -772,14 +1002,19 @@ export const TimezoneDisplay: React.FC = () => {
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
               </svg>
               <div className="flex flex-col leading-tight flex-1">
-                <span className="font-medium text-sm">{formatDateTime(currentTime)}</span>
+                <span className="font-medium text-sm">{getMainClockDisplay()}</span>
                 <span className="text-[10px] opacity-75">{timezone} (UTC{timezoneOffset})</span>
+                {(mainClockConfig.type === 'custom' || mainClockConfig.type === 'predefined') && (
+                  <span className="text-[9px] opacity-60 text-blue-600 dark:text-blue-400">
+                    {mainClockConfig.type === 'custom' ? 'Custom Main Clock' : 'Main Clock'}
+                  </span>
+                )}
               </div>
             </div>
             <button
               onClick={toggleExpand}
               className="flex-shrink-0 p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
-              title={isExpanded ? "Hide USA timezones" : "Show USA timezones"}
+              title={isExpanded ? "Hide timezones" : "Show timezones"}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -792,113 +1027,284 @@ export const TimezoneDisplay: React.FC = () => {
             </button>
           </div>
 
-          {/* Expandable USA Timezones List */}
+          {/* Expandable Timezones List */}
           <div
             className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-[800px] opacity-100 mt-3' : 'max-h-0 opacity-0'
               }`}
           >
             <div className="border-t border-slate-200 dark:border-slate-700 pt-3 space-y-3">
-              {USA_TIMEZONES.map((tzInfo) => {
-                const tzOffset = getTimezoneOffsetValue(tzInfo.tz);
-                return (
-                  <div
-                    key={tzInfo.tz}
-                    className="flex items-center gap-3 px-2 py-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors"
+              {/* System Clock Reset */}
+              {(mainClockConfig.type === 'custom' || mainClockConfig.type === 'predefined') && (
+                <button
+                  onClick={resetToSystemClock}
+                  className="w-full px-3 py-2 rounded-lg text-[11px] font-semibold bg-slate-100 dark:bg-slate-700/60 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-left"
+                >
+                  ← Reset to System Clock
+                </button>
+              )}
+
+              {/* USA Timezones Section */}
+              <div>
+                <button
+                  onClick={() => setExpandedSection(expandedSection === 'usa' ? null : 'usa')}
+                  className="w-full flex items-center justify-between px-2 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded transition-colors"
+                >
+                  <span className="text-[10px] font-bold uppercase tracking-wider opacity-70">USA Timezones</span>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    className={`w-3.5 h-3.5 transition-transform duration-300 ${expandedSection === 'usa' ? 'rotate-180' : ''}`}
                   >
-                    <ClockFace date={currentTime} timeZone={tzInfo.tz} size={40} showNumbers={false} />
-                    <div className="flex flex-col leading-tight flex-1 overflow-hidden">
-                      <div className="flex justify-between items-baseline gap-2">
-                        <span className="font-bold text-[12px] truncate">{tzInfo.name}</span>
-                        <span className="text-[10px] font-mono whitespace-nowrap bg-slate-200 dark:bg-slate-700 px-1 rounded">UTC{tzOffset}</span>
-                      </div>
-                      <div className="flex justify-between items-center mt-0.5">
-                        <span className="text-[11px] font-medium text-slate-700 dark:text-slate-300">
-                          {formatDateTime(currentTime, tzInfo.tz)}
-                        </span>
-                        <span className="text-[9px] opacity-60 uppercase font-semibold">
-                          {tzInfo.abbrev}
-                        </span>
-                      </div>
-                    </div>
+                    <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </button>
+                <div className={`overflow-hidden transition-all duration-300 ${expandedSection === 'usa' ? 'max-h-[500px] mt-2' : 'max-h-0'}`}>
+                  <div className="space-y-1">
+                    {USA_TIMEZONES.map((tzInfo) => {
+                      const tzOffset = getTimezoneOffsetValue(tzInfo.tz);
+                      const isMainClock = mainClockConfig.type === 'predefined' && mainClockConfig.predefinedTimezone === tzInfo.tz;
+                      return (
+                        <div
+                          key={tzInfo.tz}
+                          className={`flex items-center gap-2 px-2 py-2 rounded transition-colors ${
+                            isMainClock ? 'bg-blue-100 dark:bg-blue-900/30 border-2 border-blue-500' : 'hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                          }`}
+                        >
+                          <ClockFace date={currentTime} timeZone={tzInfo.tz} size={36} showNumbers={false} />
+                          <div className="flex flex-col leading-tight flex-1 overflow-hidden">
+                            <div className="flex justify-between items-baseline gap-2">
+                              <span className="font-bold text-[11px] truncate">{tzInfo.name}</span>
+                              <span className="text-[9px] font-mono whitespace-nowrap bg-slate-200 dark:bg-slate-700 px-1 rounded">UTC{tzOffset}</span>
+                            </div>
+                            <div className="text-[10px] font-medium text-slate-700 dark:text-slate-300">
+                              {formatDateTime(currentTime, tzInfo.tz)}
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-[9px] opacity-60 uppercase font-semibold">
+                                {tzInfo.abbrev}
+                              </span>
+                              {isMainClock && (
+                                <span className="text-[8px] text-blue-600 dark:text-blue-400 font-semibold">★ Main Clock</span>
+                              )}
+                            </div>
+                          </div>
+                          {!isMainClock && (
+                            <button
+                              type="button"
+                              onClick={() => setAsPredefinedMainClock(tzInfo.tz, tzInfo.name)}
+                              className="px-2 py-0.5 rounded-md text-[9px] font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-colors whitespace-nowrap"
+                              title="Set as main clock"
+                            >
+                              Set Main
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </div>
+              </div>
+
+              {/* World Timezones Section */}
+              <div>
+                <button
+                  onClick={() => setExpandedSection(expandedSection === 'world' ? null : 'world')}
+                  className="w-full flex items-center justify-between px-2 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded transition-colors"
+                >
+                  <span className="text-[10px] font-bold uppercase tracking-wider opacity-70">World Timezones</span>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    className={`w-3.5 h-3.5 transition-transform duration-300 ${expandedSection === 'world' ? 'rotate-180' : ''}`}
+                  >
+                    <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </button>
+                <div className={`overflow-hidden transition-all duration-300 ${expandedSection === 'world' ? 'max-h-[500px] mt-2' : 'max-h-0'}`}>
+                  <div className="space-y-1">
+                    {WORLD_TIMEZONES.map((tzInfo) => {
+                      const tzOffset = getTimezoneOffsetValue(tzInfo.tz);
+                      const isMainClock = mainClockConfig.type === 'predefined' && mainClockConfig.predefinedTimezone === tzInfo.tz;
+                      return (
+                        <div
+                          key={tzInfo.tz}
+                          className={`flex items-center gap-2 px-2 py-2 rounded transition-colors ${
+                            isMainClock ? 'bg-blue-100 dark:bg-blue-900/30 border-2 border-blue-500' : 'hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                          }`}
+                        >
+                          <ClockFace date={currentTime} timeZone={tzInfo.tz} size={36} showNumbers={false} />
+                          <div className="flex flex-col leading-tight flex-1 overflow-hidden">
+                            <div className="flex justify-between items-baseline gap-2">
+                              <span className="font-bold text-[11px] truncate">{tzInfo.name}</span>
+                              <span className="text-[9px] font-mono whitespace-nowrap bg-slate-200 dark:bg-slate-700 px-1 rounded">UTC{tzOffset}</span>
+                            </div>
+                            <div className="text-[10px] font-medium text-slate-700 dark:text-slate-300">
+                              {formatDateTime(currentTime, tzInfo.tz)}
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-[9px] opacity-60 uppercase font-semibold">
+                                {tzInfo.abbrev}
+                              </span>
+                              {isMainClock && (
+                                <span className="text-[8px] text-blue-600 dark:text-blue-400 font-semibold">★ Main Clock</span>
+                              )}
+                            </div>
+                          </div>
+                          {!isMainClock && (
+                            <button
+                              type="button"
+                              onClick={() => setAsPredefinedMainClock(tzInfo.tz, tzInfo.name)}
+                              className="px-2 py-0.5 rounded-md text-[9px] font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-colors whitespace-nowrap"
+                              title="Set as main clock"
+                            >
+                              Set Main
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
 
               {/* Custom timezones (UTC offsets) */}
               <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
-                <div className="flex items-center justify-between mb-2">
+                <button
+                  onClick={() => setExpandedSection(expandedSection === 'custom' ? null : 'custom')}
+                  className="w-full flex items-center justify-between px-2 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded transition-colors mb-2"
+                >
                   <span className="text-[10px] font-bold uppercase tracking-wider opacity-70">Custom Timezones (UTC)</span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={newCustomTzName}
-                    onChange={(e) => setNewCustomTzName(e.target.value)}
-                    placeholder="Name"
-                    className="flex-1 min-w-0 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/40 text-slate-800 dark:text-slate-100"
-                  />
-                  <input
-                    type="text"
-                    value={newCustomTzOffset}
-                    onChange={(e) => setNewCustomTzOffset(e.target.value)}
-                    placeholder="UTC+05:30"
-                    title="Examples: UTC+05:30, +02:00, -0500, UTC"
-                    className="w-28 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/40 text-slate-800 dark:text-slate-100 font-mono text-[11px]"
-                  />
-                  <button
-                    type="button"
-                    onClick={addCustomTimezone}
-                    className="px-3 py-1.5 rounded-lg font-semibold bg-brand-500 text-white hover:bg-brand-600 transition-colors"
-                    title="Add custom timezone"
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    className={`w-3.5 h-3.5 transition-transform duration-300 ${expandedSection === 'custom' ? 'rotate-180' : ''}`}
                   >
-                    Add
-                  </button>
-                </div>
+                    <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </button>
 
-                {customTimezones.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {customTimezones.map((ctz) => (
-                      <div
-                        key={ctz.id}
-                        className="flex items-center gap-3 px-2 py-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors"
-                      >
-                        <ClockFace date={currentTime} utcOffsetMinutes={ctz.utcOffsetMinutes} size={40} showNumbers={false} />
-                        <div className="flex flex-col leading-tight flex-1 overflow-hidden">
-                          <div className="flex justify-between items-baseline gap-2">
-                            <span className="font-bold text-[12px] truncate">{ctz.name}</span>
-                            <span className="text-[10px] font-mono whitespace-nowrap bg-slate-200 dark:bg-slate-700 px-1 rounded">
-                              {offsetMinutesToUtcString(ctz.utcOffsetMinutes)}
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center mt-0.5">
-                            <span className="text-[11px] font-medium text-slate-700 dark:text-slate-300">
-                              {formatTimeForUtcOffset(currentTime, ctz.utcOffsetMinutes)}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (isAuthenticated && ctz.source === 'db' && /^\d+$/.test(ctz.id)) {
-                                  const idNum = Number.parseInt(ctz.id, 10);
-                                  customTimezoneService
-                                    .remove(idNum)
-                                    .then(() => setCustomTimezones((prev) => prev.filter((x) => x.id !== ctz.id)))
-                                    .catch(() => undefined);
-                                  return;
-                                }
-                                setCustomTimezones((prev) => prev.filter((x) => x.id !== ctz.id));
-                              }}
-                              className="px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 dark:bg-slate-700/60 hover:bg-red-100 dark:hover:bg-red-900/20 hover:text-red-600 transition-colors"
-                              title="Delete"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                <div className={`overflow-hidden transition-all duration-300 ${expandedSection === 'custom' ? 'max-h-[600px]' : 'max-h-0'}`}>
+                  {/* Import/Export Buttons */}
+                  <div className="flex items-center gap-2 mb-3">
+                    <label className="flex-1 px-3 py-1.5 rounded-lg font-semibold bg-emerald-500 text-white hover:bg-emerald-600 transition-colors cursor-pointer text-center text-[11px]">
+                      Import
+                      <input
+                        type="file"
+                        accept=".json"
+                        onChange={importCustomTimezones}
+                        className="hidden"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={exportCustomTimezones}
+                      disabled={customTimezones.length === 0}
+                      className="flex-1 px-3 py-1.5 rounded-lg font-semibold bg-blue-500 text-white hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-[11px]"
+                      title="Export custom timezones"
+                    >
+                      Export
+                    </button>
                   </div>
-                )}
+
+                  {/* Add Custom Timezone Form */}
+                  <div className="flex items-center gap-2 mb-3">
+                    <input
+                      type="text"
+                      value={newCustomTzName}
+                      onChange={(e) => setNewCustomTzName(e.target.value)}
+                      placeholder="Name"
+                      className="flex-1 min-w-0 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/40 text-slate-800 dark:text-slate-100 text-[11px]"
+                    />
+                    <input
+                      type="text"
+                      value={newCustomTzOffset}
+                      onChange={(e) => setNewCustomTzOffset(e.target.value)}
+                      placeholder="UTC+05:30"
+                      title="Examples: UTC+05:30, +02:00, -0500, UTC"
+                      className="w-24 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/40 text-slate-800 dark:text-slate-100 font-mono text-[10px]"
+                    />
+                    <button
+                      type="button"
+                      onClick={addCustomTimezone}
+                      className="px-3 py-1.5 rounded-lg font-semibold bg-brand-500 text-white hover:bg-brand-600 transition-colors text-[11px]"
+                      title="Add custom timezone"
+                    >
+                      Add
+                    </button>
+                  </div>
+
+                  {/* Custom Timezones List */}
+                  {customTimezones.length > 0 ? (
+                    <div className="space-y-1 max-h-[300px] overflow-y-auto">
+                      {customTimezones.map((ctz) => {
+                        const isMainClock = mainClockConfig.type === 'custom' && mainClockConfig.customTimezoneId === ctz.id;
+                        return (
+                          <div
+                            key={ctz.id}
+                            className={`flex items-center gap-2 px-2 py-2 rounded transition-colors ${
+                              isMainClock ? 'bg-blue-100 dark:bg-blue-900/30 border-2 border-blue-500' : 'hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                            }`}
+                          >
+                            <ClockFace date={currentTime} utcOffsetMinutes={ctz.utcOffsetMinutes} size={36} showNumbers={false} />
+                            <div className="flex flex-col leading-tight flex-1 overflow-hidden">
+                              <div className="flex justify-between items-baseline gap-2">
+                                <span className="font-bold text-[11px] truncate">{ctz.name}</span>
+                                <span className="text-[9px] font-mono whitespace-nowrap bg-slate-200 dark:bg-slate-700 px-1 rounded">
+                                  {offsetMinutesToUtcString(ctz.utcOffsetMinutes)}
+                                </span>
+                              </div>
+                              <div className="text-[10px] font-medium text-slate-700 dark:text-slate-300">
+                                {formatTimeForUtcOffset(currentTime, ctz.utcOffsetMinutes)}
+                              </div>
+                              {isMainClock && (
+                                <div className="text-[8px] text-blue-600 dark:text-blue-400 font-semibold">★ Main Clock</div>
+                              )}
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              {!isMainClock && (
+                                <button
+                                  type="button"
+                                  onClick={() => setAsMainClock(ctz.id)}
+                                  className="px-2 py-0.5 rounded-md text-[9px] font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-colors whitespace-nowrap"
+                                  title="Set as main clock"
+                                >
+                                  Set Main
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  // If deleting the main clock, reset to system
+                                  if (isMainClock) {
+                                    resetToSystemClock();
+                                  }
+                                  if (isAuthenticated && ctz.source === 'db' && /^\d+$/.test(ctz.id)) {
+                                    const idNum = Number.parseInt(ctz.id, 10);
+                                    customTimezoneService
+                                      .remove(idNum)
+                                      .then(() => setCustomTimezones((prev) => prev.filter((x) => x.id !== ctz.id)))
+                                      .catch(() => undefined);
+                                    return;
+                                  }
+                                  setCustomTimezones((prev) => prev.filter((x) => x.id !== ctz.id));
+                                }}
+                                className="px-2 py-0.5 rounded-md text-[9px] font-semibold bg-slate-100 dark:bg-slate-700/60 hover:bg-red-100 dark:hover:bg-red-900/20 hover:text-red-600 transition-colors"
+                                title="Delete"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-[11px] opacity-70 text-center py-2">No custom timezones yet.</div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -909,7 +1315,7 @@ export const TimezoneDisplay: React.FC = () => {
           <div className="w-full flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70">Elapsed</span>
             <span className="font-mono text-[16px] font-bold text-slate-800 dark:text-slate-100">
-              {formatDuration(swDisplayMs)}
+              {formatDurationWithMs(swDisplayMs)}
             </span>
           </div>
           <div className="flex items-center gap-2 w-full">
@@ -939,6 +1345,8 @@ export const TimezoneDisplay: React.FC = () => {
               {formatDuration(timerDisplayMs)}
             </span>
           </div>
+          
+          {/* Preset Timers */}
           <div className="flex flex-wrap gap-1">
             {[60, 5 * 60, 10 * 60, 15 * 60, 30 * 60].map((sec) => (
               <button
@@ -951,6 +1359,30 @@ export const TimezoneDisplay: React.FC = () => {
               </button>
             ))}
           </div>
+
+          {/* Custom Timer Input */}
+          <div className="flex items-center gap-2 w-full">
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={customTimerMinutes}
+              onChange={handleCustomTimerInput}
+              placeholder="Custom minutes"
+              className="flex-1 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/40 text-slate-800 dark:text-slate-100 text-[11px]"
+            />
+            <button
+              type="button"
+              onClick={setCustomTimer}
+              disabled={!customTimerMinutes || parseInt(customTimerMinutes, 10) <= 0}
+              className="px-3 py-1.5 rounded-lg font-semibold bg-emerald-500 text-white hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-[11px]"
+              title="Set custom timer"
+            >
+              Set
+            </button>
+          </div>
+
+          {/* Start/Pause and Reset Buttons */}
           <div className="flex items-center gap-2 w-full">
             <button
               type="button"
@@ -973,6 +1405,31 @@ export const TimezoneDisplay: React.FC = () => {
       ) : (
         // Alarm
         <div className="w-full flex flex-col gap-2">
+          {/* Preset Alarms */}
+          <div className="flex flex-wrap gap-1">
+            {[
+              { time: '07:00', label: '🍳 Breakfast' },
+              { time: '09:00', label: '☀️ Morning' },
+              { time: '12:00', label: '🍽️ Lunch' },
+              { time: '15:00', label: '☕ Afternoon' },
+              { time: '18:00', label: '🍕 Dinner' },
+              { time: '20:00', label: '🌙 Evening' },
+            ].map((preset) => (
+              <button
+                key={preset.time}
+                type="button"
+                onClick={() => {
+                  setNewAlarmTime(preset.time);
+                  setNewAlarmLabel(preset.label);
+                }}
+                className="px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 dark:bg-slate-700/60 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                title={`Set ${preset.label} at ${preset.time}`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+
           <div className="flex items-center gap-2 w-full">
             <input
               type="time"
