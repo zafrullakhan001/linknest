@@ -510,8 +510,9 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
     // Determine which status triggers to check
     $triggersToCheck = [];
     
-    // Normalize prevStatus for comparison
-    $normalizedPrevStatus = ($prevStatus === '' || $prevStatus === false || $prevStatus === null) ? null : $prevStatus;
+    // Normalize status values for reliable comparison
+    $newStatus = strtolower(trim((string)$newStatus));
+    $normalizedPrevStatus = ($prevStatus === '' || $prevStatus === false || $prevStatus === null) ? null : strtolower(trim((string)$prevStatus));
     
     // Force-notify mode: evaluate rules based on current status even if it did not change.
     if ($forceNotifyRules) {
@@ -601,18 +602,29 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
         $subject = replaceTemplateVariables($rule['subject_template'], $monitor, $newStatus, $details, $responseTime);
         $body = replaceTemplateVariables($rule['body_template'], $monitor, $newStatus, $details, $responseTime);
         
-        error_log("[EMAIL] Prepared email - subject: $subject");
+        error_log("[EMAIL] Rule {$rule['id']} - Prepared email - subject: $subject");
+        error_log("[EMAIL] Rule {$rule['id']} - Recipients: " . implode(', ', $recipients));
+        error_log("[EMAIL] Rule {$rule['id']} - CC: " . implode(', ', $ccList));
         
         // Get from name and email (use rule-specific or fallback to SMTP settings)
         $fromName = $rule['from_name'] ?? ((getAppName() ?: 'LinkNest') . ' Monitor');
         $fromEmail = $rule['from_email'] ?? null;
         
+        error_log("[EMAIL] Rule {$rule['id']} - From: $fromName <" . ($fromEmail ?? 'default') . ">");
+        
         $appName = getAppName() ?: 'LinkNest';
 
         // Send ONE email per rule with multiple To + CC (prevents CC getting duplicates)
+        error_log("[EMAIL] Rule {$rule['id']} - Calling sendEmailMultiWithRuleFromOverride...");
         $result = sendEmailMultiWithRuleFromOverride($recipients, $ccList, $subject, $body, $fromName, $fromEmail, $monitor, $newStatus, $details, $responseTime, $appName);
         $success = ($result === true) ? 1 : 0;
         $errorMsg = ($result === true) ? null : $result;
+        
+        if ($success) {
+            error_log("[EMAIL] Rule {$rule['id']} - Email sent successfully");
+        } else {
+            error_log("[EMAIL] Rule {$rule['id']} - Email FAILED: $errorMsg");
+        }
 
         // Log notification for each recipient (to + cc)
         $logRecipients = array_values(array_unique(array_merge($recipients, $ccList)));
@@ -640,7 +652,10 @@ function sendEmailMultiWithRuleFromOverride(array $toList, array $ccList, $subje
     // Load SMTP settings from DB (supports new smtp_servers table)
     $config = getSMTPConfig();
 
+    // Handle from_name with {app_name} placeholder support
     if (!empty($fromName)) {
+        // Replace {app_name} placeholder if present
+        $fromName = str_replace('{app_name}', $appName, $fromName);
         $config['from_name'] = $fromName;
     }
     if (!empty($fromEmail)) {

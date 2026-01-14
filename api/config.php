@@ -996,7 +996,8 @@ function initDatabase() {
                     $pos++;
                     $upd->execute([$pos, (int)$r['id']]);
                 }
-                $db->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('monitor_notification_rules_sort_migrated', '1')");
+                $now = time();
+                $db->exec("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('monitor_notification_rules_sort_migrated', '1', $now)");
             }
         } catch (Exception $e) {
             // Ignore backfill issues; API/UI will still function using created_at ordering.
@@ -1154,10 +1155,10 @@ function initDatabase() {
                     $db->exec('CREATE INDEX IF NOT EXISTS idx_notification_logs_sent_at ON monitor_notification_logs(sent_at)');
                     
                     // Mark migration as complete
-                    $db->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('monitor_notification_logs_migrated', '1')");
+                    $db->exec("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('monitor_notification_logs_migrated', '1', " . time() . ")");
                 } else {
                     // Migration not needed, mark as done anyway
-                    $db->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('monitor_notification_logs_migrated', '1')");
+                    $db->exec("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('monitor_notification_logs_migrated', '1', " . time() . ")");
                 }
             }
         } catch (PDOException $e) {
