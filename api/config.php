@@ -842,6 +842,26 @@ function initDatabase() {
             // ignore if index creation fails
         }
 
+        // Create user_notes table for storing user notes with tabs/categories
+        $db->exec('CREATE TABLE IF NOT EXISTS user_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            tab_name TEXT NOT NULL,
+            content TEXT NOT NULL,
+            position INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )');
+
+        // Index for faster per-user lookup
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_user_notes_user_id ON user_notes(user_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_user_notes_tab_name ON user_notes(user_id, tab_name)');
+        } catch (PDOException $e) {
+            // ignore if index creation fails
+        }
+
         // Create monitors table
         $db->exec('CREATE TABLE IF NOT EXISTS monitors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

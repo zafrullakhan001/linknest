@@ -48,10 +48,15 @@ if (!empty($path)) {
     }
 }
 
+// Normalize empty path to avoid issues
+if (empty($path)) {
+    $path = '/';
+}
+
 error_log("api/index.php: Final normalized path: $path");
 
 // Route to appropriate handler
-if (empty($path) || $path === '/') {
+if ($path === '/') {
     http_response_code(404);
     header('Content-Type: application/json');
     echo json_encode(['error' => 'Not found']);
@@ -112,6 +117,19 @@ if (empty($path) || $path === '/') {
 } elseif (strpos($path, '/alarms') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 7); // Remove '/alarms'
     require __DIR__ . '/alarms.php';
+} elseif (strpos($path, '/notes') === 0) {
+    error_log("api/index.php: Matched /notes route, path: $path");
+    $remainingPath = substr($path, 6); // Remove '/notes'
+    // Set PATH_INFO - use '/' for root endpoint, or ensure sub-paths start with /
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    error_log("api/index.php: Setting PATH_INFO to: " . $_SERVER['PATH_INFO']);
+    error_log("api/index.php: Requiring notes.php");
+    require __DIR__ . '/notes.php';
+    exit; // Prevent any further execution
 } elseif (strpos($path, '/monitor-notifications') === 0) {
     // Remove '/monitor-notifications' prefix (22 characters)
     $prefixLength = strlen('/monitor-notifications');

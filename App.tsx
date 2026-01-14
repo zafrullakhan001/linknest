@@ -11,6 +11,10 @@ import { TimezoneDisplay } from './components/TimezoneDisplay';
 import { HelpAboutDialog } from './components/HelpAboutDialog';
 import { getDisabledTabsFromSettings } from './services/tabVisibilityService';
 import { FloatingClock } from './components/FloatingClock';
+import { FloatingPhoneticAlphabet } from './components/FloatingPhoneticAlphabet';
+import { PhoneticAlphabet } from './components/PhoneticAlphabet';
+import { FloatingNotesWidget } from './components/FloatingNotesWidget';
+import { NotesWidget } from './components/NotesWidget';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -82,6 +86,26 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('linknest_show_clock_widget', showClock.toString());
   }, [showClock]);
+
+  // Phonetic Alphabet Widget Visibility State
+  const [showPhoneticAlphabet, setShowPhoneticAlphabet] = useState(() => {
+    const saved = localStorage.getItem('linknest_show_phonetic_alphabet');
+    return saved !== null ? saved === 'true' : false; // Default to hidden
+  });
+
+  useEffect(() => {
+    localStorage.setItem('linknest_show_phonetic_alphabet', showPhoneticAlphabet.toString());
+  }, [showPhoneticAlphabet]);
+
+  // Notes Widget Visibility State (only for logged in users)
+  const [showNotes, setShowNotes] = useState(() => {
+    const saved = localStorage.getItem('linknest_show_notes_widget');
+    return saved !== null ? saved === 'true' : false; // Default to hidden
+  });
+
+  useEffect(() => {
+    localStorage.setItem('linknest_show_notes_widget', showNotes.toString());
+  }, [showNotes]);
 
   // Theme State
   const [darkMode, setDarkMode] = useState(() => {
@@ -222,6 +246,14 @@ const AppContent: React.FC = () => {
 
   const toggleClock = () => {
     setShowClock(!showClock);
+  };
+
+  const togglePhoneticAlphabet = () => {
+    setShowPhoneticAlphabet(!showPhoneticAlphabet);
+  };
+
+  const toggleNotes = () => {
+    setShowNotes(!showNotes);
   };
 
   const handleTabClick = (tab: string) => {
@@ -565,6 +597,10 @@ const AppContent: React.FC = () => {
         toggleTheme={toggleTheme}
         showClock={showClock}
         toggleClock={toggleClock}
+        showPhoneticAlphabet={showPhoneticAlphabet}
+        togglePhoneticAlphabet={togglePhoneticAlphabet}
+        showNotes={showNotes}
+        toggleNotes={toggleNotes}
         user={user}
         onLoginClick={() => setAuthModalOpen(true)}
         onHelpClick={() => setHelpAboutOpen(true)}
@@ -732,6 +768,16 @@ const AppContent: React.FC = () => {
         <FloatingClock>
           <TimezoneDisplay />
         </FloatingClock>
+      )}
+      {showPhoneticAlphabet && (
+        <FloatingPhoneticAlphabet>
+          <PhoneticAlphabet />
+        </FloatingPhoneticAlphabet>
+      )}
+      {isAuthenticated && showNotes && (
+        <FloatingNotesWidget>
+          <NotesWidget />
+        </FloatingNotesWidget>
       )}
       <AuthModal
         isOpen={authModalOpen}
