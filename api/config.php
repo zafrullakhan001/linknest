@@ -862,6 +862,29 @@ function initDatabase() {
             // ignore if index creation fails
         }
 
+        // Create broadcast_messages table for site-wide announcement banner
+        $db->exec('CREATE TABLE IF NOT EXISTS broadcast_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message TEXT NOT NULL,
+            font_family TEXT DEFAULT "Arial, sans-serif",
+            font_size TEXT DEFAULT "16px",
+            color TEXT DEFAULT "#ff0000",
+            is_active INTEGER DEFAULT 1,
+            expires_at INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            created_by INTEGER,
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        )');
+
+        // Index for active messages
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_broadcast_messages_active ON broadcast_messages(is_active)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_broadcast_messages_expires ON broadcast_messages(expires_at)');
+        } catch (PDOException $e) {
+            // ignore if index creation fails
+        }
+
         // Create monitors table
         $db->exec('CREATE TABLE IF NOT EXISTS monitors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

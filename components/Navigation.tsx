@@ -16,12 +16,14 @@ interface NavigationProps {
   toggleWeather: () => void;
   showCalculator: boolean;
   toggleCalculator: () => void;
+  showPasswordGenerator: boolean;
+  togglePasswordGenerator: () => void;
   user: { id: number; username: string; email: string; is_admin?: boolean } | null;
   onLoginClick: () => void;
   onHelpClick: () => void;
 }
 
-export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, showWeather, toggleWeather, showCalculator, toggleCalculator, user, onLoginClick, onHelpClick }) => {
+export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, showWeather, toggleWeather, showCalculator, toggleCalculator, showPasswordGenerator, togglePasswordGenerator, user, onLoginClick, onHelpClick }) => {
   const { logout } = useAuth();
   const { settings } = useSettings();
   const disabledTabs = getDisabledTabsFromSettings(settings);
@@ -176,6 +178,16 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme, s
               <line x1="8" y1="10" x2="16" y2="10"></line>
               <line x1="8" y1="14" x2="16" y2="14"></line>
               <line x1="8" y1="18" x2="16" y2="18"></line>
+            </svg>
+          </button>
+          <button
+            onClick={togglePasswordGenerator}
+            className={`p-2 rounded-full transition-all ${showPasswordGenerator ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-500 hover:bg-brand-100 dark:hover:bg-brand-900/50' : 'hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
+            title={showPasswordGenerator ? "Hide Password Generator Widget" : "Show Password Generator Widget"}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+              <rect x="5" y="11" width="14" height="10" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
             </svg>
           </button>
           <button

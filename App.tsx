@@ -19,6 +19,9 @@ import { FloatingWeatherWidget } from './components/FloatingWeatherWidget';
 import { WeatherWidget } from './components/WeatherWidget';
 import { FloatingCalculatorWidget } from './components/FloatingCalculatorWidget';
 import { CalculatorWidget } from './components/CalculatorWidget';
+import { FloatingPasswordGeneratorWidget } from './components/FloatingPasswordGeneratorWidget';
+import { PasswordGeneratorWidget } from './components/PasswordGeneratorWidget';
+import { BroadcastBanner } from './components/BroadcastBanner';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -130,6 +133,16 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('linknest_show_calculator_widget', showCalculator.toString());
   }, [showCalculator]);
+
+  // Password Generator Widget Visibility State
+  const [showPasswordGenerator, setShowPasswordGenerator] = useState(() => {
+    const saved = localStorage.getItem('linknest_show_password_generator_widget');
+    return saved !== null ? saved === 'true' : false; // Default to hidden
+  });
+
+  useEffect(() => {
+    localStorage.setItem('linknest_show_password_generator_widget', showPasswordGenerator.toString());
+  }, [showPasswordGenerator]);
 
   // Theme State
   const [darkMode, setDarkMode] = useState(() => {
@@ -286,6 +299,10 @@ const AppContent: React.FC = () => {
 
   const toggleCalculator = () => {
     setShowCalculator(!showCalculator);
+  };
+
+  const togglePasswordGenerator = () => {
+    setShowPasswordGenerator(!showPasswordGenerator);
   };
 
   const handleTabClick = (tab: string) => {
@@ -637,10 +654,13 @@ const AppContent: React.FC = () => {
         toggleWeather={toggleWeather}
         showCalculator={showCalculator}
         toggleCalculator={toggleCalculator}
+        showPasswordGenerator={showPasswordGenerator}
+        togglePasswordGenerator={togglePasswordGenerator}
         user={user}
         onLoginClick={() => setAuthModalOpen(true)}
         onHelpClick={() => setHelpAboutOpen(true)}
       />
+      <BroadcastBanner />
       <main className={`flex-grow container mx-auto px-4 py-8 max-w-6xl-plus linknest-page-content ${styles?.backgroundRaised ? 'linknest-page-background' : ''} ${!guestAccessEnabled && !isAuthenticated ? 'flex items-center justify-center' : ''}`}>
         {content}
       </main>
@@ -824,6 +844,11 @@ const AppContent: React.FC = () => {
         <FloatingCalculatorWidget>
           <CalculatorWidget />
         </FloatingCalculatorWidget>
+      )}
+      {showPasswordGenerator && (
+        <FloatingPasswordGeneratorWidget>
+          <PasswordGeneratorWidget />
+        </FloatingPasswordGeneratorWidget>
       )}
       <AuthModal
         isOpen={authModalOpen}

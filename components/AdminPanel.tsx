@@ -11,6 +11,7 @@ import { getCategoryArrangement } from '../services/storageService';
 import { SecurePasswordInput } from './SecurePasswordInput';
 import { accessService, TilePermission } from '../services/accessService';
 import { APP_TABS, getDisabledTabsFromSettings, setToSortedJsonArray, type AppTabId } from '../services/tabVisibilityService';
+import { broadcastService, BroadcastMessage } from '../services/broadcastService';
 
 // Resolve API base dynamically based on current location
 // This ensures API calls work in both dev mode and runtime mode with any base path
@@ -50,9 +51,9 @@ interface AdminPanelProps {
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const { refreshSettings } = useSettings();
   // Initialize activeTab from localStorage or default to 'pending'
-  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser'>(() => {
+  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast'>(() => {
     const savedTab = localStorage.getItem('adminPanelActiveTab');
-    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'footer', 'tabVisibility', 'access', 'clone', 'browser'];
+    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'footer', 'tabVisibility', 'access', 'clone', 'browser', 'broadcast'];
     return (savedTab && validTabs.includes(savedTab as any)) ? savedTab as any : 'pending';
   });
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
@@ -286,6 +287,39 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     if (activeTab === 'database') {
       loadSnapshots();
     }
+    if (activeTab === 'broadcast') {
+      const loadBroadcast = async () => {
+        try {
+          setBroadcastLoading(true);
+          const broadcast = await broadcastService.getBroadcast();
+          setCurrentBroadcast(broadcast);
+          if (broadcast) {
+            setBroadcastMessage(broadcast.message);
+            setBroadcastFontFamily(broadcast.fontFamily);
+            setBroadcastFontSize(broadcast.fontSize);
+            setBroadcastColor(broadcast.color);
+            if (broadcast.expiresAt) {
+              const expiresDate = new Date(broadcast.expiresAt * 1000);
+              setBroadcastExpiresAt(expiresDate.toISOString().slice(0, 16));
+            } else {
+              setBroadcastExpiresAt('');
+            }
+          } else {
+            setBroadcastMessage('');
+            setBroadcastFontFamily('Arial, sans-serif');
+            setBroadcastFontSize('16px');
+            setBroadcastColor('#ff0000');
+            setBroadcastExpiresAt('');
+          }
+        } catch (err: any) {
+          console.error('Failed to load broadcast:', err);
+          setError(err.message || 'Failed to load broadcast message');
+        } finally {
+          setBroadcastLoading(false);
+        }
+      };
+      loadBroadcast();
+    }
   }, [activeTab]);
 
   const loadSnapshots = async () => {
@@ -319,6 +353,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [testBrowser, setTestBrowser] = useState('chrome-stable');
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [detectedBrowsers, setDetectedBrowsers] = useState<string[]>([]);
+
+  // Broadcast message state
+  const [broadcastMessage, setBroadcastMessage] = useState('');
+  const [broadcastFontFamily, setBroadcastFontFamily] = useState('Arial, sans-serif');
+  const [broadcastFontSize, setBroadcastFontSize] = useState('16px');
+  const [broadcastColor, setBroadcastColor] = useState('#ff0000');
+  const [broadcastExpiresAt, setBroadcastExpiresAt] = useState<string>('');
+  const [broadcastLoading, setBroadcastLoading] = useState(false);
+  const [currentBroadcast, setCurrentBroadcast] = useState<BroadcastMessage | null>(null);
 
   // Load saved browsers from database and check extension status when browser tab is active
   useEffect(() => {
@@ -1025,6 +1068,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             }`}
         >
           Browser Extn Integration
+        </button>
+        <button
+          onClick={() => setActiveTab('broadcast')}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'broadcast'
+            ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+            : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+        >
+          Broadcast Message
         </button>
       </div>
 
@@ -5867,6 +5919,237 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Broadcast Message Tab */}
+      {activeTab === 'broadcast' && (
+        <div className="space-y-6">
+          {broadcastLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Broadcast Message Settings</h3>
+              <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                Create and manage site-wide broadcast messages that appear at the top of all pages. Messages scroll from right to left.
+              </p>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Message Text
+                  </label>
+                  <textarea
+                    value={broadcastMessage}
+                    onChange={(e) => setBroadcastMessage(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                    placeholder="Enter your broadcast message here..."
+                    rows={3}
+                  />
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    This message will be displayed in a scrolling banner at the top of all pages.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Font Family
+                    </label>
+                    <select
+                      value={broadcastFontFamily}
+                      onChange={(e) => setBroadcastFontFamily(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                    >
+                      <option value="Arial, sans-serif">Arial</option>
+                      <option value="'Times New Roman', serif">Times New Roman</option>
+                      <option value="'Courier New', monospace">Courier New</option>
+                      <option value="Georgia, serif">Georgia</option>
+                      <option value="Verdana, sans-serif">Verdana</option>
+                      <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Font Size
+                    </label>
+                    <select
+                      value={broadcastFontSize}
+                      onChange={(e) => setBroadcastFontSize(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                    >
+                      <option value="12px">12px</option>
+                      <option value="14px">14px</option>
+                      <option value="16px">16px</option>
+                      <option value="18px">18px</option>
+                      <option value="20px">20px</option>
+                      <option value="24px">24px</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Color
+                  </label>
+                  <div className="flex gap-4 items-center">
+                    <input
+                      type="color"
+                      value={broadcastColor}
+                      onChange={(e) => setBroadcastColor(e.target.value)}
+                      className="w-16 h-10 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer"
+                    />
+                    <input
+                      type="text"
+                      value={broadcastColor}
+                      onChange={(e) => setBroadcastColor(e.target.value)}
+                      className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 font-mono"
+                      placeholder="#ff0000"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Expiration Date/Time (Optional)
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={broadcastExpiresAt}
+                    onChange={(e) => setBroadcastExpiresAt(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                  />
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Leave empty for no expiration. The message will automatically stop displaying after this date/time.
+                  </p>
+                </div>
+
+                {currentBroadcast && (
+                  <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Current Active Message</h4>
+                      <button
+                        onClick={async () => {
+                          if (!confirm('Are you sure you want to delete the current broadcast message?')) {
+                            return;
+                          }
+                          try {
+                            setBroadcastLoading(true);
+                            setError('');
+                            await broadcastService.deleteBroadcast(currentBroadcast.id);
+                            setCurrentBroadcast(null);
+                            setBroadcastMessage('');
+                            setBroadcastFontFamily('Arial, sans-serif');
+                            setBroadcastFontSize('16px');
+                            setBroadcastColor('#ff0000');
+                            setBroadcastExpiresAt('');
+                            alert('Broadcast message deleted successfully!');
+                          } catch (err: any) {
+                            setError(err.message || 'Failed to delete broadcast message');
+                          } finally {
+                            setBroadcastLoading(false);
+                          }
+                        }}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-medium transition-colors"
+                      >
+                        Delete Current Message
+                      </button>
+                    </div>
+                    <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                      <p className="text-sm text-slate-700 dark:text-slate-300 mb-2" style={{ fontFamily: currentBroadcast.fontFamily, fontSize: currentBroadcast.fontSize, color: currentBroadcast.color }}>
+                        {currentBroadcast.message}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Created: {new Date(currentBroadcast.createdAt * 1000).toLocaleString()}
+                        {currentBroadcast.expiresAt && (
+                          <> | Expires: {new Date(currentBroadcast.expiresAt * 1000).toLocaleString()}</>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                  <button
+                    onClick={async () => {
+                      if (!broadcastMessage.trim()) {
+                        alert('Please enter a message');
+                        return;
+                      }
+                      try {
+                        setBroadcastLoading(true);
+                        setError('');
+                        const expiresAt = broadcastExpiresAt ? Math.floor(new Date(broadcastExpiresAt).getTime() / 1000) : null;
+                        if (currentBroadcast) {
+                          await broadcastService.updateBroadcast({
+                            id: currentBroadcast.id,
+                            message: broadcastMessage,
+                            fontFamily: broadcastFontFamily,
+                            fontSize: broadcastFontSize,
+                            color: broadcastColor,
+                            expiresAt: expiresAt,
+                          });
+                          alert('Broadcast message updated successfully!');
+                        } else {
+                          await broadcastService.createBroadcast({
+                            message: broadcastMessage,
+                            fontFamily: broadcastFontFamily,
+                            fontSize: broadcastFontSize,
+                            color: broadcastColor,
+                            expiresAt: expiresAt,
+                          });
+                          alert('Broadcast message created successfully!');
+                        }
+                        // Reload current broadcast
+                        const updated = await broadcastService.getBroadcast();
+                        setCurrentBroadcast(updated);
+                      } catch (err: any) {
+                        setError(err.message || 'Failed to save broadcast message');
+                      } finally {
+                        setBroadcastLoading(false);
+                      }
+                    }}
+                    disabled={broadcastLoading || !broadcastMessage.trim()}
+                    className="flex-1 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                  >
+                    {broadcastLoading ? 'Saving...' : currentBroadcast ? 'Update Message' : 'Create Message'}
+                  </button>
+                  {currentBroadcast && (
+                    <button
+                      onClick={async () => {
+                        if (!confirm('Are you sure you want to delete the current broadcast message?')) {
+                          return;
+                        }
+                        try {
+                          setBroadcastLoading(true);
+                          setError('');
+                          await broadcastService.deleteBroadcast(currentBroadcast.id);
+                          setCurrentBroadcast(null);
+                          setBroadcastMessage('');
+                          setBroadcastFontFamily('Arial, sans-serif');
+                          setBroadcastFontSize('16px');
+                          setBroadcastColor('#ff0000');
+                          setBroadcastExpiresAt('');
+                          alert('Broadcast message deleted successfully!');
+                        } catch (err: any) {
+                          setError(err.message || 'Failed to delete broadcast message');
+                        } finally {
+                          setBroadcastLoading(false);
+                        }
+                      }}
+                      disabled={broadcastLoading}
+                      className="px-4 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

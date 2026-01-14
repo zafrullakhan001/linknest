@@ -130,6 +130,15 @@ if ($path === '/') {
     error_log("api/index.php: Requiring notes.php");
     require __DIR__ . '/notes.php';
     exit; // Prevent any further execution
+} elseif (strpos($path, '/broadcast') === 0) {
+    $remainingPath = substr($path, 10); // Remove '/broadcast'
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    require __DIR__ . '/broadcast.php';
+    exit;
 } elseif (strpos($path, '/monitor-notifications') === 0) {
     // Remove '/monitor-notifications' prefix (22 characters)
     $prefixLength = strlen('/monitor-notifications');

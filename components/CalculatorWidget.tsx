@@ -1,10 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 export const CalculatorWidget: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'standard' | 'percentage'>('standard');
+  
+  // Standard calculator state
   const [display, setDisplay] = useState<string>('0');
   const [previousValue, setPreviousValue] = useState<number | null>(null);
   const [operation, setOperation] = useState<string | null>(null);
   const [waitingForNewValue, setWaitingForNewValue] = useState<boolean>(false);
+  
+  // Percentage calculator state
+  const [percentageValue, setPercentageValue] = useState<string>('');
+  const [numberValue, setNumberValue] = useState<string>('');
+  const [percentageResult, setPercentageResult] = useState<number | null>(null);
+  
   const widgetRef = useRef<HTMLDivElement>(null);
 
   // Use refs to access latest state in keyboard handler
@@ -20,6 +29,7 @@ export const CalculatorWidget: React.FC = () => {
     waitingForNewValueRef.current = waitingForNewValue;
   }, [display, previousValue, operation, waitingForNewValue]);
 
+  // Standard Calculator Functions
   const inputNumber = (num: string) => {
     if (waitingForNewValueRef.current) {
       setDisplay(num);
@@ -109,8 +119,31 @@ export const CalculatorWidget: React.FC = () => {
     }
   };
 
-  // Keyboard event handler
+  // Percentage Calculator Functions
+  const clearPercentage = () => {
+    setPercentageValue('');
+    setNumberValue('');
+    setPercentageResult(null);
+  };
+
   useEffect(() => {
+    if (activeTab === 'percentage') {
+      const percent = parseFloat(percentageValue);
+      const number = parseFloat(numberValue);
+      
+      if (!isNaN(percent) && !isNaN(number)) {
+        const result = (percent / 100) * number;
+        setPercentageResult(result);
+      } else {
+        setPercentageResult(null);
+      }
+    }
+  }, [percentageValue, numberValue, activeTab]);
+
+  // Keyboard event handler (only for standard calculator)
+  useEffect(() => {
+    if (activeTab !== 'standard') return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       // Only handle keys if calculator widget is visible
       if (!widgetRef.current) return;
@@ -179,7 +212,7 @@ export const CalculatorWidget: React.FC = () => {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, []); // Empty deps - using refs for state access
+  }, [activeTab]); // Empty deps - using refs for state access
 
   return (
     <div 
@@ -191,128 +224,206 @@ export const CalculatorWidget: React.FC = () => {
           Calculator
         </h3>
         
-        {/* Display */}
-        <div className="bg-slate-900 dark:bg-slate-950 rounded p-3 mb-3">
-          <div className="text-right text-2xl font-mono text-white overflow-x-auto">
-            {display}
+        {/* Tabs */}
+        <div className="flex gap-1 mb-3">
+          <button
+            onClick={() => setActiveTab('standard')}
+            className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+              activeTab === 'standard'
+                ? 'bg-brand-500 text-white'
+                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
+            }`}
+          >
+            Standard
+          </button>
+          <button
+            onClick={() => setActiveTab('percentage')}
+            className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+              activeTab === 'percentage'
+                ? 'bg-brand-500 text-white'
+                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
+            }`}
+          >
+            Percentage
+          </button>
+        </div>
+
+        {activeTab === 'standard' ? (
+          <>
+            {/* Display */}
+            <div className="bg-slate-900 dark:bg-slate-950 rounded p-3 mb-3">
+              <div className="text-right text-2xl font-mono text-white overflow-x-auto">
+                {display}
+              </div>
+            </div>
+
+            {/* Buttons Grid */}
+            <div className="grid grid-cols-4 gap-2">
+              {/* Row 1 */}
+              <button
+                onClick={() => handleButtonClick('C')}
+                className="col-span-2 px-4 py-3 bg-red-500 hover:bg-red-600 text-white rounded font-medium transition-colors"
+              >
+                Clear
+              </button>
+              <button
+                onClick={() => handleButtonClick('/')}
+                className="px-4 py-3 bg-slate-400 dark:bg-slate-600 hover:bg-slate-500 dark:hover:bg-slate-500 text-white rounded font-medium transition-colors"
+              >
+                ÷
+              </button>
+              <button
+                onClick={() => handleButtonClick('*')}
+                className="px-4 py-3 bg-slate-400 dark:bg-slate-600 hover:bg-slate-500 dark:hover:bg-slate-500 text-white rounded font-medium transition-colors"
+              >
+                ×
+              </button>
+
+              {/* Row 2 */}
+              <button
+                onClick={() => handleButtonClick('7')}
+                className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors"
+              >
+                7
+              </button>
+              <button
+                onClick={() => handleButtonClick('8')}
+                className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors"
+              >
+                8
+              </button>
+              <button
+                onClick={() => handleButtonClick('9')}
+                className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors"
+              >
+                9
+              </button>
+              <button
+                onClick={() => handleButtonClick('-')}
+                className="px-4 py-3 bg-slate-400 dark:bg-slate-600 hover:bg-slate-500 dark:hover:bg-slate-500 text-white rounded font-medium transition-colors"
+              >
+                −
+              </button>
+
+              {/* Row 3 */}
+              <button
+                onClick={() => handleButtonClick('4')}
+                className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors"
+              >
+                4
+              </button>
+              <button
+                onClick={() => handleButtonClick('5')}
+                className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors"
+              >
+                5
+              </button>
+              <button
+                onClick={() => handleButtonClick('6')}
+                className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors"
+              >
+                6
+              </button>
+              <button
+                onClick={() => handleButtonClick('+')}
+                className="px-4 py-3 bg-slate-400 dark:bg-slate-600 hover:bg-slate-500 dark:hover:bg-slate-500 text-white rounded font-medium transition-colors"
+              >
+                +
+              </button>
+
+              {/* Row 4 */}
+              <button
+                onClick={() => handleButtonClick('1')}
+                className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors"
+              >
+                1
+              </button>
+              <button
+                onClick={() => handleButtonClick('2')}
+                className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors"
+              >
+                2
+              </button>
+              <button
+                onClick={() => handleButtonClick('3')}
+                className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors"
+              >
+                3
+              </button>
+              <button
+                onClick={() => handleButtonClick('=')}
+                className="px-4 py-6 bg-brand-500 hover:bg-brand-600 text-white rounded font-medium transition-colors"
+                style={{ gridRow: 'span 2' }}
+              >
+                =
+              </button>
+
+              {/* Row 5 */}
+              <button
+                onClick={() => handleButtonClick('0')}
+                className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors col-span-2"
+              >
+                0
+              </button>
+              <button
+                onClick={() => handleButtonClick('.')}
+                className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors"
+              >
+                .
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="space-y-3">
+            {/* Percentage Input */}
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                Percentage (%)
+              </label>
+              <input
+                type="number"
+                value={percentageValue}
+                onChange={(e) => setPercentageValue(e.target.value)}
+                placeholder="Enter percentage"
+                className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+            </div>
+
+            {/* Number Input */}
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                Number
+              </label>
+              <input
+                type="number"
+                value={numberValue}
+                onChange={(e) => setNumberValue(e.target.value)}
+                placeholder="Enter number"
+                className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+            </div>
+
+            {/* Result Display */}
+            {percentageResult !== null && (
+              <div className="bg-slate-900 dark:bg-slate-950 rounded p-3">
+                <div className="text-right text-2xl font-mono text-white overflow-x-auto">
+                  {percentageResult.toLocaleString(undefined, { maximumFractionDigits: 10 })}
+                </div>
+                <div className="text-xs text-slate-400 mt-1 text-right">
+                  {percentageValue}% of {numberValue}
+                </div>
+              </div>
+            )}
+
+            {/* Clear Button */}
+            <button
+              onClick={clearPercentage}
+              className="w-full px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded font-medium transition-colors"
+            >
+              Clear
+            </button>
           </div>
-        </div>
-
-        {/* Buttons Grid */}
-        <div className="grid grid-cols-4 gap-2">
-          {/* Row 1 */}
-          <button
-            onClick={() => handleButtonClick('C')}
-            className="col-span-2 px-4 py-3 bg-red-500 hover:bg-red-600 text-white rounded font-medium transition-colors"
-          >
-            Clear
-          </button>
-          <button
-            onClick={() => handleButtonClick('/')}
-            className="px-4 py-3 bg-slate-400 dark:bg-slate-600 hover:bg-slate-500 dark:hover:bg-slate-500 text-white rounded font-medium transition-colors"
-          >
-            ÷
-          </button>
-          <button
-            onClick={() => handleButtonClick('*')}
-            className="px-4 py-3 bg-slate-400 dark:bg-slate-600 hover:bg-slate-500 dark:hover:bg-slate-500 text-white rounded font-medium transition-colors"
-          >
-            ×
-          </button>
-
-          {/* Row 2 */}
-          <button
-            onClick={() => handleButtonClick('7')}
-            className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors"
-          >
-            7
-          </button>
-          <button
-            onClick={() => handleButtonClick('8')}
-            className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors"
-          >
-            8
-          </button>
-          <button
-            onClick={() => handleButtonClick('9')}
-            className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors"
-          >
-            9
-          </button>
-          <button
-            onClick={() => handleButtonClick('-')}
-            className="px-4 py-3 bg-slate-400 dark:bg-slate-600 hover:bg-slate-500 dark:hover:bg-slate-500 text-white rounded font-medium transition-colors"
-          >
-            −
-          </button>
-
-          {/* Row 3 */}
-          <button
-            onClick={() => handleButtonClick('4')}
-            className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors"
-          >
-            4
-          </button>
-          <button
-            onClick={() => handleButtonClick('5')}
-            className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors"
-          >
-            5
-          </button>
-          <button
-            onClick={() => handleButtonClick('6')}
-            className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors"
-          >
-            6
-          </button>
-          <button
-            onClick={() => handleButtonClick('+')}
-            className="px-4 py-3 bg-slate-400 dark:bg-slate-600 hover:bg-slate-500 dark:hover:bg-slate-500 text-white rounded font-medium transition-colors"
-          >
-            +
-          </button>
-
-          {/* Row 4 */}
-          <button
-            onClick={() => handleButtonClick('1')}
-            className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors"
-          >
-            1
-          </button>
-          <button
-            onClick={() => handleButtonClick('2')}
-            className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors"
-          >
-            2
-          </button>
-          <button
-            onClick={() => handleButtonClick('3')}
-            className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors"
-          >
-            3
-          </button>
-          <button
-            onClick={() => handleButtonClick('=')}
-            className="px-4 py-6 bg-brand-500 hover:bg-brand-600 text-white rounded font-medium transition-colors"
-            style={{ gridRow: 'span 2' }}
-          >
-            =
-          </button>
-
-          {/* Row 5 */}
-          <button
-            onClick={() => handleButtonClick('0')}
-            className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors col-span-2"
-          >
-            0
-          </button>
-          <button
-            onClick={() => handleButtonClick('.')}
-            className="px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded font-medium transition-colors"
-          >
-            .
-          </button>
-        </div>
+        )}
       </div>
     </div>
   );
