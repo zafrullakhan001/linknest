@@ -341,7 +341,7 @@ function handleCreateNotificationRule() {
             $data['time_window_start'] ?? null,
             $data['time_window_end'] ?? null,
             $daysOfWeek,
-            $data['subject_template'] ?? '[LinkNest Monitor] {monitor_name} Status: {status}',
+            $data['subject_template'] ?? '[{app_name} Monitor] {monitor_name} Status: {status}',
             $data['body_template'] ?? "Monitor: {monitor_name}\nStatus: {status}\nTime: {time}\nDetails: {details}",
             $data['from_name'] ?? null,
             $data['from_email'] ?? null,
@@ -679,7 +679,7 @@ function handleImportNotificationRules($monitorId) {
                 $daysOfWeek = !empty($cleanDays) ? implode(',', $cleanDays) : null;
             }
 
-            $subjectTpl = (string)($r['subject_template'] ?? '[LinkNest Monitor] {monitor_name} Status: {status}');
+            $subjectTpl = (string)($r['subject_template'] ?? '[{app_name} Monitor] {monitor_name} Status: {status}');
             $bodyTpl = (string)($r['body_template'] ?? "Monitor: {monitor_name}\nStatus: {status}\nTime: {time}\nDetails: {details}");
             if (trim($subjectTpl) === '' || trim($bodyTpl) === '') {
                 throw new Exception('Subject/body template cannot be empty (item #' . ($idx + 1) . ')');

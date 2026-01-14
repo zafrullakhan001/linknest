@@ -1011,7 +1011,7 @@ function initDatabase() {
             username TEXT,
             password TEXT,
             from_email TEXT NOT NULL,
-            from_name TEXT NOT NULL DEFAULT "LinkNest Monitor",
+            from_name TEXT NOT NULL DEFAULT "{app_name} Monitor",
             encryption TEXT NOT NULL DEFAULT "tls",
             is_active INTEGER DEFAULT 0,
             is_enabled INTEGER DEFAULT 1,
@@ -1049,7 +1049,7 @@ function initDatabase() {
                         $oldSettings['username'] ?? '',
                         $oldSettings['password'] ?? '', // Already base64 encoded
                         $oldSettings['from_email'] ?? '',
-                        $oldSettings['from_name'] ?? 'LinkNest Monitor',
+                        $oldSettings['from_name'] ?? '{app_name} Monitor',
                         $oldSettings['encryption'] ?? 'tls',
                         1, // is_active
                         ($oldSettings['enabled'] ?? '0') === '1' ? 1 : 0,
@@ -1671,4 +1671,19 @@ function decryptPassword($encryptedPassword) {
     }
     
     return $decrypted;
+}
+
+/**
+ * Helper: get app_name from settings
+ */
+function getAppName() {
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'app_name' LIMIT 1");
+        $stmt->execute();
+        $row = $stmt->fetch();
+        return ($row && !empty($row['value'])) ? $row['value'] : null;
+    } catch (Exception $e) {
+        return null;
+    }
 }

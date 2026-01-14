@@ -25,7 +25,7 @@ function ln_format_datetime(?int $ts = null): string {
     return date('Y-m-d H:i:s', $ts);
 }
 
-function ln_email_base_layout(string $title, string $subtitle, string $accentHex, string $innerHtml, string $preheader = ''): string {
+function ln_email_base_layout(string $title, string $subtitle, string $accentHex, string $innerHtml, string $preheader = '', string $appName = 'LinkNest'): string {
     $safeTitle = ln_html_escape($title);
     $safeSubtitle = ln_html_escape($subtitle);
     $safePreheader = ln_html_escape($preheader);
@@ -59,7 +59,7 @@ function ln_email_base_layout(string $title, string $subtitle, string $accentHex
           <tr>
             <td style="padding:18px 28px 24px 28px;border-top:1px solid #eef2ff;">
               <div style="font-family:Segoe UI,Arial,sans-serif;color:#64748b;font-size:12px;line-height:1.4;">
-                Sent by LinkNest Monitoring • ' . ln_html_escape(ln_format_datetime()) . '
+                Sent by ' . ln_html_escape($appName) . ' Monitoring • ' . ln_html_escape(ln_format_datetime()) . '
               </div>
             </td>
           </tr>
@@ -71,13 +71,13 @@ function ln_email_base_layout(string $title, string $subtitle, string $accentHex
 </html>';
 }
 
-function ln_render_smtp_test_email_html(?string $toEmail = null): string {
+function ln_render_smtp_test_email_html(?string $toEmail = null, string $appName = 'LinkNest'): string {
     $who = $toEmail ? ln_html_escape($toEmail) : 'your inbox';
     $inner = '
       <div style="font-family:Segoe UI,Arial,sans-serif;color:#0f172a;">
         <div style="font-size:22px;font-weight:900;margin:0 0 10px 0;">Congratulations!</div>
         <div style="font-size:14px;line-height:1.6;color:#334155;">
-          Your SMTP email configuration is working correctly. This test message confirms that LinkNest can connect and send mail.
+          Your SMTP email configuration is working correctly. This test message confirms that ' . ln_html_escape($appName) . ' can connect and send mail.
         </div>
         <div style="margin-top:16px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:14px;padding:14px 16px;">
           <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;">Test details</div>
@@ -101,10 +101,10 @@ function ln_render_smtp_test_email_html(?string $toEmail = null): string {
         </div>
       </div>
     ';
-    return ln_email_base_layout('SMTP Configuration Test', 'LinkNest email delivery check', '#6d28d9', $inner, 'SMTP configuration test: success');
+    return ln_email_base_layout('SMTP Configuration Test', $appName . ' email delivery check', '#6d28d9', $inner, 'SMTP configuration test: success', $appName);
 }
 
-function ln_render_monitor_status_email_html(string $monitorName, string $target, string $status, string $details, $responseTimeMs, ?int $ts = null, ?string $customMessageText = null): string {
+function ln_render_monitor_status_email_html(string $monitorName, string $target, string $status, string $details, $responseTimeMs, ?int $ts = null, ?string $customMessageText = null, string $appName = 'LinkNest'): string {
     $ts = $ts ?? time();
     $statusLabel = ln_format_status_label($status);
 
@@ -164,16 +164,16 @@ function ln_render_monitor_status_email_html(string $monitorName, string $target
     ';
 
     $pre = $statusLabel . ' - ' . $monitorName . ' (' . ln_format_response_time($responseTimeMs) . ')';
-    return ln_email_base_layout('Monitor Status Update', 'Real-time status change notification', $accent, $inner, $pre);
+    return ln_email_base_layout('Monitor Status Update', 'Real-time status change notification', $accent, $inner, $pre, $appName);
 }
 
-function ln_render_smtp_test_email_text(?string $toEmail = null): string {
+function ln_render_smtp_test_email_text(?string $toEmail = null, string $appName = 'LinkNest'): string {
     $who = $toEmail ?: 'your inbox';
     return "SMTP Configuration Test\n\n" .
         "Status: SUCCESS\n" .
         "Recipient: {$who}\n" .
         "Time: " . ln_format_datetime() . "\n\n" .
-        "Your SMTP email configuration is working correctly.\n";
+        "Your SMTP email configuration is working correctly. This test message confirms that {$appName} can connect and send mail.\n";
 }
 
 function ln_render_monitor_status_email_text(string $monitorName, string $target, string $status, string $details, $responseTimeMs, ?int $ts = null, ?string $customMessageText = null): string {

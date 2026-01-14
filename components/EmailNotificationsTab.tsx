@@ -1,4 +1,5 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
+import { useSettings } from '../contexts/SettingsContext';
 import { NotificationRule, getNotificationRules, createNotificationRule, updateNotificationRule, deleteNotificationRule, importNotificationRules, moveNotificationRule, parseDaysOfWeek, formatDaysOfWeek, getDayName } from '../services/monitorNotificationService';
 
 interface EmailNotificationsTabProps {
@@ -6,6 +7,8 @@ interface EmailNotificationsTabProps {
 }
 
 export const EmailNotificationsTab: React.FC<EmailNotificationsTabProps> = ({ monitorId }) => {
+    const { settings } = useSettings();
+    const appName = settings?.app_name || 'LinkNest';
     const [rules, setRules] = useState<NotificationRule[]>([]);
     const [loading, setLoading] = useState(true); // initial load only
     const [error, setError] = useState<string | null>(null);
@@ -42,7 +45,7 @@ export const EmailNotificationsTab: React.FC<EmailNotificationsTabProps> = ({ mo
             name: '',
             monitor_id: monitorId,
             status_trigger: 'down',
-            subject_template: '[LinkNest Monitor] {monitor_name} Status: {status}',
+            subject_template: `[{app_name} Monitor] {monitor_name} Status: {status}`,
             body_template: "Monitor: {monitor_name}\nStatus: {status}\nTime: {time}\nDetails: {details}",
             is_enabled: 1,
             recipients: [],
@@ -318,11 +321,10 @@ const NotificationRuleCard: React.FC<NotificationRuleCardProps> = ({ rule, onEdi
                         {rule.name || 'Notification Rule'}
                     </div>
                     <div className="flex items-center gap-2 mb-2">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            rule.status_trigger === 'up' ? 'bg-green-100 text-green-800' :
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${rule.status_trigger === 'up' ? 'bg-green-100 text-green-800' :
                             rule.status_trigger === 'down' ? 'bg-red-100 text-red-800' :
-                            'bg-blue-100 text-blue-800'
-                        }`}>
+                                'bg-blue-100 text-blue-800'
+                            }`}>
                             {rule.status_trigger === 'up' ? 'UP' : rule.status_trigger === 'down' ? 'DOWN' : 'BOTH'}
                         </span>
                         {rule.is_enabled === 1 ? (
@@ -486,8 +488,8 @@ const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSav
     };
 
     const toggleDay = (day: number) => {
-        setSelectedDays(prev => 
-            prev.includes(day) 
+        setSelectedDays(prev =>
+            prev.includes(day)
                 ? prev.filter(d => d !== day)
                 : [...prev, day].sort()
         );
@@ -618,11 +620,10 @@ const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSav
                             key={day}
                             type="button"
                             onClick={() => toggleDay(day)}
-                            className={`px-3 py-1 rounded-lg text-sm transition-colors ${
-                                selectedDays.includes(day)
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                            }`}
+                            className={`px-3 py-1 rounded-lg text-sm transition-colors ${selectedDays.includes(day)
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                }`}
                         >
                             {getDayName(day).substring(0, 3)}
                         </button>
@@ -642,7 +643,7 @@ const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSav
                     className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                     required
                 />
-                <FieldHelp text="Available variables: {monitor_name}, {status}, {time}, {date}, {details}, {response_time}" />
+                <FieldHelp text="Available variables: {monitor_name}, {status}, {time}, {date}, {details}, {response_time}, {app_name}" />
             </div>
 
             <div>
@@ -656,7 +657,7 @@ const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSav
                     rows={6}
                     required
                 />
-                <FieldHelp text="Available variables: {monitor_name}, {status}, {time}, {date}, {details}, {response_time}, {monitor_type}, {monitor_target}" />
+                <FieldHelp text="Available variables: {monitor_name}, {status}, {time}, {date}, {details}, {response_time}, {monitor_type}, {monitor_target}, {app_name}" />
             </div>
 
             <div className="grid grid-cols-2 gap-4">

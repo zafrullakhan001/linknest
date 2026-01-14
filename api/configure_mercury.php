@@ -22,7 +22,7 @@ try {
         'smtp_username' => '',
         'smtp_password' => base64_encode(''), // Empty password, base64 encoded
         'smtp_from_email' => 'noreply@localhost.com',
-        'smtp_from_name' => 'LinkNest Monitor',
+        'smtp_from_name' => '{app_name} Monitor',
         'smtp_encryption' => 'none' // No encryption for local Mercury testing
     ];
     
@@ -43,7 +43,7 @@ try {
     echo "- SMTP Encryption: None (plain text)\n";
     echo "- SMTP Authentication: Disabled (no username/password)\n";
     echo "- From Email: noreply@localhost.com\n";
-    echo "- From Name: LinkNest Monitor\n\n";
+    echo "- From Name: {app_name} Monitor\n\n";
     echo "Test Users Available:\n";
     echo "- test@localhost.com\n";
     echo "- admin@localhost.com\n";

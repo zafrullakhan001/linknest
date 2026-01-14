@@ -288,7 +288,7 @@ function checkUrl($url, $opts = []) {
         CURLOPT_SSL_VERIFYPEER => false,
         CURLOPT_SSL_VERIFYHOST => 0,
         CURLOPT_NOBODY => true, // HEAD request for efficiency
-        CURLOPT_USERAGENT => 'LinkNest Monitor/1.0',
+        CURLOPT_USERAGENT => (getAppName() ?: 'LinkNest') . ' Monitor/1.0',
         CURLOPT_HTTPHEADER => [
             'Accept: */*',
             'Cache-Control: no-cache',
@@ -341,7 +341,7 @@ function checkKeyword($url, $keyword, $opts = []) {
         CURLOPT_SSL_VERIFYPEER => false,
         CURLOPT_SSL_VERIFYHOST => 0,
         CURLOPT_NOBODY => false, // Need body for keyword search
-        CURLOPT_USERAGENT => 'LinkNest Monitor/1.0',
+        CURLOPT_USERAGENT => (getAppName() ?: 'LinkNest') . ' Monitor/1.0',
         CURLOPT_HTTPHEADER => [
             'Accept: */*',
             'Cache-Control: no-cache',
@@ -604,11 +604,13 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
         error_log("[EMAIL] Prepared email - subject: $subject");
         
         // Get from name and email (use rule-specific or fallback to SMTP settings)
-        $fromName = $rule['from_name'] ?? 'LinkNest Monitor';
+        $fromName = $rule['from_name'] ?? ((getAppName() ?: 'LinkNest') . ' Monitor');
         $fromEmail = $rule['from_email'] ?? null;
         
+        $appName = getAppName() ?: 'LinkNest';
+
         // Send ONE email per rule with multiple To + CC (prevents CC getting duplicates)
-        $result = sendEmailMultiWithRuleFromOverride($recipients, $ccList, $subject, $body, $fromName, $fromEmail, $monitor, $newStatus, $details, $responseTime);
+        $result = sendEmailMultiWithRuleFromOverride($recipients, $ccList, $subject, $body, $fromName, $fromEmail, $monitor, $newStatus, $details, $responseTime, $appName);
         $success = ($result === true) ? 1 : 0;
         $errorMsg = ($result === true) ? null : $result;
 
@@ -634,7 +636,7 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
     }
 }
 
-function sendEmailMultiWithRuleFromOverride(array $toList, array $ccList, $subject, $body, $fromName = null, $fromEmail = null, $monitor = null, $status = null, $details = null, $responseTime = null) {
+function sendEmailMultiWithRuleFromOverride(array $toList, array $ccList, $subject, $body, $fromName = null, $fromEmail = null, $monitor = null, $status = null, $details = null, $responseTime = null, $appName = 'LinkNest') {
     // Load SMTP settings from DB (supports new smtp_servers table)
     $config = getSMTPConfig();
 
@@ -661,7 +663,8 @@ function sendEmailMultiWithRuleFromOverride(array $toList, array $ccList, $subje
         (string)$details,
         $responseTime,
         time(),
-        (string)$body
+        (string)$body,
+        $appName
     );
 
     return sendEmailMulti($toList, $ccList, $subject, $body, $config, [
@@ -740,7 +743,8 @@ function replaceTemplateVariables($template, $monitor, $status, $details, $respo
         '{response_time}' => ($rt !== null) ? ($rt . ' ms') : 'N/A',
         '{time}' => date('Y-m-d H:i:s'),
         '{date}' => date('Y-m-d'),
-        '{timestamp}' => time()
+        '{timestamp}' => time(),
+        '{app_name}' => getAppName() ?: 'LinkNest'
     ];
     
     return str_replace(array_keys($replacements), array_values($replacements), $template);
@@ -834,7 +838,8 @@ function sendNotification($monitor, $message, $statusTrigger = 'both', $response
 
     if (!empty($recipients)) {
         // Build templated subject/body (monitor overrides), fallback to existing message
-        $defaultSubjectTpl = "[LinkNest Monitor] {monitor_name} Status Update";
+        $appName = getAppName() ?: 'LinkNest';
+        $defaultSubjectTpl = "[{$appName} Monitor] {monitor_name} Status Update";
         $defaultBodyTpl =
             "{status}: {monitor_name}\n" .
             "Target: {monitor_target}\n" .
@@ -864,7 +869,8 @@ function sendNotification($monitor, $message, $statusTrigger = 'both', $response
             $detailsForTemplate,
             $responseTime,
             $ts,
-            $bodyText
+            $bodyText,
+            $appName
         );
 
         // Optional from overrides (override SMTP from_name/from_email)

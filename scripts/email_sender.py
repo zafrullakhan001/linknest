@@ -142,6 +142,13 @@ def main() -> int:
     ensure_monitors_schema(conn)
     smtp_cfg = get_smtp_config(conn)
     dedupe_window_seconds = _get_dedupe_window_seconds(conn)
+    app_name = "LinkNest"
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = 'app_name' LIMIT 1").fetchone()
+        if row and row["value"]:
+            app_name = str(row["value"]).strip()
+    except Exception:
+        pass
 
     if notifications_paused(conn):
         if args.verbose:
@@ -306,6 +313,7 @@ def main() -> int:
                     subject=str(subject or ""),
                     message_text=str(r["body"] or ""),
                     response_time_ms=(f"{int(rt)} ms" if rt not in (None, "", False) else None),
+                    app_name=app_name,
                 )
             except Exception:
                 # Never fail sending because of HTML rendering issues; plain-text fallback will still send.

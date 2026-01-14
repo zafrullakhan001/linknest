@@ -264,7 +264,7 @@ def is_in_maintenance_window(monitor_row: sqlite3.Row) -> bool:
         return False
 
 
-def replace_template_vars(template: str, monitor_row: sqlite3.Row, status: str, details: str, response_ms: Optional[int]) -> str:
+def replace_template_vars(template: str, monitor_row: sqlite3.Row, status: str, details: str, response_ms: Optional[int], app_name: str = "LinkNest") -> str:
     if template is None:
         template = ""
     rep = {
@@ -277,6 +277,7 @@ def replace_template_vars(template: str, monitor_row: sqlite3.Row, status: str, 
         "{time}": _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "{date}": _dt.datetime.now().strftime("%Y-%m-%d"),
         "{timestamp}": str(now_ts()),
+        "{app_name}": app_name,
     }
     out = template
     for k, v in rep.items():
@@ -341,10 +342,11 @@ def _ssl_context(verify_ssl: bool) -> ssl.SSLContext:
     return ctx
 
 
-def check_url_head(url: str, timeout: float, verify_ssl: bool) -> Tuple[str, str]:
+def check_url_head(url: str, timeout: float, verify_ssl: bool, app_name: str = "LinkNest") -> Tuple[str, str]:
     if not re.match(r"^https?://", url, re.I):
         return "down", "Invalid URL"
-    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "LinkNest Monitor/1.0", "Connection": "close"})
+    ua = f"{app_name} Monitor/1.0"
+    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": ua, "Connection": "close"})
     try:
         with urllib.request.urlopen(req, timeout=timeout, context=_ssl_context(verify_ssl)) as resp:
             code = getattr(resp, "status", None) or resp.getcode()
@@ -358,12 +360,13 @@ def check_url_head(url: str, timeout: float, verify_ssl: bool) -> Tuple[str, str
         return "down", f"Connection failed: {msg}"
 
 
-def check_keyword(url: str, keyword: str, timeout: float, verify_ssl: bool, max_bytes: int = 1024 * 1024) -> Tuple[str, str]:
+def check_keyword(url: str, keyword: str, timeout: float, verify_ssl: bool, max_bytes: int = 1024 * 1024, app_name: str = "LinkNest") -> Tuple[str, str]:
     if not re.match(r"^https?://", url, re.I):
         return "down", "Invalid URL"
     if not keyword:
         return "down", "No keyword specified"
-    req = urllib.request.Request(url, method="GET", headers={"User-Agent": "LinkNest Monitor/1.0", "Connection": "close"})
+    ua = f"{app_name} Monitor/1.0"
+    req = urllib.request.Request(url, method="GET", headers={"User-Agent": ua, "Connection": "close"})
     try:
         with urllib.request.urlopen(req, timeout=timeout, context=_ssl_context(verify_ssl)) as resp:
             code = getattr(resp, "status", None) or resp.getcode()
@@ -495,7 +498,7 @@ def send_smtp_email(
     password = str(smtp_cfg.get("password", "") or "")
 
     fe = (from_email or smtp_cfg.get("from_email") or "").strip()
-    fn = (from_name or smtp_cfg.get("from_name") or "LinkNest Monitor").strip()
+    fn = (from_name or smtp_cfg.get("from_name") or "Monitor").strip()
     if not fe:
         return False, "Missing from_email"
 
@@ -560,11 +563,12 @@ def _ln_nl2br_escaped(text: str) -> str:
     return _ln_html_escape(text).replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br/>")
 
 
-def ln_email_base_layout(title: str, subtitle: str, accent_hex: str, inner_html: str, preheader: str = "") -> str:
+def ln_email_base_layout(title: str, subtitle: str, accent_hex: str, inner_html: str, preheader: str = "", app_name: str = "LinkNest") -> str:
     accent = accent_hex if re.match(r"^#[0-9a-fA-F]{6}$", accent_hex or "") else "#4f46e5"
     safe_title = _ln_html_escape(title)
     safe_subtitle = _ln_html_escape(subtitle)
     safe_preheader = _ln_html_escape(preheader)
+    safe_app_name = _ln_html_escape(app_name)
     # Table-based layout for wide email client support (mirrors PHP template styling)
     return f"""<!doctype html>
 <html>
@@ -593,7 +597,7 @@ def ln_email_base_layout(title: str, subtitle: str, accent_hex: str, inner_html:
           <tr>
             <td style="padding:18px 28px 24px 28px;border-top:1px solid #eef2ff;">
               <div style="font-family:Segoe UI,Arial,sans-serif;color:#64748b;font-size:12px;line-height:1.4;">
-                Sent by LinkNest Monitoring • {_ln_html_escape(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))}
+                Sent by {safe_app_name} Monitoring • {_ln_html_escape(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))}
               </div>
             </td>
           </tr>
@@ -613,6 +617,7 @@ def ln_render_monitor_notification_html(
     subject: str,
     message_text: str,
     response_time_ms: Optional[object] = None,
+    app_name: str = "LinkNest",
 ) -> str:
     """
     Render a styled HTML email similar to the PHP legacy template.
@@ -665,5 +670,5 @@ def ln_render_monitor_notification_html(
       </div>
     """
     pre = f"{status_label} - {monitor_name}"
-    return ln_email_base_layout("Monitor Status Update", "Rule-based notification email", accent, inner, preheader=pre)
+    return ln_email_base_layout("Monitor Status Update", "Rule-based notification email", accent, inner, preheader=pre, app_name=app_name)
 

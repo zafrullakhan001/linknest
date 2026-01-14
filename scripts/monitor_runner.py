@@ -54,7 +54,7 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def perform_check(monitor: Dict[str, Any], verify_ssl: bool) -> CheckResult:
+def perform_check(monitor: Dict[str, Any], verify_ssl: bool, app_name: str = "LinkNest") -> CheckResult:
     t0 = time.time()
 
     def run_once(relaxed: bool = False) -> Tuple[str, str]:
@@ -72,10 +72,10 @@ def perform_check(monitor: Dict[str, Any], verify_ssl: bool) -> CheckResult:
 
         if mtype == "url":
             timeout = 10 if relaxed else (base_timeout_s or 5)
-            return check_url_head(target, timeout=timeout, verify_ssl=verify_ssl)
+            return check_url_head(target, timeout=timeout, verify_ssl=verify_ssl, app_name=app_name)
         if mtype == "keyword":
             timeout = 10 if relaxed else (base_timeout_s or 8)
-            return check_keyword(target, str(monitor.get("keyword") or ""), timeout=timeout, verify_ssl=verify_ssl)
+            return check_keyword(target, str(monitor.get("keyword") or ""), timeout=timeout, verify_ssl=verify_ssl, app_name=app_name)
         if mtype == "port":
             timeout = 5 if relaxed else 3
             return check_port(target, int(monitor.get("port") or 0), timeout=timeout)
@@ -106,7 +106,7 @@ def status_changed(prev_status: Optional[str], new_status: str) -> bool:
     return ps != ns
 
 
-def queue_advanced_notifications(conn, monitor_row, new_status: str, prev_status: Optional[str], details: str, response_ms: int, verbose: bool) -> int:
+def queue_advanced_notifications(conn, monitor_row, new_status: str, prev_status: Optional[str], details: str, response_ms: int, verbose: bool, app_name: str = "LinkNest") -> int:
     triggers: List[str] = []
     norm_prev = None if prev_status in (None, "", False) else str(prev_status)
     if new_status == "down":
@@ -148,9 +148,9 @@ def queue_advanced_notifications(conn, monitor_row, new_status: str, prev_status
         if not to_list and not cc_list:
             continue
 
-        subject = replace_template_vars(r["subject_template"], monitor_row, new_status, details, response_ms)
-        body = replace_template_vars(r["body_template"], monitor_row, new_status, details, response_ms)
-        from_name = (r["from_name"] or "LinkNest Monitor").strip() if r["from_name"] is not None else "LinkNest Monitor"
+        subject = replace_template_vars(r["subject_template"], monitor_row, new_status, details, response_ms, app_name=app_name)
+        body = replace_template_vars(r["body_template"], monitor_row, new_status, details, response_ms, app_name=app_name)
+        from_name = (r["from_name"] or f"{app_name} Monitor").strip() if r["from_name"] is not None else f"{app_name} Monitor"
         from_email = (r["from_email"] or "").strip() if r["from_email"] is not None else None
 
         conn.execute(
@@ -181,7 +181,7 @@ def queue_advanced_notifications(conn, monitor_row, new_status: str, prev_status
     return queued
 
 
-def queue_legacy_notification(conn, monitor_row, new_status: str, prev_status: Optional[str], details: str, response_ms: int, verbose: bool) -> int:
+def queue_legacy_notification(conn, monitor_row, new_status: str, prev_status: Optional[str], details: str, response_ms: int, verbose: bool, app_name: str = "LinkNest") -> int:
     # Rule-based only mode (disable legacy emails)
     try:
         if int(monitor_row["legacy_email_disabled"] or 0) == 1:
@@ -230,7 +230,7 @@ def queue_legacy_notification(conn, monitor_row, new_status: str, prev_status: O
     if not to_list and not cc_list:
         return 0
 
-    default_subject_tpl = "[LinkNest Monitor] {monitor_name} Status Update"
+    default_subject_tpl = f"[{app_name} Monitor] {{monitor_name}} Status Update"
     default_body_tpl = (
         "{status}: {monitor_name}\n"
         "Target: {monitor_target}\n"
@@ -241,8 +241,8 @@ def queue_legacy_notification(conn, monitor_row, new_status: str, prev_status: O
     subject_tpl = (monitor_row["legacy_email_subject_template"] or "").strip() or default_subject_tpl
     body_tpl = (monitor_row["legacy_email_body_template"] or "").strip() or default_body_tpl
 
-    subject = replace_template_vars(subject_tpl, monitor_row, subject_status, message_details or "", int(response_ms))
-    body = replace_template_vars(body_tpl, monitor_row, subject_status, message_details or "", int(response_ms))
+    subject = replace_template_vars(subject_tpl, monitor_row, subject_status, message_details or "", int(response_ms), app_name=app_name)
+    body = replace_template_vars(body_tpl, monitor_row, subject_status, message_details or "", int(response_ms), app_name=app_name)
 
     from_name = (monitor_row["legacy_email_from_name"] or "").strip() or None
     from_email = (monitor_row["legacy_email_from_email"] or "").strip() or None
@@ -313,20 +313,25 @@ def main() -> int:
     if not due:
         return 0
 
-    # Determine notification pause state once per run.
+    # Determine notification pause state and app name once per run.
     # Even if this check fails (locked/missing settings), we MUST still update monitor statuses.
     paused = True
+    app_name = "LinkNest"
     try:
         paused = bool(notifications_paused(conn, default_on_error=True))
+        # Fetch app_name from settings
+        row = conn.execute("SELECT value FROM settings WHERE key = 'app_name' LIMIT 1").fetchone()
+        if row and row["value"]:
+            app_name = str(row["value"]).strip()
     except Exception as e:
         paused = True
         if args.verbose:
-            print(f"[WARN] notifications_paused() failed; treating as paused. err={e}")
+            print(f"[WARN] settings fetch failed; treating as paused with default app_name. err={e}")
 
     # Run network checks concurrently, but keep DB writes single-threaded.
     results: Dict[int, CheckResult] = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, int(args.max_workers))) as ex:
-        futs = {ex.submit(perform_check, dict(m), args.verify_ssl): int(m["id"]) for m in due}
+        futs = {ex.submit(perform_check, dict(m), args.verify_ssl, app_name=app_name): int(m["id"]) for m in due}
         for fut in concurrent.futures.as_completed(futs):
             mid = futs[fut]
             try:
@@ -400,9 +405,9 @@ def main() -> int:
             # If notifications are paused (email pause), we skip queueing only.
             try:
                 if changed and (not paused) and (not is_in_maintenance_window(m)):
-                    queued_emails += queue_advanced_notifications(conn, m, eff_status, prev, eff_details, r.response_ms, args.verbose)
+                    queued_emails += queue_advanced_notifications(conn, m, eff_status, prev, eff_details, r.response_ms, args.verbose, app_name=app_name)
                 if (not paused) and (not is_in_maintenance_window(m)):
-                    queued_emails += queue_legacy_notification(conn, m, eff_status, prev, eff_details, r.response_ms, args.verbose)
+                    queued_emails += queue_legacy_notification(conn, m, eff_status, prev, eff_details, r.response_ms, args.verbose, app_name=app_name)
             except Exception as e:
                 if args.verbose:
                     print(f"[WARN] email queueing failed; continuing. monitor={mid} err={e}")

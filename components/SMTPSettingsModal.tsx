@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FaTimes, FaEnvelope, FaServer, FaKey, FaCheckCircle, FaExclamationTriangle, FaBellSlash, FaClock, FaPlus, FaTrash, FaEdit, FaCheck, FaVial } from 'react-icons/fa';
 import { SMTPServer, smtpService } from '../services/smtpService';
+import { useSettings } from '../contexts/SettingsContext';
 
 interface SMTPSettingsModalProps {
     onClose: () => void;
 }
 
 export const SMTPSettingsModal: React.FC<SMTPSettingsModalProps> = ({ onClose }) => {
+    const { settings } = useSettings();
+    const appName = settings?.app_name || 'LinkNest';
     const [servers, setServers] = useState<SMTPServer[]>([]);
     const [selectedServer, setSelectedServer] = useState<SMTPServer | null>(null);
     const [isEditing, setIsEditing] = useState(false);
@@ -23,7 +26,7 @@ export const SMTPSettingsModal: React.FC<SMTPSettingsModalProps> = ({ onClose })
         username: '',
         password: '',
         from_email: '',
-        from_name: 'LinkNest Monitor',
+        from_name: `${appName} Monitor`,
         encryption: 'tls',
         is_enabled: true,
         is_active: false,
@@ -125,7 +128,7 @@ export const SMTPSettingsModal: React.FC<SMTPSettingsModalProps> = ({ onClose })
             username: '',
             password: '',
             from_email: '',
-            from_name: 'LinkNest Monitor',
+            from_name: `${appName} Monitor`,
             encryption: 'tls',
             is_enabled: true,
             is_active: false,
@@ -455,7 +458,7 @@ export const SMTPSettingsModal: React.FC<SMTPSettingsModalProps> = ({ onClose })
                                                 type="text"
                                                 value={formData.from_name}
                                                 onChange={(e) => setFormData({ ...formData, from_name: e.target.value })}
-                                                placeholder="LinkNest Monitor"
+                                                placeholder={`${appName} Monitor`}
                                                 className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-[#333] bg-white dark:bg-[#1e1e1e] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                             />
                                         </div>

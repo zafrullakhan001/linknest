@@ -81,7 +81,7 @@ function handleGetActiveServer() {
         'username' => '',
         'password' => '',
         'from_email' => '',
-        'from_name' => 'LinkNest Monitor',
+        'from_name' => '{app_name} Monitor',
         'encryption' => 'tls',
         'enabled' => false,
         'pause_start' => '',
@@ -145,7 +145,7 @@ function handleCreateServer() {
             $data['username'] ?? '',
             $password,
             $data['from_email'],
-            $data['from_name'] ?? 'LinkNest Monitor',
+            $data['from_name'] ?? '{app_name} Monitor',
             $data['encryption'] ?? 'tls',
             $isActive,
             !empty($data['is_enabled']) ? 1 : 0,
@@ -396,15 +396,18 @@ function handleTestConnection() {
             $testEmail = $username . '@localhost';
         }
         
+        // Get app_name from settings
+        $appName = getAppName() ?: 'LinkNest';
+
         $result = sendEmail(
             $testEmail, 
-            'LinkNest SMTP Test', 
-            ln_render_smtp_test_email_text($testEmail),
+            $appName . ' SMTP Test', 
+            ln_render_smtp_test_email_text($testEmail, $appName),
             $data,
             [],
             [
-                'html' => ln_render_smtp_test_email_html($testEmail),
-                'text' => ln_render_smtp_test_email_text($testEmail)
+                'html' => ln_render_smtp_test_email_html($testEmail, $appName),
+                'text' => ln_render_smtp_test_email_text($testEmail, $appName)
             ]
         );
         

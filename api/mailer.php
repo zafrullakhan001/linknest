@@ -123,8 +123,9 @@ function sendEmailMulti(array $toList, array $ccList, $subject, $body, $config =
         if (empty($config['enabled']) || ($config['enabled'] !== '1' && $config['enabled'] !== 'true')) {
             error_log("[EMAIL] SMTP disabled, falling back to PHP mail()");
             // SMTP disabled, fall back to mail()
+            $appName = getAppName() ?: 'LinkNest';
             $headers = "MIME-Version: 1.0\r\n";
-            $headers .= "From: noreply@linknest.local\r\n";
+            $headers .= "From: noreply@" . strtolower(str_replace(' ', '', $appName)) . ".local\r\n";
             if (!empty($ccHeader)) {
                 $headers .= "Cc: $ccHeader\r\n";
             }
@@ -162,7 +163,9 @@ function sendEmailMulti(array $toList, array $ccList, $subject, $body, $config =
     $username = $config['username'];
     $password = $config['password'];
     $fromEmail = $config['from_email'];
-    $fromName = $config['from_name'] ?? 'LinkNest Monitor';
+    $appName = getAppName() ?: 'LinkNest';
+    $fromName = $config['from_name'] ?? ($appName . ' Monitor');
+    $fromName = str_replace('{app_name}', $appName, $fromName);
     $encryption = $config['encryption'] ?? 'tls'; // ssl, tls, none
 
     error_log("[EMAIL] SMTP config - host: $host, port: $port, encryption: $encryption, from: $fromEmail");

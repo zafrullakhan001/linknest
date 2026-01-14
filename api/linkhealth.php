@@ -204,7 +204,7 @@ function checkUrlsParallel($urls, $maxConcurrent = 5) {
             CURLOPT_NOBODY => true,
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_SSL_VERIFYHOST => 0,
-            CURLOPT_USERAGENT => 'LinkNest Health Checker/1.0',
+            CURLOPT_USERAGENT => (getAppName() ?: 'LinkNest') . ' Health Checker/1.0',
             CURLOPT_HTTPHEADER => [
                 'Accept: */*',
                 'Cache-Control: no-cache',
