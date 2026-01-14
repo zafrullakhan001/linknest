@@ -1364,36 +1364,6 @@ export const MonitoringDashboard: React.FC = () => {
                                                 ${viewMode === 'tiles' ? 'p-5' : 'p-3 flex flex-col justify-between min-h-[120px]'}
                                                 ${moveMenuId === monitor.id ? 'z-[60]' : 'z-10 hover:z-20'}`}
                                         >
-                                            {isAdmin && moveMenuId === monitor.id && (
-                                                <>
-                                                    <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setMoveMenuId(null); }}></div>
-                                                    <div className="absolute top-12 left-2 right-2 bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-[#333] rounded-2xl shadow-2xl z-[100] p-4 animate-in fade-in zoom-in duration-150 overflow-hidden" onClick={e => e.stopPropagation()}>
-                                                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 px-1 flex items-center justify-between">
-                                                            <span>Move to Tab</span>
-                                                            <button onClick={() => setMoveMenuId(null)} className="p-1 hover:bg-slate-100 dark:hover:bg-[#333] rounded-lg">
-                                                                <FaTimes size={8} />
-                                                            </button>
-                                                        </div>
-                                                        <div className="flex flex-wrap gap-1.5 mb-5 max-h-[100px] overflow-y-auto scrollbar-hide">
-                                                            {tabNames.map(t => (
-                                                                <button key={t} onClick={(e) => { e.stopPropagation(); handleMoveMonitor(monitor.id, { tab_name: t }); }}
-                                                                    className={`px-2.5 py-1.5 text-[10px] rounded-lg font-bold transition-all ${monitor.tab_name === t ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'bg-slate-100 dark:bg-[#252525] text-slate-500 hover:bg-slate-200 dark:hover:bg-[#333]'}`}>
-                                                                    {t}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 px-1">Move to Group</div>
-                                                        <div className="flex flex-wrap gap-1.5 max-h-[100px] overflow-y-auto scrollbar-hide">
-                                                            {sortedGroups.map(g => (
-                                                                <button key={g} onClick={(e) => { e.stopPropagation(); handleMoveMonitor(monitor.id, { group_name: g }); }}
-                                                                    className={`px-2.5 py-1.5 text-[10px] rounded-lg font-bold transition-all ${monitor.group_name === g ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'bg-slate-100 dark:bg-[#252525] text-slate-500 hover:bg-slate-200 dark:hover:bg-[#333]'}`}>
-                                                                    {g}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                </>
-                                            )}
                                             {/* Top Right Controls - Frequently Used */}
                                             <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-y-1 group-hover:translate-y-0 z-10">
                                                 <button
@@ -1721,6 +1691,119 @@ export const MonitoringDashboard: React.FC = () => {
                     createdMonitorId={createdMonitorId}
                 />
             )}
+
+            {/* Move Monitor Dialog */}
+            {isAdmin && moveMenuId !== null && (() => {
+                const monitorToMove = monitors.find(m => m.id === moveMenuId);
+                if (!monitorToMove) return null;
+                
+                // Get all unique groups from all tabs for the move dialog
+                const groupSet = new Set<string>();
+                monitors.forEach(m => {
+                    const group = m.group_name || 'Other';
+                    groupSet.add(group);
+                });
+                const allGroups = Array.from(groupSet).sort((a, b) => {
+                    if (a === 'Other') return 1;
+                    if (b === 'Other') return -1;
+                    return a.localeCompare(b);
+                });
+                
+                return (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setMoveMenuId(null)}>
+                        <div 
+                            className="bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl border border-slate-200 dark:border-[#333] w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {/* Header */}
+                            <div className="px-6 py-4 border-b border-slate-200 dark:border-[#333] flex items-center justify-between bg-slate-50 dark:bg-[#252525]">
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                                        monitorToMove.last_status === 'up' ? 'bg-emerald-500/10 text-emerald-500' :
+                                        monitorToMove.last_status === 'down' ? 'bg-red-500/10 text-red-500' :
+                                        'bg-slate-500/10 text-slate-500'
+                                    }`}>
+                                        {getTypeIcon(monitorToMove.type)}
+                                    </div>
+                                    <div>
+                                        <h2 className="text-lg font-bold text-slate-900 dark:text-white">Move Monitor</h2>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400">{monitorToMove.name}</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setMoveMenuId(null)}
+                                    className="p-2 hover:bg-slate-200 dark:hover:bg-[#333] rounded-xl transition-colors text-slate-500"
+                                >
+                                    <FaTimes size={18} />
+                                </button>
+                            </div>
+
+                            {/* Content */}
+                            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                                {/* Move to Tab Section */}
+                                <div>
+                                    <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-4">
+                                        Move to Tab
+                                    </h3>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                                        {tabNames.map(t => (
+                                            <button
+                                                key={t}
+                                                onClick={() => {
+                                                    handleMoveMonitor(monitorToMove.id, { tab_name: t });
+                                                    setMoveMenuId(null);
+                                                }}
+                                                className={`px-4 py-3 rounded-xl font-semibold text-sm transition-all ${
+                                                    monitorToMove.tab_name === t
+                                                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20 ring-2 ring-blue-500'
+                                                        : 'bg-slate-100 dark:bg-[#252525] text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-[#333] border border-slate-200 dark:border-[#333]'
+                                                }`}
+                                            >
+                                                {t}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Move to Group Section */}
+                                <div>
+                                    <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-4">
+                                        Move to Group
+                                    </h3>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                                        {allGroups.map(g => (
+                                            <button
+                                                key={g}
+                                                onClick={() => {
+                                                    handleMoveMonitor(monitorToMove.id, { group_name: g });
+                                                    setMoveMenuId(null);
+                                                }}
+                                                className={`px-4 py-3 rounded-xl font-semibold text-sm transition-all ${
+                                                    monitorToMove.group_name === g
+                                                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20 ring-2 ring-blue-500'
+                                                        : 'bg-slate-100 dark:bg-[#252525] text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-[#333] border border-slate-200 dark:border-[#333]'
+                                                }`}
+                                            >
+                                                {g}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Footer */}
+                            <div className="px-6 py-4 border-t border-slate-200 dark:border-[#333] bg-slate-50 dark:bg-[#252525] flex justify-end">
+                                <button
+                                    onClick={() => setMoveMenuId(null)}
+                                    className="px-5 py-2 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors rounded-lg hover:bg-slate-200 dark:hover:bg-[#333] border border-slate-300 dark:border-[#444] font-medium"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
 
             {viewingLogsMonitor && (
                 <div className="fixed inset-0 z-[100] bg-transparent flex items-center justify-center overflow-hidden">
