@@ -17,6 +17,8 @@ export const MonitoringDashboard: React.FC = () => {
     const [isEditing, setIsEditing] = useState(false);
     const [selectedMonitor, setSelectedMonitor] = useState<Monitor | undefined>(undefined);
     const [isDuplicate, setIsDuplicate] = useState(false);
+    const [isAddingNew, setIsAddingNew] = useState(false); // Track if we're adding a new monitor
+    const [createdMonitorId, setCreatedMonitorId] = useState<number | undefined>(undefined); // ID of newly created monitor
     const [viewingLogsMonitor, setViewingLogsMonitor] = useState<Monitor | null>(null);
     const [logs, setLogs] = useState<MonitorLog[]>([]);
     const [logFilter, setLogFilter] = useState<'1d' | '1w' | '1m' | 'custom'>('1d');
@@ -327,13 +329,21 @@ export const MonitoringDashboard: React.FC = () => {
             throw new Error('Admin access required');
         }
         try {
-            if (selectedMonitor && !isDuplicate) {
+            if (selectedMonitor && !isDuplicate && !isAddingNew) {
+                // Update existing monitor - close dialog after save
                 await monitoringService.updateMonitor(selectedMonitor.id, data);
+                setIsEditing(false);
+                setIsDuplicate(false);
+                setSelectedMonitor(undefined);
+                setCreatedMonitorId(undefined);
             } else {
-                await monitoringService.createMonitor(data);
+                // Create new monitor - keep dialog open so user can configure notifications
+                const createdMonitor = await monitoringService.createMonitor(data);
+                // Store the created monitor ID for the form to use in tabs
+                setCreatedMonitorId(createdMonitor.id);
+                // Keep isAddingNew true so we know we're still in "add mode"
+                setIsAddingNew(true);
             }
-            setIsEditing(false);
-            setIsDuplicate(false);
             fetchMonitors();
         } catch (error) {
             throw error;
@@ -1119,7 +1129,13 @@ export const MonitoringDashboard: React.FC = () => {
 
                     {isAdmin && (
                         <button
-                            onClick={() => { setSelectedMonitor(undefined); setIsDuplicate(false); setIsEditing(true); }}
+                            onClick={() => { 
+                                setSelectedMonitor(undefined); 
+                                setIsDuplicate(false); 
+                                setIsAddingNew(true);
+                                setCreatedMonitorId(undefined);
+                                setIsEditing(true); 
+                            }}
                             className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-blue-600/20 active:scale-95"
                         >
                             <FaPlus size={12} /> Add Monitor
@@ -1179,7 +1195,13 @@ export const MonitoringDashboard: React.FC = () => {
                     </p>
                     {isAdmin ? (
                         <button
-                            onClick={() => { setSelectedMonitor(undefined); setIsDuplicate(false); setIsEditing(true); }}
+                            onClick={() => { 
+                                setSelectedMonitor(undefined); 
+                                setIsDuplicate(false); 
+                                setIsAddingNew(true);
+                                setCreatedMonitorId(undefined);
+                                setIsEditing(true); 
+                            }}
                             className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors"
                         >
                             Create your first monitor
@@ -1385,7 +1407,13 @@ export const MonitoringDashboard: React.FC = () => {
                                                 {isAdmin && (
                                                     <>
                                                         <button
-                                                            onClick={() => { setSelectedMonitor(monitor); setIsDuplicate(false); setIsEditing(true); }}
+                                                            onClick={() => { 
+                                                                setSelectedMonitor(monitor); 
+                                                                setIsDuplicate(false); 
+                                                                setIsAddingNew(false);
+                                                                setCreatedMonitorId(undefined);
+                                                                setIsEditing(true); 
+                                                            }}
                                                             className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
                                                             title="Edit"
                                                         >
@@ -1643,7 +1671,13 @@ export const MonitoringDashboard: React.FC = () => {
                                                                         <FaCopy size={12} />
                                                                     </button>
                                                                     <button
-                                                                        onClick={() => { setSelectedMonitor(monitor); setIsDuplicate(false); setIsEditing(true); }}
+                                                                        onClick={() => { 
+                                                                            setSelectedMonitor(monitor); 
+                                                                            setIsDuplicate(false); 
+                                                                            setIsAddingNew(false);
+                                                                            setCreatedMonitorId(undefined);
+                                                                            setIsEditing(true); 
+                                                                        }}
                                                                         className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-white/20 hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
                                                                         style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileTextStyle(monitor.last_status) : {}}
                                                                     >
@@ -1674,9 +1708,17 @@ export const MonitoringDashboard: React.FC = () => {
 
             {isEditing && (
                 <MonitorForm
-                    monitor={selectedMonitor}
+                    monitor={isAddingNew ? undefined : selectedMonitor}
                     onSave={handleSave}
-                    onCancel={() => { setIsEditing(false); setIsDuplicate(false); }}
+                    onCancel={() => { 
+                        setIsEditing(false); 
+                        setIsDuplicate(false); 
+                        setIsAddingNew(false);
+                        setSelectedMonitor(undefined);
+                        setCreatedMonitorId(undefined);
+                    }}
+                    isAddingNew={isAddingNew}
+                    createdMonitorId={createdMonitorId}
                 />
             )}
 

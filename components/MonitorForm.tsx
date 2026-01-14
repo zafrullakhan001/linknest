@@ -10,6 +10,8 @@ interface MonitorFormProps {
     monitor?: Monitor;
     onSave: (monitor: Partial<Monitor>) => Promise<void>;
     onCancel: () => void;
+    isAddingNew?: boolean; // Track if we're adding a new monitor (even after creation)
+    createdMonitorId?: number; // ID of newly created monitor for tabs
 }
 
 interface MonitorPreset {
@@ -123,7 +125,7 @@ const MONITOR_PRESETS: MonitorPreset[] = [
     }
 ];
 
-export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCancel }) => {
+export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCancel, isAddingNew = false, createdMonitorId }) => {
     const { user } = useAuth();
     const isAdmin = !!user?.is_admin;
     const { settings } = useSettings();
@@ -159,6 +161,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
     const [showPresets, setShowPresets] = useState(!monitor && name === '');
     const [activeTab, setActiveTab] = useState<'settings' | 'notifications' | 'logs'>('settings');
     const [pendingSubmitAfterTabSwitch, setPendingSubmitAfterTabSwitch] = useState(false);
+    const [waitingForMonitorId, setWaitingForMonitorId] = useState(false);
     const monitorFormRef = useRef<HTMLFormElement>(null);
 
     // Permissions (admin only)
@@ -213,6 +216,14 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
         return () => window.clearTimeout(t);
     }, [pendingSubmitAfterTabSwitch, activeTab]);
 
+    // Watch for monitor ID changes after creation
+    useEffect(() => {
+        if (waitingForMonitorId && createdMonitorId) {
+            setWaitingForMonitorId(false);
+            // Monitor was created, we can now use the notifications tab
+        }
+    }, [createdMonitorId, waitingForMonitorId]);
+
     // Load user list (admin only, for monitor visibility assignments)
     useEffect(() => {
         if (!isAdmin) return;
@@ -233,6 +244,10 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
 
     // Handle drag start
     const handleMouseDown = (e: React.MouseEvent) => {
+        // Don't start dragging if clicking on a button
+        if ((e.target as HTMLElement).closest('button')) {
+            return;
+        }
         if (modalRef.current && (e.target as HTMLElement).closest('[data-drag-handle]')) {
             e.preventDefault();
             e.stopPropagation();
@@ -243,6 +258,11 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                 x: e.clientX - rect.left,
                 y: e.clientY - rect.top
             };
+            // Update position state to match current DOM position
+            setPosition({
+                x: rect.left,
+                y: rect.top
+            });
             setIsDragging(true);
         }
     };
@@ -295,24 +315,55 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (isSubmitting) return; // Prevent double submission
+        
         setIsSubmitting(true);
         setError(null);
 
         try {
+            // Validate required fields
+            if (!name.trim()) {
+                setError('Monitor name is required');
+                setIsSubmitting(false);
+                return;
+            }
+            if (!target.trim()) {
+                setError('Target is required');
+                setIsSubmitting(false);
+                return;
+            }
+            if (type === 'port' && (!port || isNaN(parseInt(port)))) {
+                setError('Port number is required for port checks');
+                setIsSubmitting(false);
+                return;
+            }
+            if (type === 'keyword' && !keyword.trim()) {
+                setError('Keyword is required for keyword checks');
+                setIsSubmitting(false);
+                return;
+            }
+
             const wt = Math.max(1, Math.min(20, parseInt(warningThreshold || '1')));
             const timeoutVal = timeoutSec.trim() === '' ? undefined : Math.max(1, Math.min(60, parseInt(timeoutSec)));
+            const intervalVal = parseInt(interval) || 5;
+            if (intervalVal < 1 || intervalVal > 1440) {
+                setError('Interval must be between 1 and 1440 minutes');
+                setIsSubmitting(false);
+                return;
+            }
+
             await onSave({
-                name,
+                name: name.trim(),
                 type,
-                target,
+                target: target.trim(),
                 port: port ? parseInt(port) : undefined,
-                keyword,
-                interval: parseInt(interval),
+                keyword: keyword.trim() || undefined,
+                interval: intervalVal,
                 warning_threshold: wt,
                 timeout: timeoutVal,
                 allowed_user_ids: isAdmin ? allowedUsers : undefined,
-                tab_name: tabName || undefined,
-                group_name: groupName || undefined,
+                tab_name: tabName.trim() || undefined,
+                group_name: groupName.trim() || undefined,
                 email_notification: emailNotification ? 1 : 0,
                 is_active: isActive ? 1 : 0,
                 legacy_email_disabled: legacyEmailDisabled ? 1 : 0,
@@ -331,14 +382,16 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
     };
 
     const handleFooterSaveClick = () => {
-        if (isSubmitting) return;
+        if (isSubmitting) return; // Prevent double submission
         if (activeTab !== 'settings') {
             setPendingSubmitAfterTabSwitch(true);
             setActiveTab('settings');
             return;
         }
         const form = monitorFormRef.current || (document.getElementById('monitor-form') as HTMLFormElement | null);
-        form?.requestSubmit();
+        if (form) {
+            form.requestSubmit();
+        }
     };
 
     const FieldHelp: React.FC<{ text: string }> = ({ text }) => (
@@ -348,7 +401,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
     const filteredPresets = MONITOR_PRESETS.filter(p => !monitor);
 
     return (
-        <div className="fixed inset-0 z-50" onClick={onCancel} style={{ backgroundColor: 'transparent' }}>
+        <div className="fixed inset-0 z-50" style={{ backgroundColor: 'transparent' }}>
             <div
                 ref={modalRef}
                 className="bg-white rounded-xl shadow-2xl border border-gray-200 w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
@@ -367,7 +420,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                     onMouseDown={handleMouseDown}
                 >
                     <h2 className="text-xl font-semibold text-gray-800">
-                        {monitor ? 'Edit Monitor' : 'Add New Monitor'}
+                        {(monitor?.id && !isAddingNew) ? 'Edit Monitor' : 'Add New Monitor'}
                     </h2>
                     <div className="flex items-center gap-3">
                         <div className="text-gray-500 text-xs flex items-center gap-1">
@@ -378,7 +431,11 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                         </div>
                         <button
                             type="button"
-                            onClick={onCancel}
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onCancel();
+                            }}
                             className="text-gray-500 hover:text-gray-700 rounded-md p-1 hover:bg-gray-100 transition-colors"
                             aria-label="Close"
                             title="Close"
@@ -391,29 +448,95 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                 </div>
 
                 {/* Tabs */}
-                {monitor && monitor.id && (
-                    <div className="border-b border-gray-200 bg-gray-50 px-6">
-                        <div className="flex space-x-1">
-                            <button
-                                type="button"
-                                onClick={() => setActiveTab('settings')}
-                                className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${activeTab === 'settings'
-                                    ? 'border-blue-600 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                                    }`}
-                            >
-                                Settings
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setActiveTab('notifications')}
-                                className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${activeTab === 'notifications'
-                                    ? 'border-blue-600 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                                    }`}
-                            >
-                                Email Notifications
-                            </button>
+                <div className="border-b border-gray-200 bg-gray-50 px-6">
+                    <div className="flex space-x-1">
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('settings')}
+                            className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${activeTab === 'settings'
+                                ? 'border-blue-600 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700'
+                                }`}
+                        >
+                            Settings
+                        </button>
+                        <button
+                            type="button"
+                            onClick={async () => {
+                                // If creating new monitor and switching to notifications tab, save monitor first
+                                const monitorIdForTabs = (isAddingNew && createdMonitorId) ? createdMonitorId : (monitor?.id);
+                                if (!monitorIdForTabs && activeTab === 'settings') {
+                                    // Validate required fields first
+                                    if (!name.trim()) {
+                                        setError('Monitor name is required');
+                                        return;
+                                    }
+                                    if (!target.trim()) {
+                                        setError('Target is required');
+                                        return;
+                                    }
+                                    if (type === 'port' && !port) {
+                                        setError('Port number is required for port checks');
+                                        return;
+                                    }
+                                    if (type === 'keyword' && !keyword.trim()) {
+                                        setError('Keyword is required for keyword checks');
+                                        return;
+                                    }
+
+                                    try {
+                                        setIsSubmitting(true);
+                                        setError(null);
+                                        setWaitingForMonitorId(true);
+                                        const wt = Math.max(1, Math.min(20, parseInt(warningThreshold || '1')));
+                                        const timeoutVal = timeoutSec.trim() === '' ? undefined : Math.max(1, Math.min(60, parseInt(timeoutSec)));
+                                        await onSave({
+                                            name: name.trim(),
+                                            type,
+                                            target: target.trim(),
+                                            port: port ? parseInt(port) : undefined,
+                                            keyword: keyword.trim() || undefined,
+                                            interval: parseInt(interval) || 5,
+                                            warning_threshold: wt,
+                                            timeout: timeoutVal,
+                                            allowed_user_ids: isAdmin ? allowedUsers : undefined,
+                                            tab_name: tabName.trim() || undefined,
+                                            group_name: groupName.trim() || undefined,
+                                            email_notification: emailNotification ? 1 : 0,
+                                            is_active: isActive ? 1 : 0,
+                                            legacy_email_disabled: legacyEmailDisabled ? 1 : 0,
+                                            legacy_email_to: legacyEmailTo.trim() || undefined,
+                                            legacy_email_cc: legacyEmailCc.trim() || undefined,
+                                            legacy_email_from_name: legacyEmailFromName.trim() || undefined,
+                                            legacy_email_from_email: legacyEmailFromEmail.trim() || undefined,
+                                            legacy_email_subject_template: legacyEmailSubjectTemplate.trim() || undefined,
+                                            legacy_email_body_template: legacyEmailBodyTemplate || undefined
+                                        });
+                                        // Switch to notifications tab - the parent will update createdMonitorId
+                                        setActiveTab('notifications');
+                                    } catch (err: any) {
+                                        setError(err.message || 'Failed to save monitor');
+                                        setWaitingForMonitorId(false);
+                                        return; // Don't switch tabs if save failed
+                                    } finally {
+                                        setIsSubmitting(false);
+                                    }
+                                } else if (monitorIdForTabs) {
+                                    // We have a monitor ID, just switch tabs
+                                    setActiveTab('notifications');
+                                } else {
+                                    // No monitor ID and not saving, show error
+                                    setError('Please save the monitor first before configuring notifications');
+                                }
+                            }}
+                            className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${activeTab === 'notifications'
+                                ? 'border-blue-600 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700'
+                                }`}
+                        >
+                            Email Notifications
+                        </button>
+                        {monitor && monitor.id && (
                             <button
                                 type="button"
                                 onClick={() => setActiveTab('logs')}
@@ -424,17 +547,39 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                             >
                                 Email Logs
                             </button>
-                        </div>
+                        )}
                     </div>
-                )}
+                </div>
 
                 {/* Scrollable Content */}
                 <div className="overflow-y-auto flex-1 p-6 bg-white">
-                    {activeTab === 'notifications' && monitor && monitor.id ? (
-                        <EmailNotificationsTab monitorId={monitor.id} />
-                    ) : activeTab === 'logs' && monitor && monitor.id ? (
-                        <EmailLogsTab monitorId={monitor.id} />
-                    ) : (
+                    {(() => {
+                        // Determine the monitor ID to use for tabs
+                        const monitorIdForTabs = (isAddingNew && createdMonitorId) ? createdMonitorId : (monitor?.id);
+                        
+                        if (activeTab === 'notifications' && monitorIdForTabs) {
+                            return <EmailNotificationsTab monitorId={monitorIdForTabs} />;
+                        } else if (activeTab === 'logs' && monitorIdForTabs) {
+                            return <EmailLogsTab monitorId={monitorIdForTabs} />;
+                        } else if (activeTab === 'notifications' && !monitorIdForTabs) {
+                            return (
+                                <div className="text-center py-8 text-gray-500">
+                                    {isSubmitting || waitingForMonitorId ? (
+                                        <>
+                                            <div className="w-8 h-8 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
+                                            <p className="mb-2">Saving monitor...</p>
+                                            <p className="text-xs">Please wait while the monitor is being created.</p>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <p className="mb-2">Monitor not saved yet</p>
+                                            <p className="text-xs">Please fill in the required fields and save the monitor first.</p>
+                                        </>
+                                    )}
+                                </div>
+                            );
+                        } else {
+                            return (
                         <>
                             {showPresets && filteredPresets.length > 0 && (
                                 <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -935,29 +1080,48 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                     </div>
                                 )}
                             </form>
-                        </>
-                    )}
+                            </>
+                        );
+                    }})()}
                 </div>
 
-                {/* Footer with Actions */}
-                <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3">
-                    <button
-                        type="button"
-                        onClick={onCancel}
-                        className="px-5 py-2 text-gray-700 hover:text-gray-900 transition-colors rounded-lg hover:bg-gray-100 border border-gray-300"
-                        disabled={isSubmitting}
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        type="button"
-                        onClick={handleFooterSaveClick}
-                        disabled={isSubmitting}
-                        className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-                    >
-                        {isSubmitting ? 'Saving...' : monitor ? 'Update Monitor' : 'Create Monitor'}
-                    </button>
-                </div>
+                {/* Footer with Actions - Only show on Settings tab */}
+                {activeTab === 'settings' && (
+                    <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3">
+                        {isAddingNew && createdMonitorId ? (
+                            // After creating monitor, show "Done" button
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={onCancel}
+                                    className="px-5 py-2 text-gray-700 hover:text-gray-900 transition-colors rounded-lg hover:bg-gray-100 border border-gray-300"
+                                >
+                                    Done
+                                </button>
+                            </>
+                        ) : (
+                            // Before creating or when editing, show normal buttons
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={onCancel}
+                                    className="px-5 py-2 text-gray-700 hover:text-gray-900 transition-colors rounded-lg hover:bg-gray-100 border border-gray-300"
+                                    disabled={isSubmitting}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleFooterSaveClick}
+                                    disabled={isSubmitting}
+                                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                                >
+                                    {isSubmitting ? 'Saving...' : (monitor?.id && !isAddingNew) ? 'Update Monitor' : 'Create Monitor'}
+                                </button>
+                            </>
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     );

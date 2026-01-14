@@ -59,6 +59,19 @@ export const EmailNotificationsTab: React.FC<EmailNotificationsTabProps> = ({ mo
         setIsCreating(false);
     };
 
+    const handleClone = (rule: NotificationRule) => {
+        // Create a copy of the rule with a new name
+        const clonedRule: NotificationRule = {
+            ...rule,
+            id: undefined, // Remove ID so it's treated as new
+            name: `${rule.name} (Copy)`,
+            created_at: undefined,
+            updated_at: undefined
+        };
+        setEditingRule(clonedRule);
+        setIsCreating(true);
+    };
+
     const handleDelete = async (ruleId: number) => {
         if (!confirm('Are you sure you want to delete this notification rule?')) {
             return;
@@ -283,6 +296,7 @@ export const EmailNotificationsTab: React.FC<EmailNotificationsTabProps> = ({ mo
                                 onEdit={handleEdit}
                                 onDelete={handleDelete}
                                 onMove={handleMove}
+                                onClone={handleClone}
                                 index={idx}
                                 total={rules.length}
                                 movingRuleId={movingRuleId}
@@ -300,12 +314,13 @@ interface NotificationRuleCardProps {
     onEdit: (rule: NotificationRule) => void;
     onDelete: (ruleId: number) => void;
     onMove: (ruleId: number, direction: 'up' | 'down') => void;
+    onClone: (rule: NotificationRule) => void;
     index: number;
     total: number;
     movingRuleId: number | null;
 }
 
-const NotificationRuleCard: React.FC<NotificationRuleCardProps> = ({ rule, onEdit, onDelete, onMove, index, total, movingRuleId }) => {
+const NotificationRuleCard: React.FC<NotificationRuleCardProps> = ({ rule, onEdit, onDelete, onMove, onClone, index, total, movingRuleId }) => {
     const days = parseDaysOfWeek(rule.days_of_week);
     const hasTimeWindow = rule.time_window_start && rule.time_window_end;
     const hasDaysFilter = days.length > 0;
@@ -367,6 +382,15 @@ const NotificationRuleCard: React.FC<NotificationRuleCardProps> = ({ rule, onEdi
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                    </button>
+                    <button
+                        onClick={() => onClone(rule)}
+                        className="p-2 text-green-600 hover:text-green-700 hover:bg-green-50 rounded transition-colors border border-green-200"
+                        title="Clone rule"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                         </svg>
                     </button>
                     <button
