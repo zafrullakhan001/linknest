@@ -15,6 +15,10 @@ import { FloatingPhoneticAlphabet } from './components/FloatingPhoneticAlphabet'
 import { PhoneticAlphabet } from './components/PhoneticAlphabet';
 import { FloatingNotesWidget } from './components/FloatingNotesWidget';
 import { NotesWidget } from './components/NotesWidget';
+import { FloatingWeatherWidget } from './components/FloatingWeatherWidget';
+import { WeatherWidget } from './components/WeatherWidget';
+import { FloatingCalculatorWidget } from './components/FloatingCalculatorWidget';
+import { CalculatorWidget } from './components/CalculatorWidget';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -106,6 +110,26 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('linknest_show_notes_widget', showNotes.toString());
   }, [showNotes]);
+
+  // Weather Widget Visibility State
+  const [showWeather, setShowWeather] = useState(() => {
+    const saved = localStorage.getItem('linknest_show_weather_widget');
+    return saved !== null ? saved === 'true' : false; // Default to hidden
+  });
+
+  useEffect(() => {
+    localStorage.setItem('linknest_show_weather_widget', showWeather.toString());
+  }, [showWeather]);
+
+  // Calculator Widget Visibility State
+  const [showCalculator, setShowCalculator] = useState(() => {
+    const saved = localStorage.getItem('linknest_show_calculator_widget');
+    return saved !== null ? saved === 'true' : false; // Default to hidden
+  });
+
+  useEffect(() => {
+    localStorage.setItem('linknest_show_calculator_widget', showCalculator.toString());
+  }, [showCalculator]);
 
   // Theme State
   const [darkMode, setDarkMode] = useState(() => {
@@ -254,6 +278,14 @@ const AppContent: React.FC = () => {
 
   const toggleNotes = () => {
     setShowNotes(!showNotes);
+  };
+
+  const toggleWeather = () => {
+    setShowWeather(!showWeather);
+  };
+
+  const toggleCalculator = () => {
+    setShowCalculator(!showCalculator);
   };
 
   const handleTabClick = (tab: string) => {
@@ -601,6 +633,10 @@ const AppContent: React.FC = () => {
         togglePhoneticAlphabet={togglePhoneticAlphabet}
         showNotes={showNotes}
         toggleNotes={toggleNotes}
+        showWeather={showWeather}
+        toggleWeather={toggleWeather}
+        showCalculator={showCalculator}
+        toggleCalculator={toggleCalculator}
         user={user}
         onLoginClick={() => setAuthModalOpen(true)}
         onHelpClick={() => setHelpAboutOpen(true)}
@@ -778,6 +814,16 @@ const AppContent: React.FC = () => {
         <FloatingNotesWidget>
           <NotesWidget />
         </FloatingNotesWidget>
+      )}
+      {showWeather && (
+        <FloatingWeatherWidget>
+          <WeatherWidget />
+        </FloatingWeatherWidget>
+      )}
+      {showCalculator && (
+        <FloatingCalculatorWidget>
+          <CalculatorWidget />
+        </FloatingCalculatorWidget>
       )}
       <AuthModal
         isOpen={authModalOpen}

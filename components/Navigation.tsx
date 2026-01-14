@@ -12,12 +12,16 @@ interface NavigationProps {
   togglePhoneticAlphabet: () => void;
   showNotes: boolean;
   toggleNotes: () => void;
+  showWeather: boolean;
+  toggleWeather: () => void;
+  showCalculator: boolean;
+  toggleCalculator: () => void;
   user: { id: number; username: string; email: string; is_admin?: boolean } | null;
   onLoginClick: () => void;
   onHelpClick: () => void;
 }
 
-export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, user, onLoginClick, onHelpClick }) => {
+export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, showWeather, toggleWeather, showCalculator, toggleCalculator, user, onLoginClick, onHelpClick }) => {
   const { logout } = useAuth();
   const { settings } = useSettings();
   const disabledTabs = getDisabledTabsFromSettings(settings);
@@ -151,6 +155,29 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme, s
               </svg>
             </button>
           )}
+          <button
+            onClick={toggleWeather}
+            className={`p-2 rounded-full transition-all ${showWeather ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-500 hover:bg-brand-100 dark:hover:bg-brand-900/50' : 'hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
+            title={showWeather ? "Hide Weather Widget" : "Show Weather Widget"}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+              <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
+              <path d="M22 10a3 3 0 0 0-3-3h-2.5a2.5 2.5 0 0 0-5 0H12a3 3 0 0 0 0 6h3a2.5 2.5 0 0 0 5 0H22Z"></path>
+            </svg>
+          </button>
+          <button
+            onClick={toggleCalculator}
+            className={`p-2 rounded-full transition-all ${showCalculator ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-500 hover:bg-brand-100 dark:hover:bg-brand-900/50' : 'hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
+            title={showCalculator ? "Hide Calculator Widget" : "Show Calculator Widget"}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+              <rect x="4" y="2" width="16" height="20" rx="2"></rect>
+              <line x1="8" y1="6" x2="16" y2="6"></line>
+              <line x1="8" y1="10" x2="16" y2="10"></line>
+              <line x1="8" y1="14" x2="16" y2="14"></line>
+              <line x1="8" y1="18" x2="16" y2="18"></line>
+            </svg>
+          </button>
           <button
             onClick={toggleTheme}
             className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all"
