@@ -193,6 +193,30 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                       Clone entire {appName} instances with progress tracking. Create copies of your installation with or without assets and database. Perfect for creating test environments or backups.
                     </p>
                   </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Tile Animations</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Choose from 200+ professional tile animations including fade, slide, zoom, bounce, and many more. Add seasonal decorations for holidays and special occasions. Personalize your workspace appearance.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Floating Widgets</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Access helpful widgets including Clock with timezone display, Phonetic Alphabet reference, Notes (authenticated users), Weather forecast, and Calculator. Toggle widgets on/off from the navigation bar.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">System Monitoring</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Monitor URLs, keywords, ports, and ping targets. Track response times, view historical charts, set up maintenance windows, and receive email notifications with advanced rule-based alerts.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Email Notifications</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Advanced email notification system with multiple SMTP server support, custom templates, time-based rules, day-of-week filters, and recipient management. Pause/resume notifications globally.
+                    </p>
+                  </div>
                 </div>
               </section>
 
@@ -239,6 +263,58 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
               <section>
                 <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
+                  </svg>
+                  System Monitoring Dashboard
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p>
+                    Monitor the health and availability of your systems, services, and websites with comprehensive monitoring tools.
+                  </p>
+                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-brand-900 dark:text-brand-100">Monitor Types:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li><strong>URL Monitoring:</strong> Check HTTP/HTTPS endpoints and websites</li>
+                      <li><strong>Keyword Monitoring:</strong> Verify specific text appears on web pages</li>
+                      <li><strong>Port Monitoring:</strong> Check if network ports are open and accepting connections</li>
+                      <li><strong>Ping Monitoring:</strong> Verify host/IP address reachability</li>
+                    </ul>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-slate-900 dark:text-white">Monitoring Features:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Customizable check intervals (minutes)</li>
+                      <li>Response time tracking and historical charts</li>
+                      <li>Warning thresholds and consecutive failure tracking</li>
+                      <li>Maintenance windows to suppress alerts during scheduled downtime</li>
+                      <li>Multiple view modes: tiles, grid, compact, and capsule layouts</li>
+                      <li>Auto-refresh with configurable intervals</li>
+                      <li>Fullscreen monitoring dashboard</li>
+                      <li>Custom tile styling for different statuses (up, down, warning)</li>
+                      <li>Organize monitors into tabs and groups</li>
+                      <li>Export/import monitors via CSV</li>
+                      <li>Bulk operations and duplicate monitors</li>
+                    </ul>
+                  </div>
+                  <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-emerald-900 dark:text-emerald-100">Email Notifications:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Advanced rule-based notification system</li>
+                      <li>Multiple SMTP server support with failover</li>
+                      <li>Custom email templates with variables</li>
+                      <li>Time-based rules (specific hours, days of week)</li>
+                      <li>Status triggers (down, up, or both)</li>
+                      <li>Recipient management (to, cc, bcc)</li>
+                      <li>Global notification pause/resume</li>
+                      <li>Email log viewing and troubleshooting</li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
                   </svg>
                   Tips & Tricks
@@ -260,6 +336,15 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     <li>Use style profiles to customize the application appearance (admin only)</li>
                     <li>Grant specific permissions to users for individual tiles (admin only)</li>
                     <li>Clone {appName} instances for testing or backup purposes (admin only)</li>
+                    <li>Customize tile animations from 200+ options for a personalized experience</li>
+                    <li>Add seasonal decorations to tiles for holidays and special occasions</li>
+                    <li>Toggle floating widgets (Clock, Phonetic Alphabet, Notes, Weather, Calculator) from navigation</li>
+                    <li>Use the Notes widget to keep quick notes (authenticated users only)</li>
+                    <li>Monitor system health with URL, keyword, port, and ping checks</li>
+                    <li>Set up email notifications with advanced rules and multiple SMTP servers</li>
+                    <li>View monitoring history with interactive charts and graphs</li>
+                    <li>Schedule maintenance windows to suppress monitoring alerts</li>
+                    <li>Pause/resume email notifications globally when needed</li>
                   </ul>
                 </div>
               </section>
@@ -287,6 +372,10 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                       <li><strong>Database Management:</strong> Export and import database backups</li>
                       <li><strong>Space Management:</strong> Bulk import/export spaces, manage all spaces</li>
                       <li><strong>Application Settings:</strong> Customize app name, logo, footer, and other global settings</li>
+                      <li><strong>Monitoring Management:</strong> Create, edit, and manage system monitors with advanced configuration</li>
+                      <li><strong>SMTP Configuration:</strong> Configure multiple SMTP servers for email notifications</li>
+                      <li><strong>Email Templates:</strong> Customize email notification templates and manage notification rules</li>
+                      <li><strong>Monitoring Settings:</strong> Configure monitoring intervals, timeouts, and notification preferences</li>
                     </ul>
                   </div>
                 </div>
@@ -315,7 +404,8 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                   {appName} helps you create beautiful, organized landing pages for your important links. 
                   Organize links into visual tiles, customize their appearance, and share them with your team or make them public. 
                   With features like browser integration, scheduling, link health monitoring, rich text content, style management, 
-                  access control, and flexible visibility controls, {appName} makes managing and sharing links simple and elegant.
+                  access control, flexible visibility controls, system monitoring, email notifications, floating widgets, and 200+ tile animations, 
+                  {appName} makes managing and sharing links simple and elegant.
                 </p>
               </section>
 
@@ -368,7 +458,28 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     'Instance Cloning',
                     'LDAP Authentication',
                     'Admin Panel',
-                    'Bulk Import/Export'
+                    'Bulk Import/Export',
+                    'Tile Animations (200+ options)',
+                    'Seasonal Decorations',
+                    'Floating Widgets',
+                    'Clock & Timezone Display',
+                    'Phonetic Alphabet Reference',
+                    'Notes Widget',
+                    'Weather Widget',
+                    'Calculator Widget',
+                    'System Monitoring Dashboard',
+                    'URL Monitoring',
+                    'Keyword Monitoring',
+                    'Port Monitoring',
+                    'Ping Monitoring',
+                    'Response Time Tracking',
+                    'Historical Charts & Graphs',
+                    'Maintenance Windows',
+                    'Email Notifications',
+                    'Advanced Notification Rules',
+                    'Multiple SMTP Servers',
+                    'Email Templates',
+                    'Notification Pause/Resume'
                   ].map((feature, index) => (
                     <div key={index} className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-brand-600 dark:text-brand-400 flex-shrink-0">
