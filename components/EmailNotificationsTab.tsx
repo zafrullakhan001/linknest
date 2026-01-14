@@ -448,6 +448,8 @@ interface NotificationRuleFormProps {
 }
 
 const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSave, onCancel, isCreating }) => {
+    const { settings } = useSettings();
+    const appName = settings?.app_name || 'LinkNest';
     const [formData, setFormData] = useState<NotificationRule>(rule);
     const [recipientsText, setRecipientsText] = useState(rule.recipients?.join(', ') || '');
     const [ccText, setCcText] = useState(rule.cc?.join(', ') || '');
@@ -694,7 +696,7 @@ const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSav
                         value={formData.from_name || ''}
                         onChange={(e) => setFormData({ ...formData, from_name: e.target.value || null })}
                         className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                        placeholder="LinkNest Monitor"
+                        placeholder={`${appName} Monitor`}
                     />
                     <FieldHelp text="Custom sender name. Uses SMTP settings if not specified." />
                 </div>

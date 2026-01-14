@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useSettings } from '../contexts/SettingsContext';
 
 interface HelpAboutDialogProps {
   isOpen: boolean;
@@ -9,6 +10,8 @@ interface HelpAboutDialogProps {
 type TabType = 'help' | 'about';
 
 export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClose }) => {
+  const { settings } = useSettings();
+  const appName = settings?.app_name || 'LinkNest';
   const [activeTab, setActiveTab] = useState<TabType>('help');
 
   if (!isOpen) return null;
@@ -76,7 +79,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                 </h3>
                 <div className="space-y-3 text-slate-700 dark:text-slate-300">
                   <p>
-                    <strong>LinkNest</strong> is a smart landing page manager that helps you organize and share your important links in a beautiful, visual way.
+                    <strong>{appName}</strong> is a smart landing page manager that helps you organize and share your important links in a beautiful, visual way.
                   </p>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2">
                     <p className="font-medium text-slate-900 dark:text-white">For Guests (Not Signed In):</p>
@@ -187,7 +190,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Instance Cloning</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Clone entire LinkNest instances with progress tracking. Create copies of your installation with or without assets and database. Perfect for creating test environments or backups.
+                      Clone entire {appName} instances with progress tracking. Create copies of your installation with or without assets and database. Perfect for creating test environments or backups.
                     </p>
                   </div>
                 </div>
@@ -203,7 +206,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                 </h3>
                 <div className="space-y-3 text-slate-700 dark:text-slate-300">
                   <p>
-                    LinkNest integrates with <strong>Browser Launcher Pro</strong> extension to open links in specific browsers. This is perfect for testing, development, or organizing links by browser.
+                    {appName} integrates with <strong>Browser Launcher Pro</strong> extension to open links in specific browsers. This is perfect for testing, development, or organizing links by browser.
                   </p>
                   <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
                     <p className="font-medium text-brand-900 dark:text-brand-100">Browser-Specific Links:</p>
@@ -256,7 +259,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     <li>Add rich text content with formatting, emojis, and images to sections</li>
                     <li>Use style profiles to customize the application appearance (admin only)</li>
                     <li>Grant specific permissions to users for individual tiles (admin only)</li>
-                    <li>Clone LinkNest instances for testing or backup purposes (admin only)</li>
+                    <li>Clone {appName} instances for testing or backup purposes (admin only)</li>
                   </ul>
                 </div>
               </section>
@@ -278,7 +281,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                       <li><strong>User Management:</strong> Approve pending users, manage all users, reset passwords</li>
                       <li><strong>Access Control:</strong> Set view, edit, and delete permissions for users on specific tiles</li>
                       <li><strong>Style Management:</strong> Create and switch between custom style profiles</li>
-                      <li><strong>Instance Cloning:</strong> Clone LinkNest installations with progress tracking</li>
+                      <li><strong>Instance Cloning:</strong> Clone {appName} installations with progress tracking</li>
                       <li><strong>LDAP Integration:</strong> Configure LDAP authentication for enterprise environments</li>
                       <li><strong>Browser Extension:</strong> Configure Browser Launcher Pro extension settings</li>
                       <li><strong>Database Management:</strong> Export and import database backups</li>
@@ -297,7 +300,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                 <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center mx-auto mb-4 text-4xl shadow-lg">
                   🔗
                 </div>
-                <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">LinkNest</h3>
+                <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">{appName}</h3>
                 <p className="text-slate-600 dark:text-slate-400 mb-4">
                   A smart, aesthetic landing page manager
                 </p>
@@ -309,10 +312,10 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
               <section>
                 <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">Description</h3>
                 <p className="text-slate-700 dark:text-slate-300">
-                  LinkNest helps you create beautiful, organized landing pages for your important links. 
+                  {appName} helps you create beautiful, organized landing pages for your important links. 
                   Organize links into visual tiles, customize their appearance, and share them with your team or make them public. 
                   With features like browser integration, scheduling, link health monitoring, rich text content, style management, 
-                  access control, and flexible visibility controls, LinkNest makes managing and sharing links simple and elegant.
+                  access control, and flexible visibility controls, {appName} makes managing and sharing links simple and elegant.
                 </p>
               </section>
 

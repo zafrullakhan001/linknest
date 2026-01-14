@@ -3947,7 +3947,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           value={settings.app_name}
                           onChange={(e) => setSettings({ ...settings, app_name: e.target.value })}
                           className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                          placeholder="LinkNest"
+                          placeholder={settings.app_name || "LinkNest"}
                         />
                       </div>
 
@@ -3960,7 +3960,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           value={settings.page_title}
                           onChange={(e) => setSettings({ ...settings, page_title: e.target.value })}
                           className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                          placeholder="LinkNest"
+                          placeholder={settings.page_title || settings.app_name || "LinkNest"}
                         />
                       </div>
 
