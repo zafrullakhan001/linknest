@@ -56,7 +56,7 @@ export const MonitoringDashboard: React.FC = () => {
     const [notificationsPaused, setNotificationsPaused] = useState<boolean>(false);
     const csvInputRef = useRef<HTMLInputElement>(null);
     const [checkStatus, setCheckStatus] = useState<{ count: number; total: number; up: number; down: number; error: number } | null>(null);
-    
+
     // Tile styles state
     const defaultTileStyles: TileStyle = {
         upBackgroundColor: '#10b981',
@@ -79,7 +79,7 @@ export const MonitoringDashboard: React.FC = () => {
         warningFontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
         borderRadius: 16,
     };
-    
+
     const [tileStyles, setTileStyles] = useState<TileStyle>(defaultTileStyles);
     const [moveMenuId, setMoveMenuId] = useState<number | null>(null);
     const [editingTabName, setEditingTabName] = useState<string | null>(null);
@@ -172,7 +172,7 @@ export const MonitoringDashboard: React.FC = () => {
     useEffect(() => {
         localStorage.setItem('linknest_monitor_view_mode', viewMode);
     }, [viewMode]);
-    
+
     // Persist fullscreen mode
     useEffect(() => {
         localStorage.setItem('linknest_monitor_fullscreen', isFullscreen.toString());
@@ -252,7 +252,7 @@ export const MonitoringDashboard: React.FC = () => {
         fetchMonitors();
         loadTileStyles();
     }, [fetchMonitors]);
-    
+
     const loadTileStyles = useCallback(async () => {
         try {
             const preferences = await userPreferencesService.getPreferences();
@@ -285,7 +285,7 @@ export const MonitoringDashboard: React.FC = () => {
             setTileStyles(defaultTileStyles);
         }
     }, []);
-    
+
     const handleTileStylesChange = useCallback((styles: TileStyle) => {
         setTileStyles(styles);
     }, []);
@@ -632,11 +632,11 @@ export const MonitoringDashboard: React.FC = () => {
             try {
                 const content = e.target?.result as string;
                 const data = JSON.parse(content);
-                
+
                 // Check if it's a single monitor or bundle
                 const isSingleMonitor = data.type === 'single_monitor' && data.monitor;
                 const isBundle = data.monitors && Array.isArray(data.monitors);
-                
+
                 if (isSingleMonitor) {
                     // Single monitor import - just add it
                     const confirmImport = confirm(`Import monitor "${data.monitor.name}"?\n\nThis will add the monitor with all its notification rules to your dashboard.`);
@@ -797,7 +797,7 @@ export const MonitoringDashboard: React.FC = () => {
                 title={title}
             >
                 {Array.from({ length: iconCount }).map((_, idx) => (
-                    <FaEnvelope key={idx} size={size} style={iconStyle as any} />
+                    <FaEnvelope key={idx} {...({ size, style: iconStyle } as any)} />
                 ))}
             </span>
         );
@@ -827,7 +827,7 @@ export const MonitoringDashboard: React.FC = () => {
         if (minutes > 0) return `${minutes}m ${seconds % 60}s ago`;
         return `${seconds}s ago`;
     }, []);
-    
+
     // Memoize helper functions for performance
     const getTileStyle = useCallback((status: 'up' | 'down' | 'warning' | 'unknown' | null): React.CSSProperties => {
         if (status === 'up') {
@@ -858,7 +858,7 @@ export const MonitoringDashboard: React.FC = () => {
         }
         return {};
     }, [tileStyles]);
-    
+
     const getTileTextColor = useCallback((status: 'up' | 'down' | 'warning' | 'unknown' | null): string => {
         if (status === 'up') {
             return tileStyles.upTextColor;
@@ -876,7 +876,7 @@ export const MonitoringDashboard: React.FC = () => {
         if (status === 'warning') return tileStyles.warningFontFamily;
         return '';
     }, [tileStyles]);
-    
+
     const getTileTextStyle = useCallback((status: 'up' | 'down' | 'warning' | 'unknown' | null): React.CSSProperties => {
         const color = getTileTextColor(status);
         if (color) {
@@ -884,7 +884,7 @@ export const MonitoringDashboard: React.FC = () => {
         }
         return {};
     }, [getTileTextColor]);
-    
+
     const getTileBorderColor = useCallback((status: 'up' | 'down' | 'warning' | 'unknown' | null): string => {
         if (status === 'up') {
             return tileStyles.upUseGradient ? tileStyles.upGradientStart : tileStyles.upBackgroundColor;
@@ -1021,7 +1021,7 @@ export const MonitoringDashboard: React.FC = () => {
                                     className="p-2 rounded-lg transition-all text-slate-400 hover:text-red-500 hover:bg-white dark:hover:bg-[#333]"
                                     title="Delete All Monitors"
                                 >
-                            <FaTrash size={14} />
+                                    <FaTrash size={14} />
                                 </button>
                             </>
                         )}
@@ -1300,7 +1300,7 @@ export const MonitoringDashboard: React.FC = () => {
                                             className={`inline-flex items-center gap-3 px-4 py-2 rounded-full border cursor-pointer transition-all hover:shadow-lg group relative ${fullAnimClass} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border-slate-200 dark:border-[#333]'}`}
                                         >
                                             <div className="flex items-center gap-3 min-w-0">
-                                                <span 
+                                                <span
                                                     className="font-semibold text-sm truncate"
                                                     style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileTextStyle(monitor.last_status) : { color: 'inherit' }}
                                                 >
@@ -1313,7 +1313,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                         {monitor.last_response_time !== null && monitor.last_response_time !== undefined ? `${monitor.last_response_time}ms` : '-'}
                                                     </span>
                                                 </div>
-                                                <span 
+                                                <span
                                                     className="text-xs opacity-70"
                                                     style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileTextStyle(monitor.last_status) : { color: 'inherit' }}
                                                 >
@@ -1432,14 +1432,14 @@ export const MonitoringDashboard: React.FC = () => {
                                             )}
 
                                             <div className={`flex items-start gap-3 ${viewMode === 'tiles' ? 'mb-5' : 'mb-2'}`}>
-                                            <div className={`${viewMode === 'tiles' ? 'w-12 h-12 text-lg' : 'w-8 h-8 text-sm'} rounded-xl flex items-center justify-center ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-white/20' : 'bg-slate-100 dark:bg-[#2a2a2a]'} ${monitor.last_status === 'down' || monitor.last_status === 'warning' || monitor.last_status === 'up' ? 'border border-white/30' : 'border border-slate-200 dark:border-[#444]'}`}>
-                                                    {React.cloneElement(getTypeIcon(monitor.type), { 
-                                                    style: monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileTextStyle(monitor.last_status) : undefined,
-                                                        size: viewMode === 'tiles' ? 18 : 14 
+                                                <div className={`${viewMode === 'tiles' ? 'w-12 h-12 text-lg' : 'w-8 h-8 text-sm'} rounded-xl flex items-center justify-center ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-white/20' : 'bg-slate-100 dark:bg-[#2a2a2a]'} ${monitor.last_status === 'down' || monitor.last_status === 'warning' || monitor.last_status === 'up' ? 'border border-white/30' : 'border border-slate-200 dark:border-[#444]'}`}>
+                                                    {React.cloneElement(getTypeIcon(monitor.type), {
+                                                        style: monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileTextStyle(monitor.last_status) : undefined,
+                                                        size: viewMode === 'tiles' ? 18 : 14
                                                     })}
                                                 </div>
                                                 <div className="min-w-0 flex-1">
-                                                    <h3 
+                                                    <h3
                                                         className={`font-bold leading-tight truncate ${viewMode === 'tiles' ? 'text-base mb-1' : 'text-xs mb-0.5'} ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-slate-900 dark:text-white'}`}
                                                         style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileTextStyle(monitor.last_status) : {}}
                                                         title={monitor.name}
@@ -1448,20 +1448,20 @@ export const MonitoringDashboard: React.FC = () => {
                                                     </h3>
                                                     <div className="flex items-center gap-2 flex-wrap">
                                                         {viewMode === 'tiles' ? (
-                                                            <div 
+                                                            <div
                                                                 className={`flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full inline-flex ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-white/20' : 'text-slate-600 dark:text-gray-400 bg-slate-100 dark:bg-[#252525]'}`}
                                                                 style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileTextStyle(monitor.last_status) : {}}
                                                             >
-                                                                {React.cloneElement(getStatusIcon(monitor.last_status) as React.ReactElement, { 
+                                                                {React.cloneElement(getStatusIcon(monitor.last_status) as React.ReactElement, {
                                                                     style: monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileTextStyle(monitor.last_status) : undefined,
-                                                                    size: 10 
+                                                                    size: 10
                                                                 })}
                                                                 <span className="uppercase font-extrabold tracking-widest">
                                                                     {monitor.last_status || 'UNKNOWN'}
                                                                 </span>
                                                             </div>
                                                         ) : (
-                                                            <div 
+                                                            <div
                                                                 className="text-[9px] font-black uppercase tracking-wider"
                                                                 style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileTextStyle(monitor.last_status) : {}}
                                                             >
@@ -1469,7 +1469,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                             </div>
                                                         )}
                                                         {isInMaintenance(monitor) && (
-                                                            <div 
+                                                            <div
                                                                 className={`flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-amber-500/30 text-white border border-white/30' : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-700'}`}
                                                                 title={`Maintenance until ${new Date((monitor.maintenance_end || 0) * 1000).toLocaleString()}`}
                                                             >
@@ -1485,13 +1485,13 @@ export const MonitoringDashboard: React.FC = () => {
                                             </div>
 
                                             <div className={`${viewMode === 'tiles' ? 'space-y-3 mb-5' : 'mb-3'}`}>
-                                                <div 
+                                                <div
                                                     className={`${viewMode === 'tiles' ? 'text-[11px] p-3' : 'text-[9px] p-1.5'} break-all rounded-xl border font-mono ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 border-white/10' : 'text-slate-600 dark:text-gray-400 bg-slate-50 dark:bg-[#252525] border-slate-100 dark:border-[#333]'}`}
                                                     style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.9 } : {}}
                                                 >
                                                     {monitor.target}
                                                     {monitor.port && (
-                                                        <span 
+                                                        <span
                                                             className={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'text-slate-400 dark:text-gray-500'}
                                                             style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.7 } : {}}
                                                         >
@@ -1501,7 +1501,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                 </div>
                                             </div>
 
-                                            <div 
+                                            <div
                                                 className={`flex flex-col gap-1 ${viewMode === 'tiles' ? 'pt-4 border-t' : 'pt-2'} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? (viewMode === 'tiles' ? 'border-white/20' : '') : 'border-slate-100 dark:border-[#333] text-slate-500 dark:text-gray-500'}`}
                                                 style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.8 } : {}}
                                             >
@@ -1514,7 +1514,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                         {monitor.interval}m
                                                     </div>
                                                 </div>
-                                                <div 
+                                                <div
                                                     className={`text-[9px] text-right font-medium ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'text-slate-400 dark:text-gray-600'}`}
                                                     style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.6 } : {}}
                                                 >
@@ -1553,12 +1553,12 @@ export const MonitoringDashboard: React.FC = () => {
                                                     <td className="px-6 py-4">
                                                         <div className="flex items-center gap-3">
                                                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-white/20' : 'bg-slate-100 dark:bg-[#2a2a2a] text-slate-500'}`}>
-                                                                {React.cloneElement(getTypeIcon(monitor.type), { 
-                                                                    size: 14, 
+                                                                {React.cloneElement(getTypeIcon(monitor.type), {
+                                                                    size: 14,
                                                                     style: monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : undefined
                                                                 })}
                                                             </div>
-                                                            <span 
+                                                            <span
                                                                 className={`font-bold text-sm ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-slate-900 dark:text-white'}`}
                                                                 style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
                                                             >
@@ -1572,7 +1572,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                         )}
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        <div 
+                                                        <div
                                                             className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-widest ${monitor.last_status === 'up' ? 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : (monitor.last_status === 'down' ? 'bg-white/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400')}`}
                                                             style={monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
                                                         >
@@ -1581,7 +1581,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        <code 
+                                                        <code
                                                             className={`text-[11px] px-2 py-1 rounded-md ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20' : 'text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-[#252525]'}`}
                                                             style={monitor.last_status === 'up' || monitor.last_status === 'down' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.9 } : {}}
                                                         >
@@ -1589,7 +1589,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                         </code>
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        <div 
+                                                        <div
                                                             className={`flex items-center gap-1.5 text-sm font-medium ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-slate-700 dark:text-slate-300'}`}
                                                             style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
                                                         >
@@ -1598,7 +1598,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        <span 
+                                                        <span
                                                             className={`text-xs ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-slate-500 dark:text-slate-400'}`}
                                                             style={monitor.last_status === 'up' || monitor.last_status === 'down' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.8 } : {}}
                                                         >
@@ -1606,7 +1606,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                         </span>
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        <span 
+                                                        <span
                                                             className={`text-xs font-bold ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-slate-500 dark:text-slate-400'}`}
                                                             style={monitor.last_status === 'up' || monitor.last_status === 'down' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.8 } : {}}
                                                         >
