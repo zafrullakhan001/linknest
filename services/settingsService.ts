@@ -83,6 +83,10 @@ export interface AppSettings {
   // Browser-Specific Link Opening Settings
   browser_specific_links_enabled?: string; // '0' or '1' - controls whether browser-specific link opening is enabled
   browser_extension_id?: string; // Browser extension ID for opening links in specific browsers
+
+  // Maintenance Mode Settings
+  maintenance_enabled?: string; // '0' or '1' - controls whether maintenance mode is enabled
+  maintenance_message?: string; // Message to display on maintenance page
 }
 
 export const settingsService = {
@@ -150,6 +154,9 @@ export const settingsService = {
       // Browser-specific link opening defaults
       browser_specific_links_enabled: data.settings?.browser_specific_links_enabled || '0',
       browser_extension_id: data.settings?.browser_extension_id || '',
+      // Maintenance mode defaults
+      maintenance_enabled: data.settings?.maintenance_enabled || '0',
+      maintenance_message: data.settings?.maintenance_message || '',
     };
   },
 

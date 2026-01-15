@@ -368,6 +368,7 @@ function handleUpdateSettings() {
                 'guest_access_enabled',
                 'show_database_path_in_footer',
                 'disabled_tabs',
+                'maintenance_enabled', 'maintenance_message',
                 'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
                 'ldap_login_domain',
                 'ldap_bind_dn', 'ldap_bind_password',

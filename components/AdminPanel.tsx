@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { authService, PendingUser, AllUser } from '../services/authService';
 import { settingsService, AppSettings } from '../services/settingsService';
 import { databaseService } from '../services/databaseService';
@@ -51,9 +51,9 @@ interface AdminPanelProps {
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const { refreshSettings } = useSettings();
   // Initialize activeTab from localStorage or default to 'pending'
-  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast'>(() => {
+  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenance'>(() => {
     const savedTab = localStorage.getItem('adminPanelActiveTab');
-    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'footer', 'tabVisibility', 'access', 'clone', 'browser', 'broadcast'];
+    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenance'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'footer', 'tabVisibility', 'access', 'clone', 'browser', 'broadcast', 'maintenance'];
     return (savedTab && validTabs.includes(savedTab as any)) ? savedTab as any : 'pending';
   });
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
@@ -73,12 +73,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     page_title: 'LinkNest',
     spaces_title: 'My Spaces',
     logo_type: 'icon',
-    logo_icon: '🔗',
+    logo_icon: 'ðŸ”—',
     logo_image: '',
     favicon: '',
-    footer_text: '© 2025 Adventhealth - Designed and developed by AIT Architecture team',
+    footer_text: 'Â© 2025 Adventhealth - Designed and developed by AIT Architecture team',
     show_database_path_in_footer: '1',
-    disabled_tabs: '[]'
+    disabled_tabs: '[]',
+    maintenance_enabled: '0',
+    maintenance_message: ''
   });
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -257,13 +259,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     try {
       setSettingsLoading(true);
       const loadedSettings = await settingsService.getSettings();
-      setSettings(loadedSettings);
+      // Ensure maintenance settings exist with defaults
+      const settingsWithDefaults = {
+        ...loadedSettings,
+        maintenance_enabled: loadedSettings.maintenance_enabled || '0',
+        maintenance_message: loadedSettings.maintenance_message || ''
+      };
+      setSettings(settingsWithDefaults);
       // Update ref with loaded password
       ldapBindPasswordRef.current = loadedSettings.ldap_bind_password || '';
       // Set preview if logo image exists
       if (loadedSettings.logo_image) {
         setLogoPreview(loadedSettings.logo_image);
       }
+      // Load maintenance message
+      setMaintenanceMessage(loadedSettings.maintenance_message || '');
     } catch (err: any) {
       setError(err.message || 'Failed to load settings');
     } finally {
@@ -320,6 +330,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       };
       loadBroadcast();
     }
+    if (activeTab === 'maintenance') {
+      loadSettings();
+    }
   }, [activeTab]);
 
   const loadSnapshots = async () => {
@@ -339,10 +352,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     localStorage.setItem('adminPanelActiveTab', activeTab);
   }, [activeTab]);
 
-  const disabledTabs = useMemo(() => getDisabledTabsFromSettings(settings), [settings.disabled_tabs]);
+  const disabledTabs = useMemo<Set<AppTabId>>(() => getDisabledTabsFromSettings(settings), [settings.disabled_tabs]);
 
   const setTabDisabled = (tabId: AppTabId, disabled: boolean) => {
-    const next = new Set(disabledTabs);
+    const next = new Set<AppTabId>(disabledTabs as Set<AppTabId>);
     if (disabled) next.add(tabId);
     else next.delete(tabId);
     setSettings(prev => ({ ...prev, disabled_tabs: setToSortedJsonArray(next) }));
@@ -362,6 +375,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [broadcastExpiresAt, setBroadcastExpiresAt] = useState<string>('');
   const [broadcastLoading, setBroadcastLoading] = useState(false);
   const [currentBroadcast, setCurrentBroadcast] = useState<BroadcastMessage | null>(null);
+
+  // Maintenance mode state
+  const [maintenanceMessage, setMaintenanceMessage] = useState('');
 
   // Load saved browsers from database and check extension status when browser tab is active
   useEffect(() => {
@@ -399,7 +415,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         const win = window as any;
         if (typeof win.BrowserLauncher === 'undefined') {
           statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
-          statusDiv.innerHTML = '<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Error:</strong> Browser Launcher Pro integration script not loaded. Please check the script path in index.html.</div>';
+          statusDiv.innerHTML = '<div class="text-sm text-amber-800 dark:text-amber-300"><strong>âš  Error:</strong> Browser Launcher Pro integration script not loaded. Please check the script path in index.html.</div>';
           return;
         }
 
@@ -416,10 +432,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         BrowserLauncher.checkAvailability((available: boolean, message: string) => {
           if (available) {
             statusDiv.className = 'p-4 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800';
-            statusDiv.innerHTML = `<div class="text-sm text-emerald-800 dark:text-emerald-300"><strong>✓ Extension Available:</strong> Browser Launcher Pro is ready!<br><small>Extension ID: ${BrowserLauncher.extensionId || 'Auto-detected'} | ${message}</small></div>`;
+            statusDiv.innerHTML = `<div class="text-sm text-emerald-800 dark:text-emerald-300"><strong>âœ“ Extension Available:</strong> Browser Launcher Pro is ready!<br><small>Extension ID: ${BrowserLauncher.extensionId || 'Auto-detected'} | ${message}</small></div>`;
           } else {
             statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
-            statusDiv.innerHTML = `<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Extension Status:</strong> ${message}<br><small><strong>Tips:</strong><br>1. Make sure Browser Launcher Pro extension is installed<br>2. Go to chrome://extensions and reload the extension<br>3. Refresh this page</small></div>`;
+            statusDiv.innerHTML = `<div class="text-sm text-amber-800 dark:text-amber-300"><strong>âš  Extension Status:</strong> ${message}<br><small><strong>Tips:</strong><br>1. Make sure Browser Launcher Pro extension is installed<br>2. Go to chrome://extensions and reload the extension<br>3. Refresh this page</small></div>`;
           }
         }, 5, 1000);
 
@@ -1077,6 +1093,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             }`}
         >
           Broadcast Message
+        </button>
+        <button
+          onClick={() => setActiveTab('maintenance')}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'maintenance'
+            ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+            : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+        >
+          Maintenance
         </button>
       </div>
 
@@ -1844,7 +1869,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                             const row = [
                                               `"${(tile.title || '').replace(/"/g, '""')}"`,
                                               `"${(tile.description || '').replace(/"/g, '""')}"`,
-                                              `"${(tile.emoji || '📁').replace(/"/g, '""')}"`,
+                                              `"${(tile.emoji || 'ðŸ“').replace(/"/g, '""')}"`,
                                               `"${(tile.themeColor || 'blue').replace(/"/g, '""')}"`,
                                               `"${(tile.group || 'General').replace(/"/g, '""')}"`,
                                               `"${(tab.title || '').replace(/"/g, '""')}"`,
@@ -1870,7 +1895,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         const row = [
                                           `"${(tile.title || '').replace(/"/g, '""')}"`,
                                           `"${(tile.description || '').replace(/"/g, '""')}"`,
-                                          `"${(tile.emoji || '📁').replace(/"/g, '""')}"`,
+                                          `"${(tile.emoji || 'ðŸ“').replace(/"/g, '""')}"`,
                                           `"${(tile.themeColor || 'blue').replace(/"/g, '""')}"`,
                                           `"${(tile.group || 'General').replace(/"/g, '""')}"`,
                                           `""`, // No tab title for legacy sections
@@ -2288,7 +2313,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           setSettings({ ...settings, ldap_bind_password: password });
                         }}
                         className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
-                        placeholder="••••••••"
+                        placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
                         autoComplete="current-password"
                       />
                     </div>
@@ -2542,7 +2567,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         const bindPassword = ldapBindPasswordRef.current || settings.ldap_bind_password || '';
 
                         // Ensure bind password doesn't contain dots (should never happen, but safety check)
-                        if (bindPassword.includes('•')) {
+                        if (bindPassword.includes('â€¢')) {
                           setLdapTestResult({
                             success: false,
                             message: 'Password field contains invalid characters. Please re-enter the password.'
@@ -2881,10 +2906,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         Footer Text
                       </label>
                       <textarea
-                        value={settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team'}
+                        value={settings.footer_text || 'Â© 2025 Adventhealth - Designed and developed by AIT Architecture team'}
                         onChange={(e) => setSettings({ ...settings, footer_text: e.target.value })}
                         className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                        placeholder="© 2025 Adventhealth - Designed and developed by AIT Architecture team"
+                        placeholder="Â© 2025 Adventhealth - Designed and developed by AIT Architecture team"
                         rows={3}
                       />
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -2896,7 +2921,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Preview</h4>
                       <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
                         <footer className="py-6 text-center text-slate-400 dark:text-slate-500 text-sm">
-                          <p dangerouslySetInnerHTML={{ __html: settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}></p>
+                          <p dangerouslySetInnerHTML={{ __html: settings.footer_text || 'Â© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}></p>
                         </footer>
                       </div>
                     </div>
@@ -2943,7 +2968,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         Control which app tabs are visible to users (including admins). Disabled tabs will be hidden and blocked from switching.
                       </p>
                       <p className="text-xs text-slate-500 dark:text-slate-500 mt-2">
-                        Tip: If you disable all tabs for a user type (e.g., guests), they’ll see a friendly “feature disabled” message.
+                        Tip: If you disable all tabs for a user type (e.g., guests), theyâ€™ll see a friendly â€œfeature disabledâ€ message.
                       </p>
                     </div>
                     <button
@@ -3921,33 +3946,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             <td className="px-6 py-4 whitespace-nowrap text-center">
                               {perm.canView ? (
                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-500/20 text-green-800 dark:text-green-400">
-                                  ✓
+                                  âœ“
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-400">
-                                  ✗
+                                  âœ—
                                 </span>
                               )}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-center">
                               {perm.canEdit ? (
                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-500/20 text-green-800 dark:text-green-400">
-                                  ✓
+                                  âœ“
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-400">
-                                  ✗
+                                  âœ—
                                 </span>
                               )}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-center">
                               {perm.canDelete ? (
                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-500/20 text-green-800 dark:text-green-400">
-                                  ✓
+                                  âœ“
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-400">
-                                  ✗
+                                  âœ—
                                 </span>
                               )}
                             </td>
@@ -4073,7 +4098,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             value={settings.logo_icon}
                             onChange={(e) => setSettings({ ...settings, logo_icon: e.target.value })}
                             className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-2xl text-center focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                            placeholder="🔗"
+                            placeholder="ðŸ”—"
                             maxLength={2}
                           />
                           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Enter an emoji or icon character</p>
@@ -4546,1200 +4571,460 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               )}
             </div>
           )}
-        </>
-      )}
 
-      {/* Permission Modal */}
-      {showPermissionModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full mx-4 border border-slate-200 dark:border-slate-700">
-            <div className="p-6">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">
-                {permissionForm.userId && permissionForm.tileId && permissions.find(
-                  p => p.userId === permissionForm.userId && p.tileId === permissionForm.tileId
-                ) ? 'Edit Tile Permission' : 'Add Tile Permission'}
-              </h3>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    User *
-                  </label>
-                  <select
-                    value={permissionForm.userId}
-                    onChange={(e) => setPermissionForm({ ...permissionForm, userId: parseInt(e.target.value) })}
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    required
-                    disabled={permissionForm.userId > 0 && permissionForm.tileId !== '' && permissions.find(
-                      p => p.userId === permissionForm.userId && p.tileId === permissionForm.tileId
-                    ) !== undefined}
-                  >
-                    <option value={0}>Select a user</option>
-                    {allUsers.filter(u => !u.is_admin).map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.username} ({user.email})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Tile *
-                  </label>
-                  <select
-                    value={permissionForm.tileId}
-                    onChange={(e) => setPermissionForm({ ...permissionForm, tileId: e.target.value })}
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    required
-                    disabled={permissionForm.userId > 0 && permissionForm.tileId !== '' && permissions.find(
-                      p => p.userId === permissionForm.userId && p.tileId === permissionForm.tileId
-                    ) !== undefined}
-                  >
-                    <option value="">Select a tile</option>
-                    {spacesTiles.map((tile) => (
-                      <option key={tile.id} value={tile.id}>
-                        {tile.emoji} {tile.title}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-3 pt-2">
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Permissions
-                  </label>
-                  <div className="space-y-2">
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={permissionForm.canView}
-                        onChange={(e) => setPermissionForm({ ...permissionForm, canView: e.target.checked })}
-                        className="w-4 h-4 text-brand-600 border-slate-300 rounded focus:ring-brand-500"
-                      />
-                      <span className="ml-2 text-sm text-slate-700 dark:text-slate-300">Can View</span>
-                    </label>
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={permissionForm.canEdit}
-                        onChange={(e) => setPermissionForm({ ...permissionForm, canEdit: e.target.checked })}
-                        className="w-4 h-4 text-brand-600 border-slate-300 rounded focus:ring-brand-500"
-                      />
-                      <span className="ml-2 text-sm text-slate-700 dark:text-slate-300">Can Edit</span>
-                    </label>
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={permissionForm.canDelete}
-                        onChange={(e) => setPermissionForm({ ...permissionForm, canDelete: e.target.checked })}
-                        className="w-4 h-4 text-brand-600 border-slate-300 rounded focus:ring-brand-500"
-                      />
-                      <span className="ml-2 text-sm text-slate-700 dark:text-slate-300">Can Delete</span>
-                    </label>
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-3 pt-4">
-                  <button
-                    onClick={() => {
-                      setShowPermissionModal(false);
-                      setPermissionForm({
-                        userId: 0,
-                        tileId: '',
-                        canView: true,
-                        canEdit: false,
-                        canDelete: false
-                      });
-                      setError('');
-                    }}
-                    className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSavePermission}
-                    disabled={!permissionForm.userId || !permissionForm.tileId}
-                    className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
-                  >
-                    Save Permission
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Reset Password Modal */}
-      {resetPasswordModal.open && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 dark:bg-slate-900/80 backdrop-blur-sm" onClick={() => {
-            setResetPasswordModal({ open: false, userId: null, username: '' });
-            setNewPassword('');
-            setError('');
-          }}></div>
-          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-md p-6 relative shadow-2xl">
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Reset Password</h3>
-            <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-              Reset password for user: <strong>{resetPasswordModal.username}</strong>
-            </p>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  New Password
-                </label>
-                <SecurePasswordInput
-                  value={newPassword}
-                  onChange={(e) => {
-                    setNewPassword(e.target.value);
-                    setError('');
-                  }}
-                  placeholder="Enter new password (min 6 characters)"
-                  minLength={6}
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  autoFocus
-                  autoComplete="new-password"
-                />
-              </div>
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  onClick={() => {
-                    setResetPasswordModal({ open: false, userId: null, username: '' });
-                    setNewPassword('');
-                    setError('');
-                  }}
-                  className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleResetPassword}
-                  disabled={resetPasswordLoading || !newPassword.trim() || newPassword.length < 6}
-                  className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
-                >
-                  {resetPasswordLoading ? 'Resetting...' : 'Reset Password'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Admin Password Change Modal */}
-      {adminPasswordModal && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 dark:bg-slate-900/80 backdrop-blur-sm" onClick={() => {
-            setAdminPasswordModal(false);
-            setCurrentPassword('');
-            setAdminNewPassword('');
-            setError('');
-          }}></div>
-          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-md p-6 relative shadow-2xl">
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Change Admin Password</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Current Password
-                </label>
-                <SecurePasswordInput
-                  value={currentPassword}
-                  onChange={(e) => {
-                    setCurrentPassword(e.target.value);
-                    setError('');
-                  }}
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  placeholder="Enter current password"
-                  autoFocus
-                  autoComplete="current-password"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  New Password
-                </label>
-                <SecurePasswordInput
-                  value={adminNewPassword}
-                  onChange={(e) => {
-                    setAdminNewPassword(e.target.value);
-                    setError('');
-                  }}
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  placeholder="Enter new password (min 6 characters)"
-                  minLength={6}
-                  autoComplete="new-password"
-                />
-              </div>
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  onClick={() => {
-                    setAdminPasswordModal(false);
-                    setCurrentPassword('');
-                    setAdminNewPassword('');
-                    setError('');
-                  }}
-                  className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={async () => {
-                    if (!currentPassword || !adminNewPassword) {
-                      setError('Please fill in all fields');
-                      return;
-                    }
-                    if (adminNewPassword.length < 6) {
-                      setError('New password must be at least 6 characters');
-                      return;
-                    }
-                    try {
-                      setAdminPasswordLoading(true);
-                      setError('');
-                      await authService.changeAdminPassword(currentPassword, adminNewPassword);
-                      setAdminPasswordModal(false);
-                      setCurrentPassword('');
-                      setAdminNewPassword('');
-                      alert('Admin password changed successfully!');
-                    } catch (err: any) {
-                      setError(err.message || 'Failed to change password');
-                    } finally {
-                      setAdminPasswordLoading(false);
-                    }
-                  }}
-                  disabled={adminPasswordLoading || !currentPassword || !adminNewPassword || adminNewPassword.length < 6}
-                  className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
-                >
-                  {adminPasswordLoading ? 'Changing...' : 'Change Password'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Add User Modal */}
-      {addUserModal && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-          {/* Keep a light, non-blurred overlay so background (including error bar) stays readable */}
-          <div className="absolute inset-0 bg-slate-900/20 dark:bg-slate-900/40" onClick={() => {
-            setAddUserModal(false);
-            setAddUserType('local');
-            setBulkImportMode(false);
-            setLocalUsername('');
-            setLocalEmail('');
-            setLocalPassword('');
-            setLdapSearchTerm('');
-            setLdapSearchResults([]);
-            setSelectedLdapUser(null);
-            setCsvFile(null);
-            setLdapUsersText('');
-            setBulkImportResults(null);
-            setError('');
-          }}></div>
-          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-2xl p-6 relative shadow-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Add User</h3>
-
-            {/* Tabs */}
-            <div className="flex gap-2 border-b border-slate-200 dark:border-slate-700 mb-4">
-              <button
-                onClick={() => {
-                  setAddUserType('local');
-                  setBulkImportMode(false);
-                  setError('');
-                  setBulkImportResults(null);
-                }}
-                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${addUserType === 'local' && !bulkImportMode
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                  }`}
-              >
-                Local User
-              </button>
-              <button
-                onClick={() => {
-                  setAddUserType('ldap');
-                  setBulkImportMode(false);
-                  setError('');
-                  setBulkImportResults(null);
-                }}
-                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${addUserType === 'ldap' && !bulkImportMode
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                  }`}
-              >
-                LDAP User
-              </button>
-              <button
-                onClick={() => {
-                  setBulkImportMode(true);
-                  setError('');
-                  setBulkImportResults(null);
-                }}
-                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${bulkImportMode
-                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                  }`}
-              >
-                Bulk Import
-              </button>
-            </div>
-
-            {/* Local User Form */}
-            {addUserType === 'local' && (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleAddLocalUser();
-                }}
-                className="space-y-4"
-              >
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Username *
-                  </label>
-                  <input
-                    type="text"
-                    value={localUsername}
-                    onChange={(e) => {
-                      setLocalUsername(e.target.value);
-                      setError('');
-                    }}
-                    placeholder="Enter username (min 3 characters)"
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    autoFocus
-                    required
-                    minLength={3}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Email *
-                  </label>
-                  <input
-                    type="email"
-                    value={localEmail}
-                    onChange={(e) => {
-                      setLocalEmail(e.target.value);
-                      setError('');
-                    }}
-                    placeholder="Enter email address"
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    required
-                    autoComplete="email"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Password *
-                  </label>
-                  <SecurePasswordInput
-                    value={localPassword}
-                    onChange={(e) => {
-                      setLocalPassword(e.target.value);
-                      setError('');
-                    }}
-                    placeholder="Enter password (min 6 characters)"
-                    minLength={6}
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    required
-                    autoComplete="new-password"
-                  />
-                </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  * User will be created and will require admin approval before they can log in.
-                </p>
-                <div className="flex justify-end gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAddUserModal(false);
-                      setBulkImportMode(false);
-                      setLocalUsername('');
-                      setLocalEmail('');
-                      setLocalPassword('');
-                      setCsvFile(null);
-                      setLdapUsersText('');
-                      setBulkImportResults(null);
-                      setError('');
-                    }}
-                    className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={addUserLoading || !localUsername.trim() || !localEmail.trim() || !localPassword.trim() || localPassword.length < 6}
-                    className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
-                  >
-                    {addUserLoading ? 'Adding...' : 'Add User'}
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* LDAP User Form */}
-            {addUserType === 'ldap' && (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Search LDAP Users *
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={ldapSearchTerm}
-                      onChange={(e) => {
-                        setLdapSearchTerm(e.target.value);
-                        setError('');
-                      }}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter') {
-                          handleSearchLdapUsers();
+          {/* Browser Extension Integration Tab */}
+          {activeTab === 'browser' && (
+            <div className="space-y-6">
+              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                <div className="mb-6">
+                  <div className="flex items-start justify-between gap-4 mb-2">
+                    <div className="flex-1">
+                      <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">ðŸš€ Browser Extension Integration</h3>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">
+                        Configure and test browser-specific link opening using Browser Launcher Pro extension.
+                      </p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        try {
+                          setSettingsSaving(true);
+                          setError('');
+                          await settingsService.updateSettings(settings);
+                          await loadSettings();
+                          await refreshSettings();
+                          alert('Browser extension settings saved successfully!');
+                        } catch (err: any) {
+                          setError(err.message || 'Failed to save browser extension settings');
+                          alert(err.message || 'Failed to save browser extension settings');
+                        } finally {
+                          setSettingsSaving(false);
                         }
                       }}
-                      placeholder="Search by username, email, or display name (min 2 characters)"
-                      className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-                      autoFocus
-                    />
-                    <button
-                      onClick={handleSearchLdapUsers}
-                      disabled={ldapSearchLoading || !ldapSearchTerm.trim() || ldapSearchTerm.length < 2}
-                      className="px-4 py-2.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
+                      disabled={settingsSaving}
+                      className="px-6 py-2.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 whitespace-nowrap"
                     >
-                      {ldapSearchLoading ? 'Searching...' : 'Search'}
+                      {settingsSaving ? (
+                        <>
+                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          Save Settings
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
 
-                {ldapSearchResults.length > 0 && (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Select User ({ldapSearchResults.length} found)
-                    </label>
-                    <div className="max-h-60 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg">
-                      {ldapSearchResults.map((user, index) => (
-                        <div
-                          key={index}
-                          onClick={() => {
-                            setSelectedLdapUser(user);
-                            setError('');
+                {/* Configuration Section */}
+                <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
+                  <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Configuration</h4>
+
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={settings.browser_specific_links_enabled === '1'}
+                          onChange={(e) => setSettings({ ...settings, browser_specific_links_enabled: e.target.checked ? '1' : '0' })}
+                          className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                        />
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Enable Browser-Specific Link Opening</span>
+                      </label>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 ml-6">Allow administrators to configure which browser opens specific links using a browser extension</p>
+                    </div>
+
+                    {settings.browser_specific_links_enabled === '1' && (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Browser Extension ID</label>
+                        <input
+                          type="text"
+                          value={settings.browser_extension_id || ''}
+                          onChange={(e) => {
+                            const value = e.target.value.trim();
+                            if (value === '' || /^[a-z0-9]{32}$/i.test(value)) {
+                              setSettings({ ...settings, browser_extension_id: value });
+                            }
                           }}
-                          className={`p-3 cursor-pointer border-b border-slate-200 dark:border-slate-700 last:border-b-0 hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors ${selectedLdapUser?.dn === user.dn ? 'bg-brand-50 dark:bg-brand-500/10 border-brand-500' : ''
-                            }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="font-medium text-slate-900 dark:text-white">
-                                {user.displayName || user.username}
-                              </div>
-                              <div className="text-sm text-slate-600 dark:text-slate-400">
-                                {user.email || 'No email'}
-                              </div>
-                              <div className="text-xs text-slate-500 dark:text-slate-500 mt-1">
-                                Username: {user.username}
-                              </div>
-                            </div>
-                            {selectedLdapUser?.dn === user.dn && (
-                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600">
-                                <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                              </svg>
-                            )}
-                          </div>
+                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                          placeholder="ifllnbjkoabnnbcodbocddplnhmbobim"
+                          maxLength={32}
+                        />
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                          Enter the browser extension ID (32 alphanumeric characters). You can find this in chrome://extensions (Developer mode enabled).
+                        </p>
+                        {settings.browser_extension_id && settings.browser_extension_id.length !== 32 && (
+                          <p className="text-xs text-red-500 dark:text-red-400 mt-1">Extension ID must be exactly 32 characters</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Extension Status */}
+                <div className="mb-6">
+                  <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Extension Status</h4>
+                  <div id="extension-status-browser" className="p-4 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+                    <div className="flex items-center gap-2">
+                      <svg className="animate-spin h-4 w-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span className="text-sm text-slate-600 dark:text-slate-400">Checking extension availability...</span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 mt-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const statusDiv = document.getElementById('extension-status-browser');
+                        if (!statusDiv) return;
+
+                        const win = window as any;
+                        if (typeof win.BrowserLauncher === 'undefined') {
+                          statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
+                          statusDiv.innerHTML = '<div class="text-sm text-amber-800 dark:text-amber-300"><strong>âš  Error:</strong> Browser Launcher Pro integration script not loaded. Please check the script path in index.html.</div>';
+                          return;
+                        }
+
+                        statusDiv.className = 'p-4 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700';
+                        statusDiv.innerHTML = '<div class="flex items-center gap-2"><svg class="animate-spin h-4 w-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span class="text-sm text-slate-600 dark:text-slate-400">Checking...</span></div>';
+
+                        const BrowserLauncher = win.BrowserLauncher;
+                        if (settings.browser_extension_id) {
+                          BrowserLauncher.setExtensionId(settings.browser_extension_id);
+                        }
+
+                        BrowserLauncher.checkAvailability((available: boolean, message: string) => {
+                          if (available) {
+                            statusDiv.className = 'p-4 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800';
+                            statusDiv.innerHTML = `<div class="text-sm text-emerald-800 dark:text-emerald-300"><strong>âœ“ Extension Available:</strong> Browser Launcher Pro is ready!<br><small>Extension ID: ${BrowserLauncher.extensionId || 'Auto-detected'} | ${message}</small></div>`;
+                          } else {
+                            statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
+                            statusDiv.innerHTML = `<div class="text-sm text-amber-800 dark:text-amber-300"><strong>âš  Extension Status:</strong> ${message}<br><small><strong>Tips:</strong><br>1. Make sure Browser Launcher Pro extension is installed<br>2. Go to chrome://extensions and reload the extension<br>3. Refresh this page</small></div>`;
+                          }
+                        }, 5, 1000);
+                      }}
+                      className="px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg text-sm font-medium transition-colors"
+                    >
+                      ðŸ”„ Re-check Extension Status
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const statusDiv = document.getElementById('extension-status-browser');
+                        if (!statusDiv) return;
+
+                        if (typeof (window as any).BrowserLauncher === 'undefined') {
+                          statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
+                          statusDiv.innerHTML = '<div class="text-sm text-amber-800 dark:text-amber-300"><strong>âš  Error:</strong> BrowserLauncher object not found.</div>';
+                          return;
+                        }
+
+                        statusDiv.className = 'p-4 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700';
+                        statusDiv.innerHTML = '<div class="flex items-center gap-2"><svg class="animate-spin h-4 w-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span class="text-sm text-slate-600 dark:text-slate-400">Testing...</span></div>';
+
+                        const BrowserLauncher = (window as any).BrowserLauncher;
+                        if (settings.browser_extension_id) {
+                          BrowserLauncher.setExtensionId(settings.browser_extension_id);
+                        }
+
+                        BrowserLauncher.open('https://www.google.com', 'chrome-stable', {}, (response: any) => {
+                          if (response && response.success !== false) {
+                            statusDiv.className = 'p-4 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800';
+                            statusDiv.innerHTML = '<div class="text-sm text-emerald-800 dark:text-emerald-300"><strong>âœ“ Test Successful!</strong> Extension is working! The link should have opened in Chrome.</div>';
+                          } else {
+                            statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
+                            statusDiv.innerHTML = `<div class="text-sm text-amber-800 dark:text-amber-300"><strong>âš  Test Result:</strong> ${response ? response.error : 'No response from extension. Check console for details.'}</div>`;
+                          }
+                        });
+                      }}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors"
+                    >
+                      ðŸ§ª Test Extension Directly
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quick Test Links */}
+                {settings.browser_specific_links_enabled === '1' && (
+                  <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
+                    <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">ðŸ“‹ Quick Test Links</h4>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                      Click any link below to test opening in the specified browser:
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {[
+                        { url: 'https://github.com', browser: 'chrome-stable', label: 'GitHub', badge: 'Chrome Stable' },
+                        { url: 'https://microsoft.com', browser: 'edge-stable', label: 'Microsoft', badge: 'Edge Stable' },
+                        { url: 'https://google.com', browser: 'chrome-beta', label: 'Google', badge: 'Chrome Beta' },
+                        { url: 'https://stackoverflow.com', browser: 'edge-beta', label: 'Stack Overflow', badge: 'Edge Beta' },
+                        { url: 'https://youtube.com', browser: 'chrome-stable', label: 'YouTube', badge: 'Chrome Stable' },
+                        { url: 'https://reddit.com', browser: 'edge-stable', label: 'Reddit', badge: 'Edge Stable' },
+                      ].map((link, idx) => (
+                        <div key={idx} className="p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg hover:border-brand-500 dark:hover:border-brand-400 transition-colors">
+                          <a
+                            href={link.url}
+                            data-browser={link.browser}
+                            onClick={(e) => {
+                              if (typeof (window as any).BrowserLauncher !== 'undefined') {
+                                e.preventDefault();
+                                const BrowserLauncher = (window as any).BrowserLauncher;
+                                if (settings.browser_extension_id) {
+                                  BrowserLauncher.setExtensionId(settings.browser_extension_id);
+                                }
+                                BrowserLauncher.open(link.url, link.browser, { fallback: true });
+                              }
+                            }}
+                            className="block text-brand-600 dark:text-brand-400 font-semibold mb-2 hover:underline"
+                            dangerouslySetInnerHTML={{ __html: link.label || '' }}
+                          />
+                          <p className="text-xs text-slate-600 dark:text-slate-400 mb-2">Open in {link.badge}</p>
+                          <span className="inline-block px-2 py-1 text-xs font-medium rounded bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300">
+                            {link.badge}
+                          </span>
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
 
-                {selectedLdapUser && (
-                  <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700">
-                    <div className="text-sm font-medium text-slate-900 dark:text-white mb-1">Selected User:</div>
-                    <div className="text-sm text-slate-600 dark:text-slate-400">
-                      <div><strong>Username:</strong> {selectedLdapUser.username}</div>
-                      <div><strong>Email:</strong> {selectedLdapUser.email || 'N/A'}</div>
-                      {selectedLdapUser.displayName && (
-                        <div><strong>Display Name:</strong> {selectedLdapUser.displayName}</div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  * Search for users in LDAP directory. Selected user will be added and will require admin approval before they can log in.
-                </p>
-
-                <div className="flex justify-end gap-3 pt-2">
-                  <button
-                    onClick={() => {
-                      setAddUserModal(false);
-                      setBulkImportMode(false);
-                      setLdapSearchTerm('');
-                      setLdapSearchResults([]);
-                      setSelectedLdapUser(null);
-                      setCsvFile(null);
-                      setLdapUsersText('');
-                      setBulkImportResults(null);
-                      setError('');
-                    }}
-                    className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleAddLdapUser}
-                    disabled={addUserLoading || !selectedLdapUser}
-                    className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
-                  >
-                    {addUserLoading ? 'Adding...' : 'Add User'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Bulk Import Section */}
-            {bulkImportMode && (
-              <div className="space-y-4">
-                <div className="flex gap-2 border-b border-slate-200 dark:border-slate-700 mb-4">
-                  <button
-                    onClick={() => {
-                      setAddUserType('local');
-                      setCsvFile(null);
-                      setBulkImportResults(null);
-                      setError('');
-                    }}
-                    className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${addUserType === 'local'
-                      ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                      : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                      }`}
-                  >
-                    Import Local Users (CSV)
-                  </button>
-                  <button
-                    onClick={() => {
-                      setAddUserType('ldap');
-                      setLdapUsersText('');
-                      setBulkImportResults(null);
-                      setError('');
-                    }}
-                    className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${addUserType === 'ldap'
-                      ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                      : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                      }`}
-                  >
-                    Import LDAP Users (Text)
-                  </button>
-                </div>
-
-                {/* Local Users CSV Import */}
-                {addUserType === 'local' && (
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                        Upload CSV File *
-                      </label>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                        CSV format: username,email,password (one per line, header row optional)
-                      </p>
-                      <input
-                        type="file"
-                        accept=".csv,text/csv"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          setCsvFile(file || null);
-                          setBulkImportResults(null);
-                          setError('');
-                        }}
-                        className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer"
-                      />
-                      {csvFile && (
-                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-2">
-                          Selected: {csvFile.name}
-                        </p>
-                      )}
-                    </div>
-                    <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-3">
-                      <p className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">CSV Format Example:</p>
-                      <pre className="text-xs text-slate-600 dark:text-slate-400 font-mono whitespace-pre-wrap">username,email,password
-                        john.doe,john@example.com,SecurePass123
-                        jane.smith,jane@example.com,AnotherPass456</pre>
-                    </div>
-                    {bulkImportResults && (
-                      <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                        <p className="text-sm font-medium text-slate-900 dark:text-white mb-2">
-                          {bulkImportResults.message}
-                        </p>
-                        <div className="text-xs text-slate-600 dark:text-slate-400 space-y-1">
-                          <p>✓ Created: {bulkImportResults.summary.created}</p>
-                          <p>⊘ Skipped: {bulkImportResults.summary.skipped}</p>
-                          <p>✗ Errors: {bulkImportResults.summary.errors}</p>
-                        </div>
-                        {bulkImportResults.results.errors.length > 0 && (
-                          <div className="mt-3 max-h-40 overflow-y-auto">
-                            <p className="text-xs font-medium text-red-600 dark:text-red-400 mb-1">Errors:</p>
-                            {bulkImportResults.results.errors.map((err: any, idx: number) => (
-                              <p key={idx} className="text-xs text-red-600 dark:text-red-400">
-                                Line {err.line || err.index}: {err.username} - {err.reason}
-                              </p>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    <div className="flex justify-end gap-3 pt-2">
-                      <button
-                        onClick={() => {
-                          setAddUserModal(false);
-                          setBulkImportMode(false);
-                          setCsvFile(null);
-                          setBulkImportResults(null);
-                          setError('');
-                        }}
-                        className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleBulkImportLocal}
-                        disabled={bulkImportLoading || !csvFile}
-                        className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
-                      >
-                        {bulkImportLoading ? 'Importing...' : 'Import Users'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* LDAP Users Text Import */}
-                {addUserType === 'ldap' && (
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                        Enter LDAP Users (Comma-separated) *
-                      </label>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                        Format: username,email,dn,displayName (one per line, displayName is optional)
-                      </p>
-                      <textarea
-                        value={ldapUsersText}
-                        onChange={(e) => {
-                          setLdapUsersText(e.target.value);
-                          setBulkImportResults(null);
-                          setError('');
-                        }}
-                        placeholder="username1,email1@example.com,CN=User1,OU=Users,DC=example,DC=com,Display Name 1&#10;username2,email2@example.com,CN=User2,OU=Users,DC=example,DC=com,Display Name 2"
-                        rows={8}
-                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
-                      />
-                    </div>
-                    <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-3">
-                      <p className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Format Example:</p>
-                      <pre className="text-xs text-slate-600 dark:text-slate-400 font-mono whitespace-pre-wrap">john.doe,john@example.com,CN=John Doe,OU=Users,DC=company,DC=com,John Doe
-                        jane.smith,jane@example.com,CN=Jane Smith,OU=Users,DC=company,DC=com,Jane Smith</pre>
-                    </div>
-                    {bulkImportResults && (
-                      <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                        <p className="text-sm font-medium text-slate-900 dark:text-white mb-2">
-                          {bulkImportResults.message}
-                        </p>
-                        <div className="text-xs text-slate-600 dark:text-slate-400 space-y-1">
-                          <p>✓ Created: {bulkImportResults.summary.created}</p>
-                          <p>⊘ Skipped: {bulkImportResults.summary.skipped}</p>
-                          <p>✗ Errors: {bulkImportResults.summary.errors}</p>
-                        </div>
-                        {bulkImportResults.results.errors.length > 0 && (
-                          <div className="mt-3 max-h-40 overflow-y-auto">
-                            <p className="text-xs font-medium text-red-600 dark:text-red-400 mb-1">Errors:</p>
-                            {bulkImportResults.results.errors.map((err: any, idx: number) => (
-                              <p key={idx} className="text-xs text-red-600 dark:text-red-400">
-                                Line {err.index}: {err.username} - {err.reason}
-                              </p>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    <div className="flex justify-end gap-3 pt-2">
-                      <button
-                        onClick={() => {
-                          setAddUserModal(false);
-                          setBulkImportMode(false);
-                          setLdapUsersText('');
-                          setBulkImportResults(null);
-                          setError('');
-                        }}
-                        className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleBulkImportLdap}
-                        disabled={bulkImportLoading || !ldapUsersText.trim()}
-                        className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
-                      >
-                        {bulkImportLoading ? 'Importing...' : 'Import Users'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Browser Extension Integration Tab */}
-      {activeTab === 'browser' && (
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-            <div className="mb-6">
-              <div className="flex items-start justify-between gap-4 mb-2">
-                <div className="flex-1">
-                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">🚀 Browser Extension Integration</h3>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                    Configure and test browser-specific link opening using Browser Launcher Pro extension.
+                {/* JavaScript API Examples */}
+                <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
+                  <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">ðŸ’» JavaScript API Examples</h4>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                    Use the JavaScript API for programmatic control. Try the examples below:
                   </p>
-                </div>
-                <button
-                  onClick={async () => {
-                    try {
-                      setSettingsSaving(true);
-                      setError('');
-                      await settingsService.updateSettings(settings);
-                      await loadSettings();
-                      await refreshSettings();
-                      alert('Browser extension settings saved successfully!');
-                    } catch (err: any) {
-                      setError(err.message || 'Failed to save browser extension settings');
-                      alert(err.message || 'Failed to save browser extension settings');
-                    } finally {
-                      setSettingsSaving(false);
-                    }
-                  }}
-                  disabled={settingsSaving}
-                  className="px-6 py-2.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 whitespace-nowrap"
-                >
-                  {settingsSaving ? (
-                    <>
-                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      Save Settings
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Configuration Section */}
-            <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
-              <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Configuration</h4>
-
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={settings.browser_specific_links_enabled === '1'}
-                      onChange={(e) => setSettings({ ...settings, browser_specific_links_enabled: e.target.checked ? '1' : '0' })}
-                      className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                    />
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Enable Browser-Specific Link Opening</span>
-                  </label>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 ml-6">Allow administrators to configure which browser opens specific links using a browser extension</p>
-                </div>
-
-                {settings.browser_specific_links_enabled === '1' && (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Browser Extension ID</label>
-                    <input
-                      type="text"
-                      value={settings.browser_extension_id || ''}
-                      onChange={(e) => {
-                        const value = e.target.value.trim();
-                        if (value === '' || /^[a-z0-9]{32}$/i.test(value)) {
-                          setSettings({ ...settings, browser_extension_id: value });
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (typeof (window as any).BrowserLauncher !== 'undefined') {
+                          const BrowserLauncher = (window as any).BrowserLauncher;
+                          if (settings.browser_extension_id) {
+                            BrowserLauncher.setExtensionId(settings.browser_extension_id);
+                          }
+                          BrowserLauncher.open('https://github.com', 'chrome-stable', {}, (response: any) => {
+                            if (response && response.success !== false) {
+                              alert('âœ“ Opening GitHub in Chrome Stable!');
+                            } else {
+                              alert('âœ— Error: ' + (response?.error || 'Unknown error'));
+                            }
+                          });
                         }
                       }}
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                      placeholder="ifllnbjkoabnnbcodbocddplnhmbobim"
-                      maxLength={32}
-                    />
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      Enter the browser extension ID (32 alphanumeric characters). You can find this in chrome://extensions (Developer mode enabled).
-                    </p>
-                    {settings.browser_extension_id && settings.browser_extension_id.length !== 32 && (
-                      <p className="text-xs text-red-500 dark:text-red-400 mt-1">Extension ID must be exactly 32 characters</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Extension Status */}
-            <div className="mb-6">
-              <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Extension Status</h4>
-              <div id="extension-status-browser" className="p-4 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
-                <div className="flex items-center gap-2">
-                  <svg className="animate-spin h-4 w-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  <span className="text-sm text-slate-600 dark:text-slate-400">Checking extension availability...</span>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-2 mt-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const statusDiv = document.getElementById('extension-status-browser');
-                    if (!statusDiv) return;
-
-                    const win = window as any;
-                    if (typeof win.BrowserLauncher === 'undefined') {
-                      statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
-                      statusDiv.innerHTML = '<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Error:</strong> Browser Launcher Pro integration script not loaded. Please check the script path in index.html.</div>';
-                      return;
-                    }
-
-                    statusDiv.className = 'p-4 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700';
-                    statusDiv.innerHTML = '<div class="flex items-center gap-2"><svg class="animate-spin h-4 w-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span class="text-sm text-slate-600 dark:text-slate-400">Checking...</span></div>';
-
-                    const BrowserLauncher = win.BrowserLauncher;
-                    if (settings.browser_extension_id) {
-                      BrowserLauncher.setExtensionId(settings.browser_extension_id);
-                    }
-
-                    BrowserLauncher.checkAvailability((available: boolean, message: string) => {
-                      if (available) {
-                        statusDiv.className = 'p-4 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800';
-                        statusDiv.innerHTML = `<div class="text-sm text-emerald-800 dark:text-emerald-300"><strong>✓ Extension Available:</strong> Browser Launcher Pro is ready!<br><small>Extension ID: ${BrowserLauncher.extensionId || 'Auto-detected'} | ${message}</small></div>`;
-                      } else {
-                        statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
-                        statusDiv.innerHTML = `<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Extension Status:</strong> ${message}<br><small><strong>Tips:</strong><br>1. Make sure Browser Launcher Pro extension is installed<br>2. Go to chrome://extensions and reload the extension<br>3. Refresh this page</small></div>`;
-                      }
-                    }, 5, 1000);
-                  }}
-                  className="px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  🔄 Re-check Extension Status
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const statusDiv = document.getElementById('extension-status-browser');
-                    if (!statusDiv) return;
-
-                    if (typeof (window as any).BrowserLauncher === 'undefined') {
-                      statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
-                      statusDiv.innerHTML = '<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Error:</strong> BrowserLauncher object not found.</div>';
-                      return;
-                    }
-
-                    statusDiv.className = 'p-4 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700';
-                    statusDiv.innerHTML = '<div class="flex items-center gap-2"><svg class="animate-spin h-4 w-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span class="text-sm text-slate-600 dark:text-slate-400">Testing...</span></div>';
-
-                    const BrowserLauncher = (window as any).BrowserLauncher;
-                    if (settings.browser_extension_id) {
-                      BrowserLauncher.setExtensionId(settings.browser_extension_id);
-                    }
-
-                    BrowserLauncher.open('https://www.google.com', 'chrome-stable', {}, (response: any) => {
-                      if (response && response.success !== false) {
-                        statusDiv.className = 'p-4 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800';
-                        statusDiv.innerHTML = '<div class="text-sm text-emerald-800 dark:text-emerald-300"><strong>✓ Test Successful!</strong> Extension is working! The link should have opened in Chrome.</div>';
-                      } else {
-                        statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
-                        statusDiv.innerHTML = `<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Test Result:</strong> ${response ? response.error : 'No response from extension. Check console for details.'}</div>`;
-                      }
-                    });
-                  }}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  🧪 Test Extension Directly
-                </button>
-              </div>
-            </div>
-
-            {/* Quick Test Links */}
-            {settings.browser_specific_links_enabled === '1' && (
-              <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
-                <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">📋 Quick Test Links</h4>
-                <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                  Click any link below to test opening in the specified browser:
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {[
-                    { url: 'https://github.com', browser: 'chrome-stable', label: 'GitHub', badge: 'Chrome Stable' },
-                    { url: 'https://microsoft.com', browser: 'edge-stable', label: 'Microsoft', badge: 'Edge Stable' },
-                    { url: 'https://google.com', browser: 'chrome-beta', label: 'Google', badge: 'Chrome Beta' },
-                    { url: 'https://stackoverflow.com', browser: 'edge-beta', label: 'Stack Overflow', badge: 'Edge Beta' },
-                    { url: 'https://youtube.com', browser: 'chrome-stable', label: 'YouTube', badge: 'Chrome Stable' },
-                    { url: 'https://reddit.com', browser: 'edge-stable', label: 'Reddit', badge: 'Edge Stable' },
-                  ].map((link, idx) => (
-                    <div key={idx} className="p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg hover:border-brand-500 dark:hover:border-brand-400 transition-colors">
-                      <a
-                        href={link.url}
-                        data-browser={link.browser}
-                        onClick={(e) => {
-                          if (typeof (window as any).BrowserLauncher !== 'undefined') {
-                            e.preventDefault();
-                            const BrowserLauncher = (window as any).BrowserLauncher;
-                            if (settings.browser_extension_id) {
-                              BrowserLauncher.setExtensionId(settings.browser_extension_id);
+                      className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
+                    >
+                      Open GitHub in Chrome
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (typeof (window as any).BrowserLauncher !== 'undefined') {
+                          const BrowserLauncher = (window as any).BrowserLauncher;
+                          if (settings.browser_extension_id) {
+                            BrowserLauncher.setExtensionId(settings.browser_extension_id);
+                          }
+                          BrowserLauncher.open('https://microsoft.com', 'edge-stable', {}, (response: any) => {
+                            if (response && response.success !== false) {
+                              alert('âœ“ Opening Microsoft in Edge Stable!');
+                            } else {
+                              alert('âœ— Error: ' + (response?.error || 'Unknown error'));
                             }
-                            BrowserLauncher.open(link.url, link.browser, { fallback: true });
+                          });
+                        }
+                      }}
+                      className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
+                    >
+                      Open Microsoft in Edge
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (typeof (window as any).BrowserLauncher !== 'undefined') {
+                          const BrowserLauncher = (window as any).BrowserLauncher;
+                          if (settings.browser_extension_id) {
+                            BrowserLauncher.setExtensionId(settings.browser_extension_id);
                           }
-                        }}
-                        className="block text-brand-600 dark:text-brand-400 font-semibold mb-2 hover:underline"
-                        dangerouslySetInnerHTML={{ __html: link.label || '' }}
-                      />
-                      <p className="text-xs text-slate-600 dark:text-slate-400 mb-2">Open in {link.badge}</p>
-                      <span className="inline-block px-2 py-1 text-xs font-medium rounded bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300">
-                        {link.badge}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* JavaScript API Examples */}
-            <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
-              <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">💻 JavaScript API Examples</h4>
-              <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                Use the JavaScript API for programmatic control. Try the examples below:
-              </p>
-              <div className="flex flex-wrap gap-2 mb-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (typeof (window as any).BrowserLauncher !== 'undefined') {
-                      const BrowserLauncher = (window as any).BrowserLauncher;
-                      if (settings.browser_extension_id) {
-                        BrowserLauncher.setExtensionId(settings.browser_extension_id);
-                      }
-                      BrowserLauncher.open('https://github.com', 'chrome-stable', {}, (response: any) => {
-                        if (response && response.success !== false) {
-                          alert('✓ Opening GitHub in Chrome Stable!');
-                        } else {
-                          alert('✗ Error: ' + (response?.error || 'Unknown error'));
+                          BrowserLauncher.open('https://google.com', 'chrome-beta', {}, (response: any) => {
+                            if (response && response.success !== false) {
+                              alert('âœ“ Opening Google in Chrome Beta!');
+                            } else {
+                              alert('âœ— Error: ' + (response?.error || 'Unknown error'));
+                            }
+                          });
                         }
-                      });
-                    }
-                  }}
-                  className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  Open GitHub in Chrome
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (typeof (window as any).BrowserLauncher !== 'undefined') {
-                      const BrowserLauncher = (window as any).BrowserLauncher;
-                      if (settings.browser_extension_id) {
-                        BrowserLauncher.setExtensionId(settings.browser_extension_id);
-                      }
-                      BrowserLauncher.open('https://microsoft.com', 'edge-stable', {}, (response: any) => {
-                        if (response && response.success !== false) {
-                          alert('✓ Opening Microsoft in Edge Stable!');
-                        } else {
-                          alert('✗ Error: ' + (response?.error || 'Unknown error'));
-                        }
-                      });
-                    }
-                  }}
-                  className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  Open Microsoft in Edge
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (typeof (window as any).BrowserLauncher !== 'undefined') {
-                      const BrowserLauncher = (window as any).BrowserLauncher;
-                      if (settings.browser_extension_id) {
-                        BrowserLauncher.setExtensionId(settings.browser_extension_id);
-                      }
-                      BrowserLauncher.open('https://google.com', 'chrome-beta', {}, (response: any) => {
-                        if (response && response.success !== false) {
-                          alert('✓ Opening Google in Chrome Beta!');
-                        } else {
-                          alert('✗ Error: ' + (response?.error || 'Unknown error'));
-                        }
-                      });
-                    }
-                  }}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  Open Google in Chrome Beta
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    const win = window as any;
-                    if (typeof win.BrowserLauncher !== 'undefined') {
-                      const BrowserLauncher = win.BrowserLauncher;
-                      if (settings.browser_extension_id) {
-                        BrowserLauncher.setExtensionId(settings.browser_extension_id);
-                      }
-
-                      // Try to fetch dynamic browser list first
-                      if (BrowserLauncher.fetchBrowsers) {
-                        const btn = e.currentTarget;
-                        const originalText = btn.innerText;
-                        btn.innerText = 'Fetching...';
-                        btn.disabled = true;
-
-                        // Flag to track if we've already processed a response
-                        let responseProcessed = false;
-
-                        BrowserLauncher.fetchBrowsers(async (response: any) => {
-                          // Ignore subsequent responses (e.g., timeout errors)
-                          if (responseProcessed) {
-                            console.log('Ignoring duplicate/timeout response from extension:', response);
-                            return;
+                      }}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors"
+                    >
+                      Open Google in Chrome Beta
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        const win = window as any;
+                        if (typeof win.BrowserLauncher !== 'undefined') {
+                          const BrowserLauncher = win.BrowserLauncher;
+                          if (settings.browser_extension_id) {
+                            BrowserLauncher.setExtensionId(settings.browser_extension_id);
                           }
 
-                          // Mark as processed immediately
-                          responseProcessed = true;
-                          btn.innerText = originalText;
-                          btn.disabled = false;
+                          // Try to fetch dynamic browser list first
+                          if (BrowserLauncher.fetchBrowsers) {
+                            const btn = e.currentTarget;
+                            const originalText = btn.innerText;
+                            btn.innerText = 'Fetching...';
+                            btn.disabled = true;
 
-                          if (response && response.success && response.browsers && response.browsers.length > 0) {
-                            setDetectedBrowsers(response.browsers);
+                            // Flag to track if we've already processed a response
+                            let responseProcessed = false;
 
-                            // Save browser list to database
-                            try {
-                              const apiBase = resolveApiBase();
-                              const saveResponse = await fetch(`${apiBase}/browsers`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                credentials: 'include',
-                                body: JSON.stringify({ browsers: response.browsers })
-                              });
-
-                              if (saveResponse.ok) {
-                                const saveData = await saveResponse.json();
-                                alert(`Browsers discovered and saved to database:\n\n${response.browsers.join('\n')}\n\nTotal: ${saveData.count} browsers saved`);
-                              } else {
-                                alert('Browsers discovered by extension:\n\n' + response.browsers.join('\n') + '\n\nNote: Failed to save to database');
+                            BrowserLauncher.fetchBrowsers(async (response: any) => {
+                              // Ignore subsequent responses (e.g., timeout errors)
+                              if (responseProcessed) {
+                                console.log('Ignoring duplicate/timeout response from extension:', response);
+                                return;
                               }
-                            } catch (err) {
-                              console.error('Failed to save browsers to database:', err);
-                              alert('Browsers discovered by extension:\n\n' + response.browsers.join('\n') + '\n\nNote: Failed to save to database');
+
+                              // Mark as processed immediately
+                              responseProcessed = true;
+                              btn.innerText = originalText;
+                              btn.disabled = false;
+
+                              if (response && response.success && response.browsers && response.browsers.length > 0) {
+                                setDetectedBrowsers(response.browsers);
+
+                                // Save browser list to database
+                                try {
+                                  const apiBase = resolveApiBase();
+                                  const saveResponse = await fetch(`${apiBase}/browsers`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    credentials: 'include',
+                                    body: JSON.stringify({ browsers: response.browsers })
+                                  });
+
+                                  if (saveResponse.ok) {
+                                    const saveData = await saveResponse.json();
+                                    alert(`Browsers discovered and saved to database:\n\n${response.browsers.join('\n')}\n\nTotal: ${saveData.count} browsers saved`);
+                                  } else {
+                                    alert('Browsers discovered by extension:\n\n' + response.browsers.join('\n') + '\n\nNote: Failed to save to database');
+                                  }
+                                } catch (err) {
+                                  console.error('Failed to save browsers to database:', err);
+                                  alert('Browsers discovered by extension:\n\n' + response.browsers.join('\n') + '\n\nNote: Failed to save to database');
+                                }
+                              } else {
+                                const error = response ? response.error : 'No response';
+                                alert(`No browsers detected.\n\nError: ${error}\n\nIMPORTANT: Please ensure the extension is installed and its background scripts are running. If detection fails, try re-checking extension status.`);
+                              }
+                            });
+                          } else {
+                            const browsers = BrowserLauncher.getBrowsers();
+                            setDetectedBrowsers(browsers);
+                            alert('Extension loaded but fetchBrowsers API not found.\nStatic list: ' + browsers.join(', '));
+                          }
+                        }
+                      }}
+                      className="px-4 py-2 bg-slate-600 hover:bg-slate-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+                    >
+                      Show Available Browsers
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const apiBase = resolveApiBase();
+                          const response = await fetch(`${apiBase}/browsers`, {
+                            credentials: 'include',
+                          });
+                          if (response.ok) {
+                            const data = await response.json();
+                            if (data.success && data.browsers && data.browsers.length > 0) {
+                              const browserList = data.browsers.map((b: any) => `â€¢ ${b.browser_name} (${b.browser_id})`).join('\n');
+                              const lastUpdated = data.metadata?.last_updated
+                                ? new Date(data.metadata.last_updated * 1000).toLocaleString()
+                                : 'Unknown';
+                              alert(`Saved Browsers in Database:\n\n${browserList}\n\nTotal: ${data.browsers.length} browsers\nLast Updated: ${lastUpdated}`);
+                            } else {
+                              alert('No browsers found in database.\n\nClick "Show Available Browsers" to fetch and save the browser list.');
                             }
                           } else {
-                            const error = response ? response.error : 'No response';
-                            alert(`No browsers detected.\n\nError: ${error}\n\nIMPORTANT: Please ensure the extension is installed and its background scripts are running. If detection fails, try re-checking extension status.`);
+                            alert('Failed to load saved browsers from database.');
                           }
-                        });
-                      } else {
-                        const browsers = BrowserLauncher.getBrowsers();
-                        setDetectedBrowsers(browsers);
-                        alert('Extension loaded but fetchBrowsers API not found.\nStatic list: ' + browsers.join(', '));
-                      }
-                    }
-                  }}
-                  className="px-4 py-2 bg-slate-600 hover:bg-slate-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  Show Available Browsers
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      const apiBase = resolveApiBase();
-                      const response = await fetch(`${apiBase}/browsers`, {
-                        credentials: 'include',
-                      });
-                      if (response.ok) {
-                        const data = await response.json();
-                        if (data.success && data.browsers && data.browsers.length > 0) {
-                          const browserList = data.browsers.map((b: any) => `• ${b.browser_name} (${b.browser_id})`).join('\n');
-                          const lastUpdated = data.metadata?.last_updated
-                            ? new Date(data.metadata.last_updated * 1000).toLocaleString()
-                            : 'Unknown';
-                          alert(`Saved Browsers in Database:\n\n${browserList}\n\nTotal: ${data.browsers.length} browsers\nLast Updated: ${lastUpdated}`);
-                        } else {
-                          alert('No browsers found in database.\n\nClick "Show Available Browsers" to fetch and save the browser list.');
+                        } catch (err) {
+                          console.error('Failed to load saved browsers:', err);
+                          alert('Error loading saved browsers from database.');
                         }
-                      } else {
-                        alert('Failed to load saved browsers from database.');
-                      }
-                    } catch (err) {
-                      console.error('Failed to load saved browsers:', err);
-                      alert('Error loading saved browsers from database.');
-                    }
-                  }}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  View Saved Browsers
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (!confirm('Are you sure you want to clear the browser cache?\n\nThis will delete all saved browsers from the database. You will need to click "Show Available Browsers" again to refresh the list.')) {
-                      return;
-                    }
-                    try {
-                      const apiBase = resolveApiBase();
-                      const response = await fetch(`${apiBase}/browsers`, {
-                        method: 'DELETE',
-                        credentials: 'include',
-                      });
-                      if (response.ok) {
-                        const data = await response.json();
-                        setDetectedBrowsers([]);
-                        alert('✓ Browser cache cleared successfully!\n\nClick "Show Available Browsers" to refresh the list.');
-                      } else {
-                        alert('Failed to clear browser cache.');
-                      }
-                    } catch (err) {
-                      console.error('Failed to clear browser cache:', err);
-                      alert('Error clearing browser cache.');
-                    }
-                  }}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  Clear Browser Cache
-                </button>
-              </div>
+                      }}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors"
+                    >
+                      View Saved Browsers
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!confirm('Are you sure you want to clear the browser cache?\n\nThis will delete all saved browsers from the database. You will need to click "Show Available Browsers" again to refresh the list.')) {
+                          return;
+                        }
+                        try {
+                          const apiBase = resolveApiBase();
+                          const response = await fetch(`${apiBase}/browsers`, {
+                            method: 'DELETE',
+                            credentials: 'include',
+                          });
+                          if (response.ok) {
+                            const data = await response.json();
+                            setDetectedBrowsers([]);
+                            alert('âœ“ Browser cache cleared successfully!\n\nClick "Show Available Browsers" to refresh the list.');
+                          } else {
+                            alert('Failed to clear browser cache.');
+                          }
+                        } catch (err) {
+                          console.error('Failed to clear browser cache:', err);
+                          alert('Error clearing browser cache.');
+                        }
+                      }}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-medium transition-colors"
+                    >
+                      Clear Browser Cache
+                    </button>
+                  </div>
 
-              {/* Code Examples */}
-              <div className="mt-6 space-y-4">
-                <div>
-                  <h5 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Example 1: Simple usage with callback</h5>
-                  <pre className="bg-slate-900 text-slate-100 p-4 rounded-lg text-xs overflow-x-auto">
-                    {`BrowserLauncher.open('https://github.com', 'chrome-stable', {}, function(response) {
+                  {/* Code Examples */}
+                  <div className="mt-6 space-y-4">
+                    <div>
+                      <h5 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Example 1: Simple usage with callback</h5>
+                      <pre className="bg-slate-900 text-slate-100 p-4 rounded-lg text-xs overflow-x-auto">
+                        {`BrowserLauncher.open('https://github.com', 'chrome-stable', {}, function(response) {
   if (response.success) {
     console.log('Opened successfully!');
   } else {
     console.error('Error:', response.error);
   }
 });`}
-                  </pre>
-                </div>
-                <div>
-                  <h5 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Example 2: Using Promises</h5>
-                  <pre className="bg-slate-900 text-slate-100 p-4 rounded-lg text-xs overflow-x-auto">
-                    {`BrowserLauncher.open('https://example.com', 'edge-stable')
+                      </pre>
+                    </div>
+                    <div>
+                      <h5 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Example 2: Using Promises</h5>
+                      <pre className="bg-slate-900 text-slate-100 p-4 rounded-lg text-xs overflow-x-auto">
+                        {`BrowserLauncher.open('https://example.com', 'edge-stable')
   .then(response => console.log('Success:', response))
   .catch(error => console.error('Error:', error));`}
-                  </pre>
-                </div>
-                <div>
-                  <h5 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Example 3: Using async/await</h5>
-                  <pre className="bg-slate-900 text-slate-100 p-4 rounded-lg text-xs overflow-x-auto">
-                    {`async function openLink() {
+                      </pre>
+                    </div>
+                    <div>
+                      <h5 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Example 3: Using async/await</h5>
+                      <pre className="bg-slate-900 text-slate-100 p-4 rounded-lg text-xs overflow-x-auto">
+                        {`async function openLink() {
   try {
     const response = await BrowserLauncher.open('https://example.com', 'chrome-stable');
     console.log('Success:', response);
@@ -5747,410 +5032,515 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     console.error('Error:', error);
   }
 }`}
-                  </pre>
+                      </pre>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            {/* Interactive Test Area */}
-            <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
-              <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">🧪 Interactive Test Area</h4>
-              <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                Test the integration with your own URLs and browser selections:
-              </p>
-              <div className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-lg border border-slate-200 dark:border-slate-700">
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">URL to Open</label>
-                    <input
-                      type="url"
-                      value={testUrl}
-                      onChange={(e) => setTestUrl(e.target.value)}
-                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                      placeholder="https://example.com"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Browser</label>
-                    <select
-                      value={testBrowser}
-                      onChange={(e) => setTestBrowser(e.target.value)}
-                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                    >
-                      {detectedBrowsers.length > 0 ? (
-                        <>
-                          {detectedBrowsers.map(id => (
-                            <option key={id} value={id}>
-                              {id.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
-                            </option>
-                          ))}
-                        </>
-                      ) : (
-                        <option value="">🔍 Detecting browsers...</option>
+                {/* Interactive Test Area */}
+                <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
+                  <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">ðŸ§ª Interactive Test Area</h4>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                    Test the integration with your own URLs and browser selections:
+                  </p>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">URL to Open</label>
+                        <input
+                          type="url"
+                          value={testUrl}
+                          onChange={(e) => setTestUrl(e.target.value)}
+                          className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                          placeholder="https://example.com"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Browser</label>
+                        <select
+                          value={testBrowser}
+                          onChange={(e) => setTestBrowser(e.target.value)}
+                          className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                        >
+                          {detectedBrowsers.length > 0 ? (
+                            <>
+                              {detectedBrowsers.map(id => (
+                                <option key={id} value={id}>
+                                  {id.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                                </option>
+                              ))}
+                            </>
+                          ) : (
+                            <option value="">ðŸ” Detecting browsers...</option>
+                          )}
+                        </select>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!testUrl.trim()) {
+                            setTestResult({ success: false, message: 'Please enter a URL' });
+                            return;
+                          }
+
+                          if (typeof (window as any).BrowserLauncher === 'undefined') {
+                            setTestResult({ success: false, message: 'BrowserLauncher object not found' });
+                            return;
+                          }
+
+                          setTestResult(null);
+                          const BrowserLauncher = (window as any).BrowserLauncher;
+                          if (settings.browser_extension_id) {
+                            BrowserLauncher.setExtensionId(settings.browser_extension_id);
+                          }
+
+                          BrowserLauncher.open(testUrl, testBrowser, { fallback: false }, (response: any) => {
+                            if (response && response.success !== false) {
+                              const message = response.message || 'Browser launch initiated';
+                              setTestResult({ success: true, message: `âœ“ Success! ${message}` });
+                            } else {
+                              setTestResult({ success: false, message: `âœ— Error: ${response ? response.error : 'No response from extension'}` });
+                            }
+                          });
+                        }}
+                        className="w-full px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
+                      >
+                        Open Link in Browser
+                      </button>
+                      {testResult && (
+                        <div className={`mt-3 p-3 rounded-lg text-xs font-medium ${testResult.success ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800' : 'bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800'}`}>
+                          {testResult.message}
+                        </div>
                       )}
-                    </select>
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!testUrl.trim()) {
-                        setTestResult({ success: false, message: 'Please enter a URL' });
-                        return;
-                      }
+                </div>
 
-                      if (typeof (window as any).BrowserLauncher === 'undefined') {
-                        setTestResult({ success: false, message: 'BrowserLauncher object not found' });
-                        return;
-                      }
+                {/* Browser IDs Reference */}
+                <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-lg font-semibold text-slate-900 dark:text-white">ðŸ” Discovered Browser IDs</h4>
+                    {detectedBrowsers.length > 0 && (
+                      <span className="px-2 py-1 text-xs font-semibold rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
+                        {detectedBrowsers.length} active
+                      </span>
+                    )}
+                  </div>
 
-                      setTestResult(null);
-                      const BrowserLauncher = (window as any).BrowserLauncher;
-                      if (settings.browser_extension_id) {
-                        BrowserLauncher.setExtensionId(settings.browser_extension_id);
-                      }
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                    Use these discovered browser IDs in your <code className="px-1.5 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-xs">data-browser</code> attributes:
+                  </p>
 
-                      BrowserLauncher.open(testUrl, testBrowser, { fallback: false }, (response: any) => {
-                        if (response && response.success !== false) {
-                          const message = response.message || 'Browser launch initiated';
-                          setTestResult({ success: true, message: `✓ Success! ${message}` });
-                        } else {
-                          setTestResult({ success: false, message: `✗ Error: ${response ? response.error : 'No response from extension'}` });
-                        }
-                      });
-                    }}
-                    className="w-full px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
-                  >
-                    Open Link in Browser
-                  </button>
-                  {testResult && (
-                    <div className={`mt-3 p-3 rounded-lg text-xs font-medium ${testResult.success ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800' : 'bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800'}`}>
-                      {testResult.message}
+                  {detectedBrowsers.length > 0 ? (
+                    <div className="bg-emerald-50 dark:bg-emerald-900/10 border-l-4 border-emerald-500 p-4 rounded">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                        {detectedBrowsers.map((id) => (
+                          <div key={id} className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400 font-mono">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            {id}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-slate-50 dark:bg-slate-900/20 border-l-4 border-slate-400 p-4 rounded text-sm text-slate-600 dark:text-slate-400 italic">
+                      ðŸ” Scanning system for installed browsers...
                     </div>
                   )}
                 </div>
+
+                {/* Troubleshooting */}
+                <div>
+                  <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">ðŸ”§ Troubleshooting</h4>
+                  <div className="bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 p-4 rounded">
+                    <div className="text-sm text-amber-800 dark:text-amber-300">
+                      <strong>If extension is not detected:</strong>
+                      <ol className="list-decimal list-inside mt-2 space-y-1 ml-4">
+                        <li><strong>Reload the extension:</strong> Go to <code className="px-1 py-0.5 bg-amber-100 dark:bg-amber-900/40 rounded">chrome://extensions</code> or <code className="px-1 py-0.5 bg-amber-100 dark:bg-amber-900/40 rounded">edge://extensions</code>, find "Browser Launcher Pro", and click the reload button</li>
+                        <li><strong>Refresh this page:</strong> Press F5 or Ctrl+R to reload</li>
+                        <li><strong>Check browser console:</strong> Press F12 and look for errors</li>
+                        <li><strong>Verify extension is enabled:</strong> Make sure the extension toggle is ON in extensions page</li>
+                      </ol>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Save Button */}
+                <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-700">
+                  <button
+                    onClick={async () => {
+                      try {
+                        setSettingsSaving(true);
+                        setError('');
+                        await settingsService.updateSettings(settings);
+                        await loadSettings();
+                        await refreshSettings();
+                        alert('Settings saved successfully!');
+                      } catch (err: any) {
+                        setError(err.message || 'Failed to save settings');
+                      } finally {
+                        setSettingsSaving(false);
+                      }
+                    }}
+                    disabled={settingsSaving}
+                    className="px-6 py-2.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
+                  >
+                    {settingsSaving ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                        </svg>
+                        Save Settings
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
+          )}
 
-            {/* Browser IDs Reference */}
-            <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="text-lg font-semibold text-slate-900 dark:text-white">🔍 Discovered Browser IDs</h4>
-                {detectedBrowsers.length > 0 && (
-                  <span className="px-2 py-1 text-xs font-semibold rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
-                    {detectedBrowsers.length} active
-                  </span>
-                )}
-              </div>
-
-              <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                Use these discovered browser IDs in your <code className="px-1.5 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-xs">data-browser</code> attributes:
-              </p>
-
-              {detectedBrowsers.length > 0 ? (
-                <div className="bg-emerald-50 dark:bg-emerald-900/10 border-l-4 border-emerald-500 p-4 rounded">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                    {detectedBrowsers.map((id) => (
-                      <div key={id} className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400 font-mono">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                        {id}
-                      </div>
-                    ))}
-                  </div>
+          {/* Broadcast Message Tab */}
+          {activeTab === 'broadcast' && (
+            <div className="space-y-6">
+              {broadcastLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
                 </div>
               ) : (
-                <div className="bg-slate-50 dark:bg-slate-900/20 border-l-4 border-slate-400 p-4 rounded text-sm text-slate-600 dark:text-slate-400 italic">
-                  🔍 Scanning system for installed browsers...
-                </div>
-              )}
-            </div>
-
-            {/* Troubleshooting */}
-            <div>
-              <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">🔧 Troubleshooting</h4>
-              <div className="bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 p-4 rounded">
-                <div className="text-sm text-amber-800 dark:text-amber-300">
-                  <strong>If extension is not detected:</strong>
-                  <ol className="list-decimal list-inside mt-2 space-y-1 ml-4">
-                    <li><strong>Reload the extension:</strong> Go to <code className="px-1 py-0.5 bg-amber-100 dark:bg-amber-900/40 rounded">chrome://extensions</code> or <code className="px-1 py-0.5 bg-amber-100 dark:bg-amber-900/40 rounded">edge://extensions</code>, find "Browser Launcher Pro", and click the reload button</li>
-                    <li><strong>Refresh this page:</strong> Press F5 or Ctrl+R to reload</li>
-                    <li><strong>Check browser console:</strong> Press F12 and look for errors</li>
-                    <li><strong>Verify extension is enabled:</strong> Make sure the extension toggle is ON in extensions page</li>
-                  </ol>
-                </div>
-              </div>
-            </div>
-
-            {/* Save Button */}
-            <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-700">
-              <button
-                onClick={async () => {
-                  try {
-                    setSettingsSaving(true);
-                    setError('');
-                    await settingsService.updateSettings(settings);
-                    await loadSettings();
-                    await refreshSettings();
-                    alert('Settings saved successfully!');
-                  } catch (err: any) {
-                    setError(err.message || 'Failed to save settings');
-                  } finally {
-                    setSettingsSaving(false);
-                  }
-                }}
-                disabled={settingsSaving}
-                className="px-6 py-2.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
-              >
-                {settingsSaving ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                      <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                    </svg>
-                    Save Settings
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Broadcast Message Tab */}
-      {activeTab === 'broadcast' && (
-        <div className="space-y-6">
-          {broadcastLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
-            </div>
-          ) : (
-            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Broadcast Message Settings</h3>
-              <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-                Create and manage site-wide broadcast messages that appear at the top of all pages. Messages scroll from right to left.
-              </p>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Message Text
-                  </label>
-                  <textarea
-                    value={broadcastMessage}
-                    onChange={(e) => setBroadcastMessage(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                    placeholder="Enter your broadcast message here..."
-                    rows={3}
-                  />
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    This message will be displayed in a scrolling banner at the top of all pages.
+                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Broadcast Message Settings</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                    Create and manage site-wide broadcast messages that appear at the top of all pages. Messages scroll from right to left.
                   </p>
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Font Family
-                    </label>
-                    <select
-                      value={broadcastFontFamily}
-                      onChange={(e) => setBroadcastFontFamily(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                    >
-                      <option value="Arial, sans-serif">Arial</option>
-                      <option value="'Times New Roman', serif">Times New Roman</option>
-                      <option value="'Courier New', monospace">Courier New</option>
-                      <option value="Georgia, serif">Georgia</option>
-                      <option value="Verdana, sans-serif">Verdana</option>
-                      <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
-                    </select>
-                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        Message Text
+                      </label>
+                      <textarea
+                        value={broadcastMessage}
+                        onChange={(e) => setBroadcastMessage(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                        placeholder="Enter your broadcast message here..."
+                        rows={3}
+                      />
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        This message will be displayed in a scrolling banner at the top of all pages.
+                      </p>
+                    </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Font Size
-                    </label>
-                    <select
-                      value={broadcastFontSize}
-                      onChange={(e) => setBroadcastFontSize(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                    >
-                      <option value="12px">12px</option>
-                      <option value="14px">14px</option>
-                      <option value="16px">16px</option>
-                      <option value="18px">18px</option>
-                      <option value="20px">20px</option>
-                      <option value="24px">24px</option>
-                    </select>
-                  </div>
-                </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                          Font Family
+                        </label>
+                        <select
+                          value={broadcastFontFamily}
+                          onChange={(e) => setBroadcastFontFamily(e.target.value)}
+                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                        >
+                          <option value="Arial, sans-serif">Arial</option>
+                          <option value="'Times New Roman', serif">Times New Roman</option>
+                          <option value="'Courier New', monospace">Courier New</option>
+                          <option value="Georgia, serif">Georgia</option>
+                          <option value="Verdana, sans-serif">Verdana</option>
+                          <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                        </select>
+                      </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Color
-                  </label>
-                  <div className="flex gap-4 items-center">
-                    <input
-                      type="color"
-                      value={broadcastColor}
-                      onChange={(e) => setBroadcastColor(e.target.value)}
-                      className="w-16 h-10 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer"
-                    />
-                    <input
-                      type="text"
-                      value={broadcastColor}
-                      onChange={(e) => setBroadcastColor(e.target.value)}
-                      className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 font-mono"
-                      placeholder="#ff0000"
-                    />
-                  </div>
-                </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                          Font Size
+                        </label>
+                        <select
+                          value={broadcastFontSize}
+                          onChange={(e) => setBroadcastFontSize(e.target.value)}
+                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                        >
+                          <option value="12px">12px</option>
+                          <option value="14px">14px</option>
+                          <option value="16px">16px</option>
+                          <option value="18px">18px</option>
+                          <option value="20px">20px</option>
+                          <option value="24px">24px</option>
+                        </select>
+                      </div>
+                    </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Expiration Date/Time (Optional)
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={broadcastExpiresAt}
-                    onChange={(e) => setBroadcastExpiresAt(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                  />
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    Leave empty for no expiration. The message will automatically stop displaying after this date/time.
-                  </p>
-                </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        Color
+                      </label>
+                      <div className="flex gap-4 items-center">
+                        <input
+                          type="color"
+                          value={broadcastColor}
+                          onChange={(e) => setBroadcastColor(e.target.value)}
+                          className="w-16 h-10 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer"
+                        />
+                        <input
+                          type="text"
+                          value={broadcastColor}
+                          onChange={(e) => setBroadcastColor(e.target.value)}
+                          className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 font-mono"
+                          placeholder="#ff0000"
+                        />
+                      </div>
+                    </div>
 
-                {currentBroadcast && (
-                  <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Current Active Message</h4>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        Expiration Date/Time (Optional)
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={broadcastExpiresAt}
+                        onChange={(e) => setBroadcastExpiresAt(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                      />
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        Leave empty for no expiration. The message will automatically stop displaying after this date/time.
+                      </p>
+                    </div>
+
+                    {currentBroadcast && (
+                      <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                        <div className="flex items-center justify-between mb-4">
+                          <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Current Active Message</h4>
+                          <button
+                            onClick={async () => {
+                              if (!confirm('Are you sure you want to delete the current broadcast message?')) {
+                                return;
+                              }
+                              try {
+                                setBroadcastLoading(true);
+                                setError('');
+                                await broadcastService.deleteBroadcast(currentBroadcast.id);
+                                setCurrentBroadcast(null);
+                                setBroadcastMessage('');
+                                setBroadcastFontFamily('Arial, sans-serif');
+                                setBroadcastFontSize('16px');
+                                setBroadcastColor('#ff0000');
+                                setBroadcastExpiresAt('');
+                                alert('Broadcast message deleted successfully!');
+                              } catch (err: any) {
+                                setError(err.message || 'Failed to delete broadcast message');
+                              } finally {
+                                setBroadcastLoading(false);
+                              }
+                            }}
+                            className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-medium transition-colors"
+                          >
+                            Delete Current Message
+                          </button>
+                        </div>
+                        <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                          <p className="text-sm text-slate-700 dark:text-slate-300 mb-2" style={{ fontFamily: currentBroadcast.fontFamily, fontSize: currentBroadcast.fontSize, color: currentBroadcast.color }}>
+                            {currentBroadcast.message}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            Created: {new Date(currentBroadcast.createdAt * 1000).toLocaleString()}
+                            {currentBroadcast.expiresAt && (
+                              <> | Expires: {new Date(currentBroadcast.expiresAt * 1000).toLocaleString()}</>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
                       <button
                         onClick={async () => {
-                          if (!confirm('Are you sure you want to delete the current broadcast message?')) {
+                          if (!broadcastMessage.trim()) {
+                            alert('Please enter a message');
                             return;
                           }
                           try {
                             setBroadcastLoading(true);
                             setError('');
-                            await broadcastService.deleteBroadcast(currentBroadcast.id);
-                            setCurrentBroadcast(null);
-                            setBroadcastMessage('');
-                            setBroadcastFontFamily('Arial, sans-serif');
-                            setBroadcastFontSize('16px');
-                            setBroadcastColor('#ff0000');
-                            setBroadcastExpiresAt('');
-                            alert('Broadcast message deleted successfully!');
+                            const expiresAt = broadcastExpiresAt ? Math.floor(new Date(broadcastExpiresAt).getTime() / 1000) : null;
+                            if (currentBroadcast) {
+                              await broadcastService.updateBroadcast({
+                                id: currentBroadcast.id,
+                                message: broadcastMessage,
+                                fontFamily: broadcastFontFamily,
+                                fontSize: broadcastFontSize,
+                                color: broadcastColor,
+                                expiresAt: expiresAt,
+                              });
+                              alert('Broadcast message updated successfully!');
+                            } else {
+                              await broadcastService.createBroadcast({
+                                message: broadcastMessage,
+                                fontFamily: broadcastFontFamily,
+                                fontSize: broadcastFontSize,
+                                color: broadcastColor,
+                                expiresAt: expiresAt,
+                              });
+                              alert('Broadcast message created successfully!');
+                            }
+                            // Reload current broadcast
+                            const updated = await broadcastService.getBroadcast();
+                            setCurrentBroadcast(updated);
                           } catch (err: any) {
-                            setError(err.message || 'Failed to delete broadcast message');
+                            setError(err.message || 'Failed to save broadcast message');
                           } finally {
                             setBroadcastLoading(false);
                           }
                         }}
-                        className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-medium transition-colors"
+                        disabled={broadcastLoading || !broadcastMessage.trim()}
+                        className="flex-1 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
                       >
-                        Delete Current Message
+                        {broadcastLoading ? 'Saving...' : currentBroadcast ? 'Update Message' : 'Create Message'}
                       </button>
-                    </div>
-                    <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                      <p className="text-sm text-slate-700 dark:text-slate-300 mb-2" style={{ fontFamily: currentBroadcast.fontFamily, fontSize: currentBroadcast.fontSize, color: currentBroadcast.color }}>
-                        {currentBroadcast.message}
-                      </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        Created: {new Date(currentBroadcast.createdAt * 1000).toLocaleString()}
-                        {currentBroadcast.expiresAt && (
-                          <> | Expires: {new Date(currentBroadcast.expiresAt * 1000).toLocaleString()}</>
-                        )}
-                      </p>
+                      {currentBroadcast && (
+                        <button
+                          onClick={async () => {
+                            if (!confirm('Are you sure you want to delete the current broadcast message?')) {
+                              return;
+                            }
+                            try {
+                              setBroadcastLoading(true);
+                              setError('');
+                              await broadcastService.deleteBroadcast(currentBroadcast.id);
+                              setCurrentBroadcast(null);
+                              setBroadcastMessage('');
+                              setBroadcastFontFamily('Arial, sans-serif');
+                              setBroadcastFontSize('16px');
+                              setBroadcastColor('#ff0000');
+                              setBroadcastExpiresAt('');
+                              alert('Broadcast message deleted successfully!');
+                            } catch (err: any) {
+                              setError(err.message || 'Failed to delete broadcast message');
+                            } finally {
+                              setBroadcastLoading(false);
+                            }
+                          }}
+                          disabled={broadcastLoading}
+                          className="px-4 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors"
+                        >
+                          Delete
+                        </button>
+                      )}
                     </div>
                   </div>
-                )}
+                </div>
+              )}
+            </div>
+          )}
 
-                <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
-                  <button
-                    onClick={async () => {
-                      if (!broadcastMessage.trim()) {
-                        alert('Please enter a message');
-                        return;
-                      }
-                      try {
-                        setBroadcastLoading(true);
-                        setError('');
-                        const expiresAt = broadcastExpiresAt ? Math.floor(new Date(broadcastExpiresAt).getTime() / 1000) : null;
-                        if (currentBroadcast) {
-                          await broadcastService.updateBroadcast({
-                            id: currentBroadcast.id,
-                            message: broadcastMessage,
-                            fontFamily: broadcastFontFamily,
-                            fontSize: broadcastFontSize,
-                            color: broadcastColor,
-                            expiresAt: expiresAt,
-                          });
-                          alert('Broadcast message updated successfully!');
-                        } else {
-                          await broadcastService.createBroadcast({
-                            message: broadcastMessage,
-                            fontFamily: broadcastFontFamily,
-                            fontSize: broadcastFontSize,
-                            color: broadcastColor,
-                            expiresAt: expiresAt,
-                          });
-                          alert('Broadcast message created successfully!');
-                        }
-                        // Reload current broadcast
-                        const updated = await broadcastService.getBroadcast();
-                        setCurrentBroadcast(updated);
-                      } catch (err: any) {
-                        setError(err.message || 'Failed to save broadcast message');
-                      } finally {
-                        setBroadcastLoading(false);
-                      }
-                    }}
-                    disabled={broadcastLoading || !broadcastMessage.trim()}
-                    className="flex-1 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
-                  >
-                    {broadcastLoading ? 'Saving...' : currentBroadcast ? 'Update Message' : 'Create Message'}
-                  </button>
-                  {currentBroadcast && (
+          {/* Maintenance Tab */}
+          {activeTab === 'maintenance' && (
+            <div className="space-y-6 mt-6">
+              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Maintenance Mode</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                  Enable maintenance mode to restrict access to the application. Only administrators will be able to log in during maintenance mode.
+                </p>
+
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg">
+                    <div className="flex-1">
+                      <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-1">Maintenance Mode</h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {(settings?.maintenance_enabled === '1' || settings?.maintenance_enabled === 'true')
+                          ? 'Currently enabled - Only administrators can access the application'
+                          : 'Currently disabled - All users can access the application'}
+                      </p>
+                    </div>
                     <button
                       onClick={async () => {
-                        if (!confirm('Are you sure you want to delete the current broadcast message?')) {
-                          return;
-                        }
                         try {
-                          setBroadcastLoading(true);
+                          setSettingsSaving(true);
                           setError('');
-                          await broadcastService.deleteBroadcast(currentBroadcast.id);
-                          setCurrentBroadcast(null);
-                          setBroadcastMessage('');
-                          setBroadcastFontFamily('Arial, sans-serif');
-                          setBroadcastFontSize('16px');
-                          setBroadcastColor('#ff0000');
-                          setBroadcastExpiresAt('');
-                          alert('Broadcast message deleted successfully!');
+                          const currentValue = settings?.maintenance_enabled || '0';
+                          const newValue = (currentValue === '1' || currentValue === 'true') ? '0' : '1';
+                          const updatedSettings = { ...settings, maintenance_enabled: newValue };
+                          setSettings(updatedSettings);
+                          await settingsService.updateSettings({
+                            maintenance_enabled: newValue,
+                            maintenance_message: settings?.maintenance_message || maintenanceMessage || ''
+                          });
+                          await loadSettings();
+                          await refreshSettings();
+                          alert(`Maintenance mode ${newValue === '1' ? 'enabled' : 'disabled'} successfully!`);
                         } catch (err: any) {
-                          setError(err.message || 'Failed to delete broadcast message');
+                          setError(err.message || 'Failed to update maintenance mode');
                         } finally {
-                          setBroadcastLoading(false);
+                          setSettingsSaving(false);
                         }
                       }}
-                      disabled={broadcastLoading}
-                      className="px-4 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors"
+                      disabled={settingsSaving}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${(settings?.maintenance_enabled === '1' || settings?.maintenance_enabled === 'true')
+                        ? 'bg-brand-600'
+                        : 'bg-slate-300 dark:bg-slate-600'
+                        } ${settingsSaving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                      type="button"
                     >
-                      Delete
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${(settings.maintenance_enabled === '1' || settings.maintenance_enabled === 'true') ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                      />
                     </button>
-                  )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Maintenance Message
+                    </label>
+                    <textarea
+                      value={maintenanceMessage}
+                      onChange={(e) => setMaintenanceMessage(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                      placeholder="Enter a message to display to users during maintenance mode..."
+                      rows={6}
+                    />
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      This message will be displayed on the maintenance page for non-admin users.
+                    </p>
+                  </div>
+
+                  <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                    <button
+                      onClick={async () => {
+                        try {
+                          setSettingsSaving(true);
+                          setError('');
+                          const updatedSettings = { ...settings, maintenance_message: maintenanceMessage };
+                          setSettings(updatedSettings);
+                          await settingsService.updateSettings({
+                            maintenance_enabled: settings?.maintenance_enabled || '0',
+                            maintenance_message: maintenanceMessage || ''
+                          });
+                          await loadSettings();
+                          await refreshSettings();
+                          alert('Maintenance settings saved successfully!');
+                        } catch (err: any) {
+                          setError(err.message || 'Failed to save maintenance settings');
+                        } finally {
+                          setSettingsSaving(false);
+                        }
+                      }}
+                      disabled={settingsSaving}
+                      className="flex-1 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                    >
+                      {settingsSaving ? 'Saving...' : 'Save Settings'}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );

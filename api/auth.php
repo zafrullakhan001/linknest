@@ -196,13 +196,17 @@ function handleLogin() {
     
     $db = getDB();
     
-    // 1. Try LDAP Authentication if enabled
-    $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'ldap_%'");
+    // Check maintenance mode first
+    $stmt = $db->prepare("SELECT key, value FROM settings WHERE key IN ('maintenance_enabled', 'ldap_enabled') OR key LIKE 'ldap_%'");
     $stmt->execute();
     $settings = [];
     foreach ($stmt->fetchAll() as $row) {
-        $settings[$row['key']] = $row['value']; // keys are like 'ldap_enabled'
+        $settings[$row['key']] = $row['value'];
     }
+    
+    $maintenanceEnabled = isset($settings['maintenance_enabled']) && $settings['maintenance_enabled'] == '1';
+    
+    // 1. Try LDAP Authentication if enabled
     
     // Check if LDAP is enabled
     // Note: settings keys in DB are 'ldap_enabled', etc.
@@ -680,6 +684,11 @@ function handleLogin() {
             sendJSON(['error' => 'Your account is pending admin approval. Please wait for approval before logging in.'], 403);
         }
         
+        // Check maintenance mode - only admins can login during maintenance
+        if ($maintenanceEnabled && !$user['is_admin']) {
+            sendJSON(['error' => 'The application is currently in maintenance mode. Only administrators can log in at this time.'], 503);
+        }
+        
         // Login success - set session with remember me support
         $_SESSION['user_id'] = $user['id'];
         $_SESSION['username'] = $user['username'];
@@ -755,6 +764,11 @@ function handleLogin() {
     // Check if user is approved
     if (!$user['is_approved'] && !$user['is_admin']) {
         sendJSON(['error' => 'Your account is pending admin approval. Please wait for approval before logging in.'], 403);
+    }
+    
+    // Check maintenance mode - only admins can login during maintenance
+    if ($maintenanceEnabled && !$user['is_admin']) {
+        sendJSON(['error' => 'The application is currently in maintenance mode. Only administrators can log in at this time.'], 503);
     }
     
     // Login success - set session with remember me support

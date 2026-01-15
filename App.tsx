@@ -22,6 +22,7 @@ import { CalculatorWidget } from './components/CalculatorWidget';
 import { FloatingPasswordGeneratorWidget } from './components/FloatingPasswordGeneratorWidget';
 import { PasswordGeneratorWidget } from './components/PasswordGeneratorWidget';
 import { BroadcastBanner } from './components/BroadcastBanner';
+import { MaintenancePage } from './components/MaintenancePage';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -476,6 +477,27 @@ const AppContent: React.FC = () => {
     );
   }
 
+
+  // Check maintenance mode - show maintenance page if enabled and user is not admin
+  const maintenanceEnabled = settings?.maintenance_enabled === '1';
+  const isAdmin = user?.is_admin === true;
+
+  if (maintenanceEnabled && !isAdmin && !authLoading && !settingsLoading) {
+    return (
+      <>
+        <MaintenancePage
+          message={settings?.maintenance_message || 'The application is currently undergoing maintenance. Please check back later.'}
+          appName={settings?.app_name || 'Application'}
+          showAdminLogin={!isAuthenticated}
+          onAdminLogin={() => setAuthModalOpen(true)}
+        />
+        <AuthModal
+          isOpen={authModalOpen}
+          onClose={() => setAuthModalOpen(false)}
+        />
+      </>
+    );
+  }
 
   // Routing Logic
   let content;
