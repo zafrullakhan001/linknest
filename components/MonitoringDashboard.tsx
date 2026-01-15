@@ -1669,25 +1669,52 @@ export const MonitoringDashboard: React.FC = () => {
                                             }}
                                             className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-[#252525] group ${fullAnimClass}`}
                                         >
-                                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                                            <div className="flex items-center gap-2 w-[280px] flex-shrink-0">
                                                 <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 ${monitor.last_status === 'up' ? 'bg-emerald-100 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : monitor.last_status === 'down' ? 'bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
                                                     {React.cloneElement(getTypeIcon(monitor.type), { size: 12 })}
                                                 </div>
-                                                <span className="font-semibold text-xs text-slate-900 dark:text-white truncate">
+                                                <span className="font-semibold text-xs text-slate-900 dark:text-white truncate" title={monitor.name}>
                                                     {monitor.name}
                                                 </span>
                                                 {renderEmailIndicators(monitor, 8)}
                                             </div>
-                                            <div className="flex items-center gap-4 flex-shrink-0">
-                                                <code className="text-[10px] px-2 py-0.5 rounded bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 font-mono">
-                                                    {monitor.target}{monitor.port ? `:${monitor.port}` : ''}
-                                                </code>
+
+                                            <div className="flex-1 h-10 px-4 min-w-[200px] opacity-50 group-hover:opacity-100 transition-opacity">
+                                                {monitor.history && monitor.history.length > 0 ? (
+                                                    <ResponsiveContainer width="100%" height="100%">
+                                                        <AreaChart data={monitor.history}>
+                                                            <defs>
+                                                                <linearGradient id={`gradient-history-${monitor.id}`} x1="0" y1="0" x2="0" y2="1">
+                                                                    <stop offset="5%" stopColor={monitor.last_status === 'up' ? '#10b981' : '#ef4444'} stopOpacity={0.3} />
+                                                                    <stop offset="95%" stopColor={monitor.last_status === 'up' ? '#10b981' : '#ef4444'} stopOpacity={0} />
+                                                                </linearGradient>
+                                                            </defs>
+                                                            <Area
+                                                                type="monotone"
+                                                                dataKey="response_time"
+                                                                stroke={monitor.last_status === 'up' ? '#10b981' : '#ef4444'}
+                                                                fill={`url(#gradient-history-${monitor.id})`}
+                                                                strokeWidth={2}
+                                                                isAnimationActive={false}
+                                                            />
+                                                        </AreaChart>
+                                                    </ResponsiveContainer>
+                                                ) : (
+                                                    <div className={`w-full h-1.5 mt-4 rounded-full ${monitor.last_status === 'up' ? 'bg-emerald-500' : monitor.last_status === 'down' ? 'bg-red-500' : 'bg-slate-300 dark:bg-slate-700'}`}></div>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-center gap-4 flex-shrink-0 justify-end w-[240px]">
+                                                <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 font-mono">
+                                                    <span className="truncate max-w-[120px]" title={`${monitor.target}${monitor.port ? `:${monitor.port}` : ''}`}>
+                                                        {monitor.target}{monitor.port ? `:${monitor.port}` : ''}
+                                                    </span>
+                                                </div>
                                                 <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
                                                     <FaClock size={10} />
                                                     {monitor.last_response_time !== null && monitor.last_response_time !== undefined ? `${monitor.last_response_time}ms` : '-'}
                                                 </div>
-                                                <div className={`w-16 h-1.5 rounded-full ${monitor.last_status === 'up' ? 'bg-emerald-500' : monitor.last_status === 'down' ? 'bg-red-500' : 'bg-slate-300 dark:bg-slate-700'}`}></div>
-                                                <span className="text-[10px] text-slate-500 dark:text-slate-400 w-16 text-right">
+                                                <span className="text-[10px] text-slate-500 dark:text-slate-400 w-20 text-right">
                                                     {formatLastChecked(monitor.last_checked_at)}
                                                 </span>
                                             </div>

@@ -529,6 +529,20 @@ function handleGetMonitors() {
     }
     $monitors = $stmt->fetchAll();
 
+    // Fetch history for sparklines (last 24 points)
+    $stmtHistory = $db->prepare('SELECT status, response_time, checked_at FROM monitor_logs WHERE monitor_id = ? ORDER BY checked_at DESC LIMIT 24');
+    foreach ($monitors as &$m) {
+        $stmtHistory->execute([(int)$m['id']]);
+        $history = $stmtHistory->fetchAll(PDO::FETCH_ASSOC);
+        // Ensure numeric types for JSON and chronological order
+        $m['history'] = array_map(function($h) {
+            $h['response_time'] = (int)$h['response_time'];
+            $h['checked_at'] = (int)$h['checked_at'];
+            return $h;
+        }, array_reverse($history));
+    }
+    unset($m);
+
     // Normalize allowed user list for admins (UI convenience)
     if (!empty($user['is_admin'])) {
         foreach ($monitors as &$m) {

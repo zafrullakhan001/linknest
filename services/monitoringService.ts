@@ -31,6 +31,7 @@ export interface Monitor {
     group_name?: string;
     maintenance_start?: number | null;
     maintenance_end?: number | null;
+    history?: { status: 'up' | 'down' | 'warning'; response_time: number; checked_at: number }[];
 }
 
 export interface MonitorLog {
@@ -132,7 +133,7 @@ export const monitoringService = {
             const response = await fetch('api/monitors.php/check-all', {
                 method: 'POST'
             });
-            
+
             if (!response.ok) {
                 let errorMessage = 'Failed to check all monitors';
                 try {
@@ -148,14 +149,14 @@ export const monitoringService = {
                 }
                 throw new Error(errorMessage);
             }
-            
+
             const data = await response.json();
-            
+
             // Check if the response indicates failure
             if (data.success === false) {
                 throw new Error(data.error || 'Failed to check all monitors');
             }
-            
+
             return {
                 count: data.count || 0,
                 total: data.total || 0,
