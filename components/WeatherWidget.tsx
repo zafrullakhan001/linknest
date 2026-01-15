@@ -991,16 +991,15 @@ export const WeatherWidget: React.FC = () => {
                 <button
                   onClick={(e) => {
                     const coordsText = `${currentCoordinates.lat.toFixed(4)}, ${currentCoordinates.lon.toFixed(4)}`;
+                    const btn = e.currentTarget;
+                    const originalText = btn.textContent || '📋';
+                    
                     navigator.clipboard.writeText(coordsText).then(() => {
                       // Show brief feedback
-                      const btn = e.currentTarget;
-                      const originalText = btn.textContent;
-                      if (originalText) {
-                        btn.textContent = '✓';
-                        setTimeout(() => {
-                          btn.textContent = originalText;
-                        }, 1000);
-                      }
+                      btn.textContent = '✓';
+                      setTimeout(() => {
+                        btn.textContent = originalText;
+                      }, 1000);
                     }).catch(() => {
                       // Fallback for older browsers
                       const textArea = document.createElement('textarea');
@@ -1009,14 +1008,10 @@ export const WeatherWidget: React.FC = () => {
                       textArea.select();
                       try {
                         document.execCommand('copy');
-                        const btn = e.currentTarget;
-                        const originalText = btn.textContent;
-                        if (originalText) {
-                          btn.textContent = '✓';
-                          setTimeout(() => {
-                            btn.textContent = originalText;
-                          }, 1000);
-                        }
+                        btn.textContent = '✓';
+                        setTimeout(() => {
+                          btn.textContent = originalText;
+                        }, 1000);
                       } catch (err) {
                         console.error('Failed to copy:', err);
                       }
@@ -1027,6 +1022,41 @@ export const WeatherWidget: React.FC = () => {
                   title="Copy coordinates"
                 >
                   📋
+                </button>
+                <button
+                  onClick={(e) => {
+                    const googleMapsUrl = `https://www.google.com/maps?q=${currentCoordinates.lat},${currentCoordinates.lon}`;
+                    const btn = e.currentTarget;
+                    const originalText = btn.textContent || '🔗';
+                    
+                    navigator.clipboard.writeText(googleMapsUrl).then(() => {
+                      // Show brief feedback
+                      btn.textContent = '✓';
+                      setTimeout(() => {
+                        btn.textContent = originalText;
+                      }, 1000);
+                    }).catch(() => {
+                      // Fallback for older browsers
+                      const textArea = document.createElement('textarea');
+                      textArea.value = googleMapsUrl;
+                      document.body.appendChild(textArea);
+                      textArea.select();
+                      try {
+                        document.execCommand('copy');
+                        btn.textContent = '✓';
+                        setTimeout(() => {
+                          btn.textContent = originalText;
+                        }, 1000);
+                      } catch (err) {
+                        console.error('Failed to copy:', err);
+                      }
+                      document.body.removeChild(textArea);
+                    });
+                  }}
+                  className="px-1.5 py-0.5 text-[10px] bg-purple-200 dark:bg-purple-600 text-purple-700 dark:text-purple-300 hover:bg-purple-300 dark:hover:bg-purple-500 rounded transition-colors"
+                  title="Copy Google Maps link"
+                >
+                  🔗
                 </button>
                 <button
                   onClick={() => {
