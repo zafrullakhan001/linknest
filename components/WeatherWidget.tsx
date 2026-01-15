@@ -169,6 +169,9 @@ export const WeatherWidget: React.FC = () => {
   const [locationResults, setLocationResults] = useState<LocationResult[]>([]);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [forecastPeriod, setForecastPeriod] = useState<'12hr' | '48hr' | '7day'>('12hr');
+  const [detectingLocation, setDetectingLocation] = useState(false);
+  const [autoDetectEnabled, setAutoDetectEnabled] = useState<boolean>(false);
+  const [currentCoordinates, setCurrentCoordinates] = useState<{ lat: number; lon: number } | null>(null);
 
   // Load location and preferences from preferences or localStorage
   useEffect(() => {
@@ -176,10 +179,66 @@ export const WeatherWidget: React.FC = () => {
       if (isAuthenticated) {
         try {
           const savedLocation = await userPreferencesService.getPreference('weather_location');
-          if (savedLocation) {
-            setLocationInput(savedLocation);
-            fetchWeather(savedLocation);
+          const savedAutoDetect = await userPreferencesService.getPreference('weather_auto_detect');
+          
+          if (savedAutoDetect === 'true') {
+            setAutoDetectEnabled(true);
+            // Try to auto-detect location if enabled
+            detectAndFetchLocation();
+          } else if (savedLocation) {
+            // Check if saved location is coordinates, and if so, reverse geocode it
+            const coords = isCoordinates(savedLocation);
+            if (coords) {
+              setCurrentCoordinates({ lat: coords.lat, lon: coords.lon });
+              try {
+                const reverseGeoUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.lat}&lon=${coords.lon}&zoom=10&addressdetails=1`;
+                const reverseGeoResponse = await fetch(reverseGeoUrl, {
+                  headers: {
+                    'User-Agent': 'LinkNest Weather Widget'
+                  }
+                });
+                
+                if (reverseGeoResponse.ok) {
+                  const reverseGeoData = await reverseGeoResponse.json();
+                  if (reverseGeoData && reverseGeoData.address) {
+                    const addr = reverseGeoData.address;
+                    const parts: string[] = [];
+                    
+                    if (addr.city || addr.town || addr.village || addr.municipality) {
+                      parts.push(addr.city || addr.town || addr.village || addr.municipality);
+                    }
+                    if (addr.state || addr.region) {
+                      parts.push(addr.state || addr.region);
+                    }
+                    if (addr.country) {
+                      parts.push(addr.country);
+                    }
+                    
+                    const displayName = parts.length > 0 ? parts.join(', ') : '';
+                    setLocationInput(displayName);
+                    setLocationName(displayName);
+                    fetchWeather(displayName);
+                  } else {
+                    setLocationInput(savedLocation);
+                    setLocationName('');
+                    fetchWeather(savedLocation);
+                  }
+                } else {
+                  setLocationInput(savedLocation);
+                  setLocationName('');
+                  fetchWeather(savedLocation);
+                }
+              } catch {
+                setLocationInput(savedLocation);
+                setLocationName('');
+                fetchWeather(savedLocation);
+              }
+            } else {
+              setLocationInput(savedLocation);
+              fetchWeather(savedLocation);
+            }
           }
+          
           const savedUnit = await userPreferencesService.getPreference('weather_use_fahrenheit');
           if (savedUnit === 'true') {
             setUseFahrenheit(true);
@@ -197,10 +256,66 @@ export const WeatherWidget: React.FC = () => {
         }
       } else {
         const savedLocation = localStorage.getItem('linknest_weather_location');
-        if (savedLocation) {
-          setLocationInput(savedLocation);
-          fetchWeather(savedLocation);
+        const savedAutoDetect = localStorage.getItem('linknest_weather_auto_detect');
+        
+        if (savedAutoDetect === 'true') {
+          setAutoDetectEnabled(true);
+          // Try to auto-detect location if enabled
+          detectAndFetchLocation();
+        } else if (savedLocation) {
+          // Check if saved location is coordinates, and if so, reverse geocode it
+          const coords = isCoordinates(savedLocation);
+          if (coords) {
+            setCurrentCoordinates({ lat: coords.lat, lon: coords.lon });
+            try {
+              const reverseGeoUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.lat}&lon=${coords.lon}&zoom=10&addressdetails=1`;
+              const reverseGeoResponse = await fetch(reverseGeoUrl, {
+                headers: {
+                  'User-Agent': 'LinkNest Weather Widget'
+                }
+              });
+              
+              if (reverseGeoResponse.ok) {
+                const reverseGeoData = await reverseGeoResponse.json();
+                if (reverseGeoData && reverseGeoData.address) {
+                  const addr = reverseGeoData.address;
+                  const parts: string[] = [];
+                  
+                  if (addr.city || addr.town || addr.village || addr.municipality) {
+                    parts.push(addr.city || addr.town || addr.village || addr.municipality);
+                  }
+                  if (addr.state || addr.region) {
+                    parts.push(addr.state || addr.region);
+                  }
+                  if (addr.country) {
+                    parts.push(addr.country);
+                  }
+                  
+                  const displayName = parts.length > 0 ? parts.join(', ') : '';
+                  setLocationInput(displayName);
+                  setLocationName(displayName);
+                  fetchWeather(displayName);
+                } else {
+                  setLocationInput(savedLocation);
+                  setLocationName('');
+                  fetchWeather(savedLocation);
+                }
+              } else {
+                setLocationInput(savedLocation);
+                setLocationName('');
+                fetchWeather(savedLocation);
+              }
+            } catch {
+              setLocationInput(savedLocation);
+              setLocationName('');
+              fetchWeather(savedLocation);
+            }
+          } else {
+            setLocationInput(savedLocation);
+            fetchWeather(savedLocation);
+          }
         }
+        
         const savedUnit = localStorage.getItem('linknest_weather_use_fahrenheit');
         if (savedUnit === 'true') {
           setUseFahrenheit(true);
@@ -217,6 +332,7 @@ export const WeatherWidget: React.FC = () => {
     };
 
     loadPreferences();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
   // Save location
@@ -268,6 +384,182 @@ export const WeatherWidget: React.FC = () => {
       }
     } else {
       localStorage.setItem('linknest_weather_country', country);
+    }
+  };
+
+  // Save auto-detect preference
+  const saveAutoDetect = async (enabled: boolean) => {
+    if (isAuthenticated) {
+      try {
+        await userPreferencesService.updatePreference('weather_auto_detect', enabled ? 'true' : 'false');
+      } catch (err) {
+        console.error('Failed to save auto-detect preference:', err);
+      }
+    } else {
+      localStorage.setItem('linknest_weather_auto_detect', enabled ? 'true' : 'false');
+    }
+  };
+
+  // Detect user's location and fetch weather
+  const detectAndFetchLocation = async () => {
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported by your browser.');
+      return;
+    }
+
+    setDetectingLocation(true);
+    setError(null);
+    setLoading(true);
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const { latitude, longitude } = position.coords;
+          setCurrentCoordinates({ lat: latitude, lon: longitude });
+          
+          // Reverse geocode to get location name using Nominatim (OpenStreetMap)
+          let displayName = '';
+          try {
+            const reverseGeoUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10&addressdetails=1`;
+            const reverseGeoResponse = await fetch(reverseGeoUrl, {
+              headers: {
+                'User-Agent': 'LinkNest Weather Widget'
+              }
+            });
+            
+            if (reverseGeoResponse.ok) {
+              const reverseGeoData = await reverseGeoResponse.json();
+              if (reverseGeoData && reverseGeoData.address) {
+                const addr = reverseGeoData.address;
+                const parts: string[] = [];
+                
+                // Build location name from address components
+                if (addr.city || addr.town || addr.village || addr.municipality) {
+                  parts.push(addr.city || addr.town || addr.village || addr.municipality);
+                }
+                if (addr.state || addr.region) {
+                  parts.push(addr.state || addr.region);
+                }
+                if (addr.country) {
+                  parts.push(addr.country);
+                }
+                
+                displayName = parts.length > 0 ? parts.join(', ') : '';
+                setLocationInput(displayName);
+              } else {
+                setLocationInput(`${latitude}, ${longitude}`);
+              }
+            } else {
+              setLocationInput(`${latitude}, ${longitude}`);
+            }
+          } catch {
+            setLocationInput(`${latitude}, ${longitude}`);
+          }
+
+          // Fetch weather using coordinates directly
+          await fetchWeatherByCoordinates(latitude, longitude, displayName);
+        } catch (err: any) {
+          setError(err.message || 'Failed to get location information.');
+          setLoading(false);
+          setDetectingLocation(false);
+        }
+      },
+      (error) => {
+        setDetectingLocation(false);
+        setLoading(false);
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            setError('Location access denied. Please enable location permissions or enter a location manually.');
+            break;
+          case error.POSITION_UNAVAILABLE:
+            setError('Location information unavailable. Please enter a location manually.');
+            break;
+          case error.TIMEOUT:
+            setError('Location request timed out. Please try again or enter a location manually.');
+            break;
+          default:
+            setError('An error occurred while detecting your location. Please enter a location manually.');
+            break;
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 300000, // 5 minutes
+      }
+    );
+  };
+
+  // Fetch weather by coordinates (used for auto-detection)
+  const fetchWeatherByCoordinates = async (latitude: number, longitude: number, displayName: string) => {
+    setLoading(true);
+    setError(null);
+    setCurrentCoordinates({ lat: latitude, lon: longitude });
+    setLocationName(displayName);
+
+    try {
+      const windSpeedUnit = useMph ? 'mph' : 'kmh';
+      const forecastHours = forecastPeriod === '12hr' ? 12 : forecastPeriod === '48hr' ? 48 : 168;
+      const forecastDays = forecastPeriod === '7day' ? 7 : undefined;
+
+      const [weatherResponse, airQualityResponse] = await Promise.all([
+        fetch(
+          `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=temperature_2m,weathercode,precipitation,uv_index,relative_humidity_2m,wind_speed_10m,apparent_temperature&forecast_hours=${forecastHours}&timezone=auto&temperature_unit=celsius&wind_speed_unit=${windSpeedUnit}${forecastDays ? `&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum,uv_index_max&forecast_days=${forecastDays}` : ''}`
+        ),
+        fetch(
+          `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${latitude}&longitude=${longitude}&hourly=us_aqi&forecast_hours=${forecastHours}&timezone=auto`
+        ),
+      ]);
+
+      if (!weatherResponse.ok) {
+        throw new Error('Failed to fetch weather data');
+      }
+
+      const weather: WeatherResponse = await weatherResponse.json();
+      let airQuality: AirQualityResponse | null = null;
+      if (airQualityResponse.ok) {
+        airQuality = await airQualityResponse.json();
+      }
+
+      let processed: WeatherData[];
+
+      if (forecastPeriod === '7day' && weather.daily) {
+        processed = weather.daily.time.map((time, index) => ({
+          time,
+          temperature: Math.round(weather.daily!.temperature_2m_max[index]),
+          weatherCode: weather.daily!.weathercode[index],
+          precipitation: weather.daily!.precipitation_sum[index],
+          uvIndex: weather.daily!.uv_index_max?.[index] || 0,
+          humidity: 0,
+          aqi: 0,
+          windSpeed: 0,
+          apparentTemp: Math.round(weather.daily!.temperature_2m_min[index]),
+        }));
+      } else {
+        const itemCount = forecastPeriod === '12hr' ? 12 : 48;
+        processed = weather.hourly.time.slice(0, itemCount).map((time, index) => ({
+          time,
+          temperature: Math.round(weather.hourly.temperature_2m[index]),
+          weatherCode: weather.hourly.weathercode[index],
+          precipitation: weather.hourly.precipitation[index],
+          uvIndex: weather.hourly.uv_index[index] || 0,
+          humidity: Math.round(weather.hourly.relative_humidity_2m[index]) || 0,
+          aqi: airQuality?.hourly.us_aqi[index] || 0,
+          windSpeed: Math.round(weather.hourly.wind_speed_10m[index]) || 0,
+          apparentTemp: Math.round(weather.hourly.apparent_temperature[index]),
+        }));
+      }
+
+      setWeatherData(processed);
+      // Save the display name instead of coordinates for better UX
+      await saveLocation(displayName);
+      setDetectingLocation(false);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load weather data');
+      setWeatherData([]);
+      setDetectingLocation(false);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -331,17 +623,56 @@ export const WeatherWidget: React.FC = () => {
       if (coords) {
         latitude = coords.lat;
         longitude = coords.lon;
-        displayName = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+        setCurrentCoordinates({ lat: latitude, lon: longitude });
+        // Reverse geocode to get location name using Nominatim (OpenStreetMap)
+        try {
+          const reverseGeoUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10&addressdetails=1`;
+          const reverseGeoResponse = await fetch(reverseGeoUrl, {
+            headers: {
+              'User-Agent': 'LinkNest Weather Widget'
+            }
+          });
+          
+          if (reverseGeoResponse.ok) {
+            const reverseGeoData = await reverseGeoResponse.json();
+            if (reverseGeoData && reverseGeoData.address) {
+              const addr = reverseGeoData.address;
+              const parts: string[] = [];
+              
+              // Build location name from address components
+              if (addr.city || addr.town || addr.village || addr.municipality) {
+                parts.push(addr.city || addr.town || addr.village || addr.municipality);
+              }
+              if (addr.state || addr.region) {
+                parts.push(addr.state || addr.region);
+              }
+              if (addr.country) {
+                parts.push(addr.country);
+              }
+              
+              displayName = parts.length > 0 ? parts.join(', ') : '';
+            } else {
+              displayName = '';
+            }
+          } else {
+            displayName = '';
+          }
+        } catch {
+          displayName = '';
+        }
         setLocationName(displayName);
       } else if (selectedLocation) {
         // Use the selected location from picker
         latitude = selectedLocation.latitude;
         longitude = selectedLocation.longitude;
+        setCurrentCoordinates({ lat: latitude, lon: longitude });
         displayName = selectedLocation.name;
         if (selectedLocation.admin1) {
           displayName += `, ${selectedLocation.admin1}`;
         }
-        displayName += `, ${selectedLocation.country}`;
+        if (selectedLocation.country) {
+          displayName += `, ${selectedLocation.country}`;
+        }
         setLocationName(displayName);
       } else {
         // Step 1: Geocode location to get coordinates
@@ -381,14 +712,17 @@ export const WeatherWidget: React.FC = () => {
 
         // Single result - use it directly
         const locationResult = geoData.results[0];
+        latitude = locationResult.latitude;
+        longitude = locationResult.longitude;
+        setCurrentCoordinates({ lat: latitude, lon: longitude });
         displayName = locationResult.name;
         if (locationResult.admin1) {
           displayName += `, ${locationResult.admin1}`;
         }
-        displayName += `, ${locationResult.country || 'Unknown'}`;
+        if (locationResult.country) {
+          displayName += `, ${locationResult.country}`;
+        }
         setLocationName(displayName);
-        latitude = locationResult.latitude;
-        longitude = locationResult.longitude;
       }
 
       // Determine forecast parameters based on period
@@ -587,13 +921,42 @@ export const WeatherWidget: React.FC = () => {
             className="flex-1 px-2 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
           <button
+            type="button"
+            onClick={detectAndFetchLocation}
+            disabled={loading || detectingLocation}
+            className="px-2 py-1.5 text-sm bg-emerald-500 text-white rounded hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            title="Detect my location"
+          >
+            {detectingLocation ? '...' : '📍'}
+          </button>
+          <button
             type="submit"
-            disabled={loading || !locationInput.trim()}
+            disabled={loading || detectingLocation || !locationInput.trim()}
             className="px-3 py-1.5 text-sm bg-brand-500 text-white rounded hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {loading ? '...' : 'Load'}
           </button>
         </form>
+        
+        {/* Auto-detect toggle */}
+        <div className="flex items-center gap-2 mb-2">
+          <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autoDetectEnabled}
+              onChange={(e) => {
+                const enabled = e.target.checked;
+                setAutoDetectEnabled(enabled);
+                saveAutoDetect(enabled);
+                if (enabled) {
+                  detectAndFetchLocation();
+                }
+              }}
+              className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-brand-500 focus:ring-brand-500"
+            />
+            <span>Auto-detect location</span>
+          </label>
+        </div>
 
         {/* Location Picker (when multiple results) */}
         {showLocationPicker && locationResults.length > 0 && (
@@ -616,9 +979,67 @@ export const WeatherWidget: React.FC = () => {
           </div>
         )}
 
-        {locationName && (
-          <div className="text-xs text-slate-600 dark:text-slate-400 mb-2">
-            📍 {locationName}
+        {(locationName || currentCoordinates) && (
+          <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 mb-2">
+            <span className="flex items-center gap-1">
+              📍 {currentCoordinates 
+                ? `${currentCoordinates.lat.toFixed(4)}, ${currentCoordinates.lon.toFixed(4)}${locationName ? ` (${locationName})` : ''}`
+                : locationName}
+            </span>
+            {currentCoordinates && (
+              <>
+                <button
+                  onClick={(e) => {
+                    const coordsText = `${currentCoordinates.lat.toFixed(4)}, ${currentCoordinates.lon.toFixed(4)}`;
+                    navigator.clipboard.writeText(coordsText).then(() => {
+                      // Show brief feedback
+                      const btn = e.currentTarget;
+                      const originalText = btn.textContent;
+                      if (originalText) {
+                        btn.textContent = '✓';
+                        setTimeout(() => {
+                          btn.textContent = originalText;
+                        }, 1000);
+                      }
+                    }).catch(() => {
+                      // Fallback for older browsers
+                      const textArea = document.createElement('textarea');
+                      textArea.value = coordsText;
+                      document.body.appendChild(textArea);
+                      textArea.select();
+                      try {
+                        document.execCommand('copy');
+                        const btn = e.currentTarget;
+                        const originalText = btn.textContent;
+                        if (originalText) {
+                          btn.textContent = '✓';
+                          setTimeout(() => {
+                            btn.textContent = originalText;
+                          }, 1000);
+                        }
+                      } catch (err) {
+                        console.error('Failed to copy:', err);
+                      }
+                      document.body.removeChild(textArea);
+                    });
+                  }}
+                  className="px-1.5 py-0.5 text-[10px] bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-500 rounded transition-colors"
+                  title="Copy coordinates"
+                >
+                  📋
+                </button>
+                <button
+                  onClick={() => {
+                    const googleMapsUrl = `https://www.google.com/maps?q=${currentCoordinates.lat},${currentCoordinates.lon}`;
+                    window.open(googleMapsUrl, '_blank', 'noopener,noreferrer');
+                  }}
+                  className="px-1.5 py-0.5 text-[10px] bg-blue-200 dark:bg-blue-600 text-blue-700 dark:text-blue-300 hover:bg-blue-300 dark:hover:bg-blue-500 rounded transition-colors"
+                  title="Open in Google Maps"
+                >
+                  🗺️
+                </button>
+              </>
+            )}
           </div>
         )}
 
