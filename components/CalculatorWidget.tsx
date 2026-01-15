@@ -2,18 +2,19 @@ import React, { useState, useEffect, useRef } from 'react';
 
 export const CalculatorWidget: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'standard' | 'percentage'>('standard');
-  
+
   // Standard calculator state
   const [display, setDisplay] = useState<string>('0');
   const [previousValue, setPreviousValue] = useState<number | null>(null);
   const [operation, setOperation] = useState<string | null>(null);
   const [waitingForNewValue, setWaitingForNewValue] = useState<boolean>(false);
-  
+
   // Percentage calculator state
   const [percentageValue, setPercentageValue] = useState<string>('');
   const [numberValue, setNumberValue] = useState<string>('');
   const [percentageResult, setPercentageResult] = useState<number | null>(null);
-  
+  const [percentageMode, setPercentageMode] = useState<'calculate' | 'find'>('calculate');
+
   const widgetRef = useRef<HTMLDivElement>(null);
 
   // Use refs to access latest state in keyboard handler
@@ -128,17 +129,28 @@ export const CalculatorWidget: React.FC = () => {
 
   useEffect(() => {
     if (activeTab === 'percentage') {
-      const percent = parseFloat(percentageValue);
-      const number = parseFloat(numberValue);
-      
-      if (!isNaN(percent) && !isNaN(number)) {
-        const result = (percent / 100) * number;
-        setPercentageResult(result);
+      const value1 = parseFloat(percentageValue);
+      const value2 = parseFloat(numberValue);
+
+      if (!isNaN(value1) && !isNaN(value2)) {
+        if (percentageMode === 'calculate') {
+          // Calculate: value1% of value2
+          const result = (value1 / 100) * value2;
+          setPercentageResult(result);
+        } else {
+          // Find: value1 is what % of value2
+          if (value2 !== 0) {
+            const result = (value1 / value2) * 100;
+            setPercentageResult(result);
+          } else {
+            setPercentageResult(null);
+          }
+        }
       } else {
         setPercentageResult(null);
       }
     }
-  }, [percentageValue, numberValue, activeTab]);
+  }, [percentageValue, numberValue, activeTab, percentageMode]);
 
   // Keyboard event handler (only for standard calculator)
   useEffect(() => {
@@ -215,7 +227,7 @@ export const CalculatorWidget: React.FC = () => {
   }, [activeTab]); // Empty deps - using refs for state access
 
   return (
-    <div 
+    <div
       ref={widgetRef}
       className="bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 p-4 min-w-[280px] max-w-[320px]"
     >
@@ -223,26 +235,24 @@ export const CalculatorWidget: React.FC = () => {
         <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
           Calculator
         </h3>
-        
+
         {/* Tabs */}
         <div className="flex gap-1 mb-3">
           <button
             onClick={() => setActiveTab('standard')}
-            className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
-              activeTab === 'standard'
+            className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'standard'
                 ? 'bg-brand-500 text-white'
                 : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
-            }`}
+              }`}
           >
             Standard
           </button>
           <button
             onClick={() => setActiveTab('percentage')}
-            className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
-              activeTab === 'percentage'
+            className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'percentage'
                 ? 'bg-brand-500 text-white'
                 : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
-            }`}
+              }`}
           >
             Percentage
           </button>
@@ -375,30 +385,52 @@ export const CalculatorWidget: React.FC = () => {
           </>
         ) : (
           <div className="space-y-3">
-            {/* Percentage Input */}
+            {/* Mode Selector */}
+            <div className="flex gap-1">
+              <button
+                onClick={() => setPercentageMode('calculate')}
+                className={`flex-1 px-2 py-1.5 text-xs font-medium rounded transition-colors ${percentageMode === 'calculate'
+                    ? 'bg-brand-500 text-white'
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
+                  }`}
+              >
+                X% of Y
+              </button>
+              <button
+                onClick={() => setPercentageMode('find')}
+                className={`flex-1 px-2 py-1.5 text-xs font-medium rounded transition-colors ${percentageMode === 'find'
+                    ? 'bg-brand-500 text-white'
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
+                  }`}
+              >
+                X is ?% of Y
+              </button>
+            </div>
+
+            {/* First Input */}
             <div>
               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                Percentage (%)
+                {percentageMode === 'calculate' ? 'Percentage (%)' : 'Value (X)'}
               </label>
               <input
                 type="number"
                 value={percentageValue}
                 onChange={(e) => setPercentageValue(e.target.value)}
-                placeholder="Enter percentage"
+                placeholder={percentageMode === 'calculate' ? 'Enter percentage' : 'Enter value'}
                 className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
 
-            {/* Number Input */}
+            {/* Second Input */}
             <div>
               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                Number
+                {percentageMode === 'calculate' ? 'Number' : 'Total (Y)'}
               </label>
               <input
                 type="number"
                 value={numberValue}
                 onChange={(e) => setNumberValue(e.target.value)}
-                placeholder="Enter number"
+                placeholder={percentageMode === 'calculate' ? 'Enter number' : 'Enter total'}
                 className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
@@ -408,9 +440,13 @@ export const CalculatorWidget: React.FC = () => {
               <div className="bg-slate-900 dark:bg-slate-950 rounded p-3">
                 <div className="text-right text-2xl font-mono text-white overflow-x-auto">
                   {percentageResult.toLocaleString(undefined, { maximumFractionDigits: 10 })}
+                  {percentageMode === 'find' && '%'}
                 </div>
                 <div className="text-xs text-slate-400 mt-1 text-right">
-                  {percentageValue}% of {numberValue}
+                  {percentageMode === 'calculate'
+                    ? `${percentageValue}% of ${numberValue}`
+                    : `${percentageValue} is ${percentageResult.toFixed(2)}% of ${numberValue}`
+                  }
                 </div>
               </div>
             )}
