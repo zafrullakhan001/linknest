@@ -1404,10 +1404,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
   }, [activeTab, isAuthenticated, tiles]);
 
-  // Check health of favorite links when favorites tab is active
+  // Check health of favorite links when favorites tab is active with 5s delay and cancellation
   useEffect(() => {
     // Only check health for favorites and public-favorites tabs
-    if (activeTab !== 'favorites' && activeTab !== 'public-favorites') {
+    const isFavoritesTab = activeTab === 'favorites' || activeTab === 'public-favorites';
+
+    if (!isFavoritesTab) {
       // Cancel any ongoing checks when switching away from favorites tab
       favoriteLinkHealthService.cancelCheck();
       setIsCheckingHealth(false);
@@ -1418,6 +1420,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
     if (favoriteLinks.length === 0) {
       return;
     }
+
+    let checkTimeoutId: NodeJS.Timeout | null = null;
 
     // Start health checking
     const checkHealth = async () => {
@@ -1443,18 +1447,28 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
         // Final update with all results
         setLinkHealthResults(results);
-      } catch (error) {
-        console.error('Error checking link health:', error);
+      } catch (error: any) {
+        if (error.name !== 'AbortError') {
+          console.error('Error checking link health:', error);
+        }
       } finally {
         setIsCheckingHealth(false);
       }
     };
 
-    checkHealth();
+    // Add 5 second delay for health check calculation
+    // If the user stays on the tab post 5 seconds, calculate status; if not, cancel it
+    checkTimeoutId = setTimeout(() => {
+      checkHealth();
+    }, 5000);
 
-    // Cleanup: cancel checks when component unmounts or dependencies change
+    // Cleanup: cancel checks and clear timeout when component unmounts or dependencies change
     return () => {
+      if (checkTimeoutId) {
+        clearTimeout(checkTimeoutId);
+      }
       favoriteLinkHealthService.cancelCheck();
+      setIsCheckingHealth(false);
     };
   }, [activeTab, favoriteLinks]);
 
