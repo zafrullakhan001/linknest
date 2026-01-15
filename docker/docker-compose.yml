@@ -6,10 +6,21 @@ services:
       dockerfile: docker/Dockerfile
     container_name: linknest
     ports:
-      - "8090:80"   # HTTP
-      - "8443:443"  # HTTPS
+      - "8090:80" # HTTP
+      - "8443:443" # HTTPS
     # No volume mounts - container is fully isolated with its own database and files
+    # Timezone: Automatically use host system timezone
+    # On Windows: Set TZ environment variable (e.g., TZ=America/New_York) or it will use UTC
+    # On Linux/Mac: Will automatically detect from /etc/timezone or /etc/localtime if mounted
+    # Mount timezone files if they exist (Linux/Mac only, ignored on Windows)
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     environment:
+      # Timezone: Set TZ environment variable to match your system timezone
+      # Examples: TZ=America/New_York, TZ=Europe/London, TZ=Asia/Tokyo, TZ=UTC
+      # If not set, will try to detect from mounted /etc/timezone or use UTC
+      - TZ=${TZ:-America/New_York}
       - APACHE_DOCUMENT_ROOT=/var/www/html
       - PHP_MEMORY_LIMIT=256M
       - PHP_MAX_EXECUTION_TIME=300
@@ -27,7 +38,7 @@ services:
       - mailpit
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "-k", "https://localhost/api/settings"]
+      test: [ "CMD", "curl", "-f", "-k", "https://localhost/api/settings" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -41,38 +52,6 @@ services:
     image: axllent/mailpit:latest
     container_name: linknest-mailpit
     ports:
-      - "1025:1025"  # SMTP
-      - "8025:8025"  # Web UI
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI
     restart: unless-stopped
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

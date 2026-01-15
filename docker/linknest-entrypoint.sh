@@ -19,6 +19,29 @@ DB_PATH="${LINKNEST_DB_PATH:-/var/www/html/data/linknest.db}"
 MAX_WORKERS="${LINKNEST_WORKER_MAX_WORKERS:-10}"
 EMAIL_LIMIT="${LINKNEST_EMAIL_LIMIT:-50}"
 
+# Set timezone from environment variable or detect from system
+# TZ can be set in docker-compose.yml (e.g., TZ=America/New_York)
+# If not set, try to detect from mounted /etc/timezone or use UTC as fallback
+if [ -n "${TZ:-}" ]; then
+    echo "[ENTRYPOINT] Setting timezone from TZ environment variable: ${TZ}"
+    ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime
+    echo "${TZ}" > /etc/timezone
+    echo "date.timezone=${TZ}" > /usr/local/etc/php/conf.d/timezone.ini
+elif [ -f /etc/timezone ]; then
+    TZ=$(cat /etc/timezone)
+    echo "[ENTRYPOINT] Setting timezone from /etc/timezone: ${TZ}"
+    ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime 2>/dev/null || true
+elif [ -f /etc/localtime ]; then
+    echo "[ENTRYPOINT] Using timezone from /etc/localtime"
+else
+    echo "[ENTRYPOINT] No timezone configured, using UTC (set TZ environment variable to override)"
+    export TZ=UTC
+fi
+
+# Display current timezone
+echo "[ENTRYPOINT] Current timezone: $(cat /etc/timezone 2>/dev/null || echo 'UTC')"
+echo "[ENTRYPOINT] Current time: $(date)"
+
 # Ensure backups directory exists with proper permissions
 BACKUPS_DIR="/var/www/html/data/backups"
 if [ ! -d "$BACKUPS_DIR" ]; then

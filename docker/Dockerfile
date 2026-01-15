@@ -62,6 +62,7 @@ RUN apt-get update && apt-get install -y \
     zlib1g-dev \
     python3 \
     cron \
+    tzdata \
     && docker-php-ext-install pdo pdo_sqlite opcache ldap zip \
     && docker-php-ext-enable pdo_sqlite opcache ldap zip \
     && ln -sf /usr/bin/python3 /usr/local/bin/python \
@@ -209,6 +210,7 @@ RUN echo "🧹 Cleaning up unnecessary files to reduce image size..." && \
 # Set environment variables
 ENV APACHE_DOCUMENT_ROOT=/var/www/html
 ENV PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d
+# Timezone will be set at runtime from host system or TZ environment variable
 
 # Expose ports (HTTP and HTTPS)
 EXPOSE 80 443
