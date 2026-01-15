@@ -1,9 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 type Point = { x: number; y: number };
+type Size = { width: number; height: number };
 
 const STORAGE_KEY = 'linknest.floatingWeatherWidget.position.v1';
+const SIZE_STORAGE_KEY = 'linknest.floatingWeatherWidget.size.v1';
 const MIN_VISIBLE = 48; // keep at least this many pixels visible on-screen
+const MIN_WIDTH = 320;
+const MIN_HEIGHT = 400;
+const MAX_WIDTH = 600;
+const MAX_HEIGHT = 800;
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -44,6 +50,26 @@ function safeParsePoint(raw: string | null): Point | null {
   return null;
 }
 
+function safeParseSize(raw: string | null): Size | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (
+      typeof parsed === 'object' &&
+      parsed &&
+      typeof parsed.width === 'number' &&
+      typeof parsed.height === 'number' &&
+      Number.isFinite(parsed.width) &&
+      Number.isFinite(parsed.height)
+    ) {
+      return { width: parsed.width, height: parsed.height };
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 export const FloatingWeatherWidget: React.FC<{
   children: React.ReactNode;
   defaultPosition?: Point;
@@ -56,18 +82,27 @@ export const FloatingWeatherWidget: React.FC<{
     return { x: 24, y: 100 };
   }, [defaultPosition]);
 
+  const initialSize = useMemo<Size>(() => {
+    const stored = safeParseSize(localStorage.getItem(SIZE_STORAGE_KEY));
+    if (stored) return stored;
+    return { width: 450, height: 500 };
+  }, []);
+
   const [pos, setPos] = useState<Point>(initialPos);
+  const [size, setSize] = useState<Size>(initialSize);
   const [isDragging, setIsDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
   const dragStartRef = useRef<{ x: number; y: number; posX: number; posY: number } | null>(null);
+  const resizeStartRef = useRef<{ x: number; y: number; width: number; height: number; posX: number; posY: number; direction: string } | null>(null);
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const latestPosRef = useRef<Point>(initialPos);
+  const latestSizeRef = useRef<Size>(initialSize);
   const rafRef = useRef<number | null>(null);
   const pendingPosRef = useRef<Point | null>(null);
 
   const clampToViewport = (p: Point): Point => {
-    const el = containerRef.current;
-    const width = el?.offsetWidth ?? 450;
-    const height = el?.offsetHeight ?? 500;
+    const width = size.width;
+    const height = size.height;
 
     const zoom = getCssZoom();
     const { width: vvW, height: vvH } = getVisualViewportSize();
@@ -107,9 +142,8 @@ export const FloatingWeatherWidget: React.FC<{
     }
 
     requestAnimationFrame(() => {
-      const el = containerRef.current;
-      const width = el?.offsetWidth ?? 450;
-      const height = el?.offsetHeight ?? 500;
+      const width = size.width;
+      const height = size.height;
       const zoom = getCssZoom();
       const { width: vvW, height: vvH } = getVisualViewportSize();
       const layoutViewportWidth = vvW / zoom;
@@ -131,7 +165,7 @@ export const FloatingWeatherWidget: React.FC<{
       window.visualViewport?.removeEventListener('scroll', onResize);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [size]);
 
   // Cleanup listeners on unmount
   useEffect(() => {
@@ -185,6 +219,82 @@ export const FloatingWeatherWidget: React.FC<{
     e.stopPropagation();
   };
 
+  const startResize = (e: React.PointerEvent, direction: string) => {
+    dragCleanupRef.current?.();
+    dragCleanupRef.current = null;
+
+    resizeStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      width: size.width,
+      height: size.height,
+      posX: pos.x,
+      posY: pos.y,
+      direction,
+    };
+    setIsResizing(true);
+
+    const onMove = (ev: PointerEvent) => {
+      const start = resizeStartRef.current;
+      if (!start) return;
+      const zoom = getCssZoom();
+      const dx = (ev.clientX - start.x) / zoom;
+      const dy = (ev.clientY - start.y) / zoom;
+
+      let newWidth = start.width;
+      let newHeight = start.height;
+      let newX = start.posX;
+      let newY = start.posY;
+
+      if (direction.includes('e')) {
+        newWidth = clamp(start.width + dx, MIN_WIDTH, MAX_WIDTH);
+      }
+      if (direction.includes('w')) {
+        const proposedWidth = clamp(start.width - dx, MIN_WIDTH, MAX_WIDTH);
+        const actualDx = start.width - proposedWidth;
+        newWidth = proposedWidth;
+        newX = start.posX + actualDx;
+      }
+      if (direction.includes('s')) {
+        newHeight = clamp(start.height + dy, MIN_HEIGHT, MAX_HEIGHT);
+      }
+      if (direction.includes('n')) {
+        const proposedHeight = clamp(start.height - dy, MIN_HEIGHT, MAX_HEIGHT);
+        const actualDy = start.height - proposedHeight;
+        newHeight = proposedHeight;
+        newY = start.posY + actualDy;
+      }
+
+      setSize({ width: newWidth, height: newHeight });
+      setPos({ x: newX, y: newY });
+      latestSizeRef.current = { width: newWidth, height: newHeight };
+      latestPosRef.current = { x: newX, y: newY };
+    };
+
+    const onUp = () => {
+      dragCleanupRef.current?.();
+      dragCleanupRef.current = null;
+      resizeStartRef.current = null;
+      setIsResizing(false);
+      try {
+        localStorage.setItem(SIZE_STORAGE_KEY, JSON.stringify(latestSizeRef.current));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(latestPosRef.current));
+      } catch {
+        // ignore storage failures
+      }
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp, { once: true });
+    window.addEventListener('pointercancel', onUp, { once: true });
+    dragCleanupRef.current = () => {
+      window.removeEventListener('pointermove', onMove);
+    };
+
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
   return (
     <div
       ref={containerRef}
@@ -193,15 +303,16 @@ export const FloatingWeatherWidget: React.FC<{
         position: 'fixed',
         left: pos.x,
         top: pos.y,
+        width: size.width,
+        height: size.height,
         zIndex: 2147483647,
       }}
     >
-      <div className="relative">
+      <div className="relative w-full h-full">
         <button
           type="button"
-          className={`absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-7 rounded-full shadow-md border border-blue-300/70 dark:border-blue-600/60 bg-blue-500/90 dark:bg-blue-600/90 backdrop-blur flex items-center justify-center text-white ${
-            isDragging ? 'cursor-grabbing' : 'cursor-grab'
-          }`}
+          className={`absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-7 rounded-full shadow-md border border-blue-300/70 dark:border-blue-600/60 bg-blue-500/90 dark:bg-blue-600/90 backdrop-blur flex items-center justify-center text-white ${isDragging ? 'cursor-grabbing' : 'cursor-grab'
+            }`}
           onPointerDown={startDrag}
           title="Drag weather widget (grab here)"
           aria-label="Drag weather widget"
@@ -209,7 +320,31 @@ export const FloatingWeatherWidget: React.FC<{
           <span className="text-[16px] leading-none tracking-widest flex items-center">⋮⋮⋮</span>
         </button>
 
-        {children}
+        {/* Resize handles */}
+        <div
+          className="absolute top-0 right-0 w-3 h-3 cursor-ne-resize opacity-0 hover:opacity-100 transition-opacity"
+          onPointerDown={(e) => startResize(e, 'ne')}
+          style={{ background: 'linear-gradient(135deg, transparent 50%, rgba(59, 130, 246, 0.5) 50%)' }}
+        />
+        <div
+          className="absolute bottom-0 right-0 w-3 h-3 cursor-se-resize opacity-0 hover:opacity-100 transition-opacity"
+          onPointerDown={(e) => startResize(e, 'se')}
+          style={{ background: 'linear-gradient(45deg, transparent 50%, rgba(59, 130, 246, 0.5) 50%)' }}
+        />
+        <div
+          className="absolute bottom-0 left-0 w-3 h-3 cursor-sw-resize opacity-0 hover:opacity-100 transition-opacity"
+          onPointerDown={(e) => startResize(e, 'sw')}
+          style={{ background: 'linear-gradient(-45deg, transparent 50%, rgba(59, 130, 246, 0.5) 50%)' }}
+        />
+        <div
+          className="absolute top-0 left-0 w-3 h-3 cursor-nw-resize opacity-0 hover:opacity-100 transition-opacity"
+          onPointerDown={(e) => startResize(e, 'nw')}
+          style={{ background: 'linear-gradient(-135deg, transparent 50%, rgba(59, 130, 246, 0.5) 50%)' }}
+        />
+
+        <div className="w-full h-full overflow-auto">
+          {children}
+        </div>
       </div>
     </div>
   );
