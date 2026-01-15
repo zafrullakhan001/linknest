@@ -4195,6 +4195,1555 @@ body {
   animation: tileAnimFinaleMega 1.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }
 
+/* Leaf Drop - Gentle falling with slight rotation */
+@keyframes tileAnimLeafDrop {
+  0% {
+    opacity: 0;
+    transform: translateY(-50px) rotate(0deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) rotate(15deg);
+  }
+}
+
+.tile-anim-leaf-drop {
+  animation: tileAnimLeafDrop 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Feather Float - Very light, slow descent */
+@keyframes tileAnimFeatherFloat {
+  0% {
+    opacity: 0;
+    transform: translateY(-60px) translateX(-10px);
+  }
+  50% {
+    transform: translateY(-20px) translateX(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) translateX(0);
+  }
+}
+
+.tile-anim-feather-float {
+  animation: tileAnimFeatherFloat 1.8s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+/* Snow Settle - Soft, gentle landing */
+@keyframes tileAnimSnowSettle {
+  0% {
+    opacity: 0;
+    transform: translateY(-40px) scale(0.9);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.tile-anim-snow-settle {
+  animation: tileAnimSnowSettle 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Petal Fall - Graceful flower petal descent */
+@keyframes tileAnimPetalFall {
+  0% {
+    opacity: 0;
+    transform: translateY(-50px) rotate(-5deg);
+  }
+  60% {
+    transform: translateY(-10px) rotate(3deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) rotate(0deg);
+  }
+}
+
+.tile-anim-petal-fall {
+  animation: tileAnimPetalFall 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Dust Settle - Particles gently settling */
+@keyframes tileAnimDustSettle {
+  0% {
+    opacity: 0;
+    transform: translateY(-30px) scale(0.95);
+    filter: blur(3px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.tile-anim-dust-settle {
+  animation: tileAnimDustSettle 1.3s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+}
+
+/* Silk Drape - Smooth, flowing fabric */
+@keyframes tileAnimSilkDrape {
+  0% {
+    opacity: 0;
+    transform: translateY(-40px) scaleY(0.8);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+.tile-anim-silk-drape {
+  animation: tileAnimSilkDrape 1.6s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+/* Velvet Slide - Luxurious, smooth glide */
+@keyframes tileAnimVelvetSlide {
+  0% {
+    opacity: 0;
+    transform: translateX(-50px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tile-anim-velvet-slide {
+  animation: tileAnimVelvetSlide 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Cotton Drift - Soft, airy float */
+@keyframes tileAnimCottonDrift {
+  0% {
+    opacity: 0;
+    transform: translateY(-45px) translateX(-8px);
+  }
+  50% {
+    transform: translateY(-15px) translateX(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) translateX(0);
+  }
+}
+
+.tile-anim-cotton-drift {
+  animation: tileAnimCottonDrift 1.7s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+/* Mist Descend - Gentle fog falling */
+@keyframes tileAnimMistDescend {
+  0% {
+    opacity: 0;
+    transform: translateY(-35px);
+    filter: blur(5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+.tile-anim-mist-descend {
+  animation: tileAnimMistDescend 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Dew Form - Morning dew appearing */
+@keyframes tileAnimDewForm {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-dew-form {
+  animation: tileAnimDewForm 1.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Water Ripple - Concentric ripple effect */
+@keyframes tileAnimWaterRipple {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-water-ripple {
+  animation: tileAnimWaterRipple 1.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Pond Ripple - Calm pond waves */
+@keyframes tileAnimPondRipple {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  40% {
+    transform: scale(1.01);
+  }
+  70% {
+    transform: scale(0.99);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-pond-ripple {
+  animation: tileAnimPondRipple 1.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Lake Calm - Peaceful, still water */
+@keyframes tileAnimLakeCalm {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-anim-lake-calm {
+  animation: tileAnimLakeCalm 1.8s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+}
+
+/* Ocean Swell - Gentle wave rise */
+@keyframes tileAnimOceanSwell {
+  0% {
+    opacity: 0;
+    transform: translateY(20px) scaleY(0.95);
+  }
+  60% {
+    transform: translateY(-5px) scaleY(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+.tile-anim-ocean-swell {
+  animation: tileAnimOceanSwell 1.7s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Tide In - Tide coming in slowly */
+@keyframes tileAnimTideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-40px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tile-anim-tide-in {
+  animation: tileAnimTideIn 1.9s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Wave Gentle - Soft wave motion */
+@keyframes tileAnimWaveGentle {
+  0% {
+    opacity: 0;
+    transform: translateY(15px) translateX(-10px);
+  }
+  50% {
+    transform: translateY(-3px) translateX(5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) translateX(0);
+  }
+}
+
+.tile-anim-wave-gentle {
+  animation: tileAnimWaveGentle 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Stream Flow - Flowing water */
+@keyframes tileAnimStreamFlow {
+  0% {
+    opacity: 0;
+    transform: translateX(-30px) translateY(-10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
+  }
+}
+
+.tile-anim-stream-flow {
+  animation: tileAnimStreamFlow 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Rain Drop - Single raindrop falling */
+@keyframes tileAnimRainDrop {
+  0% {
+    opacity: 0;
+    transform: translateY(-60px) scaleY(1.2);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+.tile-anim-rain-drop {
+  animation: tileAnimRainDrop 1.1s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Drizzle In - Light rain effect */
+@keyframes tileAnimDrizzleIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-40px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-anim-drizzle-in {
+  animation: tileAnimDrizzleIn 1.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Puddle Form - Puddle forming */
+@keyframes tileAnimPuddleForm {
+  0% {
+    opacity: 0;
+    transform: scale(0.7) scaleY(0.3);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) scaleY(1);
+  }
+}
+
+.tile-anim-puddle-form {
+  animation: tileAnimPuddleForm 1.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Cloud Drift - Cloud floating by */
+@keyframes tileAnimCloudDrift {
+  0% {
+    opacity: 0;
+    transform: translateX(-50px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tile-anim-cloud-drift {
+  animation: tileAnimCloudDrift 2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Fog Roll - Rolling fog */
+@keyframes tileAnimFogRoll {
+  0% {
+    opacity: 0;
+    transform: translateX(-40px);
+    filter: blur(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+    filter: blur(0);
+  }
+}
+
+.tile-anim-fog-roll {
+  animation: tileAnimFogRoll 1.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Haze Settle - Hazy atmosphere */
+@keyframes tileAnimHazeSettle {
+  0% {
+    opacity: 0;
+    filter: blur(6px);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+.tile-anim-haze-settle {
+  animation: tileAnimHazeSettle 1.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Vapor Rise - Steam rising */
+@keyframes tileAnimVaporRise {
+  0% {
+    opacity: 0;
+    transform: translateY(30px);
+    filter: blur(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+.tile-anim-vapor-rise {
+  animation: tileAnimVaporRise 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Smoke Curl - Curling smoke */
+@keyframes tileAnimSmokeCurl {
+  0% {
+    opacity: 0;
+    transform: translateY(25px) rotate(-5deg);
+    filter: blur(5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) rotate(0deg);
+    filter: blur(0);
+  }
+}
+
+.tile-anim-smoke-curl {
+  animation: tileAnimSmokeCurl 1.7s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Steam Wisp - Wispy steam */
+@keyframes tileAnimSteamWisp {
+  0% {
+    opacity: 0;
+    transform: translateY(20px) translateX(-5px);
+    filter: blur(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) translateX(0);
+    filter: blur(0);
+  }
+}
+
+.tile-anim-steam-wisp {
+  animation: tileAnimSteamWisp 1.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Breeze Sway - Gentle breeze */
+@keyframes tileAnimBreezeSway {
+  0% {
+    opacity: 0;
+    transform: translateX(-15px) rotate(-2deg);
+  }
+  50% {
+    transform: translateX(5px) rotate(2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) rotate(0deg);
+  }
+}
+
+.tile-anim-breeze-sway {
+  animation: tileAnimBreezeSway 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Wind Gentle - Soft wind */
+@keyframes tileAnimWindGentle {
+  0% {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tile-anim-wind-gentle {
+  animation: tileAnimWindGentle 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Air Float - Floating on air */
+@keyframes tileAnimAirFloat {
+  0% {
+    opacity: 0;
+    transform: translateY(-35px);
+  }
+  60% {
+    transform: translateY(-5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-anim-air-float {
+  animation: tileAnimAirFloat 1.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Bubble Rise - Bubble floating up */
+@keyframes tileAnimBubbleRise {
+  0% {
+    opacity: 0;
+    transform: translateY(40px) scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.tile-anim-bubble-rise {
+  animation: tileAnimBubbleRise 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Honey Drip - Thick honey flow */
+@keyframes tileAnimHoneyDrip {
+  0% {
+    opacity: 0;
+    transform: translateY(-30px) scaleY(1.3);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+.tile-anim-honey-drip {
+  animation: tileAnimHoneyDrip 2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Syrup Pour - Syrup pouring */
+@keyframes tileAnimSyrupPour {
+  0% {
+    opacity: 0;
+    transform: translateY(-35px) scaleY(1.4);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+.tile-anim-syrup-pour {
+  animation: tileAnimSyrupPour 2.1s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Oil Spread - Oil spreading */
+@keyframes tileAnimOilSpread {
+  0% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-oil-spread {
+  animation: tileAnimOilSpread 1.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Ink Diffuse - Ink in water */
+@keyframes tileAnimInkDiffuse {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+    filter: blur(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+.tile-anim-ink-diffuse {
+  animation: tileAnimInkDiffuse 1.9s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Paint Blend - Paint mixing */
+@keyframes tileAnimPaintBlend {
+  0% {
+    opacity: 0;
+    filter: blur(6px) saturate(0.5);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0) saturate(1);
+  }
+}
+
+.tile-anim-paint-blend {
+  animation: tileAnimPaintBlend 1.7s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Watercolor Bleed - Watercolor effect */
+@keyframes tileAnimWatercolorBleed {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+    filter: blur(5px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+.tile-anim-watercolor-bleed {
+  animation: tileAnimWatercolorBleed 1.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Gradient Wash - Color gradient */
+@keyframes tileAnimGradientWash {
+  0% {
+    opacity: 0;
+    filter: hue-rotate(30deg);
+  }
+  100% {
+    opacity: 1;
+    filter: hue-rotate(0deg);
+  }
+}
+
+.tile-anim-gradient-wash {
+  animation: tileAnimGradientWash 1.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Color Fade - Fading colors */
+@keyframes tileAnimColorFade {
+  0% {
+    opacity: 0;
+    filter: saturate(0);
+  }
+  100% {
+    opacity: 1;
+    filter: saturate(1);
+  }
+}
+
+.tile-anim-color-fade {
+  animation: tileAnimColorFade 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Tint Spread - Tint spreading */
+@keyframes tileAnimTintSpread {
+  0% {
+    opacity: 0;
+    filter: brightness(0.5);
+  }
+  100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+
+.tile-anim-tint-spread {
+  animation: tileAnimTintSpread 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Shade Deepen - Deepening shade */
+@keyframes tileAnimShadeDeepen {
+  0% {
+    opacity: 0;
+    filter: brightness(1.5);
+  }
+  100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+
+.tile-anim-shade-deepen {
+  animation: tileAnimShadeDeepen 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Sand Pour - Sand pouring */
+@keyframes tileAnimSandPour {
+  0% {
+    opacity: 0;
+    transform: translateY(-40px) rotate(5deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) rotate(0deg);
+  }
+}
+
+.tile-anim-sand-pour {
+  animation: tileAnimSandPour 1.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Grain Settle - Grains settling */
+@keyframes tileAnimGrainSettle {
+  0% {
+    opacity: 0;
+    transform: translateY(-30px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-anim-grain-settle {
+  animation: tileAnimGrainSettle 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Powder Dust - Powder dusting */
+@keyframes tileAnimPowderDust {
+  0% {
+    opacity: 0;
+    transform: translateY(-25px);
+    filter: blur(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+.tile-anim-powder-dust {
+  animation: tileAnimPowderDust 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Ash Fall - Ash falling */
+@keyframes tileAnimAshFall {
+  0% {
+    opacity: 0;
+    transform: translateY(-35px) translateX(-8px);
+  }
+  50% {
+    transform: translateY(-10px) translateX(5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) translateX(0);
+  }
+}
+
+.tile-anim-ash-fall {
+  animation: tileAnimAshFall 1.7s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Ember Fade - Fading ember */
+@keyframes tileAnimEmberFade {
+  0% {
+    opacity: 0;
+    filter: brightness(2);
+  }
+  100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+
+.tile-anim-ember-fade {
+  animation: tileAnimEmberFade 1.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Glow Dim - Dimming glow */
+@keyframes tileAnimGlowDim {
+  0% {
+    opacity: 0;
+    filter: brightness(2) blur(5px);
+  }
+  100% {
+    opacity: 1;
+    filter: brightness(1) blur(0);
+  }
+}
+
+.tile-anim-glow-dim {
+  animation: tileAnimGlowDim 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Light Soften - Softening light */
+@keyframes tileAnimLightSoften {
+  0% {
+    opacity: 0;
+    filter: brightness(1.8);
+  }
+  100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+
+.tile-anim-light-soften {
+  animation: tileAnimLightSoften 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Shadow Lengthen - Shadow lengthens */
+@keyframes tileAnimShadowLengthen {
+  0% {
+    opacity: 0;
+    transform: scaleX(0.5);
+  }
+  100% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+.tile-anim-shadow-lengthen {
+  animation: tileAnimShadowLengthen 1.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Dusk Settle - Evening falling */
+@keyframes tileAnimDuskSettle {
+  0% {
+    opacity: 0;
+    filter: brightness(1.3);
+  }
+  100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+
+.tile-anim-dusk-settle {
+  animation: tileAnimDuskSettle 1.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Dawn Break - Morning arrives */
+@keyframes tileAnimDawnBreak {
+  0% {
+    opacity: 0;
+    filter: brightness(0.5);
+  }
+  100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+
+.tile-anim-dawn-break {
+  animation: tileAnimDawnBreak 1.7s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Silk Unfurl - Silk unfolding */
+@keyframes tileAnimSilkUnfurl {
+  0% {
+    opacity: 0;
+    transform: scaleX(0) scaleY(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: scaleX(1) scaleY(1);
+  }
+}
+
+.tile-anim-silk-unfurl {
+  animation: tileAnimSilkUnfurl 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Ribbon Wave - Ribbon waving */
+@keyframes tileAnimRibbonWave {
+  0% {
+    opacity: 0;
+    transform: translateY(-20px) rotate(-10deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(5deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) rotate(0deg);
+  }
+}
+
+.tile-anim-ribbon-wave {
+  animation: tileAnimRibbonWave 1.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Fabric Billow - Fabric billowing */
+@keyframes tileAnimFabricBillow {
+  0% {
+    opacity: 0;
+    transform: scale(0.9) translateY(-15px);
+  }
+  50% {
+    transform: scale(1.03) translateY(-3px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.tile-anim-fabric-billow {
+  animation: tileAnimFabricBillow 1.7s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Curtain Sway - Curtain swaying */
+@keyframes tileAnimCurtainSway {
+  0% {
+    opacity: 0;
+    transform: translateX(-15px) scaleX(0.95);
+  }
+  50% {
+    transform: translateX(5px) scaleX(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scaleX(1);
+  }
+}
+
+.tile-anim-curtain-sway {
+  animation: tileAnimCurtainSway 1.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Banner Flutter - Banner fluttering */
+@keyframes tileAnimBannerFlutter {
+  0% {
+    opacity: 0;
+    transform: translateX(-20px) rotate(-3deg);
+  }
+  40% {
+    transform: translateX(3px) rotate(2deg);
+  }
+  70% {
+    transform: translateX(-2px) rotate(-1deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) rotate(0deg);
+  }
+}
+
+.tile-anim-banner-flutter {
+  animation: tileAnimBannerFlutter 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Flag Ripple - Flag rippling */
+@keyframes tileAnimFlagRipple {
+  0% {
+    opacity: 0;
+    transform: translateX(-18px) scaleX(0.95);
+  }
+  50% {
+    transform: translateX(4px) scaleX(1.03);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scaleX(1);
+  }
+}
+
+.tile-anim-flag-ripple {
+  animation: tileAnimFlagRipple 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Cloth Settle - Cloth settling */
+@keyframes tileAnimClothSettle {
+  0% {
+    opacity: 0;
+    transform: translateY(-25px) scaleY(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+.tile-anim-cloth-settle {
+  animation: tileAnimClothSettle 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Veil Lift - Veil lifting */
+@keyframes tileAnimVeilLift {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-anim-veil-lift {
+  animation: tileAnimVeilLift 1.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Scarf Drift - Scarf drifting */
+@keyframes tileAnimScarfDrift {
+  0% {
+    opacity: 0;
+    transform: translateX(-25px) rotate(-8deg);
+  }
+  50% {
+    transform: translateX(5px) rotate(4deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) rotate(0deg);
+  }
+}
+
+.tile-anim-scarf-drift {
+  animation: tileAnimScarfDrift 1.7s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Sheet Float - Sheet floating */
+@keyframes tileAnimSheetFloat {
+  0% {
+    opacity: 0;
+    transform: translateY(-30px) scaleY(1.05);
+  }
+  60% {
+    transform: translateY(-5px) scaleY(1.01);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+.tile-anim-sheet-float {
+  animation: tileAnimSheetFloat 1.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Paper Glide - Paper gliding */
+@keyframes tileAnimPaperGlide {
+  0% {
+    opacity: 0;
+    transform: translateX(-30px) translateY(-15px) rotate(-5deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) translateY(0) rotate(0deg);
+  }
+}
+
+.tile-anim-paper-glide {
+  animation: tileAnimPaperGlide 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Page Turn - Page turning */
+@keyframes tileAnimPageTurn {
+  0% {
+    opacity: 0;
+    transform: perspective(800px) rotateY(-90deg);
+  }
+  100% {
+    opacity: 1;
+    transform: perspective(800px) rotateY(0deg);
+  }
+}
+
+.tile-anim-page-turn {
+  animation: tileAnimPageTurn 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Book Open - Book opening */
+@keyframes tileAnimBookOpen {
+  0% {
+    opacity: 0;
+    transform: perspective(1000px) rotateX(-45deg) scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: perspective(1000px) rotateX(0deg) scale(1);
+  }
+}
+
+.tile-anim-book-open {
+  animation: tileAnimBookOpen 1.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Scroll Unfurl - Scroll unrolling */
+@keyframes tileAnimScrollUnfurl {
+  0% {
+    opacity: 0;
+    transform: scaleY(0.1) translateY(-20px);
+  }
+  100% {
+    opacity: 1;
+    transform: scaleY(1) translateY(0);
+  }
+}
+
+.tile-anim-scroll-unfurl {
+  animation: tileAnimScrollUnfurl 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Origami Fold - Origami folding */
+@keyframes tileAnimOrigamiFold {
+  0% {
+    opacity: 0;
+    transform: perspective(600px) rotateX(-30deg) rotateY(-30deg) scale(0.8);
+  }
+  100% {
+    opacity: 1;
+    transform: perspective(600px) rotateX(0deg) rotateY(0deg) scale(1);
+  }
+}
+
+.tile-anim-origami-fold {
+  animation: tileAnimOrigamiFold 1.7s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Card Flip Slow - Slow card flip */
+@keyframes tileAnimCardFlipSlow {
+  0% {
+    opacity: 0;
+    transform: perspective(800px) rotateY(180deg);
+  }
+  100% {
+    opacity: 1;
+    transform: perspective(800px) rotateY(0deg);
+  }
+}
+
+.tile-anim-card-flip-slow {
+  animation: tileAnimCardFlipSlow 1.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Letter Settle - Letter landing */
+@keyframes tileAnimLetterSettle {
+  0% {
+    opacity: 0;
+    transform: translateY(-40px) rotate(10deg);
+  }
+  70% {
+    transform: translateY(5px) rotate(-2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) rotate(0deg);
+  }
+}
+
+.tile-anim-letter-settle {
+  animation: tileAnimLetterSettle 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Note Drift - Note drifting */
+@keyframes tileAnimNoteDrift {
+  0% {
+    opacity: 0;
+    transform: translateY(-35px) translateX(-10px) rotate(-8deg);
+  }
+  50% {
+    transform: translateY(-10px) translateX(5px) rotate(4deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) translateX(0) rotate(0deg);
+  }
+}
+
+.tile-anim-note-drift {
+  animation: tileAnimNoteDrift 1.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Document Slide - Document sliding */
+@keyframes tileAnimDocumentSlide {
+  0% {
+    opacity: 0;
+    transform: translateX(-40px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tile-anim-document-slide {
+  animation: tileAnimDocumentSlide 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Parchment Roll - Parchment rolling */
+@keyframes tileAnimParchmentRoll {
+  0% {
+    opacity: 0;
+    transform: scaleX(0) translateX(-20px);
+  }
+  100% {
+    opacity: 1;
+    transform: scaleX(1) translateX(0);
+  }
+}
+
+.tile-anim-parchment-roll {
+  animation: tileAnimParchmentRoll 1.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Ice Melt - Ice melting */
+@keyframes tileAnimIceMelt {
+  0% {
+    opacity: 0;
+    transform: scale(1.1);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+.tile-anim-ice-melt {
+  animation: tileAnimIceMelt 1.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Frost Form - Frost forming */
+@keyframes tileAnimFrostForm {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+    filter: blur(3px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+.tile-anim-frost-form {
+  animation: tileAnimFrostForm 1.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Crystal Grow - Crystal growing */
+@keyframes tileAnimCrystalGrow {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-crystal-grow {
+  animation: tileAnimCrystalGrow 1.7s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Snowflake Settle - Snowflake landing */
+@keyframes tileAnimSnowflakeSettle {
+  0% {
+    opacity: 0;
+    transform: translateY(-50px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-15px) rotate(180deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) rotate(360deg);
+  }
+}
+
+.tile-anim-snowflake-settle {
+  animation: tileAnimSnowflakeSettle 1.9s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Icicle Drip - Icicle dripping */
+@keyframes tileAnimIcicleDrip {
+  0% {
+    opacity: 0;
+    transform: translateY(-30px) scaleY(1.2);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+.tile-anim-icicle-drip {
+  animation: tileAnimIcicleDrip 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Glacier Shift - Glacier moving */
+@keyframes tileAnimGlacierShift {
+  0% {
+    opacity: 0;
+    transform: translateX(-50px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tile-anim-glacier-shift {
+  animation: tileAnimGlacierShift 2.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Frozen Thaw - Ice thawing */
+@keyframes tileAnimFrozenThaw {
+  0% {
+    opacity: 0;
+    transform: scale(1.05);
+    filter: blur(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+.tile-anim-frozen-thaw {
+  animation: tileAnimFrozenThaw 1.7s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Chill Spread - Cold spreading */
+@keyframes tileAnimChillSpread {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+    filter: blur(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+.tile-anim-chill-spread {
+  animation: tileAnimChillSpread 1.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Winter Breath - Frosty breath */
+@keyframes tileAnimWinterBreath {
+  0% {
+    opacity: 0;
+    transform: translateX(-25px);
+    filter: blur(5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+    filter: blur(0);
+  }
+}
+
+.tile-anim-winter-breath {
+  animation: tileAnimWinterBreath 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Arctic Drift - Arctic wind */
+@keyframes tileAnimArcticDrift {
+  0% {
+    opacity: 0;
+    transform: translateX(-40px);
+    filter: blur(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+    filter: blur(0);
+  }
+}
+
+.tile-anim-arctic-drift {
+  animation: tileAnimArcticDrift 1.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Zen Settle - Zen calmness */
+@keyframes tileAnimZenSettle {
+  0% {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-anim-zen-settle {
+  animation: tileAnimZenSettle 2s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+}
+
+/* Meditation Calm - Meditative calm */
+@keyframes tileAnimMeditationCalm {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-meditation-calm {
+  animation: tileAnimMeditationCalm 2.1s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+}
+
+/* Peaceful Rest - Peaceful resting */
+@keyframes tileAnimPeacefulRest {
+  0% {
+    opacity: 0;
+    transform: translateY(-15px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-anim-peaceful-rest {
+  animation: tileAnimPeacefulRest 1.9s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+}
+
+/* Tranquil Ease - Tranquil motion */
+@keyframes tileAnimTranquilEase {
+  0% {
+    opacity: 0;
+    transform: translateY(-18px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-anim-tranquil-ease {
+  animation: tileAnimTranquilEase 2s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+}
+
+/* Serene Float - Serene floating */
+@keyframes tileAnimSereneFloat {
+  0% {
+    opacity: 0;
+    transform: translateY(-25px);
+  }
+  60% {
+    transform: translateY(-5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-anim-serene-float {
+  animation: tileAnimSereneFloat 2.2s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+}
+
+/* Harmony Balance - Balanced harmony */
+@keyframes tileAnimHarmonyBalance {
+  0% {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  50% {
+    transform: scale(1.01);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-anim-harmony-balance {
+  animation: tileAnimHarmonyBalance 1.8s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+}
+
+/* Gentle Rest - Gentle resting */
+@keyframes tileAnimGentleRest {
+  0% {
+    opacity: 0;
+    transform: translateY(-22px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-anim-gentle-rest {
+  animation: tileAnimGentleRest 2s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+}
+
+/* Soft Landing - Soft touchdown */
+@keyframes tileAnimSoftLanding {
+  0% {
+    opacity: 0;
+    transform: translateY(-35px);
+  }
+  80% {
+    transform: translateY(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-anim-soft-landing {
+  animation: tileAnimSoftLanding 1.7s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+}
+
+/* Calm Descent - Calm descending */
+@keyframes tileAnimCalmDescent {
+  0% {
+    opacity: 0;
+    transform: translateY(-30px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-anim-calm-descent {
+  animation: tileAnimCalmDescent 1.9s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+}
+
+/* Quiet Settle - Quiet settling */
+@keyframes tileAnimQuietSettle {
+  0% {
+    opacity: 0;
+    transform: translateY(-28px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-anim-quiet-settle {
+  animation: tileAnimQuietSettle 2.1s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+}
+
 
 
 /* End of animated tile declarations */
