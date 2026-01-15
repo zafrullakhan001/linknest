@@ -405,7 +405,7 @@ export const WeatherWidget: React.FC = () => {
 
       {/* Weather List */}
       {weatherData.length > 0 ? (
-        <div className="space-y-2 max-h-[400px] overflow-y-auto">
+        <div className="space-y-2 flex-1 overflow-y-auto">
           {weatherData.map((item, index) => {
             const uvLevel = getUVLevel(item.uvIndex);
             const aqiLevel = getAQILevel(item.aqi);
