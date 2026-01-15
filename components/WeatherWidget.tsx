@@ -12,6 +12,9 @@ interface WeatherData {
   aqi: number;
   windSpeed: number;
   apparentTemp: number;
+  moonPhase?: number; // 0-1, where 0/1 = new moon, 0.5 = full moon
+  sunrise?: string;
+  sunset?: string;
 }
 
 interface WeatherResponse {
@@ -32,6 +35,8 @@ interface WeatherResponse {
     weathercode: number[];
     precipitation_sum: number[];
     uv_index_max: number[];
+    sunrise?: string[];
+    sunset?: string[];
   };
 }
 
@@ -104,6 +109,45 @@ const WEATHER_EMOJIS: Record<number, string> = {
   99: '⛈️',
 };
 
+// Moon phase calculation - returns value between 0 and 1
+// 0/1 = New Moon, 0.25 = First Quarter, 0.5 = Full Moon, 0.75 = Last Quarter
+const calculateMoonPhase = (date: Date): number => {
+  // Julian Day calculation
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  
+  let jd = 367 * year - Math.floor(7 * (year + Math.floor((month + 9) / 12)) / 4) +
+    Math.floor(275 * month / 9) + day + 1721013.5;
+  
+  // Days since last new moon (approximate)
+  const daysSinceNewMoon = (jd - 2451549.5) % 29.53058867;
+  
+  // Normalize to 0-1 range
+  return daysSinceNewMoon / 29.53058867;
+};
+
+// Get moon phase emoji and name
+const getMoonPhaseInfo = (phase: number): { emoji: string; name: string } => {
+  if (phase < 0.03 || phase >= 0.97) {
+    return { emoji: '🌑', name: 'New Moon' };
+  } else if (phase < 0.22) {
+    return { emoji: '🌒', name: 'Waxing Crescent' };
+  } else if (phase < 0.28) {
+    return { emoji: '🌓', name: 'First Quarter' };
+  } else if (phase < 0.47) {
+    return { emoji: '🌔', name: 'Waxing Gibbous' };
+  } else if (phase < 0.53) {
+    return { emoji: '🌕', name: 'Full Moon' };
+  } else if (phase < 0.72) {
+    return { emoji: '🌖', name: 'Waning Gibbous' };
+  } else if (phase < 0.78) {
+    return { emoji: '🌗', name: 'Last Quarter' };
+  } else {
+    return { emoji: '🌘', name: 'Waning Crescent' };
+  }
+};
+
 interface LocationResult {
   name: string;
   country: string;
@@ -172,6 +216,10 @@ export const WeatherWidget: React.FC = () => {
   const [detectingLocation, setDetectingLocation] = useState(false);
   const [autoDetectEnabled, setAutoDetectEnabled] = useState<boolean>(false);
   const [currentCoordinates, setCurrentCoordinates] = useState<{ lat: number; lon: number } | null>(null);
+  const [todaySunrise, setTodaySunrise] = useState<string | null>(null);
+  const [todaySunset, setTodaySunset] = useState<string | null>(null);
+  const [todayMoonPhase, setTodayMoonPhase] = useState<number | null>(null);
+  const [animationKey, setAnimationKey] = useState<number>(0);
 
   // Load location and preferences from preferences or localStorage
   useEffect(() => {
@@ -504,7 +552,7 @@ export const WeatherWidget: React.FC = () => {
 
       const [weatherResponse, airQualityResponse] = await Promise.all([
         fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=temperature_2m,weathercode,precipitation,uv_index,relative_humidity_2m,wind_speed_10m,apparent_temperature&forecast_hours=${forecastHours}&timezone=auto&temperature_unit=celsius&wind_speed_unit=${windSpeedUnit}${forecastDays ? `&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum,uv_index_max&forecast_days=${forecastDays}` : ''}`
+          `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=temperature_2m,weathercode,precipitation,uv_index,relative_humidity_2m,wind_speed_10m,apparent_temperature&forecast_hours=${forecastHours}&timezone=auto&temperature_unit=celsius&wind_speed_unit=${windSpeedUnit}${forecastDays ? `&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum,uv_index_max,sunrise,sunset&forecast_days=${forecastDays}` : `&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum,uv_index_max,sunrise,sunset&forecast_days=1`}`
         ),
         fetch(
           `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${latitude}&longitude=${longitude}&hourly=us_aqi&forecast_hours=${forecastHours}&timezone=auto`
@@ -521,36 +569,61 @@ export const WeatherWidget: React.FC = () => {
         airQuality = await airQualityResponse.json();
       }
 
+      // Store today's sunrise/sunset and moon phase
+      if (weather.daily && weather.daily.time.length > 0) {
+        const todayIndex = 0;
+        if (weather.daily.sunrise && weather.daily.sunrise[todayIndex]) {
+          setTodaySunrise(weather.daily.sunrise[todayIndex]);
+        }
+        if (weather.daily.sunset && weather.daily.sunset[todayIndex]) {
+          setTodaySunset(weather.daily.sunset[todayIndex]);
+        }
+        const todayDate = new Date(weather.daily.time[todayIndex]);
+        setTodayMoonPhase(calculateMoonPhase(todayDate));
+      }
+
       let processed: WeatherData[];
 
       if (forecastPeriod === '7day' && weather.daily) {
-        processed = weather.daily.time.map((time, index) => ({
-          time,
-          temperature: Math.round(weather.daily!.temperature_2m_max[index]),
-          weatherCode: weather.daily!.weathercode[index],
-          precipitation: weather.daily!.precipitation_sum[index],
-          uvIndex: weather.daily!.uv_index_max?.[index] || 0,
-          humidity: 0,
-          aqi: 0,
-          windSpeed: 0,
-          apparentTemp: Math.round(weather.daily!.temperature_2m_min[index]),
-        }));
+        processed = weather.daily.time.map((time, index) => {
+          const date = new Date(time);
+          return {
+            time,
+            temperature: Math.round(weather.daily!.temperature_2m_max[index]),
+            weatherCode: weather.daily!.weathercode[index],
+            precipitation: weather.daily!.precipitation_sum[index],
+            uvIndex: weather.daily!.uv_index_max?.[index] || 0,
+            humidity: 0,
+            aqi: 0,
+            windSpeed: 0,
+            apparentTemp: Math.round(weather.daily!.temperature_2m_min[index]),
+            moonPhase: calculateMoonPhase(date),
+            sunrise: weather.daily!.sunrise?.[index],
+            sunset: weather.daily!.sunset?.[index],
+          };
+        });
       } else {
         const itemCount = forecastPeriod === '12hr' ? 12 : 48;
-        processed = weather.hourly.time.slice(0, itemCount).map((time, index) => ({
-          time,
-          temperature: Math.round(weather.hourly.temperature_2m[index]),
-          weatherCode: weather.hourly.weathercode[index],
-          precipitation: weather.hourly.precipitation[index],
-          uvIndex: weather.hourly.uv_index[index] || 0,
-          humidity: Math.round(weather.hourly.relative_humidity_2m[index]) || 0,
-          aqi: airQuality?.hourly.us_aqi[index] || 0,
-          windSpeed: Math.round(weather.hourly.wind_speed_10m[index]) || 0,
-          apparentTemp: Math.round(weather.hourly.apparent_temperature[index]),
-        }));
+        processed = weather.hourly.time.slice(0, itemCount).map((time, index) => {
+          const date = new Date(time);
+          return {
+            time,
+            temperature: Math.round(weather.hourly.temperature_2m[index]),
+            weatherCode: weather.hourly.weathercode[index],
+            precipitation: weather.hourly.precipitation[index],
+            uvIndex: weather.hourly.uv_index[index] || 0,
+            humidity: Math.round(weather.hourly.relative_humidity_2m[index]) || 0,
+            aqi: airQuality?.hourly.us_aqi[index] || 0,
+            windSpeed: Math.round(weather.hourly.wind_speed_10m[index]) || 0,
+            apparentTemp: Math.round(weather.hourly.apparent_temperature[index]),
+            moonPhase: calculateMoonPhase(date),
+          };
+        });
       }
 
       setWeatherData(processed);
+      // Trigger animation by updating key
+      setAnimationKey(prev => prev + 1);
       // Save the display name instead of coordinates for better UX
       await saveLocation(displayName);
       setDetectingLocation(false);
@@ -581,6 +654,15 @@ export const WeatherWidget: React.FC = () => {
     const newUnit = !useMph;
     setUseMph(newUnit);
     saveWindSpeedUnit(newUnit);
+    
+    // Refetch weather data with the new unit if we have a location
+    if (locationInput || currentCoordinates) {
+      if (currentCoordinates) {
+        fetchWeatherByCoordinates(currentCoordinates.lat, currentCoordinates.lon, locationName || locationInput);
+      } else if (locationInput) {
+        fetchWeather(locationInput);
+      }
+    }
   };
 
   const handleCountryChange = (country: string) => {
@@ -733,7 +815,7 @@ export const WeatherWidget: React.FC = () => {
       const windSpeedUnit = useMph ? 'mph' : 'kmh';
       const [weatherResponse, airQualityResponse] = await Promise.all([
         fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=temperature_2m,weathercode,precipitation,uv_index,relative_humidity_2m,wind_speed_10m,apparent_temperature&forecast_hours=${forecastHours}&timezone=auto&temperature_unit=celsius&wind_speed_unit=${windSpeedUnit}${forecastDays ? `&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum,uv_index_max&forecast_days=${forecastDays}` : ''}`
+          `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=temperature_2m,weathercode,precipitation,uv_index,relative_humidity_2m,wind_speed_10m,apparent_temperature&forecast_hours=${forecastHours}&timezone=auto&temperature_unit=celsius&wind_speed_unit=${windSpeedUnit}${forecastDays ? `&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum,uv_index_max,sunrise,sunset&forecast_days=${forecastDays}` : `&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum,uv_index_max,sunrise,sunset&forecast_days=1`}`
         ),
         fetch(
           `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${latitude}&longitude=${longitude}&hourly=us_aqi&forecast_hours=${forecastHours}&timezone=auto`
@@ -752,39 +834,64 @@ export const WeatherWidget: React.FC = () => {
         airQuality = await airQualityResponse.json();
       }
 
+      // Store today's sunrise/sunset and moon phase
+      if (weather.daily && weather.daily.time.length > 0) {
+        const todayIndex = 0;
+        if (weather.daily.sunrise && weather.daily.sunrise[todayIndex]) {
+          setTodaySunrise(weather.daily.sunrise[todayIndex]);
+        }
+        if (weather.daily.sunset && weather.daily.sunset[todayIndex]) {
+          setTodaySunset(weather.daily.sunset[todayIndex]);
+        }
+        const todayDate = new Date(weather.daily.time[todayIndex]);
+        setTodayMoonPhase(calculateMoonPhase(todayDate));
+      }
+
       // Process weather data based on period
       let processed: WeatherData[];
 
       if (forecastPeriod === '7day' && weather.daily) {
         // For 7-day view, use daily data
-        processed = weather.daily.time.map((time, index) => ({
-          time,
-          temperature: Math.round(weather.daily!.temperature_2m_max[index]),
-          weatherCode: weather.daily!.weathercode[index],
-          precipitation: weather.daily!.precipitation_sum[index],
-          uvIndex: weather.daily!.uv_index_max?.[index] || 0,
-          humidity: 0, // Not available in daily data
-          aqi: 0, // Not available in daily aggregation
-          windSpeed: 0, // Not available in daily data
-          apparentTemp: Math.round(weather.daily!.temperature_2m_min[index]),
-        }));
+        processed = weather.daily.time.map((time, index) => {
+          const date = new Date(time);
+          return {
+            time,
+            temperature: Math.round(weather.daily!.temperature_2m_max[index]),
+            weatherCode: weather.daily!.weathercode[index],
+            precipitation: weather.daily!.precipitation_sum[index],
+            uvIndex: weather.daily!.uv_index_max?.[index] || 0,
+            humidity: 0, // Not available in daily data
+            aqi: 0, // Not available in daily aggregation
+            windSpeed: 0, // Not available in daily data
+            apparentTemp: Math.round(weather.daily!.temperature_2m_min[index]),
+            moonPhase: calculateMoonPhase(date),
+            sunrise: weather.daily!.sunrise?.[index],
+            sunset: weather.daily!.sunset?.[index],
+          };
+        });
       } else {
         // For hourly views (12hr, 48hr)
         const itemCount = forecastPeriod === '12hr' ? 12 : 48;
-        processed = weather.hourly.time.slice(0, itemCount).map((time, index) => ({
-          time,
-          temperature: Math.round(weather.hourly.temperature_2m[index]),
-          weatherCode: weather.hourly.weathercode[index],
-          precipitation: weather.hourly.precipitation[index],
-          uvIndex: weather.hourly.uv_index[index] || 0,
-          humidity: Math.round(weather.hourly.relative_humidity_2m[index]) || 0,
-          aqi: airQuality?.hourly.us_aqi[index] || 0,
-          windSpeed: Math.round(weather.hourly.wind_speed_10m[index]) || 0,
-          apparentTemp: Math.round(weather.hourly.apparent_temperature[index]),
-        }));
+        processed = weather.hourly.time.slice(0, itemCount).map((time, index) => {
+          const date = new Date(time);
+          return {
+            time,
+            temperature: Math.round(weather.hourly.temperature_2m[index]),
+            weatherCode: weather.hourly.weathercode[index],
+            precipitation: weather.hourly.precipitation[index],
+            uvIndex: weather.hourly.uv_index[index] || 0,
+            humidity: Math.round(weather.hourly.relative_humidity_2m[index]) || 0,
+            aqi: airQuality?.hourly.us_aqi[index] || 0,
+            windSpeed: Math.round(weather.hourly.wind_speed_10m[index]) || 0,
+            apparentTemp: Math.round(weather.hourly.apparent_temperature[index]),
+            moonPhase: calculateMoonPhase(date),
+          };
+        });
       }
 
       setWeatherData(processed);
+      // Trigger animation by updating key
+      setAnimationKey(prev => prev + 1);
       await saveLocation(location);
     } catch (err: any) {
       setError(err.message || 'Failed to load weather data');
@@ -814,6 +921,11 @@ export const WeatherWidget: React.FC = () => {
     const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
     const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
     return `${dayName} ${time}`;
+  };
+
+  const formatTimeOnly = (timeString: string) => {
+    const date = new Date(timeString);
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   };
 
   const getUVLevel = (uvIndex: number): { label: string; color: string; bgColor: string } => {
@@ -1073,6 +1185,33 @@ export const WeatherWidget: React.FC = () => {
           </div>
         )}
 
+        {/* Today's Moon Phase, Sunrise, and Sunset */}
+        {(todayMoonPhase !== null || todaySunrise || todaySunset) && (
+          <div className="flex flex-wrap gap-2 mb-2 text-xs">
+            {todayMoonPhase !== null && (() => {
+              const moonInfo = getMoonPhaseInfo(todayMoonPhase);
+              return (
+                <div className="flex items-center gap-1 px-2 py-1 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                  <span>{moonInfo.emoji}</span>
+                  <span className="font-medium">{moonInfo.name}</span>
+                </div>
+              );
+            })()}
+            {todaySunrise && (
+              <div className="flex items-center gap-1 px-2 py-1 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400">
+                <span>🌅</span>
+                <span className="font-medium">Sunrise: {formatTimeOnly(todaySunrise)}</span>
+              </div>
+            )}
+            {todaySunset && (
+              <div className="flex items-center gap-1 px-2 py-1 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400">
+                <span>🌇</span>
+                <span className="font-medium">Sunset: {formatTimeOnly(todaySunset)}</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {error && (
           <div className="text-xs text-red-500 dark:text-red-400 mb-2">
             {error}
@@ -1082,7 +1221,7 @@ export const WeatherWidget: React.FC = () => {
 
       {/* Weather List */}
       {weatherData.length > 0 ? (
-        <div className="space-y-2 flex-1 overflow-y-auto">
+        <div className="space-y-2 flex-1 overflow-y-auto" key={`weather-list-${animationKey}`}>
           {weatherData.map((item, index) => {
             const uvLevel = getUVLevel(item.uvIndex);
             const aqiLevel = getAQILevel(item.aqi);
@@ -1090,8 +1229,11 @@ export const WeatherWidget: React.FC = () => {
             const feelsLikeDiff = item.apparentTemp - item.temperature;
             return (
               <div
-                key={index}
-                className="bg-slate-50 dark:bg-slate-700/50 rounded p-2 border border-slate-200 dark:border-slate-600"
+                key={`${item.time}-${index}`}
+                className="bg-slate-50 dark:bg-slate-700/50 rounded p-2 border border-slate-200 dark:border-slate-600 tile-anim-flip-y linknest-tile-animated"
+                style={{
+                  animationDelay: `${index * 0.28}s`
+                }}
               >
                 <div className="flex items-center justify-between gap-2 mb-1.5">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -1169,6 +1311,30 @@ export const WeatherWidget: React.FC = () => {
                       <span className="text-xs">☀️</span>
                       <span className={`text-xs px-1.5 py-0.5 rounded ${uvLevel.bgColor} ${uvLevel.color} font-medium`}>
                         Max UV {item.uvIndex.toFixed(1)}
+                      </span>
+                    </div>
+                  )}
+                  {item.moonPhase !== undefined && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs">{getMoonPhaseInfo(item.moonPhase).emoji}</span>
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-300 font-medium">
+                        {getMoonPhaseInfo(item.moonPhase).name}
+                      </span>
+                    </div>
+                  )}
+                  {forecastPeriod === '7day' && item.sunrise && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs">🌅</span>
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 font-medium">
+                        {formatTimeOnly(item.sunrise)}
+                      </span>
+                    </div>
+                  )}
+                  {forecastPeriod === '7day' && item.sunset && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs">🌇</span>
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 font-medium">
+                        {formatTimeOnly(item.sunset)}
                       </span>
                     </div>
                   )}
