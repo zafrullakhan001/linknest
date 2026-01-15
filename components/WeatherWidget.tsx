@@ -104,42 +104,114 @@ const WEATHER_EMOJIS: Record<number, string> = {
   99: '⛈️',
 };
 
+interface LocationResult {
+  name: string;
+  country: string;
+  admin1?: string;
+  latitude: number;
+  longitude: number;
+}
+
+// Common countries list for dropdown
+const COUNTRIES = [
+  { code: '', name: 'Any Country' },
+  { code: 'US', name: 'United States' },
+  { code: 'GB', name: 'United Kingdom' },
+  { code: 'CA', name: 'Canada' },
+  { code: 'AU', name: 'Australia' },
+  { code: 'DE', name: 'Germany' },
+  { code: 'FR', name: 'France' },
+  { code: 'IT', name: 'Italy' },
+  { code: 'ES', name: 'Spain' },
+  { code: 'NL', name: 'Netherlands' },
+  { code: 'BE', name: 'Belgium' },
+  { code: 'CH', name: 'Switzerland' },
+  { code: 'AT', name: 'Austria' },
+  { code: 'SE', name: 'Sweden' },
+  { code: 'NO', name: 'Norway' },
+  { code: 'DK', name: 'Denmark' },
+  { code: 'FI', name: 'Finland' },
+  { code: 'PL', name: 'Poland' },
+  { code: 'CZ', name: 'Czech Republic' },
+  { code: 'IE', name: 'Ireland' },
+  { code: 'PT', name: 'Portugal' },
+  { code: 'GR', name: 'Greece' },
+  { code: 'JP', name: 'Japan' },
+  { code: 'CN', name: 'China' },
+  { code: 'IN', name: 'India' },
+  { code: 'BR', name: 'Brazil' },
+  { code: 'MX', name: 'Mexico' },
+  { code: 'AR', name: 'Argentina' },
+  { code: 'ZA', name: 'South Africa' },
+  { code: 'NZ', name: 'New Zealand' },
+  { code: 'SG', name: 'Singapore' },
+  { code: 'MY', name: 'Malaysia' },
+  { code: 'TH', name: 'Thailand' },
+  { code: 'PH', name: 'Philippines' },
+  { code: 'ID', name: 'Indonesia' },
+  { code: 'KR', name: 'South Korea' },
+  { code: 'TR', name: 'Turkey' },
+  { code: 'RU', name: 'Russia' },
+  { code: 'SA', name: 'Saudi Arabia' },
+  { code: 'AE', name: 'United Arab Emirates' },
+];
+
 export const WeatherWidget: React.FC = () => {
   const { isAuthenticated } = useAuth();
-  const [postalCode, setPostalCode] = useState<string>('');
+  const [locationInput, setLocationInput] = useState<string>('');
   const [weatherData, setWeatherData] = useState<WeatherData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [locationName, setLocationName] = useState<string>('');
   const [useFahrenheit, setUseFahrenheit] = useState<boolean>(false);
+  const [useMph, setUseMph] = useState<boolean>(true);
+  const [selectedCountry, setSelectedCountry] = useState<string>('');
+  const [locationResults, setLocationResults] = useState<LocationResult[]>([]);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [forecastPeriod, setForecastPeriod] = useState<'12hr' | '48hr' | '7day'>('12hr');
 
-  // Load postal code and temperature unit from preferences or localStorage
+  // Load location and preferences from preferences or localStorage
   useEffect(() => {
     const loadPreferences = async () => {
       if (isAuthenticated) {
         try {
-          const savedCode = await userPreferencesService.getPreference('weather_postal_code');
-          if (savedCode) {
-            setPostalCode(savedCode);
-            fetchWeather(savedCode);
+          const savedLocation = await userPreferencesService.getPreference('weather_location');
+          if (savedLocation) {
+            setLocationInput(savedLocation);
+            fetchWeather(savedLocation);
           }
           const savedUnit = await userPreferencesService.getPreference('weather_use_fahrenheit');
           if (savedUnit === 'true') {
             setUseFahrenheit(true);
           }
+          const savedWindUnit = await userPreferencesService.getPreference('weather_use_mph');
+          if (savedWindUnit === 'false') {
+            setUseMph(false);
+          }
+          const savedCountry = await userPreferencesService.getPreference('weather_country');
+          if (savedCountry) {
+            setSelectedCountry(savedCountry);
+          }
         } catch (err) {
           console.error('Failed to load preferences:', err);
         }
       } else {
-        const savedCode = localStorage.getItem('linknest_weather_postal_code');
-        if (savedCode) {
-          setPostalCode(savedCode);
-          fetchWeather(savedCode);
+        const savedLocation = localStorage.getItem('linknest_weather_location');
+        if (savedLocation) {
+          setLocationInput(savedLocation);
+          fetchWeather(savedLocation);
         }
         const savedUnit = localStorage.getItem('linknest_weather_use_fahrenheit');
         if (savedUnit === 'true') {
           setUseFahrenheit(true);
+        }
+        const savedWindUnit = localStorage.getItem('linknest_weather_use_mph');
+        if (savedWindUnit === 'false') {
+          setUseMph(false);
+        }
+        const savedCountry = localStorage.getItem('linknest_weather_country');
+        if (savedCountry) {
+          setSelectedCountry(savedCountry);
         }
       }
     };
@@ -147,16 +219,16 @@ export const WeatherWidget: React.FC = () => {
     loadPreferences();
   }, [isAuthenticated]);
 
-  // Save postal code
-  const savePostalCode = async (code: string) => {
+  // Save location
+  const saveLocation = async (location: string) => {
     if (isAuthenticated) {
       try {
-        await userPreferencesService.updatePreference('weather_postal_code', code);
+        await userPreferencesService.updatePreference('weather_location', location);
       } catch (err) {
-        console.error('Failed to save postal code:', err);
+        console.error('Failed to save location:', err);
       }
     } else {
-      localStorage.setItem('linknest_weather_postal_code', code);
+      localStorage.setItem('linknest_weather_location', location);
     }
   };
 
@@ -170,6 +242,32 @@ export const WeatherWidget: React.FC = () => {
       }
     } else {
       localStorage.setItem('linknest_weather_use_fahrenheit', useF ? 'true' : 'false');
+    }
+  };
+
+  // Save wind speed unit preference
+  const saveWindSpeedUnit = async (useM: boolean) => {
+    if (isAuthenticated) {
+      try {
+        await userPreferencesService.updatePreference('weather_use_mph', useM ? 'true' : 'false');
+      } catch (err) {
+        console.error('Failed to save wind speed unit:', err);
+      }
+    } else {
+      localStorage.setItem('linknest_weather_use_mph', useM ? 'true' : 'false');
+    }
+  };
+
+  // Save country preference
+  const saveCountry = async (country: string) => {
+    if (isAuthenticated) {
+      try {
+        await userPreferencesService.updatePreference('weather_country', country);
+      } catch (err) {
+        console.error('Failed to save country:', err);
+      }
+    } else {
+      localStorage.setItem('linknest_weather_country', country);
     }
   };
 
@@ -187,43 +285,121 @@ export const WeatherWidget: React.FC = () => {
     saveTemperatureUnit(newUnit);
   };
 
-  const fetchWeather = async (code: string) => {
-    if (!code.trim()) {
-      setError('Please enter a postal code');
+  const toggleWindSpeedUnit = () => {
+    const newUnit = !useMph;
+    setUseMph(newUnit);
+    saveWindSpeedUnit(newUnit);
+  };
+
+  const handleCountryChange = (country: string) => {
+    setSelectedCountry(country);
+    saveCountry(country);
+  };
+
+  // Check if input is coordinates (lat,lon format)
+  const isCoordinates = (input: string): { lat: number; lon: number } | null => {
+    const coordPattern = /^(-?\d+\.?\d*),\s*(-?\d+\.?\d*)$/;
+    const match = input.trim().match(coordPattern);
+    if (match) {
+      const lat = parseFloat(match[1]);
+      const lon = parseFloat(match[2]);
+      if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
+        return { lat, lon };
+      }
+    }
+    return null;
+  };
+
+  const fetchWeather = async (location: string, selectedLocation?: LocationResult) => {
+    if (!location.trim()) {
+      setError('Please enter a city name, postal code, or coordinates (lat,lon)');
       return;
     }
 
     setLoading(true);
     setError(null);
+    setLocationResults([]);
+    setShowLocationPicker(false);
 
     try {
-      // Step 1: Geocode postal code to get coordinates
-      const geoResponse = await fetch(
-        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(code)}&count=1&language=en&format=json`
-      );
+      let latitude: number;
+      let longitude: number;
+      let displayName: string;
 
-      if (!geoResponse.ok) {
-        throw new Error('Failed to find location');
+      // Check if input is coordinates
+      const coords = isCoordinates(location);
+      if (coords) {
+        latitude = coords.lat;
+        longitude = coords.lon;
+        displayName = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+        setLocationName(displayName);
+      } else if (selectedLocation) {
+        // Use the selected location from picker
+        latitude = selectedLocation.latitude;
+        longitude = selectedLocation.longitude;
+        displayName = selectedLocation.name;
+        if (selectedLocation.admin1) {
+          displayName += `, ${selectedLocation.admin1}`;
+        }
+        displayName += `, ${selectedLocation.country}`;
+        setLocationName(displayName);
+      } else {
+        // Step 1: Geocode location to get coordinates
+        let geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=10&language=en&format=json`;
+        
+        // Add country filter if selected
+        if (selectedCountry) {
+          geoUrl += `&country_codes=${selectedCountry}`;
+        }
+
+        const geoResponse = await fetch(geoUrl);
+
+        if (!geoResponse.ok) {
+          throw new Error('Failed to search for location. Please try again.');
+        }
+
+        const geoData = await geoResponse.json();
+
+        if (!geoData.results || geoData.results.length === 0) {
+          throw new Error(`Location "${location}" not found. Try a different city name, postal code, or coordinates (latitude,longitude).`);
+        }
+
+        // If multiple results, show picker
+        if (geoData.results.length > 1) {
+          const results: LocationResult[] = geoData.results.map((r: any) => ({
+            name: r.name,
+            country: r.country || 'Unknown',
+            admin1: r.admin1,
+            latitude: r.latitude,
+            longitude: r.longitude,
+          }));
+          setLocationResults(results);
+          setShowLocationPicker(true);
+          setLoading(false);
+          return;
+        }
+
+        // Single result - use it directly
+        const locationResult = geoData.results[0];
+        displayName = locationResult.name;
+        if (locationResult.admin1) {
+          displayName += `, ${locationResult.admin1}`;
+        }
+        displayName += `, ${locationResult.country || 'Unknown'}`;
+        setLocationName(displayName);
+        latitude = locationResult.latitude;
+        longitude = locationResult.longitude;
       }
-
-      const geoData = await geoResponse.json();
-
-      if (!geoData.results || geoData.results.length === 0) {
-        throw new Error('Location not found. Please check your postal code.');
-      }
-
-      const location = geoData.results[0];
-      setLocationName(location.name || code);
-      const { latitude, longitude } = location;
 
       // Determine forecast parameters based on period
       const forecastHours = forecastPeriod === '12hr' ? 12 : forecastPeriod === '48hr' ? 48 : 168; // 168 hours = 7 days
       const forecastDays = forecastPeriod === '7day' ? 7 : undefined;
 
       // Step 2: Fetch weather forecast and air quality in parallel
+      const windSpeedUnit = useMph ? 'mph' : 'kmh';
       const [weatherResponse, airQualityResponse] = await Promise.all([
         fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=temperature_2m,weathercode,precipitation,uv_index,relative_humidity_2m,wind_speed_10m,apparent_temperature&forecast_hours=${forecastHours}&timezone=auto&temperature_unit=celsius&wind_speed_unit=mph${forecastDays ? `&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum,uv_index_max&forecast_days=${forecastDays}` : ''}`
+          `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=temperature_2m,weathercode,precipitation,uv_index,relative_humidity_2m,wind_speed_10m,apparent_temperature&forecast_hours=${forecastHours}&timezone=auto&temperature_unit=celsius&wind_speed_unit=${windSpeedUnit}${forecastDays ? `&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum,uv_index_max&forecast_days=${forecastDays}` : ''}`
         ),
         fetch(
           `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${latitude}&longitude=${longitude}&hourly=us_aqi&forecast_hours=${forecastHours}&timezone=auto`
@@ -275,7 +451,7 @@ export const WeatherWidget: React.FC = () => {
       }
 
       setWeatherData(processed);
-      await savePostalCode(code);
+      await saveLocation(location);
     } catch (err: any) {
       setError(err.message || 'Failed to load weather data');
       setWeatherData([]);
@@ -284,9 +460,14 @@ export const WeatherWidget: React.FC = () => {
     }
   };
 
+  const handleLocationSelect = (location: LocationResult) => {
+    setShowLocationPicker(false);
+    fetchWeather(locationInput, location);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchWeather(postalCode);
+    fetchWeather(locationInput);
   };
 
   const formatTime = (timeString: string) => {
@@ -332,19 +513,28 @@ export const WeatherWidget: React.FC = () => {
           <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
             Weather Forecast
           </h3>
-          <button
-            onClick={toggleTemperatureUnit}
-            className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600 rounded transition-colors"
-            title={`Switch to ${useFahrenheit ? 'Celsius' : 'Fahrenheit'}`}
-          >
-            {useFahrenheit ? '°F' : '°C'}
-          </button>
+          <div className="flex gap-1">
+            <button
+              onClick={toggleTemperatureUnit}
+              className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600 rounded transition-colors"
+              title={`Switch to ${useFahrenheit ? 'Celsius' : 'Fahrenheit'}`}
+            >
+              {useFahrenheit ? '°F' : '°C'}
+            </button>
+            <button
+              onClick={toggleWindSpeedUnit}
+              className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600 rounded transition-colors"
+              title={`Switch to ${useMph ? 'km/h' : 'mph'}`}
+            >
+              {useMph ? 'mph' : 'km/h'}
+            </button>
+          </div>
         </div>
 
         {/* Forecast Period Selector */}
         <div className="flex gap-1 mb-3">
           <button
-            onClick={() => { setForecastPeriod('12hr'); if (postalCode) fetchWeather(postalCode); }}
+            onClick={() => { setForecastPeriod('12hr'); if (locationInput) fetchWeather(locationInput); }}
             className={`flex-1 px-2 py-1 text-xs rounded transition-colors ${forecastPeriod === '12hr'
               ? 'bg-brand-500 text-white'
               : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
@@ -353,7 +543,7 @@ export const WeatherWidget: React.FC = () => {
             12 Hours
           </button>
           <button
-            onClick={() => { setForecastPeriod('48hr'); if (postalCode) fetchWeather(postalCode); }}
+            onClick={() => { setForecastPeriod('48hr'); if (locationInput) fetchWeather(locationInput); }}
             className={`flex-1 px-2 py-1 text-xs rounded transition-colors ${forecastPeriod === '48hr'
               ? 'bg-brand-500 text-white'
               : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
@@ -362,7 +552,7 @@ export const WeatherWidget: React.FC = () => {
             48 Hours
           </button>
           <button
-            onClick={() => { setForecastPeriod('7day'); if (postalCode) fetchWeather(postalCode); }}
+            onClick={() => { setForecastPeriod('7day'); if (locationInput) fetchWeather(locationInput); }}
             className={`flex-1 px-2 py-1 text-xs rounded transition-colors ${forecastPeriod === '7day'
               ? 'bg-brand-500 text-white'
               : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
@@ -372,23 +562,59 @@ export const WeatherWidget: React.FC = () => {
           </button>
         </div>
 
-        {/* Postal Code Input */}
+        {/* Country Filter */}
+        <div className="mb-2">
+          <select
+            value={selectedCountry}
+            onChange={(e) => handleCountryChange(e.target.value)}
+            className="w-full px-2 py-1.5 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
+            {COUNTRIES.map((country) => (
+              <option key={country.code} value={country.code}>
+                {country.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Location Input */}
         <form onSubmit={handleSubmit} className="flex gap-2 mb-3">
           <input
             type="text"
-            value={postalCode}
-            onChange={(e) => setPostalCode(e.target.value)}
-            placeholder="Enter postal code..."
+            value={locationInput}
+            onChange={(e) => setLocationInput(e.target.value)}
+            placeholder="City, postal code, or coordinates..."
             className="flex-1 px-2 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
           <button
             type="submit"
-            disabled={loading || !postalCode.trim()}
+            disabled={loading || !locationInput.trim()}
             className="px-3 py-1.5 text-sm bg-brand-500 text-white rounded hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {loading ? '...' : 'Load'}
           </button>
         </form>
+
+        {/* Location Picker (when multiple results) */}
+        {showLocationPicker && locationResults.length > 0 && (
+          <div className="mb-3 max-h-40 overflow-y-auto border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700">
+            <div className="p-2 text-xs text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-600">
+              Multiple locations found. Please select one:
+            </div>
+            {locationResults.map((result, index) => (
+              <button
+                key={index}
+                onClick={() => handleLocationSelect(result)}
+                className="w-full text-left px-2 py-1.5 text-xs hover:bg-slate-100 dark:hover:bg-slate-600 border-b border-slate-200 dark:border-slate-600 last:border-b-0"
+              >
+                <div className="font-medium text-slate-900 dark:text-slate-100">{result.name}</div>
+                <div className="text-slate-500 dark:text-slate-400">
+                  {result.admin1 ? `${result.admin1}, ` : ''}{result.country}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
 
         {locationName && (
           <div className="text-xs text-slate-600 dark:text-slate-400 mb-2">
@@ -475,7 +701,7 @@ export const WeatherWidget: React.FC = () => {
                     <div className="flex items-center gap-1">
                       <span className="text-xs">💨</span>
                       <span className="text-xs px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-300 font-medium">
-                        {item.windSpeed} mph
+                        {item.windSpeed} {useMph ? 'mph' : 'km/h'}
                       </span>
                     </div>
                   )}
@@ -502,7 +728,7 @@ export const WeatherWidget: React.FC = () => {
         </div>
       ) : !loading && !error && (
         <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-4">
-          Enter a postal code to see weather forecast
+          Enter a city name, postal code, or coordinates to see weather forecast
         </div>
       )}
 

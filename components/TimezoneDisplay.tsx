@@ -51,8 +51,18 @@ type MainClockConfig = {
   predefinedName?: string; // display name for the predefined timezone
 };
 
+type MultiClockConfig = {
+  id: string;
+  type: 'system' | 'custom' | 'predefined';
+  customTimezoneId?: string;
+  predefinedTimezone?: string;
+  predefinedName?: string;
+};
+
 const TOOLS_STORAGE_KEY = 'linknest.timeWidget.tools.v1';
 const MAIN_CLOCK_STORAGE_KEY = 'linknest.mainClock.config.v1';
+const MULTI_CLOCKS_STORAGE_KEY = 'linknest.multiClocks.config.v1';
+const MAX_CLOCKS = 5;
 
 function formatDuration(ms: number) {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -342,6 +352,10 @@ export const TimezoneDisplay: React.FC = () => {
   // Main clock configuration
   const [mainClockConfig, setMainClockConfig] = useState<MainClockConfig>({ type: 'system' });
   const [expandedSection, setExpandedSection] = useState<'usa' | 'world' | 'custom' | null>(null);
+  
+  // Multiple clocks configuration (up to 5)
+  const [multiClocks, setMultiClocks] = useState<MultiClockConfig[]>([]);
+  const [showClockManager, setShowClockManager] = useState(false);
 
   const [nowMs, setNowMs] = useState(Date.now());
 
@@ -413,6 +427,21 @@ export const TimezoneDisplay: React.FC = () => {
       }).catch(() => {
         // Ignore errors - will use default config
       });
+      
+      // Load multiple clocks
+      userPreferencesService.getPreference('multi_clocks_config').then((value) => {
+        if (value) {
+          const stored = safeJsonParse<MultiClockConfig[]>(value);
+          if (Array.isArray(stored)) {
+            const valid = stored
+              .filter((c) => c && typeof c === 'object' && (c.type === 'system' || c.type === 'custom' || c.type === 'predefined'))
+              .slice(0, MAX_CLOCKS);
+            setMultiClocks(valid);
+          }
+        }
+      }).catch(() => {
+        // Ignore errors
+      });
     } else {
       // Load from localStorage for unauthenticated users
       const stored = safeJsonParse<any>(localStorage.getItem(MAIN_CLOCK_STORAGE_KEY));
@@ -420,6 +449,15 @@ export const TimezoneDisplay: React.FC = () => {
         if (stored.type === 'system' || stored.type === 'custom' || stored.type === 'predefined') {
           setMainClockConfig(stored);
         }
+      }
+      
+      // Load multiple clocks from localStorage
+      const multiStored = safeJsonParse<MultiClockConfig[]>(localStorage.getItem(MULTI_CLOCKS_STORAGE_KEY));
+      if (Array.isArray(multiStored)) {
+        const valid = multiStored
+          .filter((c) => c && typeof c === 'object' && (c.type === 'system' || c.type === 'custom' || c.type === 'predefined'))
+          .slice(0, MAX_CLOCKS);
+        setMultiClocks(valid);
       }
     }
   }, [isAuthenticated]);
@@ -440,6 +478,21 @@ export const TimezoneDisplay: React.FC = () => {
       }
     }
   }, [mainClockConfig, isAuthenticated]);
+
+  // Persist multiple clocks configuration
+  useEffect(() => {
+    if (isAuthenticated) {
+      userPreferencesService.updatePreference('multi_clocks_config', JSON.stringify(multiClocks)).catch(() => {
+        // Ignore errors
+      });
+    } else {
+      try {
+        localStorage.setItem(MULTI_CLOCKS_STORAGE_KEY, JSON.stringify(multiClocks));
+      } catch {
+        // ignore
+      }
+    }
+  }, [multiClocks, isAuthenticated]);
 
   // Load persisted tools state once
   useEffect(() => {
@@ -925,6 +978,77 @@ export const TimezoneDisplay: React.FC = () => {
     return formatDateTime(currentTime);
   };
 
+  // Multiple clocks management functions
+  const addClock = (config: Omit<MultiClockConfig, 'id'>) => {
+    if (multiClocks.length >= MAX_CLOCKS) return;
+    const newClock: MultiClockConfig = {
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      ...config,
+    };
+    setMultiClocks((prev) => [...prev, newClock]);
+  };
+
+  const removeClock = (id: string) => {
+    setMultiClocks((prev) => prev.filter((c) => c.id !== id));
+  };
+
+  const moveClock = (id: string, direction: 'up' | 'down') => {
+    setMultiClocks((prev) => {
+      const index = prev.findIndex((c) => c.id === id);
+      if (index === -1) return prev;
+      
+      const newIndex = direction === 'up' ? index - 1 : index + 1;
+      if (newIndex < 0 || newIndex >= prev.length) return prev;
+      
+      const newClocks = [...prev];
+      [newClocks[index], newClocks[newIndex]] = [newClocks[newIndex], newClocks[index]];
+      return newClocks;
+    });
+  };
+
+  const getClockDisplay = (clock: MultiClockConfig) => {
+    if (clock.type === 'custom' && clock.customTimezoneId) {
+      const customTz = customTimezones.find(tz => tz.id === clock.customTimezoneId);
+      if (customTz) {
+        return formatTimeForUtcOffset(currentTime, customTz.utcOffsetMinutes);
+      }
+    }
+    if (clock.type === 'predefined' && clock.predefinedTimezone) {
+      return formatDateTime(currentTime, clock.predefinedTimezone);
+    }
+    return formatDateTime(currentTime);
+  };
+
+  const getClockTimezone = (clock: MultiClockConfig): string => {
+    if (clock.type === 'custom' && clock.customTimezoneId) {
+      const customTz = customTimezones.find(tz => tz.id === clock.customTimezoneId);
+      if (customTz) {
+        return customTz.name;
+      }
+    }
+    if (clock.type === 'predefined' && clock.predefinedName) {
+      return clock.predefinedName;
+    }
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  };
+
+  const getClockOffset = (clock: MultiClockConfig): string => {
+    if (clock.type === 'custom' && clock.customTimezoneId) {
+      const customTz = customTimezones.find(tz => tz.id === clock.customTimezoneId);
+      if (customTz) {
+        return offsetMinutesToUtcString(customTz.utcOffsetMinutes).replace('UTC', '');
+      }
+    }
+    if (clock.type === 'predefined' && clock.predefinedTimezone) {
+      return getTimezoneOffsetValue(clock.predefinedTimezone);
+    }
+    const offset = -new Date().getTimezoneOffset();
+    const offsetHours = Math.floor(Math.abs(offset) / 60);
+    const offsetMinutes = Math.abs(offset) % 60;
+    const offsetSign = offset >= 0 ? '+' : '-';
+    return `${offsetSign}${offsetHours.toString().padStart(2, '0')}:${offsetMinutes.toString().padStart(2, '0')}`;
+  };
+
   return (
     <div
       className={`relative flex flex-col items-start gap-2 px-3 py-2 text-xs text-slate-600 dark:text-slate-400 bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm rounded-lg border border-slate-200 dark:border-slate-700 shadow-lg transition-all ${isAnalog ? 'py-4 px-4' : ''}`}
@@ -972,21 +1096,129 @@ export const TimezoneDisplay: React.FC = () => {
       {mode === 'clock' ? (
         isAnalog ? (
         // Analog Clock
-        <div
-          className="flex items-center gap-4 cursor-pointer hover:opacity-90 transition-opacity"
-          onClick={toggleClock}
-          title="Click to switch to digital clock"
-        >
-          <ClockFace date={currentTime} size={144} />
-          <div className="flex flex-col leading-tight">
-            <span className="font-semibold text-sm mb-1">{formatDateOnly(currentTime)}</span>
-            <span className="text-xs opacity-75">{timezone}</span>
-            <span className="text-[10px] opacity-60">UTC{timezoneOffset}</span>
+        <div className="w-full">
+          {/* Multiple Clocks Display (Analog) */}
+          {multiClocks.length > 0 && (
+            <div className="space-y-3 mb-3">
+              {multiClocks.map((clock, index) => (
+                <div
+                  key={clock.id}
+                  className="flex items-center gap-2 px-2 py-2 rounded-lg bg-slate-50 dark:bg-slate-700/30 border border-slate-200 dark:border-slate-600"
+                >
+                  {/* Reorder Controls */}
+                  <div className="flex flex-col gap-0.5">
+                    <button
+                      onClick={() => moveClock(clock.id, 'up')}
+                      disabled={index === 0}
+                      className="p-0.5 rounded text-[10px] bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      title="Move up"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      onClick={() => moveClock(clock.id, 'down')}
+                      disabled={index === multiClocks.length - 1}
+                      className="p-0.5 rounded text-[10px] bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      title="Move down"
+                    >
+                      ▼
+                    </button>
+                  </div>
+                  <ClockFace
+                    date={currentTime}
+                    timeZone={clock.type === 'predefined' ? clock.predefinedTimezone : undefined}
+                    utcOffsetMinutes={clock.type === 'custom' && clock.customTimezoneId
+                      ? customTimezones.find(tz => tz.id === clock.customTimezoneId)?.utcOffsetMinutes
+                      : undefined}
+                    size={72}
+                    showNumbers={false}
+                  />
+                  <div className="flex flex-col leading-tight flex-1">
+                    <span className="font-medium text-xs">{getClockDisplay(clock)}</span>
+                    <span className="text-[10px] opacity-75">{getClockTimezone(clock)}</span>
+                    <span className="text-[9px] opacity-60">UTC{getClockOffset(clock)}</span>
+                  </div>
+                  <button
+                    onClick={() => removeClock(clock.id)}
+                    className="px-2 py-1 rounded text-[10px] bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+                    title="Remove clock"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {/* Main Clock (Analog) */}
+          <div
+            className="flex items-center gap-4 cursor-pointer hover:opacity-90 transition-opacity"
+            onClick={toggleClock}
+            title="Click to switch to digital clock"
+          >
+            <ClockFace date={currentTime} size={144} />
+            <div className="flex flex-col leading-tight">
+              <span className="font-semibold text-sm mb-1">{formatDateOnly(currentTime)}</span>
+              <span className="text-xs opacity-75">{timezone}</span>
+              <span className="text-[10px] opacity-60">UTC{timezoneOffset}</span>
+            </div>
           </div>
         </div>
       ) : (
         // Digital Clock
         <div className="w-full">
+          {/* Multiple Clocks Display (Digital) */}
+          {multiClocks.length > 0 && (
+            <div className="space-y-2 mb-3 pb-3 border-b border-slate-200 dark:border-slate-700">
+              {multiClocks.map((clock, index) => (
+                <div
+                  key={clock.id}
+                  className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-700/30 border border-slate-200 dark:border-slate-600"
+                >
+                  {/* Reorder Controls */}
+                  <div className="flex flex-col gap-0.5 flex-shrink-0">
+                    <button
+                      onClick={() => moveClock(clock.id, 'up')}
+                      disabled={index === 0}
+                      className="p-0.5 rounded text-[8px] leading-none bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      title="Move up"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      onClick={() => moveClock(clock.id, 'down')}
+                      disabled={index === multiClocks.length - 1}
+                      className="p-0.5 rounded text-[8px] leading-none bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      title="Move down"
+                    >
+                      ▼
+                    </button>
+                  </div>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    className="w-3 h-3 flex-shrink-0 opacity-60"
+                  >
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
+                  </svg>
+                  <div className="flex flex-col leading-tight flex-1 min-w-0">
+                    <span className="font-medium text-xs">{getClockDisplay(clock)}</span>
+                    <span className="text-[9px] opacity-75 truncate">{getClockTimezone(clock)} (UTC{getClockOffset(clock)})</span>
+                  </div>
+                  <button
+                    onClick={() => removeClock(clock.id)}
+                    className="px-1.5 py-0.5 rounded text-[9px] bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors flex-shrink-0"
+                    title="Remove clock"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {/* Main Clock (Digital) */}
           <div className="flex items-center gap-2 rounded px-1 -mx-1">
             <div
               className="flex items-center gap-2 flex-1 cursor-pointer hover:bg-white/50 dark:hover:bg-slate-800/50 rounded px-1 -mx-1 transition-colors"
@@ -1011,22 +1243,39 @@ export const TimezoneDisplay: React.FC = () => {
                 )}
               </div>
             </div>
-            <button
-              onClick={toggleExpand}
-              className="flex-shrink-0 p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
-              title={isExpanded ? "Hide timezones" : "Show timezones"}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                className={`w-4 h-4 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setShowClockManager(!showClockManager)}
+                className="flex-shrink-0 p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+                title={showClockManager ? "Hide clock manager" : "Manage clocks"}
+                disabled={multiClocks.length >= MAX_CLOCKS && !showClockManager}
               >
-                <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-              </svg>
-            </button>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className="w-4 h-4"
+                >
+                  <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
+                </svg>
+              </button>
+              <button
+                onClick={toggleExpand}
+                className="flex-shrink-0 p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+                title={isExpanded ? "Hide timezones" : "Show timezones"}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className={`w-4 h-4 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}
+                >
+                  <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
           </div>
-
+          
           {/* Expandable Timezones List */}
           <div
             className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-[800px] opacity-100 mt-3' : 'max-h-0 opacity-0'
@@ -1089,16 +1338,34 @@ export const TimezoneDisplay: React.FC = () => {
                               )}
                             </div>
                           </div>
-                          {!isMainClock && (
-                            <button
-                              type="button"
-                              onClick={() => setAsPredefinedMainClock(tzInfo.tz, tzInfo.name)}
-                              className="px-2 py-0.5 rounded-md text-[9px] font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-colors whitespace-nowrap"
-                              title="Set as main clock"
-                            >
-                              Set Main
-                            </button>
-                          )}
+                          <div className="flex flex-col gap-1">
+                            {!isMainClock && (
+                              <button
+                                type="button"
+                                onClick={() => setAsPredefinedMainClock(tzInfo.tz, tzInfo.name)}
+                                className="px-2 py-0.5 rounded-md text-[9px] font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-colors whitespace-nowrap"
+                                title="Set as main clock"
+                              >
+                                Set Main
+                              </button>
+                            )}
+                            {showClockManager && multiClocks.length < MAX_CLOCKS && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  addClock({
+                                    type: 'predefined',
+                                    predefinedTimezone: tzInfo.tz,
+                                    predefinedName: tzInfo.name,
+                                  });
+                                }}
+                                className="px-2 py-0.5 rounded-md text-[9px] font-semibold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-900/60 transition-colors whitespace-nowrap"
+                                title="Add as clock"
+                              >
+                                Add Clock
+                              </button>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
@@ -1152,16 +1419,34 @@ export const TimezoneDisplay: React.FC = () => {
                               )}
                             </div>
                           </div>
-                          {!isMainClock && (
-                            <button
-                              type="button"
-                              onClick={() => setAsPredefinedMainClock(tzInfo.tz, tzInfo.name)}
-                              className="px-2 py-0.5 rounded-md text-[9px] font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-colors whitespace-nowrap"
-                              title="Set as main clock"
-                            >
-                              Set Main
-                            </button>
-                          )}
+                          <div className="flex flex-col gap-1">
+                            {!isMainClock && (
+                              <button
+                                type="button"
+                                onClick={() => setAsPredefinedMainClock(tzInfo.tz, tzInfo.name)}
+                                className="px-2 py-0.5 rounded-md text-[9px] font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-colors whitespace-nowrap"
+                                title="Set as main clock"
+                              >
+                                Set Main
+                              </button>
+                            )}
+                            {showClockManager && multiClocks.length < MAX_CLOCKS && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  addClock({
+                                    type: 'predefined',
+                                    predefinedTimezone: tzInfo.tz,
+                                    predefinedName: tzInfo.name,
+                                  });
+                                }}
+                                className="px-2 py-0.5 rounded-md text-[9px] font-semibold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-900/60 transition-colors whitespace-nowrap"
+                                title="Add as clock"
+                              >
+                                Add Clock
+                              </button>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
@@ -1274,6 +1559,21 @@ export const TimezoneDisplay: React.FC = () => {
                                   Set Main
                                 </button>
                               )}
+                              {showClockManager && multiClocks.length < MAX_CLOCKS && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    addClock({
+                                      type: 'custom',
+                                      customTimezoneId: ctz.id,
+                                    });
+                                  }}
+                                  className="px-2 py-0.5 rounded-md text-[9px] font-semibold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-900/60 transition-colors whitespace-nowrap"
+                                  title="Add as clock"
+                                >
+                                  Add Clock
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1308,6 +1608,31 @@ export const TimezoneDisplay: React.FC = () => {
               </div>
             </div>
           </div>
+          
+          {/* Clock Manager Panel */}
+          {showClockManager && (
+            <div className="mt-2 p-2 rounded-lg bg-slate-100 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-semibold">Add Clocks ({multiClocks.length}/{MAX_CLOCKS})</span>
+                {multiClocks.length >= MAX_CLOCKS && (
+                  <span className="text-[9px] text-amber-600 dark:text-amber-400">Maximum reached</span>
+                )}
+              </div>
+              <div className="text-[9px] opacity-70 mb-2">
+                Click "Add Clock" on any timezone above to add it as a displayed clock.
+              </div>
+              {multiClocks.length < MAX_CLOCKS && (
+                <button
+                  type="button"
+                  onClick={() => addClock({ type: 'system' })}
+                  className="w-full px-2 py-1.5 rounded-md text-[10px] font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-colors"
+                  title="Add system clock"
+                >
+                  + Add System Clock
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )
       ) : mode === 'stopwatch' ? (
