@@ -141,6 +141,33 @@ try {
     $dbError = 'Error accessing database: ' . $e->getMessage();
 }
 
+// Get application name from settings (fallback to "LinkNest" if not found)
+$appName = 'LinkNest'; // Default fallback
+try {
+    if (isset($db) && $db) {
+        $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'app_name' LIMIT 1");
+        $stmt->execute();
+        $row = $stmt->fetch();
+        if ($row && !empty($row['value'])) {
+            $appName = $row['value'];
+        }
+    } elseif (file_exists(DB_PATH)) {
+        // Try to get app_name directly if db connection wasn't established above
+        $tempDb = new PDO('sqlite:' . DB_PATH);
+        $tempDb->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $stmt = $tempDb->prepare("SELECT value FROM settings WHERE key = 'app_name' LIMIT 1");
+        $stmt->execute();
+        $row = $stmt->fetch();
+        if ($row && !empty($row['value'])) {
+            $appName = $row['value'];
+        }
+        unset($tempDb);
+    }
+} catch (Exception $e) {
+    // If we can't get app_name, just use the default "LinkNest"
+    // This ensures the page still works even if there's a database issue
+}
+
 // Format bytes helper
 function formatBytes($bytes, $precision = 2) {
     $units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -161,7 +188,7 @@ function formatNumber($number) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LinkNest - System Status</title>
+    <title><?php echo htmlspecialchars($appName); ?> - System Status</title>
     <style>
         * {
             margin: 0;
@@ -389,7 +416,7 @@ function formatNumber($number) {
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔍 LinkNest System Status</h1>
+            <h1>🔍 <?php echo htmlspecialchars($appName); ?> System Status</h1>
             <p>OPcache & SQLite Database Performance Dashboard</p>
         </div>
         
