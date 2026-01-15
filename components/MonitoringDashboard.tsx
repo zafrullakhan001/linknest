@@ -70,6 +70,19 @@ export const MonitoringDashboard: React.FC = () => {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isFullscreen]);
 
+    // Handle Escape key for Logs Modal
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && viewingLogsMonitor) {
+                setViewingLogsMonitor(null);
+            }
+        };
+        if (viewingLogsMonitor) {
+            window.addEventListener('keydown', handleKeyDown);
+        }
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [viewingLogsMonitor]);
+
     // Tile styles state
     const defaultTileStyles: TileStyle = {
         upBackgroundColor: '#10b981',
@@ -1679,7 +1692,14 @@ export const MonitoringDashboard: React.FC = () => {
                                                 {renderEmailIndicators(monitor, 8)}
                                             </div>
 
-                                            <div className="flex-1 h-10 px-4 min-w-[200px] opacity-50 group-hover:opacity-100 transition-opacity">
+                                            <div
+                                                className="flex-1 h-10 px-4 min-w-[200px] opacity-50 group-hover:opacity-100 transition-opacity relative"
+                                                title={monitor.history && monitor.history.length > 1 ? (() => {
+                                                    const diff = monitor.history[monitor.history.length - 1].checked_at - monitor.history[0].checked_at;
+                                                    const mins = Math.round(diff / 60);
+                                                    return mins < 60 ? `History: Last ${mins} mins` : `History: Last ${(mins / 60).toFixed(1)} hours`;
+                                                })() : 'History'}
+                                            >
                                                 {monitor.history && monitor.history.length > 0 ? (
                                                     <ResponsiveContainer width="100%" height="100%">
                                                         <AreaChart data={monitor.history}>

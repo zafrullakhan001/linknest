@@ -529,12 +529,32 @@ function handleGetMonitors() {
     }
     $monitors = $stmt->fetchAll();
 
-    // Fetch history for sparklines (last 24 points)
-    $stmtHistory = $db->prepare('SELECT status, response_time, checked_at FROM monitor_logs WHERE monitor_id = ? ORDER BY checked_at DESC LIMIT 24');
+    // Fetch history for sparklines (last 24h)
+    $stmtHistory = $db->prepare('SELECT status, response_time, checked_at FROM monitor_logs WHERE monitor_id = ? AND checked_at >= ? ORDER BY checked_at DESC LIMIT 2000');
+    $oneDayAgo = time() - 86400;
+
     foreach ($monitors as &$m) {
-        $stmtHistory->execute([(int)$m['id']]);
-        $history = $stmtHistory->fetchAll(PDO::FETCH_ASSOC);
-        // Ensure numeric types for JSON and chronological order
+        $stmtHistory->execute([(int)$m['id'], $oneDayAgo]);
+        $rows = $stmtHistory->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Downsample to max ~72 points (approx 1 per 20 mins if 1440 pts) to keep payload light
+        $count = count($rows);
+        $maxPoints = 72;
+        $history = [];
+        
+        if ($count <= $maxPoints) {
+            $history = $rows;
+        } else {
+            $step = $count / $maxPoints;
+            for ($i = 0; $i < $maxPoints; $i++) {
+                $index = (int)($i * $step);
+                if (isset($rows[$index])) {
+                    $history[] = $rows[$index];
+                }
+            }
+        }
+        
+        // Ensure numeric types for JSON and chronological order (Oldest -> Newest)
         $m['history'] = array_map(function($h) {
             $h['response_time'] = (int)$h['response_time'];
             $h['checked_at'] = (int)$h['checked_at'];
