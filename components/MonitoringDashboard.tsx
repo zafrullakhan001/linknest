@@ -28,9 +28,9 @@ export const MonitoringDashboard: React.FC = () => {
     });
     const [isLogsLoading, setIsLogsLoading] = useState(false);
     const [checkingId, setCheckingId] = useState<number | null>(null);
-    const [viewMode, setViewMode] = useState<'tiles' | 'grid' | 'compact' | 'capsule'>(() => {
+    const [viewMode, setViewMode] = useState<'tiles' | 'grid' | 'compact' | 'capsule' | 'status-bar' | 'kanban' | 'timeline'>(() => {
         const saved = localStorage.getItem('linknest_monitor_view_mode');
-        return (saved === 'tiles' || saved === 'grid' || saved === 'compact' || saved === 'capsule') ? saved : 'tiles';
+        return (saved === 'tiles' || saved === 'grid' || saved === 'compact' || saved === 'capsule' || saved === 'status-bar' || saved === 'kanban' || saved === 'timeline') ? saved : 'tiles';
     });
     const [autoRefreshInterval, setAutoRefreshInterval] = useState<number>(30); // Default 30s
     const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(() => {
@@ -58,6 +58,17 @@ export const MonitoringDashboard: React.FC = () => {
     const [notificationsPaused, setNotificationsPaused] = useState<boolean>(false);
     const csvInputRef = useRef<HTMLInputElement>(null);
     const [checkStatus, setCheckStatus] = useState<{ count: number; total: number; up: number; down: number; error: number } | null>(null);
+
+    // Handle Escape key for fullscreen
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && isFullscreen) {
+                setIsFullscreen(false);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isFullscreen]);
 
     // Tile styles state
     const defaultTileStyles: TileStyle = {
@@ -1056,18 +1067,48 @@ export const MonitoringDashboard: React.FC = () => {
                             <FaBars size={14} />
                         </button>
                         <button
-                            onClick={() => setViewMode('grid')}
-                            className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white dark:bg-[#333] text-blue-500 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                            title="Table Mode"
-                        >
-                            <FaList size={14} />
-                        </button>
-                        <button
                             onClick={() => setViewMode('capsule')}
                             className={`p-2 rounded-lg transition-all ${viewMode === 'capsule' ? 'bg-white dark:bg-[#333] text-blue-500 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                             title="Capsule Mode"
                         >
                             <FaCircle size={14} />
+                        </button>
+                        <button
+                            onClick={() => setViewMode('status-bar')}
+                            className={`p-2 rounded-lg transition-all ${viewMode === 'status-bar' ? 'bg-white dark:bg-[#333] text-blue-500 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            title="Status Bar Mode"
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                <rect x="2" y="4" width="20" height="4" rx="2" />
+                                <rect x="2" y="10" width="20" height="4" rx="2" />
+                                <rect x="2" y="16" width="20" height="4" rx="2" />
+                            </svg>
+                        </button>
+                        <button
+                            onClick={() => setViewMode('kanban')}
+                            className={`p-2 rounded-lg transition-all ${viewMode === 'kanban' ? 'bg-white dark:bg-[#333] text-blue-500 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            title="Kanban Mode"
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                <rect x="2" y="2" width="6" height="20" rx="1" />
+                                <rect x="10" y="2" width="6" height="14" rx="1" />
+                                <rect x="18" y="2" width="4" height="18" rx="1" />
+                            </svg>
+                        </button>
+                        <button
+                            onClick={() => setViewMode('timeline')}
+                            className={`p-2 rounded-lg transition-all ${viewMode === 'timeline' ? 'bg-white dark:bg-[#333] text-blue-500 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            title="Timeline Mode"
+                        >
+                            <FaHistory size={14} />
+                        </button>
+                        <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-1"></div>
+                        <button
+                            onClick={() => setViewMode('grid')}
+                            className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white dark:bg-[#333] text-blue-500 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            title="Table Mode"
+                        >
+                            <FaList size={14} />
                         </button>
                     </div>
 
@@ -1129,16 +1170,17 @@ export const MonitoringDashboard: React.FC = () => {
 
                     {isAdmin && (
                         <button
-                            onClick={() => { 
-                                setSelectedMonitor(undefined); 
-                                setIsDuplicate(false); 
+                            onClick={() => {
+                                setSelectedMonitor(undefined);
+                                setIsDuplicate(false);
                                 setIsAddingNew(true);
                                 setCreatedMonitorId(undefined);
-                                setIsEditing(true); 
+                                setIsEditing(true);
                             }}
-                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-blue-600/20 active:scale-95"
+                            className="flex items-center justify-center w-10 h-10 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-600/20 active:scale-95"
+                            title="Add New Monitor"
                         >
-                            <FaPlus size={12} /> Add Monitor
+                            <FaPlus size={14} />
                         </button>
                     )}
                 </div>
@@ -1195,12 +1237,12 @@ export const MonitoringDashboard: React.FC = () => {
                     </p>
                     {isAdmin ? (
                         <button
-                            onClick={() => { 
-                                setSelectedMonitor(undefined); 
-                                setIsDuplicate(false); 
+                            onClick={() => {
+                                setSelectedMonitor(undefined);
+                                setIsDuplicate(false);
                                 setIsAddingNew(true);
                                 setCreatedMonitorId(undefined);
-                                setIsEditing(true); 
+                                setIsEditing(true);
                             }}
                             className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors"
                         >
@@ -1377,12 +1419,12 @@ export const MonitoringDashboard: React.FC = () => {
                                                 {isAdmin && (
                                                     <>
                                                         <button
-                                                            onClick={() => { 
-                                                                setSelectedMonitor(monitor); 
-                                                                setIsDuplicate(false); 
+                                                            onClick={() => {
+                                                                setSelectedMonitor(monitor);
+                                                                setIsDuplicate(false);
                                                                 setIsAddingNew(false);
                                                                 setCreatedMonitorId(undefined);
-                                                                setIsEditing(true); 
+                                                                setIsEditing(true);
                                                             }}
                                                             className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
                                                             title="Edit"
@@ -1522,6 +1564,136 @@ export const MonitoringDashboard: React.FC = () => {
                                         </div>
                                     ))}
                                 </div>
+                            ) : viewMode === 'status-bar' ? (
+                                <div className="space-y-2">
+                                    {groupedByGroups[groupName].map((monitor, index) => (
+                                        <div
+                                            key={monitor.id}
+                                            onClick={(e) => handleTileClick(e, monitor)}
+                                            style={{
+                                                animationDelay: `${index * 30}ms`,
+                                                ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileStyle(monitor.last_status) : {})
+                                            }}
+                                            className={`flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all hover:shadow-lg group ${fullAnimClass} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-[#333]'}`}
+                                        >
+                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-white/20' : 'bg-slate-100 dark:bg-[#252525]'}`}>
+                                                {React.cloneElement(getTypeIcon(monitor.type), {
+                                                    size: 18,
+                                                    style: monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : undefined
+                                                })}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span
+                                                        className={`font-bold text-sm truncate ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-slate-900 dark:text-white'}`}
+                                                        style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
+                                                    >
+                                                        {monitor.name}
+                                                    </span>
+                                                    {renderEmailIndicators(monitor, 10)}
+                                                </div>
+                                                <div className="flex items-center gap-4 text-xs">
+                                                    <code
+                                                        className={`px-2 py-0.5 rounded ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400'}`}
+                                                        style={monitor.last_status === 'up' || monitor.last_status === 'down' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.8 } : {}}
+                                                    >
+                                                        {monitor.target}{monitor.port ? `:${monitor.port}` : ''}
+                                                    </code>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-6 flex-shrink-0">
+                                                <div className={`flex items-center gap-2 text-sm font-medium ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-slate-700 dark:text-slate-300'}`} style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}>
+                                                    <FaClock size={12} />
+                                                    {monitor.last_response_time !== null && monitor.last_response_time !== undefined ? `${monitor.last_response_time}ms` : '-'}
+                                                </div>
+                                                <div
+                                                    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold uppercase ${monitor.last_status === 'up' ? 'bg-white/20' : monitor.last_status === 'down' ? 'bg-white/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}
+                                                    style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
+                                                >
+                                                    <div className={`w-2 h-2 rounded-full ${monitor.last_status === 'up' ? 'bg-white animate-pulse' : monitor.last_status === 'down' ? 'bg-white animate-pulse' : 'bg-slate-400'}`}></div>
+                                                    {monitor.last_status || 'UNKNOWN'}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : viewMode === 'kanban' ? (
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    {['up', 'down', 'warning'].map((status) => {
+                                        const statusMonitors = groupedByGroups[groupName].filter(m => m.last_status === status || (status === 'warning' && !m.last_status));
+                                        return (
+                                            <div key={status} className="space-y-3">
+                                                <div className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm uppercase ${status === 'up' ? 'bg-emerald-100 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : status === 'down' ? 'bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
+                                                    <div className={`w-2 h-2 rounded-full ${status === 'up' ? 'bg-emerald-500' : status === 'down' ? 'bg-red-500' : 'bg-slate-400'}`}></div>
+                                                    {status} ({statusMonitors.length})
+                                                </div>
+                                                <div className="space-y-2">
+                                                    {statusMonitors.map((monitor, index) => (
+                                                        <div
+                                                            key={monitor.id}
+                                                            onClick={(e) => handleTileClick(e, monitor)}
+                                                            style={{
+                                                                animationDelay: `${index * 30}ms`,
+                                                                ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileStyle(monitor.last_status) : {})
+                                                            }}
+                                                            className={`p-3 rounded-xl cursor-pointer transition-all hover:shadow-lg ${fullAnimClass} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-[#333]'}`}
+                                                        >
+                                                            <div className="flex items-center gap-2 mb-2">
+                                                                <span
+                                                                    className={`font-bold text-xs truncate ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-slate-900 dark:text-white'}`}
+                                                                    style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
+                                                                >
+                                                                    {monitor.name}
+                                                                </span>
+                                                                {renderEmailIndicators(monitor, 9)}
+                                                            </div>
+                                                            <div className={`flex items-center gap-2 text-xs ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-slate-600 dark:text-slate-400'}`} style={monitor.last_status === 'up' || monitor.last_status === 'down' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.8 } : {}}>
+                                                                <FaClock size={10} />
+                                                                {monitor.last_response_time !== null && monitor.last_response_time !== undefined ? `${monitor.last_response_time}ms` : '-'}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : viewMode === 'timeline' ? (
+                                <div className="space-y-1">
+                                    {groupedByGroups[groupName].map((monitor, index) => (
+                                        <div
+                                            key={monitor.id}
+                                            onClick={(e) => handleTileClick(e, monitor)}
+                                            style={{
+                                                animationDelay: `${index * 20}ms`
+                                            }}
+                                            className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-[#252525] group ${fullAnimClass}`}
+                                        >
+                                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 ${monitor.last_status === 'up' ? 'bg-emerald-100 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : monitor.last_status === 'down' ? 'bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
+                                                    {React.cloneElement(getTypeIcon(monitor.type), { size: 12 })}
+                                                </div>
+                                                <span className="font-semibold text-xs text-slate-900 dark:text-white truncate">
+                                                    {monitor.name}
+                                                </span>
+                                                {renderEmailIndicators(monitor, 8)}
+                                            </div>
+                                            <div className="flex items-center gap-4 flex-shrink-0">
+                                                <code className="text-[10px] px-2 py-0.5 rounded bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 font-mono">
+                                                    {monitor.target}{monitor.port ? `:${monitor.port}` : ''}
+                                                </code>
+                                                <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+                                                    <FaClock size={10} />
+                                                    {monitor.last_response_time !== null && monitor.last_response_time !== undefined ? `${monitor.last_response_time}ms` : '-'}
+                                                </div>
+                                                <div className={`w-16 h-1.5 rounded-full ${monitor.last_status === 'up' ? 'bg-emerald-500' : monitor.last_status === 'down' ? 'bg-red-500' : 'bg-slate-300 dark:bg-slate-700'}`}></div>
+                                                <span className="text-[10px] text-slate-500 dark:text-slate-400 w-16 text-right">
+                                                    {formatLastChecked(monitor.last_checked_at)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             ) : (
                                 <div className="bg-white dark:bg-[#1e1e1e] rounded-3xl border border-slate-200 dark:border-[#333] overflow-hidden shadow-xl overflow-x-auto">
                                     <table className="w-full text-left border-collapse min-w-[800px]">
@@ -1641,12 +1813,12 @@ export const MonitoringDashboard: React.FC = () => {
                                                                         <FaCopy size={12} />
                                                                     </button>
                                                                     <button
-                                                                        onClick={() => { 
-                                                                            setSelectedMonitor(monitor); 
-                                                                            setIsDuplicate(false); 
+                                                                        onClick={() => {
+                                                                            setSelectedMonitor(monitor);
+                                                                            setIsDuplicate(false);
                                                                             setIsAddingNew(false);
                                                                             setCreatedMonitorId(undefined);
-                                                                            setIsEditing(true); 
+                                                                            setIsEditing(true);
                                                                         }}
                                                                         className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-white/20 hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
                                                                         style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileTextStyle(monitor.last_status) : {}}
@@ -1680,9 +1852,9 @@ export const MonitoringDashboard: React.FC = () => {
                 <MonitorForm
                     monitor={isAddingNew ? undefined : selectedMonitor}
                     onSave={handleSave}
-                    onCancel={() => { 
-                        setIsEditing(false); 
-                        setIsDuplicate(false); 
+                    onCancel={() => {
+                        setIsEditing(false);
+                        setIsDuplicate(false);
                         setIsAddingNew(false);
                         setSelectedMonitor(undefined);
                         setCreatedMonitorId(undefined);
@@ -1696,7 +1868,7 @@ export const MonitoringDashboard: React.FC = () => {
             {isAdmin && moveMenuId !== null && (() => {
                 const monitorToMove = monitors.find(m => m.id === moveMenuId);
                 if (!monitorToMove) return null;
-                
+
                 // Get all unique groups from all tabs for the move dialog
                 const groupSet = new Set<string>();
                 monitors.forEach(m => {
@@ -1708,21 +1880,20 @@ export const MonitoringDashboard: React.FC = () => {
                     if (b === 'Other') return -1;
                     return a.localeCompare(b);
                 });
-                
+
                 return (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setMoveMenuId(null)}>
-                        <div 
+                        <div
                             className="bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl border border-slate-200 dark:border-[#333] w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200"
                             onClick={(e) => e.stopPropagation()}
                         >
                             {/* Header */}
                             <div className="px-6 py-4 border-b border-slate-200 dark:border-[#333] flex items-center justify-between bg-slate-50 dark:bg-[#252525]">
                                 <div className="flex items-center gap-3">
-                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                                        monitorToMove.last_status === 'up' ? 'bg-emerald-500/10 text-emerald-500' :
+                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${monitorToMove.last_status === 'up' ? 'bg-emerald-500/10 text-emerald-500' :
                                         monitorToMove.last_status === 'down' ? 'bg-red-500/10 text-red-500' :
-                                        'bg-slate-500/10 text-slate-500'
-                                    }`}>
+                                            'bg-slate-500/10 text-slate-500'
+                                        }`}>
                                         {getTypeIcon(monitorToMove.type)}
                                     </div>
                                     <div>
@@ -1753,11 +1924,10 @@ export const MonitoringDashboard: React.FC = () => {
                                                     handleMoveMonitor(monitorToMove.id, { tab_name: t });
                                                     setMoveMenuId(null);
                                                 }}
-                                                className={`px-4 py-3 rounded-xl font-semibold text-sm transition-all ${
-                                                    monitorToMove.tab_name === t
-                                                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20 ring-2 ring-blue-500'
-                                                        : 'bg-slate-100 dark:bg-[#252525] text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-[#333] border border-slate-200 dark:border-[#333]'
-                                                }`}
+                                                className={`px-4 py-3 rounded-xl font-semibold text-sm transition-all ${monitorToMove.tab_name === t
+                                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20 ring-2 ring-blue-500'
+                                                    : 'bg-slate-100 dark:bg-[#252525] text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-[#333] border border-slate-200 dark:border-[#333]'
+                                                    }`}
                                             >
                                                 {t}
                                             </button>
@@ -1778,11 +1948,10 @@ export const MonitoringDashboard: React.FC = () => {
                                                     handleMoveMonitor(monitorToMove.id, { group_name: g });
                                                     setMoveMenuId(null);
                                                 }}
-                                                className={`px-4 py-3 rounded-xl font-semibold text-sm transition-all ${
-                                                    monitorToMove.group_name === g
-                                                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20 ring-2 ring-blue-500'
-                                                        : 'bg-slate-100 dark:bg-[#252525] text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-[#333] border border-slate-200 dark:border-[#333]'
-                                                }`}
+                                                className={`px-4 py-3 rounded-xl font-semibold text-sm transition-all ${monitorToMove.group_name === g
+                                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20 ring-2 ring-blue-500'
+                                                    : 'bg-slate-100 dark:bg-[#252525] text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-[#333] border border-slate-200 dark:border-[#333]'
+                                                    }`}
                                             >
                                                 {g}
                                             </button>
@@ -2242,6 +2411,13 @@ export const MonitoringDashboard: React.FC = () => {
     if (isFullscreen) {
         return (
             <div className="fixed inset-0 overflow-y-auto bg-slate-50 dark:bg-[#121212] transition-colors z-50">
+                <button
+                    onClick={() => setIsFullscreen(false)}
+                    className="fixed top-4 right-4 z-[60] p-3 bg-red-600 hover:bg-red-700 text-white rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95"
+                    title="Exit Fullscreen (Esc)"
+                >
+                    <FaTimes size={16} />
+                </button>
                 <div className="min-h-full p-4">
                     {content}
                 </div>
