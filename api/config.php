@@ -877,6 +877,7 @@ function initDatabase() {
             FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
         )');
 
+
         // Index for active messages
         try {
             $db->exec('CREATE INDEX IF NOT EXISTS idx_broadcast_messages_active ON broadcast_messages(is_active)');
@@ -884,6 +885,24 @@ function initDatabase() {
         } catch (PDOException $e) {
             // ignore if index creation fails
         }
+
+        // Migrate existing broadcast_messages table to add scroll_speed column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(broadcast_messages)")->fetchAll();
+            $hasScrollSpeed = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'scroll_speed') {
+                    $hasScrollSpeed = true;
+                    break;
+                }
+            }
+            if (!$hasScrollSpeed) {
+                $db->exec('ALTER TABLE broadcast_messages ADD COLUMN scroll_speed INTEGER DEFAULT 30');
+            }
+        } catch (PDOException $e) {
+            error_log('Broadcast messages scroll_speed migration warning: ' . $e->getMessage());
+        }
+
 
         // Create monitors table
         $db->exec('CREATE TABLE IF NOT EXISTS monitors (

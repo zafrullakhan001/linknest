@@ -57,7 +57,7 @@ function handleGetBroadcast($db) {
     try {
         $now = time();
         // Get active broadcast message that hasn't expired
-        $stmt = $db->prepare('SELECT id, message, font_family, font_size, color, expires_at, created_at, updated_at FROM broadcast_messages WHERE is_active = 1 AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC LIMIT 1');
+        $stmt = $db->prepare('SELECT id, message, font_family, font_size, color, scroll_speed, expires_at, created_at, updated_at FROM broadcast_messages WHERE is_active = 1 AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC LIMIT 1');
         $stmt->execute([$now]);
         $broadcast = $stmt->fetch();
         
@@ -68,6 +68,7 @@ function handleGetBroadcast($db) {
                 'fontFamily' => $broadcast['font_family'],
                 'fontSize' => $broadcast['font_size'],
                 'color' => $broadcast['color'],
+                'scrollSpeed' => $broadcast['scroll_speed'] ? (int)$broadcast['scroll_speed'] : 30,
                 'expiresAt' => $broadcast['expires_at'] ? (int)$broadcast['expires_at'] : null,
                 'createdAt' => (int)$broadcast['created_at'],
                 'updatedAt' => (int)$broadcast['updated_at'],
@@ -88,6 +89,7 @@ function handleCreateBroadcast($db) {
     $fontFamily = $data['fontFamily'] ?? 'Arial, sans-serif';
     $fontSize = $data['fontSize'] ?? '16px';
     $color = $data['color'] ?? '#ff0000';
+    $scrollSpeed = isset($data['scrollSpeed']) ? (int)$data['scrollSpeed'] : 30;
     $expiresAt = isset($data['expiresAt']) && $data['expiresAt'] ? (int)$data['expiresAt'] : null;
     
     if (empty($message)) {
@@ -103,8 +105,8 @@ function handleCreateBroadcast($db) {
         $stmt->execute([$now]);
         
         // Create new broadcast message
-        $stmt = $db->prepare('INSERT INTO broadcast_messages (message, font_family, font_size, color, is_active, expires_at, created_at, updated_at, created_by) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)');
-        $stmt->execute([$message, $fontFamily, $fontSize, $color, $expiresAt, $now, $now, $userId]);
+        $stmt = $db->prepare('INSERT INTO broadcast_messages (message, font_family, font_size, color, scroll_speed, is_active, expires_at, created_at, updated_at, created_by) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)');
+        $stmt->execute([$message, $fontFamily, $fontSize, $color, $scrollSpeed, $expiresAt, $now, $now, $userId]);
         
         $broadcastId = $db->lastInsertId();
         
@@ -160,6 +162,11 @@ function handleUpdateBroadcast($db) {
         if (isset($data['color'])) {
             $updates[] = 'color = ?';
             $params[] = $data['color'];
+        }
+        
+        if (isset($data['scrollSpeed'])) {
+            $updates[] = 'scroll_speed = ?';
+            $params[] = (int)$data['scrollSpeed'];
         }
         
         if (isset($data['isActive'])) {

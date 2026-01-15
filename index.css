@@ -82,6 +82,13 @@
   position: relative;
 }
 
+/* Add padding when broadcast banner is visible */
+body.has-broadcast-banner .linknest-app-container {
+  padding-top: 40px;
+  transition: padding-top 0.3s ease;
+}
+
+
 .linknest-app-container::before {
   content: '';
   position: fixed;

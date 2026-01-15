@@ -308,6 +308,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             setBroadcastFontFamily(broadcast.fontFamily);
             setBroadcastFontSize(broadcast.fontSize);
             setBroadcastColor(broadcast.color);
+            setBroadcastScrollSpeed(broadcast.scrollSpeed || 30);
             if (broadcast.expiresAt) {
               const expiresDate = new Date(broadcast.expiresAt * 1000);
               setBroadcastExpiresAt(expiresDate.toISOString().slice(0, 16));
@@ -319,6 +320,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             setBroadcastFontFamily('Arial, sans-serif');
             setBroadcastFontSize('16px');
             setBroadcastColor('#ff0000');
+            setBroadcastScrollSpeed(30);
             setBroadcastExpiresAt('');
           }
         } catch (err: any) {
@@ -372,6 +374,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [broadcastFontFamily, setBroadcastFontFamily] = useState('Arial, sans-serif');
   const [broadcastFontSize, setBroadcastFontSize] = useState('16px');
   const [broadcastColor, setBroadcastColor] = useState('#ff0000');
+  const [broadcastScrollSpeed, setBroadcastScrollSpeed] = useState(30);
   const [broadcastExpiresAt, setBroadcastExpiresAt] = useState<string>('');
   const [broadcastLoading, setBroadcastLoading] = useState(false);
   const [currentBroadcast, setCurrentBroadcast] = useState<BroadcastMessage | null>(null);
@@ -5218,7 +5221,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
                   <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Broadcast Message Settings</h3>
                   <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-                    Create and manage site-wide broadcast messages that appear at the top of all pages. Messages scroll from right to left.
+                    Create and manage site-wide broadcast messages that appear at the top of all pages. Messages scroll from right to left with customizable speed. Users can hover to pause the message or click to read the full content in a popup.
                   </p>
 
                   <div className="space-y-4">
@@ -5299,6 +5302,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                     <div>
                       <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        Scroll Speed (seconds)
+                      </label>
+                      <input
+                        type="number"
+                        min="5"
+                        max="120"
+                        step="1"
+                        value={broadcastScrollSpeed}
+                        onChange={(e) => setBroadcastScrollSpeed(Number(e.target.value))}
+                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                        placeholder="30"
+                      />
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        Time in seconds for the message to scroll across the screen. Lower = faster, higher = slower. Recommended: 20-40 seconds.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                         Expiration Date/Time (Optional)
                       </label>
                       <input
@@ -5375,6 +5397,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 fontFamily: broadcastFontFamily,
                                 fontSize: broadcastFontSize,
                                 color: broadcastColor,
+                                scrollSpeed: broadcastScrollSpeed,
                                 expiresAt: expiresAt,
                               });
                               alert('Broadcast message updated successfully!');
@@ -5384,6 +5407,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 fontFamily: broadcastFontFamily,
                                 fontSize: broadcastFontSize,
                                 color: broadcastColor,
+                                scrollSpeed: broadcastScrollSpeed,
                                 expiresAt: expiresAt,
                               });
                               alert('Broadcast message created successfully!');

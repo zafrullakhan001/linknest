@@ -26,6 +26,7 @@ export interface BroadcastMessage {
   fontFamily: string;
   fontSize: string;
   color: string;
+  scrollSpeed: number;
   expiresAt: number | null;
   createdAt: number;
   updatedAt: number;
@@ -54,6 +55,7 @@ export const broadcastService = {
     fontFamily?: string;
     fontSize?: string;
     color?: string;
+    scrollSpeed?: number;
     expiresAt?: number | null;
   }): Promise<{ id: number; message: string }> {
     const response = await fetch(`${API_BASE}/broadcast`, {
@@ -65,6 +67,7 @@ export const broadcastService = {
         fontFamily: broadcast.fontFamily || 'Arial, sans-serif',
         fontSize: broadcast.fontSize || '16px',
         color: broadcast.color || '#ff0000',
+        scrollSpeed: broadcast.scrollSpeed || 30,
         expiresAt: broadcast.expiresAt || null,
       }),
     });
@@ -84,6 +87,7 @@ export const broadcastService = {
     fontFamily?: string;
     fontSize?: string;
     color?: string;
+    scrollSpeed?: number;
     expiresAt?: number | null;
     isActive?: boolean;
   }): Promise<{ success: boolean; message: string }> {
