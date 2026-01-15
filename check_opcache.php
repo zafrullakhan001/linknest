@@ -8,11 +8,36 @@
 // Set content type to HTML
 header('Content-Type: text/html; charset=utf-8');
 
-// Database configuration - check_opcache.php is in root, so data/ is in same directory
-// Try linknest.db first (standard), then linknext.db as fallback
-$dbPath1 = __DIR__ . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'linknest.db';
-$dbPath2 = __DIR__ . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'linknext.db';
-define('DB_PATH', file_exists($dbPath1) ? $dbPath1 : (file_exists($dbPath2) ? $dbPath2 : $dbPath1));
+// Database configuration - Use config.php if available, otherwise try default paths
+// This works both in Docker (/var/www/html) and local development
+if (file_exists(__DIR__ . '/api/config.php')) {
+    // Load config.php but suppress any output/errors that might break the page
+    $oldErrorReporting = error_reporting(0);
+    $oldDisplayErrors = ini_get('display_errors');
+    ini_set('display_errors', 0);
+    
+    try {
+        require_once __DIR__ . '/api/config.php';
+        // DB_PATH and DB_DIR are now defined from config.php
+    } catch (Exception $e) {
+        // If config.php fails, fall through to default paths
+    }
+    
+    error_reporting($oldErrorReporting);
+    ini_set('display_errors', $oldDisplayErrors);
+}
+
+// Fallback: Use default Docker/standard paths if DB_PATH not defined
+if (!defined('DB_PATH')) {
+    // Try Docker path first (/var/www/html/data/linknest.db)
+    $dbPath1 = __DIR__ . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'linknest.db';
+    $dbPath2 = __DIR__ . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'linknext.db';
+    define('DB_PATH', file_exists($dbPath1) ? $dbPath1 : (file_exists($dbPath2) ? $dbPath2 : $dbPath1));
+}
+
+if (!defined('DB_DIR')) {
+    define('DB_DIR', dirname(DB_PATH));
+}
 
 // Get OPcache status
 $opcacheLoaded = extension_loaded('Zend OPcache');

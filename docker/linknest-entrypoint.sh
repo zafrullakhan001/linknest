@@ -2,6 +2,7 @@
 set -u
 
 # LinkNest container entrypoint:
+# - Starts cron daemon for scheduled tasks (database backups)
 # - Starts a lightweight Python worker loop (monitor_runner + email_sender)
 # - Then execs Apache in the foreground (PID 1)
 #
@@ -17,6 +18,25 @@ INTERVAL="${LINKNEST_WORKER_INTERVAL_SECONDS:-60}"
 DB_PATH="${LINKNEST_DB_PATH:-/var/www/html/data/linknest.db}"
 MAX_WORKERS="${LINKNEST_WORKER_MAX_WORKERS:-10}"
 EMAIL_LIMIT="${LINKNEST_EMAIL_LIMIT:-50}"
+
+# Ensure backups directory exists with proper permissions
+BACKUPS_DIR="/var/www/html/data/backups"
+if [ ! -d "$BACKUPS_DIR" ]; then
+    mkdir -p "$BACKUPS_DIR"
+    chown www-data:www-data "$BACKUPS_DIR"
+    chmod 755 "$BACKUPS_DIR"
+    echo "[ENTRYPOINT] Created backups directory: $BACKUPS_DIR"
+fi
+
+# Start cron daemon for scheduled tasks (database backups at 3:00 AM daily)
+echo "[ENTRYPOINT] Starting cron daemon for scheduled backups..."
+# Start cron in the background
+cron
+
+# Display cron job status
+echo "[ENTRYPOINT] Cron job configured: Daily database snapshot at 3:00 AM"
+echo "[ENTRYPOINT] Backup location: $BACKUPS_DIR"
+echo "[ENTRYPOINT] Old backups (>30 days) are automatically removed by snapshot.php"
 
 worker_loop() {
   echo "[WORKER] LinkNest workers enabled=${ENABLED} interval=${INTERVAL}s db=${DB_PATH}"

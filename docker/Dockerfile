@@ -58,15 +58,18 @@ RUN apt-get update && apt-get install -y \
     curl \
     openssl \
     libldap2-dev \
+    libzip-dev \
+    zlib1g-dev \
     python3 \
-    && docker-php-ext-install pdo pdo_sqlite opcache ldap \
-    && docker-php-ext-enable pdo_sqlite opcache ldap \
+    cron \
+    && docker-php-ext-install pdo pdo_sqlite opcache ldap zip \
+    && docker-php-ext-enable pdo_sqlite opcache ldap zip \
     && ln -sf /usr/bin/python3 /usr/local/bin/python \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Enable Apache modules (including SSL)
-RUN a2enmod rewrite headers mime ssl
+# Enable Apache modules (including SSL and performance modules)
+RUN a2enmod rewrite headers mime ssl expires deflate cache
 
 # Set working directory
 WORKDIR /var/www/html
@@ -91,9 +94,10 @@ RUN if [ ! -f dist/index.html ]; then echo "ERROR: dist/index.html not found!" &
     echo "✓ Copied dist/index.html to root"
 
 # Create necessary directories with proper permissions
-RUN mkdir -p data uploads && \
+RUN mkdir -p data uploads data/backups && \
     chown -R www-data:www-data data uploads && \
-    chmod -R 755 data uploads
+    chmod -R 755 data uploads && \
+    chmod 755 data/backups
 
 # Copy existing SQLite database file(s) from host to container if they exist
 # This allows you to start with your existing database, but it will be isolated inside the container
@@ -105,14 +109,11 @@ COPY data/ ./data/
 # This allows you to start with your existing branding assets, but they will be isolated inside the container
 COPY uploads/ ./uploads/
 
-# Copy check_opcache.php if it exists in the build context (optional)
-RUN if [ -f ../check_opcache.php ]; then \
-        cp ../check_opcache.php ./check_opcache.php && \
-        chmod 644 ./check_opcache.php && \
-        echo "✓ check_opcache.php copied"; \
-    else \
-        echo "Note: check_opcache.php not found, skipping (optional file)"; \
-    fi
+# Copy check_opcache.php for OPcache status monitoring (health check page)
+# This provides a web-accessible dashboard for monitoring OPcache and database status
+COPY check_opcache.php ./check_opcache.php
+RUN chmod 644 ./check_opcache.php && \
+    echo "✓ check_opcache.php copied (OPcache health check page)"
 
 # Set proper permissions for all files
 # Set permissions on database files if they exist (will be auto-created if not present)
@@ -126,6 +127,25 @@ RUN chmod +x /usr/local/bin/generate-ssl-cert.sh
 
 # Generate self-signed SSL certificate
 RUN /usr/local/bin/generate-ssl-cert.sh
+
+# Configure Apache for high performance (1000+ concurrent users)
+# Optimize MPM (Multi-Processing Module) settings for production
+RUN echo '<IfModule mpm_prefork_module>' > /etc/apache2/conf-available/mpm-performance.conf && \
+    echo '    StartServers 8' >> /etc/apache2/conf-available/mpm-performance.conf && \
+    echo '    MinSpareServers 5' >> /etc/apache2/conf-available/mpm-performance.conf && \
+    echo '    MaxSpareServers 20' >> /etc/apache2/conf-available/mpm-performance.conf && \
+    echo '    ServerLimit 256' >> /etc/apache2/conf-available/mpm-performance.conf && \
+    echo '    MaxRequestWorkers 256' >> /etc/apache2/conf-available/mpm-performance.conf && \
+    echo '    MaxConnectionsPerChild 10000' >> /etc/apache2/conf-available/mpm-performance.conf && \
+    echo '</IfModule>' >> /etc/apache2/conf-available/mpm-performance.conf && \
+    echo '' >> /etc/apache2/conf-available/mpm-performance.conf && \
+    echo '# Performance tuning' >> /etc/apache2/conf-available/mpm-performance.conf && \
+    echo 'Timeout 300' >> /etc/apache2/conf-available/mpm-performance.conf && \
+    echo 'KeepAlive On' >> /etc/apache2/conf-available/mpm-performance.conf && \
+    echo 'MaxKeepAliveRequests 100' >> /etc/apache2/conf-available/mpm-performance.conf && \
+    echo 'KeepAliveTimeout 5' >> /etc/apache2/conf-available/mpm-performance.conf && \
+    echo 'HostnameLookups Off' >> /etc/apache2/conf-available/mpm-performance.conf && \
+    a2enconf mpm-performance
 
 # Configure Apache
 COPY docker/apache-config.conf /etc/apache2/sites-available/000-default.conf
@@ -144,6 +164,18 @@ RUN chmod +x /usr/local/bin/verify-php.sh
 # Copy container entrypoint (starts workers + apache)
 COPY docker/linknest-entrypoint.sh /usr/local/bin/linknest-entrypoint.sh
 RUN chmod +x /usr/local/bin/linknest-entrypoint.sh
+
+# Set up cron job for daily database snapshots at 3:00 AM
+# Cron format: minute hour day month day-of-week user command
+# 0 3 * * * = Every day at 3:00 AM
+# Note: snapshot.php automatically removes backups older than 30 days
+RUN echo "0 3 * * * www-data /usr/bin/php /var/www/html/api/snapshot.php >> /var/log/linknest-backup.log 2>&1" > /etc/cron.d/linknest-backup && \
+    chmod 0644 /etc/cron.d/linknest-backup && \
+    # Create log file with proper permissions
+    touch /var/log/linknest-backup.log && \
+    chown www-data:www-data /var/log/linknest-backup.log && \
+    # Ensure cron can read the crontab
+    chmod 644 /etc/cron.d/linknest-backup
 
 # Verify PHP and SQLite are working
 RUN /usr/local/bin/verify-php.sh
