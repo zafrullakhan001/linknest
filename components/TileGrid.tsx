@@ -1526,22 +1526,42 @@ export const TileGrid: React.FC<TileGridProps> = ({
     setRefreshCountdown(autoRefreshInterval);
   }, [autoRefreshInterval]);
 
+  // Reset preferencesLoaded when authentication state changes
+  // This ensures preferences are reloaded when user logs in or out
+  useEffect(() => {
+    setPreferencesLoaded(false);
+  }, [isAuthenticated]);
+
   // Load saved active tab preference for authenticated users
   useEffect(() => {
     if (isAuthenticated && !preferencesLoaded) {
+      // Try to load from localStorage first (for immediate restoration after login)
+      const localStorageTab = localStorage.getItem('linknest_user_active_tab');
+
       userPreferencesService.getPreference('activeTab')
         .then(savedTab => {
-          if (savedTab && typeof savedTab === 'string') {
-            const validTabs: TabType[] = ['public', 'favorites', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin'];
-            if (validTabs.includes(savedTab as TabType)) {
-              setActiveTab(savedTab as TabType);
+          // Prefer user preferences over localStorage, but use localStorage as fallback
+          const tabToRestore = savedTab || localStorageTab;
+
+          if (tabToRestore && typeof tabToRestore === 'string') {
+            const validTabs: TabType[] = ['public', 'favorites', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+            if (validTabs.includes(tabToRestore as TabType)) {
+              setActiveTab(tabToRestore as TabType);
             }
           }
           setPreferencesLoaded(true);
         })
         .catch(error => {
-          // Silently fail if preferences can't be loaded (e.g., user not authenticated yet)
+          // If preferences can't be loaded, try localStorage as fallback
           console.debug('Could not load active tab preference:', error);
+
+          if (localStorageTab) {
+            const validTabs: TabType[] = ['public', 'favorites', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+            if (validTabs.includes(localStorageTab as TabType)) {
+              setActiveTab(localStorageTab as TabType);
+            }
+          }
+
           setPreferencesLoaded(true); // Mark as loaded even on error to prevent retries
         });
     } else if (!isAuthenticated) {
@@ -1572,10 +1592,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
       // Only save if preferences have been loaded (to avoid saving default 'public' on initial load)
       // Debounce the save to avoid too many API calls
       const timeoutId = setTimeout(() => {
+        // Save to user preferences (server-side)
         userPreferencesService.updatePreference('activeTab', activeTab)
           .catch(error => {
             console.error('Failed to save active tab preference:', error);
           });
+
+        // Also save to localStorage for immediate restoration after login
+        localStorage.setItem('linknest_user_active_tab', activeTab);
       }, 300); // Wait 300ms after tab change before saving
 
       return () => clearTimeout(timeoutId);
