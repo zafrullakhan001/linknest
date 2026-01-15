@@ -90,14 +90,20 @@ RUN if [ ! -f dist/index.html ]; then echo "ERROR: dist/index.html not found!" &
     cp dist/index.html index.html && \
     echo "✓ Copied dist/index.html to root"
 
-# Create necessary directories first
-RUN mkdir -p data uploads
+# Create necessary directories with proper permissions
+RUN mkdir -p data uploads && \
+    chown -R www-data:www-data data uploads && \
+    chmod -R 755 data uploads
 
-# Copy existing SQLite database file(s) from host to container
-# This copies the existing database into the image
-# Note: The volume mount in docker-compose.yml will use the host database at runtime,
-# but having it in the image ensures it's available even without volume mounts
+# Copy existing SQLite database file(s) from host to container if they exist
+# This allows you to start with your existing database, but it will be isolated inside the container
+# Note: If data/ directory doesn't exist in build context, create it first, then copy if present
+# The database will be auto-created on first run if not copied
 COPY data/ ./data/
+
+# Copy uploads folder (contains logo images and branding data)
+# This allows you to start with your existing branding assets, but they will be isolated inside the container
+COPY uploads/ ./uploads/
 
 # Copy check_opcache.php if it exists in the build context (optional)
 RUN if [ -f ../check_opcache.php ]; then \
@@ -109,6 +115,7 @@ RUN if [ -f ../check_opcache.php ]; then \
     fi
 
 # Set proper permissions for all files
+# Set permissions on database files if they exist (will be auto-created if not present)
 RUN chown -R www-data:www-data /var/www/html && \
     chmod -R 755 /var/www/html && \
     chmod 644 data/*.db 2>/dev/null || echo "Note: Database will be created on first run if not present"
@@ -140,6 +147,32 @@ RUN chmod +x /usr/local/bin/linknest-entrypoint.sh
 
 # Verify PHP and SQLite are working
 RUN /usr/local/bin/verify-php.sh
+
+# Post-build cleanup: Remove unnecessary files to reduce image size
+RUN echo "🧹 Cleaning up unnecessary files to reduce image size..." && \
+    # Remove any node_modules if present (shouldn't be, but just in case)
+    find /var/www/html -type d -name "node_modules" -exec rm -rf {} + 2>/dev/null || true && \
+    # Remove TypeScript/React source files (we only need the built dist folder)
+    find /var/www/html -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.jsx" \) ! -path "*/dist/*" ! -path "*/scripts/*" -delete 2>/dev/null || true && \
+    # Remove source directories (components, contexts, services, land) if they exist
+    rm -rf /var/www/html/components /var/www/html/contexts /var/www/html/services /var/www/html/land 2>/dev/null || true && \
+    # Remove build configuration files (not needed in runtime)
+    rm -f /var/www/html/vite.config.ts /var/www/html/vite.docker.config.ts /var/www/html/vite.runtime.config.ts \
+          /var/www/html/tsconfig.json /var/www/html/tailwind.config.js /var/www/html/postcss.config.js \
+          /var/www/html/package.json /var/www/html/package-lock.json 2>/dev/null || true && \
+    # Remove source files from root
+    rm -f /var/www/html/App.tsx /var/www/html/index.tsx /var/www/html/types.ts /var/www/html/index.css 2>/dev/null || true && \
+    # Remove any .git directories if present
+    find /var/www/html -type d -name ".git" -exec rm -rf {} + 2>/dev/null || true && \
+    # Remove documentation and markdown files
+    find /var/www/html -type f -name "*.md" -delete 2>/dev/null || true && \
+    # Remove test files
+    find /var/www/html -type f -name "test_*.php" -delete 2>/dev/null || true && \
+    find /var/www/html -type f -name "*.test.*" -delete 2>/dev/null || true && \
+    # Clean up apt cache and temporary files
+    apt-get clean && \
+    rm -rf /tmp/* /var/tmp/* && \
+    echo "✓ Cleanup complete - image size optimized"
 
 # Set environment variables
 ENV APACHE_DOCUMENT_ROOT=/var/www/html

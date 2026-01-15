@@ -8,9 +8,7 @@ services:
     ports:
       - "8090:80"   # HTTP
       - "8443:443"  # HTTPS
-    volumes:
-      - ../data:/var/www/html/data
-      - ../uploads:/var/www/html/uploads
+    # No volume mounts - container is fully isolated with its own database and files
     environment:
       - APACHE_DOCUMENT_ROOT=/var/www/html
       - PHP_MEMORY_LIMIT=256M
