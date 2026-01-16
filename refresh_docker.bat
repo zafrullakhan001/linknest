@@ -203,6 +203,10 @@ echo LinkNest is running at:
 echo    HTTP:  http://localhost:8090
 echo    HTTPS: https://localhost:8443
 echo.
+echo Docker Landing Page (Quick Access):
+echo    HTTP:  http://localhost:8090/docker-landing.php
+echo    HTTPS: https://localhost:8443/docker-landing.php
+echo.
 echo Mail Server (Pilot):
 echo    Mailpit Web UI: http://localhost:8025
 echo    SMTP: localhost:1025 (no auth, no TLS)

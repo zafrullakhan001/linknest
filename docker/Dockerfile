@@ -116,6 +116,18 @@ COPY check_opcache.php ./check_opcache.php
 RUN chmod 644 ./check_opcache.php && \
     echo "✓ check_opcache.php copied (OPcache health check page)"
 
+# Copy backup_restore_docker.php for Docker container backup/restore management
+# This provides a web-accessible interface for managing database backups in Docker containers
+COPY backup_restore_docker.php ./backup_restore_docker.php
+RUN chmod 644 ./backup_restore_docker.php && \
+    echo "✓ backup_restore_docker.php copied (Docker backup & restore page)"
+
+# Copy docker-landing.php for Docker container landing page
+# This provides a comprehensive landing page with all application links and services
+COPY docker-landing.php ./docker-landing.php
+RUN chmod 644 ./docker-landing.php && \
+    echo "✓ docker-landing.php copied (Docker landing page)"
+
 # Set proper permissions for all files
 # Set permissions on database files if they exist (will be auto-created if not present)
 RUN chown -R www-data:www-data /var/www/html && \
