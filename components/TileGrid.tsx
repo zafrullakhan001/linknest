@@ -3426,15 +3426,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
       </div>
 
       {/* Tabs */}
-      <div className="flex items-end gap-0.5 bg-slate-200 dark:bg-slate-800 px-1 pt-1">
+      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700">
         {!disabledAppTabs.has('public') && (
           <button
             onClick={() => requestTab('public')}
             data-active={activeTab === 'public'}
-            className={`px-4 py-2 text-sm font-medium transition-all relative ${activeTab === 'public'
-              ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-t-lg shadow-sm border-x border-t border-slate-300 dark:border-slate-600 -mb-px'
-              : 'bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 rounded-t-lg hover:bg-slate-400 dark:hover:bg-slate-600'
-            }`}
+            className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'public' ? 'active' : ''}`}
           >
             Public
           </button>
@@ -3443,10 +3440,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
           <button
             onClick={() => requestTab('public-favorites')}
             data-active={activeTab === 'public-favorites'}
-            className={`px-4 py-2 text-sm font-medium transition-all relative ${activeTab === 'public-favorites'
-              ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-t-lg shadow-sm border-x border-t border-slate-300 dark:border-slate-600 -mb-px'
-              : 'bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 rounded-t-lg hover:bg-slate-400 dark:hover:bg-slate-600'
-            }`}
+            className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'public-favorites' ? 'active' : ''}`}
           >
             Favorites
             {(publicFavoritesCount + favoriteLinks.length) > 0 && (
@@ -3512,10 +3506,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               <button
                 onClick={() => requestTab('favorites')}
                 data-active={activeTab === 'favorites'}
-                className={`px-4 py-2 text-sm font-medium transition-all relative ${activeTab === 'favorites'
-                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-t-lg shadow-sm border-x border-t border-slate-300 dark:border-slate-600 -mb-px'
-                  : 'bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 rounded-t-lg hover:bg-slate-400 dark:hover:bg-slate-600'
-                }`}
+                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'favorites' ? 'active' : ''}`}
               >
                 Favorites
                 {(favoriteTilesCount + favoriteLinks.length) > 0 && (
@@ -3538,10 +3529,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               <button
                 onClick={() => requestTab('private')}
                 data-active={activeTab === 'private'}
-                className={`px-4 py-2 text-sm font-medium transition-all relative ${activeTab === 'private'
-                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-t-lg shadow-sm border-x border-t border-slate-300 dark:border-slate-600 -mb-px'
-                  : 'bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 rounded-t-lg hover:bg-slate-400 dark:hover:bg-slate-600'
-                }`}
+                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'private' ? 'active' : ''}`}
               >
                 Private
                 {privateTilesCount > 0 && (
@@ -3555,10 +3543,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               <button
                 onClick={() => requestTab('scheduled')}
                 data-active={activeTab === 'scheduled'}
-                className={`px-4 py-2 text-sm font-medium transition-all relative ${activeTab === 'scheduled'
-                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-t-lg shadow-sm border-x border-t border-slate-300 dark:border-slate-600 -mb-px'
-                  : 'bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 rounded-t-lg hover:bg-slate-400 dark:hover:bg-slate-600'
-                }`}
+                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'scheduled' ? 'active' : ''}`}
               >
                 Scheduled
                 {scheduledTilesCount > 0 && (
@@ -3572,10 +3557,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               <button
                 onClick={() => requestTab('expired')}
                 data-active={activeTab === 'expired'}
-                className={`px-4 py-2 text-sm font-medium transition-all relative ${activeTab === 'expired'
-                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-t-lg shadow-sm border-x border-t border-slate-300 dark:border-slate-600 -mb-px'
-                  : 'bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 rounded-t-lg hover:bg-slate-400 dark:hover:bg-slate-600'
-                }`}
+                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'expired' ? 'active' : ''}`}
               >
                 Expired
                 {expiredTilesCount > 0 && (
@@ -3589,10 +3571,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               <button
                 onClick={() => requestTab('archive')}
                 data-active={activeTab === 'archive'}
-                className={`px-4 py-2 text-sm font-medium transition-all relative ${activeTab === 'archive'
-                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-t-lg shadow-sm border-x border-t border-slate-300 dark:border-slate-600 -mb-px'
-                  : 'bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 rounded-t-lg hover:bg-slate-400 dark:hover:bg-slate-600'
-                }`}
+                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'archive' ? 'active' : ''}`}
               >
                 Archive
                 {isAuthenticated && (
@@ -3605,10 +3584,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
             {isAuthenticated && !disabledAppTabs.has('monitoring') && (
               <button
                 onClick={() => requestTab('monitoring')}
-                className={`px-4 py-2 text-sm font-medium transition-all relative ${activeTab === 'monitoring'
-                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-t-lg shadow-sm border-x border-t border-slate-300 dark:border-slate-600 -mb-px'
-                  : 'bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 rounded-t-lg hover:bg-slate-400 dark:hover:bg-slate-600'
-                }`}
+                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'monitoring' ? 'active' : ''}`}
               >
                 Monitoring
               </button>
@@ -3616,10 +3592,10 @@ export const TileGrid: React.FC<TileGridProps> = ({
             {!disabledAppTabs.has('recycle-bin') && (
               <button
                 onClick={() => requestTab('recycle-bin')}
-                className={`px-4 py-2 text-sm font-medium transition-all relative ${activeTab === 'recycle-bin'
-                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-t-lg shadow-sm border-x border-t border-slate-300 dark:border-slate-600 -mb-px'
-                  : 'bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 rounded-t-lg hover:bg-slate-400 dark:hover:bg-slate-600'
-                }`}
+                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'recycle-bin'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
               >
                 Recycle Bin
                 {isAuthenticated && (
