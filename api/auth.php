@@ -144,8 +144,8 @@ function handleRegister() {
     
     $db = getDB();
     
-    // Check if username exists
-    $stmt = $db->prepare('SELECT id FROM users WHERE username = ?');
+    // Check if username exists (case-insensitive)
+    $stmt = $db->prepare('SELECT id FROM users WHERE LOWER(username) = LOWER(?)');
     $stmt->execute([$username]);
     if ($stmt->fetch()) {
         sendJSON(['error' => 'Username already exists'], 409);
@@ -622,8 +622,8 @@ function handleLogin() {
     
     // Handle LDAP Success
     if ($ldapSuccess && $ldapUser) {
-        // Check if user exists in DB
-        $stmt = $db->prepare('SELECT id, username, email, password_hash, is_admin, is_approved, auth_source FROM users WHERE username = ?');
+        // Check if user exists in DB (case-insensitive)
+        $stmt = $db->prepare('SELECT id, username, email, password_hash, is_admin, is_approved, auth_source FROM users WHERE LOWER(username) = LOWER(?)');
         $stmt->execute([$username]);
         $user = $stmt->fetch();
         
@@ -746,7 +746,7 @@ function handleLogin() {
         sendJSON(['error' => $errorMessage], 401);
     }
     
-    $stmt = $db->prepare('SELECT id, username, email, password_hash, is_admin, is_approved, auth_source FROM users WHERE username = ? OR email = ?');
+    $stmt = $db->prepare('SELECT id, username, email, password_hash, is_admin, is_approved, auth_source FROM users WHERE LOWER(username) = LOWER(?) OR email = ?');
     $stmt->execute([$username, $username]);
     $user = $stmt->fetch();
     
@@ -1569,8 +1569,8 @@ function handleAddLocalUser() {
     
     $db = getDB();
     
-    // Check if username exists
-    $stmt = $db->prepare('SELECT id FROM users WHERE username = ?');
+    // Check if username exists (case-insensitive)
+    $stmt = $db->prepare('SELECT id FROM users WHERE LOWER(username) = LOWER(?)');
     $stmt->execute([$username]);
     if ($stmt->fetch()) {
         sendJSON(['error' => 'Username already exists'], 409);
@@ -1725,8 +1725,8 @@ function handleAddLdapUser() {
         // User verified in LDAP, now add to database
         $db = getDB();
         
-        // Check if username exists
-        $stmt = $db->prepare('SELECT id FROM users WHERE username = ?');
+        // Check if username exists (case-insensitive)
+        $stmt = $db->prepare('SELECT id FROM users WHERE LOWER(username) = LOWER(?)');
         $stmt->execute([$username]);
         if ($stmt->fetch()) {
             sendJSON(['error' => 'Username already exists'], 409);
@@ -1868,8 +1868,8 @@ function handleBulkImportLocalUsers() {
         $line = $userData['line'];
         
         try {
-            // Check if username exists
-            $stmt = $db->prepare('SELECT id FROM users WHERE username = ?');
+            // Check if username exists (case-insensitive)
+            $stmt = $db->prepare('SELECT id FROM users WHERE LOWER(username) = LOWER(?)');
             $stmt->execute([$username]);
             if ($stmt->fetch()) {
                 $results['skipped'][] = [
@@ -2060,8 +2060,8 @@ function handleBulkImportLdapUsers() {
         }
         
         try {
-            // Check if username exists in database
-            $stmt = $db->prepare('SELECT id FROM users WHERE username = ?');
+            // Check if username exists in database (case-insensitive)
+            $stmt = $db->prepare('SELECT id FROM users WHERE LOWER(username) = LOWER(?)');
             $stmt->execute([$username]);
             if ($stmt->fetch()) {
                 $results['skipped'][] = [
