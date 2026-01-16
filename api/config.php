@@ -4,6 +4,78 @@ ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 error_reporting(E_ALL);
 
+// Set timezone to match system time
+// On Windows, ALWAYS use the Windows system timezone to match the system clock
+// This overrides php.ini settings to ensure times match what the user sees on their system
+if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+    // On Windows, detect and use the actual Windows system timezone
+    try {
+        // Get Windows timezone using tzutil (Windows Vista+)
+        $output = @shell_exec('tzutil /g 2>nul');
+        if ($output) {
+            $winTz = trim($output);
+            // Common Windows to PHP timezone mappings
+            $tzMap = [
+                'Eastern Standard Time' => 'America/New_York',
+                'Central Standard Time' => 'America/Chicago',
+                'Mountain Standard Time' => 'America/Denver',
+                'Pacific Standard Time' => 'America/Los_Angeles',
+                'GMT Standard Time' => 'Europe/London',
+                'W. Europe Standard Time' => 'Europe/Berlin',
+                'Central Europe Standard Time' => 'Europe/Berlin',
+                'Romance Standard Time' => 'Europe/Paris',
+                'W. Central Africa Standard Time' => 'Africa/Lagos',
+                'Tokyo Standard Time' => 'Asia/Tokyo',
+                'China Standard Time' => 'Asia/Shanghai',
+                'India Standard Time' => 'Asia/Kolkata',
+                'AUS Eastern Standard Time' => 'Australia/Sydney',
+                'US Eastern Standard Time' => 'America/New_York',
+                'US Central Standard Time' => 'America/Chicago',
+                'US Mountain Standard Time' => 'America/Denver',
+                'US Pacific Standard Time' => 'America/Los_Angeles',
+            ];
+            if (isset($tzMap[$winTz])) {
+                date_default_timezone_set($tzMap[$winTz]);
+            } else {
+                // Try to use offset-based detection for unmapped timezones
+                $offsetHours = @shell_exec('w32tm /tz 2>nul');
+                if ($offsetHours && preg_match('/Bias: -?(\d+)/', $offsetHours, $matches)) {
+                    $biasMinutes = (int)$matches[1];
+                    $offsetHours = -$biasMinutes / 60;
+                    // Create timezone from offset (e.g., Etc/GMT+5 for GMT-5)
+                    // Note: PHP uses inverted sign for Etc/GMT timezones
+                    $tzName = sprintf('Etc/GMT%+d', (int)-$offsetHours);
+                    @date_default_timezone_set($tzName);
+                } else {
+                    // Fallback: log warning and use PHP's detected timezone
+                    $detectedTz = @date_default_timezone_get();
+                    error_log("Warning: Could not map Windows timezone '$winTz' to PHP timezone. Using: " . ($detectedTz ?: 'UTC'));
+                    date_default_timezone_set($detectedTz ?: 'UTC');
+                }
+            }
+        } else {
+            // tzutil not available, try using PHP's detected timezone
+            $detectedTz = @date_default_timezone_get();
+            error_log("Warning: Could not detect Windows timezone using tzutil. Using: " . ($detectedTz ?: 'UTC'));
+            date_default_timezone_set($detectedTz ?: 'UTC');
+        }
+    } catch (Exception $e) {
+        // If detection fails completely, fall back to PHP's detected timezone
+        $detectedTz = @date_default_timezone_get();
+        error_log("Error detecting Windows timezone: " . $e->getMessage() . ". Using: " . ($detectedTz ?: 'UTC'));
+        date_default_timezone_set($detectedTz ?: 'UTC');
+    }
+} else {
+    // Non-Windows: respect php.ini or auto-detect
+    $tz = ini_get('date.timezone');
+    if (empty($tz)) {
+        $detectedTz = @date_default_timezone_get();
+        date_default_timezone_set($detectedTz ?: 'UTC');
+    } else {
+        date_default_timezone_set($tz);
+    }
+}
+
 // Start output buffering to prevent any accidental output
 if (!ob_get_level()) {
     ob_start();

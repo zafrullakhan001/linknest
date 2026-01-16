@@ -279,12 +279,23 @@ function handleGetSnapshots() {
         $metaFile = $file . '.json';
         $meta = file_exists($metaFile) ? json_decode(file_get_contents($metaFile), true) : null;
         
+        // Use metadata timestamp if available (more accurate), otherwise fall back to filemtime
+        // Always format the timestamp using current timezone for consistent display
+        if ($meta && isset($meta['timestamp'])) {
+            $createdAt = (int)$meta['timestamp'];
+            // Format using current timezone setting (always accurate, timezone-independent Unix timestamp)
+            $createdAtFormatted = date('Y-m-d H:i:s', $createdAt);
+        } else {
+            $createdAt = filemtime($file);
+            $createdAtFormatted = date('Y-m-d H:i:s', $createdAt);
+        }
+        
         $snapshots[] = [
             'filename' => $filename,
             'size' => filesize($file),
             'size_formatted' => formatBytes(filesize($file)),
-            'created_at' => filemtime($file),
-            'created_at_formatted' => date('Y-m-d H:i:s', filemtime($file)),
+            'created_at' => $createdAt,
+            'created_at_formatted' => $createdAtFormatted,
             'metadata' => $meta
         ];
     }

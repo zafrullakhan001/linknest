@@ -810,6 +810,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   };
 
+  const handleChangeAdminPassword = async () => {
+    if (!currentPassword.trim() || !adminNewPassword.trim()) {
+      setError('Please fill in all fields');
+      return;
+    }
+
+    if (adminNewPassword.length < 6) {
+      setError('New password must be at least 6 characters');
+      return;
+    }
+
+    try {
+      setAdminPasswordLoading(true);
+      setError('');
+      await authService.changeAdminPassword(currentPassword, adminNewPassword);
+      setAdminPasswordModal(false);
+      setCurrentPassword('');
+      setAdminNewPassword('');
+      alert('Admin password changed successfully!');
+    } catch (err: any) {
+      setError(err.message || 'Failed to change admin password');
+    } finally {
+      setAdminPasswordLoading(false);
+    }
+  };
+
   const formatDate = (timestamp: number) => {
     return new Date(timestamp * 1000).toLocaleString();
   };
@@ -972,6 +998,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     setSelectedLdapUser(null);
     setError('');
   };
+
+  // Handle ESC key to close modals
+  useEffect(() => {
+    const handleEscKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (addUserModal) {
+          setAddUserModal(false);
+          setError('');
+        }
+        if (adminPasswordModal) {
+          setAdminPasswordModal(false);
+          setCurrentPassword('');
+          setAdminNewPassword('');
+          setError('');
+        }
+      }
+    };
+
+    if (addUserModal || adminPasswordModal) {
+      window.addEventListener('keydown', handleEscKey);
+      return () => {
+        window.removeEventListener('keydown', handleEscKey);
+      };
+    }
+  }, [addUserModal, adminPasswordModal]);
 
   return (
     <div className="space-y-6">
@@ -5683,6 +5734,268 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         {/* End Content Area */}
       </div>
       {/* End Tabs and Content Container */}
+
+      {/* Add User Modal */}
+      {addUserModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Add User</h2>
+                <button
+                  onClick={() => {
+                    setAddUserModal(false);
+                    setError('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              <div className="flex gap-2 border-b border-slate-200 dark:border-slate-700 pb-4">
+                <button
+                  onClick={() => {
+                    setAddUserType('local');
+                    setError('');
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    addUserType === 'local'
+                      ? 'bg-brand-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                  }`}
+                >
+                  Local User
+                </button>
+                <button
+                  onClick={() => {
+                    setAddUserType('ldap');
+                    setError('');
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    addUserType === 'ldap'
+                      ? 'bg-brand-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                  }`}
+                >
+                  LDAP User
+                </button>
+              </div>
+
+              {addUserType === 'local' ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Username
+                    </label>
+                    <input
+                      type="text"
+                      value={localUsername}
+                      onChange={(e) => setLocalUsername(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                      placeholder="Enter username"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      value={localEmail}
+                      onChange={(e) => setLocalEmail(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                      placeholder="Enter email"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Password
+                    </label>
+                    <SecurePasswordInput
+                      value={localPassword}
+                      onChange={(e) => setLocalPassword(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                      placeholder="Enter password (min 6 characters)"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Search LDAP Users
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={ldapSearchTerm}
+                        onChange={(e) => setLdapSearchTerm(e.target.value)}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter') {
+                            handleSearchLdapUsers();
+                          }
+                        }}
+                        className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                        placeholder="Enter search term (min 2 characters)"
+                      />
+                      <button
+                        onClick={handleSearchLdapUsers}
+                        disabled={ldapSearchLoading || !ldapSearchTerm.trim() || ldapSearchTerm.length < 2}
+                        className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                      >
+                        {ldapSearchLoading ? 'Searching...' : 'Search'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {ldapSearchResults.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        Select User
+                      </label>
+                      <div className="max-h-60 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg">
+                        {ldapSearchResults.map((user, index) => (
+                          <button
+                            key={index}
+                            onClick={() => {
+                              setSelectedLdapUser(user);
+                              setError('');
+                            }}
+                            className={`w-full text-left px-4 py-3 border-b border-slate-200 dark:border-slate-700 last:border-b-0 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors ${
+                              selectedLdapUser?.dn === user.dn ? 'bg-brand-50 dark:bg-brand-900/20' : ''
+                            }`}
+                          >
+                            <div className="font-medium text-slate-900 dark:text-white">{user.displayName || user.username}</div>
+                            <div className="text-sm text-slate-600 dark:text-slate-400">{user.email}</div>
+                            <div className="text-xs text-slate-500 dark:text-slate-500 mt-1">{user.username}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedLdapUser && (
+                    <div className="bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-lg p-4">
+                      <div className="text-sm font-medium text-slate-900 dark:text-white mb-1">Selected User:</div>
+                      <div className="text-sm text-slate-700 dark:text-slate-300">{selectedLdapUser.displayName || selectedLdapUser.username}</div>
+                      <div className="text-xs text-slate-600 dark:text-slate-400">{selectedLdapUser.email}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => {
+                    setAddUserModal(false);
+                    setError('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={addUserType === 'local' ? handleAddLocalUser : handleAddLdapUser}
+                  disabled={addUserLoading || (addUserType === 'local' ? (!localUsername.trim() || !localEmail.trim() || !localPassword.trim()) : !selectedLdapUser)}
+                  className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  {addUserLoading ? 'Adding...' : 'Add User'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Change Admin Password Modal */}
+      {adminPasswordModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Change Admin Password</h2>
+                <button
+                  onClick={() => {
+                    setAdminPasswordModal(false);
+                    setCurrentPassword('');
+                    setAdminNewPassword('');
+                    setError('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Current Password
+                </label>
+                <SecurePasswordInput
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                  placeholder="Enter current password"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  New Password
+                </label>
+                <SecurePasswordInput
+                  value={adminNewPassword}
+                  onChange={(e) => setAdminNewPassword(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                  placeholder="Enter new password (min 6 characters)"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => {
+                    setAdminPasswordModal(false);
+                    setCurrentPassword('');
+                    setAdminNewPassword('');
+                    setError('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleChangeAdminPassword}
+                  disabled={adminPasswordLoading || !currentPassword.trim() || !adminNewPassword.trim() || adminNewPassword.length < 6}
+                  className="flex-1 px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  {adminPasswordLoading ? 'Changing...' : 'Change Password'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

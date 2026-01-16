@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { FaTimes, FaPalette } from 'react-icons/fa';
+import React, { useState, useEffect, useRef } from 'react';
+import { FaTimes, FaPalette, FaDownload, FaUpload } from 'react-icons/fa';
 import { userPreferencesService } from '../services/userPreferencesService';
 
 export interface TileStyle {
@@ -79,6 +79,7 @@ export const MonitoringTileStyleModal: React.FC<MonitoringTileStyleModalProps> =
     const [styles, setStyles] = useState<TileStyle>(defaultStyles);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         if (isOpen) {
@@ -167,6 +168,142 @@ export const MonitoringTileStyleModal: React.FC<MonitoringTileStyleModalProps> =
 
     const resetToDefaults = () => {
         setStyles(defaultStyles);
+    };
+
+    const exportStyles = () => {
+        try {
+            const exportData = {
+                version: '1.0',
+                exportedAt: new Date().toISOString(),
+                styles: styles
+            };
+            
+            const jsonString = JSON.stringify(exportData, null, 2);
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `monitor-tile-styles-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Failed to export styles:', error);
+            alert('Failed to export styles. Please try again.');
+        }
+    };
+
+    const handleImportClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const content = e.target?.result as string;
+                const importedData = JSON.parse(content);
+                
+                // Support both direct style objects and wrapped objects with metadata
+                const importedStyles: TileStyle = importedData.styles || importedData;
+                
+                // Validate that all required fields are present
+                const requiredFields: (keyof TileStyle)[] = [
+                    'upBackgroundColor', 'upTextColor', 'upUseGradient', 'upGradientStart', 
+                    'upGradientEnd', 'upFontFamily',
+                    'downBackgroundColor', 'downTextColor', 'downUseGradient', 'downGradientStart',
+                    'downGradientEnd', 'downFontFamily',
+                    'warningBackgroundColor', 'warningTextColor', 'warningUseGradient', 
+                    'warningGradientStart', 'warningGradientEnd', 'warningFontFamily',
+                    'borderRadius'
+                ];
+                
+                const missingFields = requiredFields.filter(field => !(field in importedStyles));
+                if (missingFields.length > 0) {
+                    alert(`Invalid style file. Missing required fields: ${missingFields.join(', ')}`);
+                    return;
+                }
+                
+                // Validate types
+                if (typeof importedStyles.borderRadius !== 'number') {
+                    importedStyles.borderRadius = Number(importedStyles.borderRadius) || defaultStyles.borderRadius;
+                }
+                
+                // Clamp borderRadius
+                importedStyles.borderRadius = Math.max(0, Math.min(48, importedStyles.borderRadius));
+                
+                // Validate boolean fields
+                if (typeof importedStyles.upUseGradient !== 'boolean') {
+                    importedStyles.upUseGradient = importedStyles.upUseGradient === 'true' || importedStyles.upUseGradient === true;
+                }
+                if (typeof importedStyles.downUseGradient !== 'boolean') {
+                    importedStyles.downUseGradient = importedStyles.downUseGradient === 'true' || importedStyles.downUseGradient === true;
+                }
+                if (typeof importedStyles.warningUseGradient !== 'boolean') {
+                    importedStyles.warningUseGradient = importedStyles.warningUseGradient === 'true' || importedStyles.warningUseGradient === true;
+                }
+                
+                setStyles(importedStyles);
+                // Notify parent component of the imported styles
+                onStylesChange(importedStyles);
+                
+                // Show success message and auto-save
+                if (window.confirm('Styles imported successfully! Would you like to save them now?')) {
+                    // Create a save function that uses the imported styles
+                    const saveImportedStyles = async () => {
+                        setIsSaving(true);
+                        try {
+                            await userPreferencesService.updatePreferences({
+                                'monitor_tile_up_bg': importedStyles.upBackgroundColor,
+                                'monitor_tile_up_text': importedStyles.upTextColor,
+                                'monitor_tile_up_gradient': importedStyles.upUseGradient ? 'true' : 'false',
+                                'monitor_tile_up_gradient_start': importedStyles.upGradientStart,
+                                'monitor_tile_up_gradient_end': importedStyles.upGradientEnd,
+                                'monitor_tile_up_font': importedStyles.upFontFamily,
+                                'monitor_tile_down_bg': importedStyles.downBackgroundColor,
+                                'monitor_tile_down_text': importedStyles.downTextColor,
+                                'monitor_tile_down_gradient': importedStyles.downUseGradient ? 'true' : 'false',
+                                'monitor_tile_down_gradient_start': importedStyles.downGradientStart,
+                                'monitor_tile_down_gradient_end': importedStyles.downGradientEnd,
+                                'monitor_tile_down_font': importedStyles.downFontFamily,
+                                'monitor_tile_warning_bg': importedStyles.warningBackgroundColor,
+                                'monitor_tile_warning_text': importedStyles.warningTextColor,
+                                'monitor_tile_warning_gradient': importedStyles.warningUseGradient ? 'true' : 'false',
+                                'monitor_tile_warning_gradient_start': importedStyles.warningGradientStart,
+                                'monitor_tile_warning_gradient_end': importedStyles.warningGradientEnd,
+                                'monitor_tile_warning_font': importedStyles.warningFontFamily,
+                                'monitor_tile_radius': String(importedStyles.borderRadius),
+                            });
+                            
+                            alert('Styles saved successfully!');
+                        } catch (error) {
+                            console.error('Failed to save imported styles:', error);
+                            alert('Failed to save imported styles. Please try again.');
+                        } finally {
+                            setIsSaving(false);
+                        }
+                    };
+                    
+                    saveImportedStyles();
+                } else {
+                    alert('Styles loaded. Click "Save Styles" to apply them permanently.');
+                }
+            } catch (error) {
+                console.error('Failed to import styles:', error);
+                alert('Failed to import styles. Please ensure the file is a valid JSON format.');
+            }
+        };
+        
+        reader.readAsText(file);
+        
+        // Reset file input
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
     };
 
     if (!isOpen) return null;
@@ -764,12 +901,36 @@ export const MonitoringTileStyleModal: React.FC<MonitoringTileStyleModalProps> =
 
                 {/* Footer */}
                 <div className="p-4 bg-slate-50 dark:bg-[#252525] border-t border-slate-100 dark:border-[#333] flex items-center justify-between">
-                    <button
-                        onClick={resetToDefaults}
-                        className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
-                    >
-                        Reset to Defaults
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={resetToDefaults}
+                            className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                        >
+                            Reset to Defaults
+                        </button>
+                        <div className="h-6 w-px bg-slate-300 dark:bg-slate-600"></div>
+                        <button
+                            onClick={exportStyles}
+                            className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors flex items-center gap-2"
+                        >
+                            <FaDownload size={14} />
+                            Export JSON
+                        </button>
+                        <button
+                            onClick={handleImportClick}
+                            className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors flex items-center gap-2"
+                        >
+                            <FaUpload size={14} />
+                            Import JSON
+                        </button>
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".json,application/json"
+                            onChange={handleFileImport}
+                            className="hidden"
+                        />
+                    </div>
                     <div className="flex gap-3">
                         <button
                             onClick={onClose}
