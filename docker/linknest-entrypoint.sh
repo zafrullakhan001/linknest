@@ -51,15 +51,17 @@ if [ ! -d "$BACKUPS_DIR" ]; then
     echo "[ENTRYPOINT] Created backups directory: $BACKUPS_DIR"
 fi
 
-# Start cron daemon for scheduled tasks (database backups at 3:00 AM daily)
+# Start cron daemon for scheduled tasks (database backups at 2:00 AM and 3:00 AM daily)
 echo "[ENTRYPOINT] Starting cron daemon for scheduled backups..."
 # Start cron in the background
 cron
 
 # Display cron job status
-echo "[ENTRYPOINT] Cron job configured: Daily database snapshot at 3:00 AM"
+echo "[ENTRYPOINT] Cron jobs configured:"
+echo "[ENTRYPOINT]   - Daily database export at 2:00 AM (export_database.php)"
+echo "[ENTRYPOINT]   - Daily database snapshot at 3:00 AM (snapshot.php)"
 echo "[ENTRYPOINT] Backup location: $BACKUPS_DIR"
-echo "[ENTRYPOINT] Old backups (>30 days) are automatically removed by snapshot.php"
+echo "[ENTRYPOINT] Old backups (>30 days) are automatically removed by both scripts"
 
 worker_loop() {
   echo "[WORKER] LinkNest workers enabled=${ENABLED} interval=${INTERVAL}s db=${DB_PATH}"

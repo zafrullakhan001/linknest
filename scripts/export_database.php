@@ -261,6 +261,40 @@ try {
         json_encode($summary, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
     );
     
+    // Clean up old export backups (keep last 30 days)
+    $backupsBaseDir = dirname($outputDir);
+    $now = time();
+    $deleted = 0;
+    
+    if (is_dir($backupsBaseDir)) {
+        // Find all export directories matching the pattern export_YYYY-MM-DD_HHMMSS
+        $dirs = glob($backupsBaseDir . '/export_*', GLOB_ONLYDIR);
+        
+        foreach ($dirs as $dir) {
+            // Check if directory is older than 30 days
+            if ($now - filemtime($dir) > 30 * 24 * 60 * 60) {
+                // Recursively delete the directory and all its contents
+                $files = new RecursiveIteratorIterator(
+                    new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS),
+                    RecursiveIteratorIterator::CHILD_FIRST
+                );
+                
+                foreach ($files as $file) {
+                    if ($file->isDir()) {
+                        rmdir($file->getRealPath());
+                    } else {
+                        unlink($file->getRealPath());
+                    }
+                }
+                
+                // Remove the directory itself
+                if (rmdir($dir)) {
+                    $deleted++;
+                }
+            }
+        }
+    }
+    
     echo "\n";
     echo "========================================\n";
     echo "Export completed successfully!\n";
@@ -277,9 +311,14 @@ try {
     echo "Total rows: $totalRows\n";
     echo "Total indexes: " . count($schema['indexes']) . "\n";
     echo "Total triggers: " . count($schema['triggers']) . "\n";
+    if ($deleted > 0) {
+        echo "Deleted old export backups (>30 days): $deleted\n";
+    }
     echo "\n";
     echo "To import this backup, use:\n";
     echo "  php scripts/import_database.php \"$outputDir\"\n";
+    echo "\n";
+    echo "Note: Export backups older than 30 days are automatically removed.\n";
     echo "\n";
     
 } catch (PDOException $e) {

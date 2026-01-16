@@ -166,11 +166,16 @@ RUN chmod +x /usr/local/bin/verify-php.sh
 COPY docker/linknest-entrypoint.sh /usr/local/bin/linknest-entrypoint.sh
 RUN chmod +x /usr/local/bin/linknest-entrypoint.sh
 
-# Set up cron job for daily database snapshots at 3:00 AM
+# Set up cron jobs for daily database backups
 # Cron format: minute hour day month day-of-week user command
-# 0 3 * * * = Every day at 3:00 AM
-# Note: snapshot.php automatically removes backups older than 30 days
-RUN echo "0 3 * * * www-data /usr/bin/php /var/www/html/api/snapshot.php >> /var/log/linknest-backup.log 2>&1" > /etc/cron.d/linknest-backup && \
+# 0 2 * * * = Every day at 2:00 AM (export_database.php)
+# 0 3 * * * = Every day at 3:00 AM (snapshot.php)
+# Note: Both export_database.php and snapshot.php automatically remove backups older than 30 days
+RUN echo "# Daily database export at 2:00 AM" > /etc/cron.d/linknest-backup && \
+    echo "0 2 * * * www-data /usr/bin/php /var/www/html/scripts/export_database.php >> /var/log/linknest-backup.log 2>&1" >> /etc/cron.d/linknest-backup && \
+    echo "" >> /etc/cron.d/linknest-backup && \
+    echo "# Daily database snapshot at 3:00 AM" >> /etc/cron.d/linknest-backup && \
+    echo "0 3 * * * www-data /usr/bin/php /var/www/html/api/snapshot.php >> /var/log/linknest-backup.log 2>&1" >> /etc/cron.d/linknest-backup && \
     chmod 0644 /etc/cron.d/linknest-backup && \
     # Create log file with proper permissions
     touch /var/log/linknest-backup.log && \
