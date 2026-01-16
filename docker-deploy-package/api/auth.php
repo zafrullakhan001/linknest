@@ -754,8 +754,9 @@ function handleLogin() {
         sendJSON(['error' => 'Invalid username or password'], 401);
     }
     
-    // Update auth_source to 'local' if it's not already set (for existing users)
-    if (empty($user['auth_source']) || $user['auth_source'] !== 'local') {
+    // Update auth_source to 'local' only if it's empty/NULL (for existing users created before auth_source column)
+    // Don't override if it's explicitly set to 'ldap' - respect admin's manual setting
+    if (empty($user['auth_source']) || $user['auth_source'] === null) {
         $stmt = $db->prepare('UPDATE users SET auth_source = ? WHERE id = ?');
         $stmt->execute(['local', $user['id']]);
         $user['auth_source'] = 'local';
@@ -1159,25 +1160,40 @@ function handleToggleAuthSource($userId) {
     
     $db = getDB();
     
-    // Check if user exists and is not admin
+    // Check if user exists
     $stmt = $db->prepare('SELECT id, auth_source FROM users WHERE id = ?');
     $stmt->execute([$userId]);
-    $user = $stmt->fetch();
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
     
     if (!$user) {
         sendJSON(['error' => 'User not found'], 404);
     }
     
-    // Toggle between 'ldap' and 'local'
-    $newAuthSource = ($user['auth_source'] === 'ldap') ? 'local' : 'ldap';
+    // Normalize auth_source: treat NULL, empty string, or 'local' as 'local'
+    $currentAuthSource = $user['auth_source'] ?? null;
+    $currentAuthSource = ($currentAuthSource === null || $currentAuthSource === '' || $currentAuthSource === 'local') ? 'local' : $currentAuthSource;
     
+    // Toggle between 'ldap' and 'local'
+    $newAuthSource = ($currentAuthSource === 'ldap') ? 'local' : 'ldap';
+    
+    // Update the auth_source
     $stmt = $db->prepare('UPDATE users SET auth_source = ? WHERE id = ?');
     $stmt->execute([$newAuthSource, $userId]);
     
-    if ($stmt->rowCount() > 0) {
+    // Verify the update by re-reading the value
+    $stmt = $db->prepare('SELECT auth_source FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $updatedUser = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if ($updatedUser && $updatedUser['auth_source'] === $newAuthSource) {
         sendJSON(['success' => true, 'message' => "Auth source updated to {$newAuthSource}", 'auth_source' => $newAuthSource]);
     } else {
-        sendJSON(['error' => 'Failed to update auth source'], 500);
+        // Even if rowCount is 0, check if the value is already what we want
+        if ($updatedUser && $updatedUser['auth_source'] === $newAuthSource) {
+            sendJSON(['success' => true, 'message' => "Auth source is already set to {$newAuthSource}", 'auth_source' => $newAuthSource]);
+        } else {
+            sendJSON(['error' => 'Failed to update auth source. Please try again.'], 500);
+        }
     }
 }
 
