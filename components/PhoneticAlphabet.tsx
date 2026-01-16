@@ -156,7 +156,11 @@ const countryNames: Record<string, string> = {
   australia: 'Australia',
 };
 
-export const PhoneticAlphabet: React.FC = () => {
+interface PhoneticAlphabetProps {
+  onClose?: () => void;
+}
+
+export const PhoneticAlphabet: React.FC<PhoneticAlphabetProps> = ({ onClose }) => {
   const [activeTab, setActiveTab] = useState<string>('usa');
   const [viewMode, setViewMode] = useState<'chart' | 'converter' | 'readaloud'>('chart');
   const [inputText, setInputText] = useState<string>('');
@@ -374,9 +378,23 @@ export const PhoneticAlphabet: React.FC = () => {
   return (
     <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 p-4 h-full flex flex-col min-w-0">
       <div className="mb-3 flex-shrink-0">
-        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-          Phonetic Alphabet
-        </h3>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+            Phonetic Alphabet
+          </h3>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="text-xs px-2 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 rounded transition-colors"
+              title="Close Phonetic Alphabet Widget"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          )}
+        </div>
         {/* View Mode Tabs */}
         <div className="flex gap-1 mb-3">
           <button

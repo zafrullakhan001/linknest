@@ -844,32 +844,32 @@ const AppContent: React.FC = () => {
       </footer>
       {showClock && (
         <FloatingClock>
-          <TimezoneDisplay />
+          <TimezoneDisplay onClose={toggleClock} />
         </FloatingClock>
       )}
       {showPhoneticAlphabet && (
         <FloatingPhoneticAlphabet>
-          <PhoneticAlphabet />
+          <PhoneticAlphabet onClose={togglePhoneticAlphabet} />
         </FloatingPhoneticAlphabet>
       )}
       {isAuthenticated && showNotes && (
         <FloatingNotesWidget>
-          <NotesWidget />
+          <NotesWidget onClose={toggleNotes} />
         </FloatingNotesWidget>
       )}
       {showWeather && (
         <FloatingWeatherWidget>
-          <WeatherWidget />
+          <WeatherWidget onClose={toggleWeather} />
         </FloatingWeatherWidget>
       )}
       {showCalculator && (
         <FloatingCalculatorWidget>
-          <CalculatorWidget />
+          <CalculatorWidget onClose={toggleCalculator} />
         </FloatingCalculatorWidget>
       )}
       {showPasswordGenerator && (
         <FloatingPasswordGeneratorWidget>
-          <PasswordGeneratorWidget />
+          <PasswordGeneratorWidget onClose={togglePasswordGenerator} />
         </FloatingPasswordGeneratorWidget>
       )}
       <AuthModal

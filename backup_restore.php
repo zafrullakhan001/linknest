@@ -2018,8 +2018,18 @@ $dbInfo = getDatabaseInfo();
             display: block;
         }
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+            from { 
+                opacity: 0; 
+                transform: scale(0.8) rotate(-5deg) translateY(20px); 
+            }
+            50% {
+                opacity: 0.7;
+                transform: scale(1.05) rotate(2deg) translateY(-5px);
+            }
+            to { 
+                opacity: 1; 
+                transform: scale(1) rotate(0deg) translateY(0); 
+            }
         }
         .stats-grid {
             display: grid;

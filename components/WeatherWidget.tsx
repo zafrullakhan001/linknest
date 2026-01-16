@@ -12,6 +12,8 @@ interface WeatherData {
   aqi: number;
   windSpeed: number;
   apparentTemp: number;
+  pressure?: number; // Surface pressure in hPa
+  dewpoint?: number; // Dew point temperature in Celsius
   moonPhase?: number; // 0-1, where 0/1 = new moon, 0.5 = full moon
   sunrise?: string;
   sunset?: string;
@@ -27,6 +29,8 @@ interface WeatherResponse {
     relative_humidity_2m: number[];
     wind_speed_10m: number[];
     apparent_temperature: number[];
+    surface_pressure?: number[];
+    dewpoint_2m?: number[];
   };
   daily?: {
     time: string[];
@@ -78,7 +82,7 @@ const WEATHER_CODE_NAMES: Record<number, string> = {
   99: 'Thunderstorm with Heavy Hail',
 };
 
-const WEATHER_EMOJIS: Record<number, string> = {
+const WEATHER_EMOJIS_DAY: Record<number, string> = {
   0: '☀️',
   1: '🌤️',
   2: '⛅',
@@ -102,6 +106,37 @@ const WEATHER_EMOJIS: Record<number, string> = {
   80: '🌦️',
   81: '🌦️',
   82: '🌦️',
+  85: '🌨️',
+  86: '🌨️',
+  95: '⛈️',
+  96: '⛈️',
+  99: '⛈️',
+};
+
+const WEATHER_EMOJIS_NIGHT: Record<number, string> = {
+  0: '🌙',
+  1: '🌙',
+  2: '☁️',
+  3: '☁️',
+  45: '🌫️',
+  48: '🌫️',
+  51: '🌧️',
+  53: '🌧️',
+  55: '🌧️',
+  56: '🌨️',
+  57: '🌨️',
+  61: '🌧️',
+  63: '🌧️',
+  65: '🌧️',
+  66: '🌨️',
+  67: '🌨️',
+  71: '🌨️',
+  73: '🌨️',
+  75: '🌨️',
+  77: '🌨️',
+  80: '🌧️',
+  81: '🌧️',
+  82: '🌧️',
   85: '🌨️',
   86: '🌨️',
   95: '⛈️',
@@ -146,6 +181,22 @@ const getMoonPhaseInfo = (phase: number): { emoji: string; name: string } => {
   } else {
     return { emoji: '🌘', name: 'Waning Crescent' };
   }
+};
+
+// Determine if a given time is during the day or night
+const isDayTime = (timeString: string, sunrise?: string, sunset?: string): boolean => {
+  const time = new Date(timeString);
+  const hour = time.getHours();
+  
+  // If we have sunrise and sunset times, use them
+  if (sunrise && sunset) {
+    const sunriseTime = new Date(sunrise);
+    const sunsetTime = new Date(sunset);
+    return time >= sunriseTime && time < sunsetTime;
+  }
+  
+  // Fallback: assume day is between 6 AM and 6 PM
+  return hour >= 6 && hour < 18;
 };
 
 interface LocationResult {
@@ -200,7 +251,11 @@ const COUNTRIES = [
   { code: 'AE', name: 'United Arab Emirates' },
 ];
 
-export const WeatherWidget: React.FC = () => {
+interface WeatherWidgetProps {
+  onClose?: () => void;
+}
+
+export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ onClose }) => {
   const { isAuthenticated } = useAuth();
   const [locationInput, setLocationInput] = useState<string>('');
   const [weatherData, setWeatherData] = useState<WeatherData[]>([]);
@@ -552,7 +607,7 @@ export const WeatherWidget: React.FC = () => {
 
       const [weatherResponse, airQualityResponse] = await Promise.all([
         fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=temperature_2m,weathercode,precipitation,uv_index,relative_humidity_2m,wind_speed_10m,apparent_temperature&forecast_hours=${forecastHours}&timezone=auto&temperature_unit=celsius&wind_speed_unit=${windSpeedUnit}${forecastDays ? `&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum,uv_index_max,sunrise,sunset&forecast_days=${forecastDays}` : `&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum,uv_index_max,sunrise,sunset&forecast_days=1`}`
+          `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=temperature_2m,weathercode,precipitation,uv_index,relative_humidity_2m,wind_speed_10m,apparent_temperature,surface_pressure,dewpoint_2m&forecast_hours=${forecastHours}&timezone=auto&temperature_unit=celsius&wind_speed_unit=${windSpeedUnit}${forecastDays ? `&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum,uv_index_max,sunrise,sunset&forecast_days=${forecastDays}` : `&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum,uv_index_max,sunrise,sunset&forecast_days=1`}`
         ),
         fetch(
           `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${latitude}&longitude=${longitude}&hourly=us_aqi&forecast_hours=${forecastHours}&timezone=auto`
@@ -616,6 +671,8 @@ export const WeatherWidget: React.FC = () => {
             aqi: airQuality?.hourly.us_aqi[index] || 0,
             windSpeed: Math.round(weather.hourly.wind_speed_10m[index]) || 0,
             apparentTemp: Math.round(weather.hourly.apparent_temperature[index]),
+            pressure: weather.hourly.surface_pressure?.[index] ? Math.round(weather.hourly.surface_pressure[index]) : undefined,
+            dewpoint: weather.hourly.dewpoint_2m?.[index] ? Math.round(weather.hourly.dewpoint_2m[index]) : undefined,
             moonPhase: calculateMoonPhase(date),
           };
         });
@@ -815,7 +872,7 @@ export const WeatherWidget: React.FC = () => {
       const windSpeedUnit = useMph ? 'mph' : 'kmh';
       const [weatherResponse, airQualityResponse] = await Promise.all([
         fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=temperature_2m,weathercode,precipitation,uv_index,relative_humidity_2m,wind_speed_10m,apparent_temperature&forecast_hours=${forecastHours}&timezone=auto&temperature_unit=celsius&wind_speed_unit=${windSpeedUnit}${forecastDays ? `&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum,uv_index_max,sunrise,sunset&forecast_days=${forecastDays}` : `&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum,uv_index_max,sunrise,sunset&forecast_days=1`}`
+          `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=temperature_2m,weathercode,precipitation,uv_index,relative_humidity_2m,wind_speed_10m,apparent_temperature,surface_pressure,dewpoint_2m&forecast_hours=${forecastHours}&timezone=auto&temperature_unit=celsius&wind_speed_unit=${windSpeedUnit}${forecastDays ? `&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum,uv_index_max,sunrise,sunset&forecast_days=${forecastDays}` : `&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum,uv_index_max,sunrise,sunset&forecast_days=1`}`
         ),
         fetch(
           `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${latitude}&longitude=${longitude}&hourly=us_aqi&forecast_hours=${forecastHours}&timezone=auto`
@@ -884,6 +941,8 @@ export const WeatherWidget: React.FC = () => {
             aqi: airQuality?.hourly.us_aqi[index] || 0,
             windSpeed: Math.round(weather.hourly.wind_speed_10m[index]) || 0,
             apparentTemp: Math.round(weather.hourly.apparent_temperature[index]),
+            pressure: weather.hourly.surface_pressure?.[index] ? Math.round(weather.hourly.surface_pressure[index]) : undefined,
+            dewpoint: weather.hourly.dewpoint_2m?.[index] ? Math.round(weather.hourly.dewpoint_2m[index]) : undefined,
             moonPhase: calculateMoonPhase(date),
           };
         });
@@ -959,7 +1018,7 @@ export const WeatherWidget: React.FC = () => {
           <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
             Weather Forecast
           </h3>
-          <div className="flex gap-1">
+          <div className="flex gap-1 items-center">
             <button
               onClick={toggleTemperatureUnit}
               className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600 rounded transition-colors"
@@ -974,6 +1033,18 @@ export const WeatherWidget: React.FC = () => {
             >
               {useMph ? 'mph' : 'km/h'}
             </button>
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 rounded transition-colors"
+                title="Close Weather Widget"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            )}
           </div>
         </div>
 
@@ -1180,6 +1251,16 @@ export const WeatherWidget: React.FC = () => {
                 >
                   🗺️
                 </button>
+                <button
+                  onClick={() => {
+                    const weatherComUrl = `https://weather.com/weather/today/l/${currentCoordinates.lat},${currentCoordinates.lon}`;
+                    window.open(weatherComUrl, '_blank', 'noopener,noreferrer');
+                  }}
+                  className="px-1.5 py-0.5 text-[10px] bg-cyan-200 dark:bg-cyan-600 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-300 dark:hover:bg-cyan-500 rounded transition-colors"
+                  title="Open in Weather.com"
+                >
+                  🌦️
+                </button>
               </>
             )}
           </div>
@@ -1227,6 +1308,13 @@ export const WeatherWidget: React.FC = () => {
             const aqiLevel = getAQILevel(item.aqi);
             const humidityLevel = getHumidityLevel(item.humidity);
             const feelsLikeDiff = item.apparentTemp - item.temperature;
+            // Determine if it's day or night for this item
+            const sunrise = item.sunrise || todaySunrise;
+            const sunset = item.sunset || todaySunset;
+            const isDay = isDayTime(item.time, sunrise || undefined, sunset || undefined);
+            const weatherEmoji = isDay 
+              ? (WEATHER_EMOJIS_DAY[item.weatherCode] || '🌤️')
+              : (WEATHER_EMOJIS_NIGHT[item.weatherCode] || '🌙');
             return (
               <div
                 key={`${item.time}-${index}`}
@@ -1235,10 +1323,11 @@ export const WeatherWidget: React.FC = () => {
                   animationDelay: `${index * 0.28}s`
                 }}
               >
-                <div className="flex items-center justify-between gap-2 mb-1.5">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="grid grid-cols-4 gap-3 items-center">
+                  {/* Column 1: Weather emoji, time, condition */}
+                  <div className="flex items-center gap-3 min-w-0">
                     <div className="text-2xl flex-shrink-0">
-                      {WEATHER_EMOJIS[item.weatherCode] || '🌤️'}
+                      {weatherEmoji}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
@@ -1260,84 +1349,102 @@ export const WeatherWidget: React.FC = () => {
                       )}
                     </div>
                   </div>
-                  <div className="text-lg font-bold text-slate-900 dark:text-slate-100 flex-shrink-0">
-                    {forecastPeriod === '7day' ? (
-                      <div className="text-right">
-                        <div>{convertTemp(item.temperature)}°</div>
-                        <div className="text-xs font-normal text-slate-500 dark:text-slate-400">
-                          {convertTemp(item.apparentTemp)}°
-                        </div>
+                  
+                  {/* Column 2: UV, Humidity, Wind Speed */}
+                  <div className="flex flex-col gap-1 items-center">
+                    {forecastPeriod !== '7day' && item.uvIndex > 0 && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs">☀️</span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${uvLevel.bgColor} ${uvLevel.color} font-medium`}>
+                          UV {item.uvIndex.toFixed(1)}
+                        </span>
                       </div>
-                    ) : (
-                      <>{convertTemp(item.temperature)}°{useFahrenheit ? 'F' : 'C'}</>
+                    )}
+                    {forecastPeriod !== '7day' && item.humidity > 0 && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs">💧</span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${humidityLevel.bgColor} ${humidityLevel.color} font-medium`}>
+                          {item.humidity}%
+                        </span>
+                      </div>
+                    )}
+                    {forecastPeriod !== '7day' && item.windSpeed > 0 && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs">💨</span>
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-300 font-medium">
+                          {item.windSpeed} {useMph ? 'mph' : 'km/h'}
+                        </span>
+                      </div>
+                    )}
+                    {forecastPeriod === '7day' && item.uvIndex > 0 && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs">☀️</span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${uvLevel.bgColor} ${uvLevel.color} font-medium`}>
+                          Max UV {item.uvIndex.toFixed(1)}
+                        </span>
+                      </div>
+                    )}
+                    {forecastPeriod === '7day' && item.sunrise && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs">🌅</span>
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 font-medium">
+                          {formatTimeOnly(item.sunrise)}
+                        </span>
+                      </div>
+                    )}
+                    {forecastPeriod === '7day' && item.sunset && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs">🌇</span>
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 font-medium">
+                          {formatTimeOnly(item.sunset)}
+                        </span>
+                      </div>
                     )}
                   </div>
-                </div>
-                <div className="flex flex-wrap gap-1.5 mt-1">
-                  {forecastPeriod !== '7day' && item.uvIndex > 0 && (
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs">☀️</span>
-                      <span className={`text-xs px-1.5 py-0.5 rounded ${uvLevel.bgColor} ${uvLevel.color} font-medium`}>
-                        UV {item.uvIndex.toFixed(1)}
-                      </span>
+                  
+                  {/* Column 3: AQI, Pressure, Dew Point */}
+                  <div className="flex flex-col gap-1 items-center">
+                    {forecastPeriod !== '7day' && item.aqi > 0 && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs">🌫️</span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${aqiLevel.bgColor} ${aqiLevel.color} font-medium`}>
+                          AQI {aqiLevel.label}
+                        </span>
+                      </div>
+                    )}
+                    {forecastPeriod !== '7day' && item.pressure !== undefined && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs">📊</span>
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-300 font-medium">
+                          {item.pressure} hPa
+                        </span>
+                      </div>
+                    )}
+                    {forecastPeriod !== '7day' && item.dewpoint !== undefined && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs">🌡️</span>
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-300 font-medium">
+                          DP {convertTemp(item.dewpoint)}°
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Column 4: Temperature */}
+                  <div className="flex flex-col items-center justify-center flex-shrink-0">
+                    <div className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                      {forecastPeriod === '7day' ? (
+                        <div className="text-center">
+                          <div>{convertTemp(item.temperature)}°</div>
+                          <div className="text-xs font-normal text-slate-500 dark:text-slate-400">
+                            {convertTemp(item.apparentTemp)}°
+                          </div>
+                        </div>
+                      ) : (
+                        <>{convertTemp(item.temperature)}°{useFahrenheit ? 'F' : 'C'}</>
+                      )}
                     </div>
-                  )}
-                  {forecastPeriod !== '7day' && item.humidity > 0 && (
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs">💧</span>
-                      <span className={`text-xs px-1.5 py-0.5 rounded ${humidityLevel.bgColor} ${humidityLevel.color} font-medium`}>
-                        {item.humidity}%
-                      </span>
-                    </div>
-                  )}
-                  {forecastPeriod !== '7day' && item.windSpeed > 0 && (
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs">💨</span>
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-300 font-medium">
-                        {item.windSpeed} {useMph ? 'mph' : 'km/h'}
-                      </span>
-                    </div>
-                  )}
-                  {forecastPeriod !== '7day' && item.aqi > 0 && (
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs">🌫️</span>
-                      <span className={`text-xs px-1.5 py-0.5 rounded ${aqiLevel.bgColor} ${aqiLevel.color} font-medium`}>
-                        AQI {aqiLevel.label}
-                      </span>
-                    </div>
-                  )}
-                  {forecastPeriod === '7day' && item.uvIndex > 0 && (
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs">☀️</span>
-                      <span className={`text-xs px-1.5 py-0.5 rounded ${uvLevel.bgColor} ${uvLevel.color} font-medium`}>
-                        Max UV {item.uvIndex.toFixed(1)}
-                      </span>
-                    </div>
-                  )}
-                  {item.moonPhase !== undefined && (
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs">{getMoonPhaseInfo(item.moonPhase).emoji}</span>
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-300 font-medium">
-                        {getMoonPhaseInfo(item.moonPhase).name}
-                      </span>
-                    </div>
-                  )}
-                  {forecastPeriod === '7day' && item.sunrise && (
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs">🌅</span>
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 font-medium">
-                        {formatTimeOnly(item.sunrise)}
-                      </span>
-                    </div>
-                  )}
-                  {forecastPeriod === '7day' && item.sunset && (
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs">🌇</span>
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 font-medium">
-                        {formatTimeOnly(item.sunset)}
-                      </span>
-                    </div>
-                  )}
+                  </div>
                 </div>
               </div>
             );

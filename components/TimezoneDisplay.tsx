@@ -315,7 +315,11 @@ const ClockFace: React.FC<{
   );
 };
 
-export const TimezoneDisplay: React.FC = () => {
+interface TimezoneDisplayProps {
+  onClose?: () => void;
+}
+
+export const TimezoneDisplay: React.FC<TimezoneDisplayProps> = ({ onClose }) => {
   const { isAuthenticated } = useAuth();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [timezone, setTimezone] = useState<string>('');
@@ -1055,6 +1059,18 @@ export const TimezoneDisplay: React.FC = () => {
       style={{ zIndex: 1 }}
       title={`Click to switch to ${isAnalog ? 'digital' : 'analog'} clock - Timezone: ${timezone} (UTC${timezoneOffset})`}
     >
+      {onClose && (
+        <button
+          onClick={onClose}
+          className="absolute top-2 right-2 text-xs px-2 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 rounded transition-colors z-10"
+          title="Close Clock Widget"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      )}
       {(timerRinging || alarmRingingId) && (
         <div className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg border border-red-200 dark:border-red-900/40 bg-red-50/80 dark:bg-red-900/20 text-red-700 dark:text-red-200">
           <div className="flex flex-col leading-tight min-w-0">

@@ -45,7 +45,11 @@ interface NotesData {
   notes: Record<string, Note[]>;
 }
 
-export const NotesWidget: React.FC = () => {
+interface NotesWidgetProps {
+  onClose?: () => void;
+}
+
+export const NotesWidget: React.FC<NotesWidgetProps> = ({ onClose }) => {
   const { isAuthenticated } = useAuth();
   const [tabs, setTabs] = useState<string[]>(['General']);
   const [activeTab, setActiveTab] = useState<string>('General');
@@ -83,12 +87,20 @@ export const NotesWidget: React.FC = () => {
       if (!response.ok) throw new Error('Failed to load notes');
       const data: NotesData = await response.json();
       
-      setTabs(data.tabs.length > 0 ? data.tabs : ['General']);
+      // Preserve existing tab order and append new tabs that don't exist
+      setTabs((currentTabs) => {
+        const apiTabs = data.tabs.length > 0 ? data.tabs : ['General'];
+        const existingTabs = currentTabs.filter(tab => apiTabs.includes(tab));
+        const newTabs = apiTabs.filter(tab => !currentTabs.includes(tab));
+        // Return existing tabs in their current order, then append new tabs
+        return [...existingTabs, ...newTabs];
+      });
       setNotes(data.notes || {});
       
       // Set active tab to first tab if current active tab doesn't exist
-      if (!data.tabs.includes(activeTab) && data.tabs.length > 0) {
-        setActiveTab(data.tabs[0]);
+      const apiTabs = data.tabs.length > 0 ? data.tabs : ['General'];
+      if (!apiTabs.includes(activeTab) && apiTabs.length > 0) {
+        setActiveTab(apiTabs[0]);
       }
     } catch (error) {
       console.error('Error loading notes:', error);
@@ -218,6 +230,165 @@ export const NotesWidget: React.FC = () => {
     }
   };
 
+  const exportToCSV = () => {
+    try {
+      // Prepare CSV data
+      const csvRows: string[] = [];
+      
+      // CSV header
+      csvRows.push('Tab,Content,Position,Created At,Updated At');
+      
+      // Add all notes
+      tabs.forEach(tab => {
+        const tabNotes = notes[tab] || [];
+        tabNotes.forEach(note => {
+          // Escape content for CSV (handle commas, quotes, newlines)
+          const escapedContent = `"${note.content.replace(/"/g, '""')}"`;
+          const createdDate = new Date(note.created_at * 1000).toISOString();
+          const updatedDate = new Date(note.updated_at * 1000).toISOString();
+          csvRows.push(`${tab},${escapedContent},${note.position},${createdDate},${updatedDate}`);
+        });
+      });
+      
+      // Create CSV string
+      const csvContent = csvRows.join('\n');
+      
+      // Create download link
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `linknest-notes-${new Date().toISOString().slice(0, 10)}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Error exporting to CSV:', error);
+      alert('Failed to export notes. Please try again.');
+    }
+  };
+
+  const importFromCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const lines = text.split('\n').filter(line => line.trim());
+      
+      if (lines.length < 2) {
+        alert('CSV file is empty or invalid.');
+        return;
+      }
+
+      // Skip header row
+      const dataLines = lines.slice(1);
+      const importedNotes: Array<{ tab: string; content: string; position: number }> = [];
+
+      // Simple CSV parser that handles quoted fields
+      const parseCSVLine = (line: string): string[] => {
+        const result: string[] = [];
+        let current = '';
+        let inQuotes = false;
+
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          const nextChar = line[i + 1];
+
+          if (char === '"') {
+            if (inQuotes && nextChar === '"') {
+              // Escaped quote
+              current += '"';
+              i++; // Skip next quote
+            } else {
+              // Toggle quote state
+              inQuotes = !inQuotes;
+            }
+          } else if (char === ',' && !inQuotes) {
+            // Field separator
+            result.push(current);
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+        result.push(current); // Add last field
+        return result;
+      };
+
+      for (const line of dataLines) {
+        const fields = parseCSVLine(line);
+        if (fields.length < 3) continue;
+
+        const [tab, content, positionStr] = fields;
+        const position = parseInt(positionStr, 10) || 0;
+
+        if (tab && content) {
+          importedNotes.push({
+            tab: tab.trim(),
+            content: content.trim(),
+            position,
+          });
+        }
+      }
+
+      if (importedNotes.length === 0) {
+        alert('No valid notes found in CSV file.');
+        return;
+      }
+
+      if (!confirm(`Import ${importedNotes.length} note(s)? This will add new notes to existing tabs.`)) {
+        return;
+      }
+
+      // Import notes via API
+      const apiBase = resolveApiBase();
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const note of importedNotes) {
+        try {
+          const response = await fetch(`${apiBase}/notes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ 
+              content: note.content, 
+              tab_name: note.tab,
+              position: note.position 
+            }),
+          });
+
+          if (response.ok) {
+            successCount++;
+          } else {
+            errorCount++;
+          }
+        } catch (err) {
+          errorCount++;
+        }
+      }
+
+      // Reload notes
+      await loadNotes();
+
+      // Show result
+      if (errorCount === 0) {
+        alert(`Successfully imported ${successCount} note(s).`);
+      } else {
+        alert(`Imported ${successCount} note(s). ${errorCount} note(s) failed to import.`);
+      }
+
+      // Reset file input
+      event.target.value = '';
+    } catch (error) {
+      console.error('Error importing from CSV:', error);
+      alert('Failed to import notes. Please check the CSV file format.');
+      event.target.value = '';
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent, noteId: number | null, content: string) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
@@ -251,13 +422,46 @@ export const NotesWidget: React.FC = () => {
           <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
             Quick Notes
           </h3>
-          <button
-            onClick={() => setShowNewTabInput(!showNewTabInput)}
-            className="text-xs px-2 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600 rounded transition-colors"
-            title="Add new tab"
-          >
+          <div className="flex gap-1 items-center">
+            <button
+              onClick={exportToCSV}
+              className="text-xs px-2 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600 rounded transition-colors"
+              title="Export to CSV"
+            >
+              📥
+            </button>
+            <label 
+              className="text-xs px-2 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600 rounded transition-colors cursor-pointer"
+              title="Import from CSV"
+            >
+              <input
+                type="file"
+                accept=".csv"
+                onChange={importFromCSV}
+                className="hidden"
+              />
+              📤
+            </label>
+            <button
+              onClick={() => setShowNewTabInput(!showNewTabInput)}
+              className="text-xs px-2 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600 rounded transition-colors"
+              title="Add new tab"
+            >
             + Tab
           </button>
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="text-xs px-2 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 rounded transition-colors"
+                title="Close Notes Widget"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Tabs */}
