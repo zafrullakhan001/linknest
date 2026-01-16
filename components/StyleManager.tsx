@@ -117,16 +117,15 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
     // Get zoom scale to account for page zoom
     const zoomScale = (styles.pageZoom || 100) / 100;
 
-    // Calculate offset from center of dialog
-    // getBoundingClientRect() returns coordinates in actual viewport (not scaled)
-    const rect = dialogRef.current.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
+    // Calculate offset: difference between mouse position and dialog center
+    // position.x/y are in CSS pixels, so convert to viewport pixels for comparison with e.clientX
+    const centerXInViewport = position.x * zoomScale;
+    const centerYInViewport = position.y * zoomScale;
 
-    // Account for zoom when calculating offset
+    // Store offset in viewport pixels (difference between mouse and center)
     setDragOffset({
-      x: (e.clientX - centerX) / zoomScale,
-      y: (e.clientY - centerY) / zoomScale
+      x: e.clientX - centerXInViewport,
+      y: e.clientY - centerYInViewport
     });
     setIsDragging(true);
     e.preventDefault();
@@ -142,9 +141,17 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
       const zoomScale = (styles.pageZoom || 100) / 100;
 
       // Calculate new position (center point of dialog) accounting for drag offset and zoom
-      // e.clientX/clientY are in actual viewport coordinates, so we need to scale them
-      const newX = (e.clientX / zoomScale) - dragOffset.x;
-      const newY = (e.clientY / zoomScale) - dragOffset.y;
+      // e.clientX/clientY are in viewport pixels
+      // dragOffset is also in viewport pixels
+      // position.x/y are in CSS pixels (already divided by zoomScale)
+      // So: convert mouse position to CSS pixels, then subtract offset (also converted)
+      const mouseXInCssPixels = e.clientX / zoomScale;
+      const mouseYInCssPixels = e.clientY / zoomScale;
+      const offsetXInCssPixels = dragOffset.x / zoomScale;
+      const offsetYInCssPixels = dragOffset.y / zoomScale;
+      
+      const newX = mouseXInCssPixels - offsetXInCssPixels;
+      const newY = mouseYInCssPixels - offsetYInCssPixels;
 
       // Keep dialog within viewport bounds (account for zoom)
       const dialogWidth = dialogRef.current.offsetWidth;
