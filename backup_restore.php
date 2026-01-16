@@ -14,23 +14,28 @@ session_start();
 // Branding configuration file (load early so it's available everywhere)
 $brandingFile = __DIR__ . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'backup_branding.json';
 
-// Function to load branding
+// Function to load branding and settings
 function loadBranding($file) {
     if (file_exists($file)) {
         $content = @file_get_contents($file);
         if ($content) {
             $data = @json_decode($content, true);
-            if ($data && isset($data['brand_name']) && !empty(trim($data['brand_name']))) {
-                return trim($data['brand_name']);
+            if ($data) {
+                return $data;
             }
         }
     }
-    return 'LinkNest'; // Default brand name
+    return ['brand_name' => 'LinkNest', 'password_hash' => null]; // Default values
 }
 
-// Function to save branding
-function saveBranding($file, $brandName) {
-    $data = ['brand_name' => trim($brandName)];
+// Function to save branding and settings
+function saveBranding($file, $brandName, $passwordHash = null) {
+    // Load existing data to preserve password hash if not changing
+    $existing = loadBranding($file);
+    $data = [
+        'brand_name' => trim($brandName),
+        'password_hash' => $passwordHash !== null ? $passwordHash : ($existing['password_hash'] ?? null)
+    ];
     $dir = dirname($file);
     if (!is_dir($dir)) {
         @mkdir($dir, 0755, true);
@@ -62,7 +67,9 @@ function saveBackupSettings($file, $settings) {
 }
 
 // Load branding early
-$brandName = loadBranding($brandingFile);
+$brandingData = loadBranding($brandingFile);
+$brandName = $brandingData['brand_name'] ?? 'LinkNest';
+$storedPasswordHash = $brandingData['password_hash'] ?? null;
 
 // Backup settings file
 $backupSettingsFile = __DIR__ . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'backup_settings.json';
@@ -71,7 +78,8 @@ $backupMethod = $backupSettings['backup_method'] ?? 'vacuum_into';
 
 // Authentication credentials
 define('BACKUP_USERNAME', 'admin');
-define('BACKUP_PASSWORD', 'password123');
+// Use stored password hash if available, otherwise use default password
+define('BACKUP_PASSWORD', 'password123'); // Default password (only used if no hash is stored)
 
 // Check if user is logged in
 $isLoggedIn = isset($_SESSION['backup_authenticated']) && $_SESSION['backup_authenticated'] === true;
@@ -81,7 +89,18 @@ if (isset($_POST['login'])) {
     $username = $_POST['username'] ?? '';
     $password = $_POST['password'] ?? '';
     
-    if ($username === BACKUP_USERNAME && $password === BACKUP_PASSWORD) {
+    $passwordValid = false;
+    
+    // Check if we have a stored password hash
+    if ($storedPasswordHash !== null && !empty($storedPasswordHash)) {
+        // Verify against stored hash
+        $passwordValid = password_verify($password, $storedPasswordHash);
+    } else {
+        // Fall back to default password for backward compatibility
+        $passwordValid = ($password === BACKUP_PASSWORD);
+    }
+    
+    if ($username === BACKUP_USERNAME && $passwordValid) {
         $_SESSION['backup_authenticated'] = true;
         $isLoggedIn = true;
         header('Location: ' . $_SERVER['PHP_SELF']);
@@ -646,6 +665,7 @@ if (isset($_POST['save_branding']) && $isLoggedIn) {
     if (!empty(trim($newBrandName))) {
         if (saveBranding($brandingFile, $newBrandName)) {
             $brandName = trim($newBrandName);
+            $brandingData['brand_name'] = $brandName;
             $_SESSION['brand_saved'] = true;
             header('Location: ' . $_SERVER['PHP_SELF'] . '?tab=settings');
             exit;
@@ -653,12 +673,53 @@ if (isset($_POST['save_branding']) && $isLoggedIn) {
     }
 }
 
+// Handle password change
+if (isset($_POST['change_password']) && $isLoggedIn) {
+    $currentPassword = $_POST['current_password'] ?? '';
+    $newPassword = $_POST['new_password'] ?? '';
+    $confirmPassword = $_POST['confirm_password'] ?? '';
+    
+    // Verify current password
+    $currentPasswordValid = false;
+    if ($storedPasswordHash !== null && !empty($storedPasswordHash)) {
+        $currentPasswordValid = password_verify($currentPassword, $storedPasswordHash);
+    } else {
+        $currentPasswordValid = ($currentPassword === BACKUP_PASSWORD);
+    }
+    
+    if (!$currentPasswordValid) {
+        $_SESSION['password_error'] = 'Current password is incorrect';
+    } elseif (empty($newPassword) || strlen($newPassword) < 6) {
+        $_SESSION['password_error'] = 'New password must be at least 6 characters long';
+    } elseif ($newPassword !== $confirmPassword) {
+        $_SESSION['password_error'] = 'New password and confirmation do not match';
+    } else {
+        // Hash the new password
+        $newPasswordHash = password_hash($newPassword, PASSWORD_DEFAULT);
+        if (saveBranding($brandingFile, $brandName, $newPasswordHash)) {
+            $storedPasswordHash = $newPasswordHash;
+            $brandingData['password_hash'] = $newPasswordHash;
+            $_SESSION['password_saved'] = true;
+            header('Location: ' . $_SERVER['PHP_SELF'] . '?tab=settings');
+            exit;
+        } else {
+            $_SESSION['password_error'] = 'Failed to save new password';
+        }
+    }
+    header('Location: ' . $_SERVER['PHP_SELF'] . '?tab=settings');
+    exit;
+}
+
 // Handle branding reset
 if (isset($_GET['reset_branding']) && $isLoggedIn) {
+    // Preserve password hash when resetting branding
+    $passwordHash = $storedPasswordHash;
     if (file_exists($brandingFile)) {
-        @unlink($brandingFile);
+        // Only reset brand name, keep password
+        saveBranding($brandingFile, 'LinkNest', $passwordHash);
     }
     $brandName = 'LinkNest';
+    $brandingData['brand_name'] = 'LinkNest';
     header('Location: ' . $_SERVER['PHP_SELF'] . '?tab=settings');
     exit;
 }
@@ -1726,7 +1787,7 @@ $dbInfo = getDatabaseInfo();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars($brandName); ?> Backup & Restore</title>
+    <title><?php echo htmlspecialchars($brandName); ?> Backup & Restore for SQLite DB</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -2186,7 +2247,7 @@ $dbInfo = getDatabaseInfo();
 <body>
     <div class="container">
         <div class="header">
-            <h1>💾 <?php echo htmlspecialchars($brandName); ?> Backup & Restore</h1>
+            <h1>💾 <?php echo htmlspecialchars($brandName); ?> Backup & Restore for SQLite DB</h1>
             <div class="header-actions">
                 <a href="?logout=1" class="btn btn-secondary">Logout</a>
             </div>
@@ -2237,7 +2298,7 @@ $dbInfo = getDatabaseInfo();
             <!-- Database Information Card -->
             <div class="card-modern">
                 <div class="card-header-modern">
-                    <h2>🗄️ Database Information</h2>
+                    <h2>🗄️ SQLite DB Info</h2>
                     <button id="db-info-toggle" class="btn-modern btn-modern-secondary" style="padding: 6px 12px; font-size: 12px;" onclick="toggleDatabaseInfo()">
                         <span id="db-info-toggle-icon">▼</span> <span id="db-info-toggle-text">Show</span>
                     </button>
@@ -2681,6 +2742,49 @@ $dbInfo = getDatabaseInfo();
                         <?php unset($_SESSION['brand_saved']); ?>
                     <?php endif; ?>
                     
+                    <h3 style="color: #4f46e5; font-size: 18px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #e5e7eb; margin-top: 32px;">Change Password</h3>
+                    <form method="POST" style="display: grid; gap: 20px; max-width: 600px; margin-bottom: 32px;">
+                        <div>
+                            <label style="display: block; font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 8px;">Current Password:</label>
+                            <input type="password" name="current_password" required
+                                   style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px; transition: border-color 0.2s;"
+                                   onfocus="this.style.borderColor='#6b7280'" onblur="this.style.borderColor='#e5e7eb'"
+                                   placeholder="Enter current password">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 8px;">New Password:</label>
+                            <input type="password" name="new_password" required minlength="6"
+                                   style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px; transition: border-color 0.2s;"
+                                   onfocus="this.style.borderColor='#6b7280'" onblur="this.style.borderColor='#e5e7eb'"
+                                   placeholder="Enter new password (min 6 characters)">
+                            <p style="font-size: 12px; color: #6b7280; margin-top: 4px;">Password must be at least 6 characters long</p>
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 8px;">Confirm New Password:</label>
+                            <input type="password" name="confirm_password" required minlength="6"
+                                   style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px; transition: border-color 0.2s;"
+                                   onfocus="this.style.borderColor='#6b7280'" onblur="this.style.borderColor='#e5e7eb'"
+                                   placeholder="Confirm new password">
+                        </div>
+                        <div style="display: flex; gap: 12px;">
+                            <button type="submit" name="change_password" class="btn-modern btn-modern-primary">🔒 Change Password</button>
+                        </div>
+                    </form>
+                    
+                    <?php if (isset($_SESSION['password_error'])): ?>
+                        <div style="padding: 12px; background: #fee2e2; border: 1px solid #ef4444; border-radius: 8px; color: #991b1b; margin-bottom: 20px;">
+                            ✗ <?php echo htmlspecialchars($_SESSION['password_error']); ?>
+                        </div>
+                        <?php unset($_SESSION['password_error']); ?>
+                    <?php endif; ?>
+                    
+                    <?php if (isset($_SESSION['password_saved'])): ?>
+                        <div style="padding: 12px; background: #d1fae5; border: 1px solid #10b981; border-radius: 8px; color: #065f46; margin-bottom: 20px;">
+                            ✓ Password changed successfully!
+                        </div>
+                        <?php unset($_SESSION['password_saved']); ?>
+                    <?php endif; ?>
+                    
                     <h3 style="color: #4f46e5; font-size: 18px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #e5e7eb; margin-top: 32px;">Backup Method</h3>
                     <form method="POST" style="display: grid; gap: 20px; max-width: 600px; margin-bottom: 32px;">
                         <div>
@@ -2716,20 +2820,29 @@ $dbInfo = getDatabaseInfo();
                     <?php endif; ?>
                     
                     <h3 style="color: #4f46e5; font-size: 18px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #e5e7eb; margin-top: 32px;">Custom Backup Paths</h3>
+                    <div style="padding: 12px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; color: #92400e; margin-bottom: 20px; font-size: 12px;">
+                        <strong>ℹ️ Note:</strong> These are <strong>server-side paths</strong>, not client/browser paths. The paths must exist on the server where PHP is running.
+                    </div>
                     <form method="POST" style="display: grid; gap: 20px; max-width: 600px;">
                         <div>
-                            <label style="display: block; font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 8px;">Snapshot Path:</label>
+                            <label style="display: block; font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 8px;">Snapshot Path (Server Path):</label>
                             <input type="text" name="snapshot_path" value="<?php echo htmlspecialchars($customSnapshotPath); ?>" 
                                    style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-family: monospace; font-size: 13px; transition: border-color 0.2s;"
                                    onfocus="this.style.borderColor='#6b7280'" onblur="this.style.borderColor='#e5e7eb'">
-                            <p style="font-size: 12px; color: #6b7280; margin-top: 4px;">Where snapshot .db files are stored</p>
+                            <p style="font-size: 12px; color: #6b7280; margin-top: 4px;">
+                                <strong>Complete Server Path:</strong> <code style="background: #f3f4f6; padding: 2px 6px; border-radius: 4px;"><?php echo htmlspecialchars(realpath($customSnapshotPath) ?: $customSnapshotPath); ?></code>
+                            </p>
+                            <p style="font-size: 12px; color: #6b7280; margin-top: 4px;">Where snapshot .db files are stored on the server</p>
                         </div>
                         <div>
-                            <label style="display: block; font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 8px;">Export Path:</label>
+                            <label style="display: block; font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 8px;">Export Path (Server Path):</label>
                             <input type="text" name="export_path" value="<?php echo htmlspecialchars($customExportPath); ?>" 
                                    style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-family: monospace; font-size: 13px; transition: border-color 0.2s;"
                                    onfocus="this.style.borderColor='#6b7280'" onblur="this.style.borderColor='#e5e7eb'">
-                            <p style="font-size: 12px; color: #6b7280; margin-top: 4px;">Where export directories are stored</p>
+                            <p style="font-size: 12px; color: #6b7280; margin-top: 4px;">
+                                <strong>Complete Server Path:</strong> <code style="background: #f3f4f6; padding: 2px 6px; border-radius: 4px;"><?php echo htmlspecialchars(realpath($customExportPath) ?: $customExportPath); ?></code>
+                            </p>
+                            <p style="font-size: 12px; color: #6b7280; margin-top: 4px;">Where export directories are stored on the server</p>
                         </div>
                         <div style="display: flex; gap: 12px; margin-top: 8px;">
                             <button type="submit" name="save_paths" class="btn-modern btn-modern-primary">💾 Save Paths</button>
