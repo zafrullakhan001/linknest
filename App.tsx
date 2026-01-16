@@ -23,6 +23,8 @@ import { FloatingPasswordGeneratorWidget } from './components/FloatingPasswordGe
 import { PasswordGeneratorWidget } from './components/PasswordGeneratorWidget';
 import { BroadcastBanner } from './components/BroadcastBanner';
 import { MaintenancePage } from './components/MaintenancePage';
+import { FloatingPageZoomControl } from './components/FloatingPageZoomControl';
+import { PageZoomWidget } from './components/PageZoomControl';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -144,6 +146,16 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('linknest_show_password_generator_widget', showPasswordGenerator.toString());
   }, [showPasswordGenerator]);
+
+  // Page Zoom Control Widget Visibility State
+  const [showZoomControl, setShowZoomControl] = useState(() => {
+    const saved = localStorage.getItem('linknest_show_zoom_control_widget');
+    return saved !== null ? saved === 'true' : false; // Default to hidden
+  });
+
+  useEffect(() => {
+    localStorage.setItem('linknest_show_zoom_control_widget', showZoomControl.toString());
+  }, [showZoomControl]);
 
   // Theme State
   const [darkMode, setDarkMode] = useState(() => {
@@ -304,6 +316,10 @@ const AppContent: React.FC = () => {
 
   const togglePasswordGenerator = () => {
     setShowPasswordGenerator(!showPasswordGenerator);
+  };
+
+  const toggleZoomControl = () => {
+    setShowZoomControl(!showZoomControl);
   };
 
   const handleTabClick = (tab: string) => {
@@ -678,6 +694,8 @@ const AppContent: React.FC = () => {
         toggleCalculator={toggleCalculator}
         showPasswordGenerator={showPasswordGenerator}
         togglePasswordGenerator={togglePasswordGenerator}
+        showZoomControl={showZoomControl}
+        toggleZoomControl={toggleZoomControl}
         user={user}
         onLoginClick={() => setAuthModalOpen(true)}
         onHelpClick={() => setHelpAboutOpen(true)}
@@ -871,6 +889,11 @@ const AppContent: React.FC = () => {
         <FloatingPasswordGeneratorWidget>
           <PasswordGeneratorWidget onClose={togglePasswordGenerator} />
         </FloatingPasswordGeneratorWidget>
+      )}
+      {showZoomControl && (
+        <FloatingPageZoomControl onClose={toggleZoomControl}>
+          <PageZoomWidget />
+        </FloatingPageZoomControl>
       )}
       <AuthModal
         isOpen={authModalOpen}
