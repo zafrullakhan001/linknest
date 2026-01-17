@@ -38,6 +38,18 @@ interface ProcessingStats {
   totalSections: number;
   processingTime: number;
   chunksProcessed: number;
+  totalCost: number;
+}
+
+interface ChunkProgress {
+  current: number;
+  total: number;
+  chunkTime?: number;
+  startTime?: number;
+  processedCount?: number;
+  unprocessedCount?: number;
+  chunkCost?: number;
+  totalCost?: number;
 }
 
 export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose }) => {
@@ -47,7 +59,7 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
   const [error, setError] = useState<string | null>(null);
   const [organizedJson, setOrganizedJson] = useState<string | null>(null);
   const [extractionMethod, setExtractionMethod] = useState<'html' | 'manual'>('html');
-  const [progress, setProgress] = useState<{ current: number; total: number; chunkTime?: number; startTime?: number } | null>(null);
+  const [progress, setProgress] = useState<ChunkProgress | null>(null);
   const [selectedModel, setSelectedModel] = useState<string>('openai/gpt-4o-mini');
   const [chunkSize, setChunkSize] = useState<number>(100);
   const [stats, setStats] = useState<ProcessingStats | null>(null);
@@ -56,6 +68,9 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
   const [processedLinks, setProcessedLinks] = useState<Bookmark[]>([]);
   const [unprocessedLinks, setUnprocessedLinks] = useState<Bookmark[]>([]);
   const [lastPrompt, setLastPrompt] = useState<string>('');
+  const [chunkCosts, setChunkCosts] = useState<number[]>([]);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [isCancelled, setIsCancelled] = useState<boolean>(false);
 
   // Load settings from localStorage on mount
   useEffect(() => {
@@ -239,11 +254,16 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
   // Generate unique IDs
   const generateId = (prefix: string, index: number) => `${prefix}_${index}_${Date.now()}`;
 
-  // Track which links were processed (count all links in all tiles)
-  const trackProcessedLinks = (tiles: any[]): number => {
-    let count = 0;
-    const seenUrls = new Set<string>();
+  // Track which links were processed and return both count and lists
+  const trackProcessedLinks = (tiles: any[], allBookmarks: Bookmark[]): { 
+    count: number; 
+    processed: Bookmark[]; 
+    unprocessed: Bookmark[] 
+  } => {
+    const processedUrls = new Set<string>();
+    const processed: Bookmark[] = [];
     
+    // Collect all processed URLs
     for (const tile of tiles) {
       // Check tabs
       if (tile.tabs && Array.isArray(tile.tabs)) {
@@ -252,9 +272,15 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
             for (const section of tab.sections) {
               if (section.links && Array.isArray(section.links)) {
                 for (const link of section.links) {
-                  if (link.url && !seenUrls.has(link.url)) {
-                    seenUrls.add(link.url);
-                    count++;
+                  if (link.url) {
+                    const normalizedUrl = link.url.toLowerCase().replace(/\/$/, '').split('#')[0].trim();
+                    if (!processedUrls.has(normalizedUrl)) {
+                      processedUrls.add(normalizedUrl);
+                      processed.push({
+                        title: link.label || link.url,
+                        url: link.url
+                      });
+                    }
                   }
                 }
               }
@@ -267,20 +293,64 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
         for (const section of tile.sections) {
           if (section.links && Array.isArray(section.links)) {
             for (const link of section.links) {
-              if (link.url && !seenUrls.has(link.url)) {
-                seenUrls.add(link.url);
-                count++;
+              if (link.url) {
+                const normalizedUrl = link.url.toLowerCase().replace(/\/$/, '').split('#')[0].trim();
+                if (!processedUrls.has(normalizedUrl)) {
+                  processedUrls.add(normalizedUrl);
+                  processed.push({
+                    title: link.label || link.url,
+                    url: link.url
+                  });
+                }
               }
             }
           }
         }
       }
     }
-    return count;
+    
+    // Find unprocessed links
+    const unprocessed: Bookmark[] = [];
+    for (const bookmark of allBookmarks) {
+      const normalizedUrl = bookmark.url.toLowerCase().replace(/\/$/, '').split('#')[0].trim();
+      if (!processedUrls.has(normalizedUrl)) {
+        unprocessed.push(bookmark);
+      }
+    }
+    
+    return {
+      count: processed.length,
+      processed,
+      unprocessed
+    };
+  };
+
+  // Estimate cost based on model and tokens
+  const estimateCost = (model: string, inputTokens: number, outputTokens: number): number => {
+    // Approximate pricing per 1M tokens (as of 2024)
+    // These are estimates - actual pricing may vary
+    const pricing: Record<string, { input: number; output: number }> = {
+      'openai/gpt-4o': { input: 2.5, output: 10 },
+      'openai/gpt-4o-mini': { input: 0.15, output: 0.6 },
+      'anthropic/claude-3.5-sonnet': { input: 3, output: 15 },
+      'anthropic/claude-3-haiku': { input: 0.25, output: 1.25 },
+      'google/gemini-pro-1.5': { input: 1.25, output: 5 },
+      'google/gemini-flash-1.5:free': { input: 0, output: 0 },
+      'meta-llama/llama-3.1-70b-instruct:free': { input: 0, output: 0 },
+      'mistralai/mistral-7b-instruct:free': { input: 0, output: 0 },
+      'qwen/qwen-2.5-72b-instruct:free': { input: 0, output: 0 },
+      'openrouter/auto': { input: 2, output: 8 }, // Average estimate
+    };
+
+    const modelPricing = pricing[model] || { input: 1, output: 4 }; // Default fallback
+    const inputCost = (inputTokens / 1_000_000) * modelPricing.input;
+    const outputCost = (outputTokens / 1_000_000) * modelPricing.output;
+    
+    return inputCost + outputCost;
   };
 
   // Process a single chunk of bookmarks
-  const processChunk = async (chunk: Bookmark[], chunkIndex: number, totalChunks: number, startTime: number): Promise<{ result: any; prompt: string }> => {
+  const processChunk = async (chunk: Bookmark[], chunkIndex: number, totalChunks: number, startTime: number, currentTotalCost: number): Promise<{ result: any; prompt: string; cost: number; inputTokens: number; outputTokens: number }> => {
     const bookmarksText = chunk.map((b, i) => `${i + 1}. ${b.title} - ${b.url}`).join('\n');
 
     const currentTimestamp = Math.floor(Date.now() / 1000);
@@ -434,12 +504,18 @@ CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chun
         temperature: 0.3,
         max_tokens: 8000,
         response_format: { type: 'json_object' }
-      })
+      }),
+      signal: signal
     });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
       throw new Error(errorData.error?.message || `API error: ${response.status}`);
+    }
+
+    // Check if cancelled
+    if (signal?.aborted) {
+      throw new Error('Processing cancelled by user');
     }
 
     const data = await response.json();
@@ -448,6 +524,14 @@ CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chun
     if (!content) {
       throw new Error('No response from API');
     }
+
+    // Get token usage from response (if available)
+    const usage = data.usage || {};
+    const inputTokens = usage.prompt_tokens || Math.ceil(prompt.length / 4); // Rough estimate: ~4 chars per token
+    const outputTokens = usage.completion_tokens || Math.ceil(content.length / 4);
+    
+    // Calculate cost
+    const cost = estimateCost(selectedModel, inputTokens, outputTokens);
 
     // Clean the response - remove markdown code blocks if present
     let jsonText = content.trim();
@@ -463,7 +547,7 @@ CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chun
       throw new Error('Invalid JSON response from API. Please try again.');
     }
 
-    return { result: organized, prompt };
+    return { result: organized, prompt, cost, inputTokens, outputTokens };
   };
 
   // Merge multiple organized results into one
@@ -563,6 +647,11 @@ CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chun
       setError(null);
       setProgress(null);
       setStats(null);
+      setIsCancelled(false);
+
+      // Create abort controller for cancellation
+      const controller = new AbortController();
+      setAbortController(controller);
 
       const startTime = Date.now();
       
@@ -581,19 +670,50 @@ CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chun
 
       // Process each chunk
       const results: any[] = [];
+      const prompts: string[] = [];
       const chunkStartTimes: number[] = [];
+      const costs: number[] = [];
+      let runningTotalCost = 0;
+      let runningProcessedCount = 0;
+      let runningUnprocessedCount = 0;
       
       for (let i = 0; i < chunks.length; i++) {
         chunkStartTimes[i] = Date.now();
+        
+        // Check if cancelled before processing chunk
+        if (controller.signal.aborted) {
+          throw new Error('Processing cancelled by user');
+        }
+
+        const { result, prompt, cost, inputTokens, outputTokens } = await processChunk(
+          chunks[i], 
+          i, 
+          totalChunks, 
+          startTime,
+          runningTotalCost,
+          controller.signal
+        );
+        
+        results.push(result);
+        prompts.push(prompt);
+        costs.push(cost);
+        runningTotalCost += cost;
+        
+        // Track processed links from this chunk
+        const chunkTracking = trackProcessedLinks(result?.tiles || [], chunks[i]);
+        runningProcessedCount += chunkTracking.count;
+        runningUnprocessedCount += chunks[i].length - chunkTracking.count;
+        
         setProgress({ 
           current: i + 1, 
           total: totalChunks,
           startTime,
-          chunkTime: i > 0 ? Date.now() - chunkStartTimes[i - 1] : undefined
+          chunkTime: i > 0 ? Date.now() - chunkStartTimes[i - 1] : undefined,
+          processedCount: runningProcessedCount,
+          unprocessedCount: runningUnprocessedCount,
+          chunkCost: cost,
+          totalCost: runningTotalCost
         });
-        
-        const result = await processChunk(chunks[i], i, totalChunks, startTime);
-        results.push(result);
         
         // Small delay to avoid rate limiting (longer for free models)
         const delay = selectedModel.includes(':free') ? 1000 : 500;
@@ -601,6 +721,11 @@ CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chun
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
+      
+      setChunkCosts(costs);
+
+      // Store the combined prompt (first chunk's prompt as representative)
+      setLastPrompt(prompts.length > 0 ? prompts[0] : '');
 
       // Merge all results
       const merged = mergeOrganizedResults(results);
@@ -608,14 +733,14 @@ CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chun
       // Post-process: ensure all required IDs are generated and valid
       const processed = postProcessOrganizedData(merged);
       
-      // Calculate statistics
-      const processedLinks = trackProcessedLinks(processed.tiles || []);
-      const totalTiles = (processed.tiles || []).length;
+      // Calculate statistics and track processed/unprocessed links
+      const linkTracking = trackProcessedLinks(processed?.tiles || [], bookmarks || []);
+      const totalTiles = (processed?.tiles || []).length;
       let totalSections = 0;
-      for (const tile of processed.tiles || []) {
-        if (tile.tabs && Array.isArray(tile.tabs)) {
+      for (const tile of processed?.tiles || []) {
+        if (tile?.tabs && Array.isArray(tile.tabs)) {
           for (const tab of tile.tabs) {
-            if (tab.sections && Array.isArray(tab.sections)) {
+            if (tab?.sections && Array.isArray(tab.sections)) {
               totalSections += tab.sections.length;
             }
           }
@@ -624,16 +749,21 @@ CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chun
       
       const processingTime = Math.round((Date.now() - startTime) / 1000);
       
+      // Store processed and unprocessed links (ensure arrays exist)
+      setProcessedLinks(linkTracking?.processed || []);
+      setUnprocessedLinks(linkTracking?.unprocessed || []);
+      
       const finalStats: ProcessingStats = {
-        totalLinks: bookmarks.length + duplicateCount, // Original count including duplicates
-        uniqueLinks: bookmarks.length, // Unique links sent to LLM
-        duplicateLinks: duplicateCount, // Duplicates filtered
-        processedLinks,
-        unprocessedLinks: bookmarks.length - processedLinks, // Unique links not processed
+        totalLinks: (bookmarks?.length || 0) + (duplicateCount || 0), // Original count including duplicates
+        uniqueLinks: bookmarks?.length || 0, // Unique links sent to LLM
+        duplicateLinks: duplicateCount || 0, // Duplicates filtered
+        processedLinks: linkTracking?.count || 0,
+        unprocessedLinks: linkTracking?.unprocessed?.length || 0, // Unique links not processed
         totalTiles,
         totalSections,
         processingTime,
-        chunksProcessed: totalChunks
+        chunksProcessed: totalChunks,
+        totalCost: runningTotalCost
       };
       
       setStats(finalStats);
@@ -644,12 +774,31 @@ CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chun
       setProgress(null);
 
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to organize bookmarks');
+      if (err instanceof Error && err.name === 'AbortError') {
+        setIsCancelled(true);
+        setError('Processing cancelled by user');
+      } else if (err instanceof Error && err.message.includes('cancelled')) {
+        setIsCancelled(true);
+        setError('Processing cancelled by user');
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to organize bookmarks');
+      }
       setOrganizedJson(null);
       setProgress(null);
       setStats(null);
     } finally {
       setLoading(false);
+      setAbortController(null);
+    }
+  };
+
+  // Handle cancellation
+  const handleCancel = () => {
+    if (abortController) {
+      abortController.abort();
+      setIsCancelled(true);
+      setLoading(false);
+      setProgress(null);
     }
   };
 
@@ -790,6 +939,67 @@ CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chun
     } catch (err) {
       setError('Failed to copy to clipboard');
     }
+  };
+
+  // Download processed links as CSV
+  const handleDownloadProcessedLinks = () => {
+    if (processedLinks.length === 0) return;
+
+    const csvRows = ['Title,URL'];
+    processedLinks.forEach(link => {
+      const title = link.title.replace(/"/g, '""');
+      const url = link.url.replace(/"/g, '""');
+      csvRows.push(`"${title}","${url}"`);
+    });
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `processed-links-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Download unprocessed links as CSV
+  const handleDownloadUnprocessedLinks = () => {
+    if (unprocessedLinks.length === 0) return;
+
+    const csvRows = ['Title,URL'];
+    unprocessedLinks.forEach(link => {
+      const title = link.title.replace(/"/g, '""');
+      const url = link.url.replace(/"/g, '""');
+      csvRows.push(`"${title}","${url}"`);
+    });
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `unprocessed-links-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Download AI prompt as text file
+  const handleDownloadPrompt = () => {
+    if (!lastPrompt) return;
+
+    const blob = new Blob([lastPrompt], { type: 'text/plain;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `ai-prompt-${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -990,9 +1200,18 @@ CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chun
             <span className="text-sm font-medium text-blue-800 dark:text-blue-300">
               Processing chunks...
             </span>
-            <span className="text-sm text-blue-600 dark:text-blue-400">
-              {progress.current} / {progress.total}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-blue-600 dark:text-blue-400">
+                {progress.current} / {progress.total}
+              </span>
+              <button
+                onClick={handleCancel}
+                className="px-3 py-1 text-xs bg-red-500 text-white hover:bg-red-600 rounded transition-colors font-medium"
+                title="Cancel processing"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
           <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2 mb-2">
             <div
@@ -1001,11 +1220,32 @@ CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chun
             />
           </div>
           {progress.startTime && (
-            <div className="text-xs text-blue-600 dark:text-blue-400">
-              Elapsed: {Math.round((Date.now() - progress.startTime) / 1000)}s
-              {progress.chunkTime && ` | Last chunk: ${Math.round(progress.chunkTime / 1000)}s`}
+            <div className="text-xs text-blue-600 dark:text-blue-400 space-y-1">
+              <div>
+                Elapsed: {Math.round((Date.now() - progress.startTime) / 1000)}s
+                {progress.chunkTime && ` | Last chunk: ${Math.round(progress.chunkTime / 1000)}s`}
+              </div>
+              {progress.processedCount !== undefined && progress.unprocessedCount !== undefined && (
+                <div>
+                  Processed: <span className="font-medium text-emerald-600 dark:text-emerald-400">{progress.processedCount}</span> | 
+                  Unprocessed: <span className="font-medium text-amber-600 dark:text-amber-400">{progress.unprocessedCount}</span>
+                </div>
+              )}
+              {progress.chunkCost !== undefined && progress.totalCost !== undefined && (
+                <div>
+                  Chunk cost: <span className="font-medium">${progress.chunkCost.toFixed(4)}</span> | 
+                  Total cost: <span className="font-medium">${progress.totalCost.toFixed(4)}</span>
+                </div>
+              )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Cancelled Message */}
+      {isCancelled && (
+        <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded text-sm text-amber-800 dark:text-amber-300">
+          ⚠️ Processing was cancelled. Partial results may be available below.
         </div>
       )}
 
@@ -1074,17 +1314,58 @@ CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chun
               <span className="text-slate-600 dark:text-slate-400">Processing Time:</span>
               <span className="ml-2 font-medium text-slate-900 dark:text-slate-100">{stats.processingTime}s</span>
             </div>
+            <div>
+              <span className="text-slate-600 dark:text-slate-400">Total Cost:</span>
+              <span className="ml-2 font-medium text-slate-900 dark:text-slate-100">
+                ${stats.totalCost.toFixed(4)}
+                {stats.totalCost === 0 && <span className="text-xs text-slate-500"> (Free model)</span>}
+              </span>
+            </div>
           </div>
           {stats.unprocessedLinks > 0 && (
             <div className="mt-3 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded text-xs text-amber-800 dark:text-amber-300">
               ⚠️ {stats.unprocessedLinks} links were not included. Try using a larger model or smaller chunk size.
             </div>
           )}
-          {stats.processedLinks === stats.totalLinks && (
+          {stats.processedLinks === stats.uniqueLinks && (
             <div className="mt-3 p-2 bg-emerald-100 dark:bg-emerald-900/30 border border-emerald-300 dark:border-emerald-700 rounded text-xs text-emerald-800 dark:text-emerald-300">
-              ✅ All {stats.totalLinks} links were successfully processed!
+              ✅ All {stats.uniqueLinks} unique links were successfully processed!
             </div>
           )}
+          
+          {/* Download Links */}
+          <div className="mt-4 pt-3 border-t border-emerald-200 dark:border-emerald-800">
+            <p className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">Download Reports:</p>
+            <div className="flex flex-wrap gap-2">
+              {processedLinks.length > 0 && (
+                <button
+                  onClick={handleDownloadProcessedLinks}
+                  className="px-3 py-1.5 text-xs bg-emerald-500 text-white hover:bg-emerald-600 rounded transition-colors"
+                  title={`Download ${processedLinks.length} processed links as CSV`}
+                >
+                  📥 Processed Links ({processedLinks.length})
+                </button>
+              )}
+              {unprocessedLinks.length > 0 && (
+                <button
+                  onClick={handleDownloadUnprocessedLinks}
+                  className="px-3 py-1.5 text-xs bg-amber-500 text-white hover:bg-amber-600 rounded transition-colors"
+                  title={`Download ${unprocessedLinks.length} unprocessed links as CSV`}
+                >
+                  📥 Unprocessed Links ({unprocessedLinks.length})
+                </button>
+              )}
+              {lastPrompt && (
+                <button
+                  onClick={handleDownloadPrompt}
+                  className="px-3 py-1.5 text-xs bg-blue-500 text-white hover:bg-blue-600 rounded transition-colors"
+                  title="Download AI prompt used for processing"
+                >
+                  📝 AI Prompt
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
