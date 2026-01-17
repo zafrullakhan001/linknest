@@ -13,6 +13,7 @@ import { SecurePasswordInput } from './SecurePasswordInput';
 import { accessService, TilePermission } from '../services/accessService';
 import { APP_TABS, getDisabledTabsFromSettings, setToSortedJsonArray, type AppTabId } from '../services/tabVisibilityService';
 import { broadcastService, BroadcastMessage } from '../services/broadcastService';
+import { rolesService, Role } from '../services/rolesService';
 
 // Resolve API base dynamically based on current location
 // This ensures API calls work in both dev mode and runtime mode with any base path
@@ -164,6 +165,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     canDelete: false
   });
 
+  // Roles management state
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [rolesLoading, setRolesLoading] = useState(false);
+  const [showRoleModal, setShowRoleModal] = useState(false);
+  const [showRoleTilesModal, setShowRoleTilesModal] = useState(false);
+  const [showRoleLinksModal, setShowRoleLinksModal] = useState(false);
+  const [showUserRolesModal, setShowUserRolesModal] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+  const [selectedUserForRoles, setSelectedUserForRoles] = useState<number | null>(null);
+  const [userSelectedRoleIds, setUserSelectedRoleIds] = useState<number[]>([]);
+  const [userRolesLoading, setUserRolesLoading] = useState(false);
+  const [roleForm, setRoleForm] = useState({ name: '', description: '' });
+  const [allTiles, setAllTiles] = useState<Tile[]>([]);
+  const [allLinks, setAllLinks] = useState<Array<{ id: string; label: string; url: string; tileId: string; tileTitle: string }>>([]);
+  const [roleTilesLoading, setRoleTilesLoading] = useState(false);
+  const [roleLinksLoading, setRoleLinksLoading] = useState(false);
+  const [selectedTileIds, setSelectedTileIds] = useState<Set<string>>(new Set());
+  const [selectedLinkIds, setSelectedLinkIds] = useState<Set<string>>(new Set());
+  const [tileSearchTerm, setTileSearchTerm] = useState('');
+  const [linkSearchTerm, setLinkSearchTerm] = useState('');
+  const [expandedTiles, setExpandedTiles] = useState<Set<string>>(new Set());
+  const [expandedLinks, setExpandedLinks] = useState<Set<string>>(new Set());
+
   // Clone state
   const [cloneFolderName, setCloneFolderName] = useState('');
   const [cloneSourcePath, setCloneSourcePath] = useState('');
@@ -295,6 +319,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
     if (activeTab === 'access') {
       loadPermissions();
+      loadRoles();
+      loadAllTilesAndLinks();
     }
     if (activeTab === 'clone') {
       loadClonesList();
@@ -615,6 +641,47 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   };
 
+  const loadRoles = async () => {
+    try {
+      setRolesLoading(true);
+      setError('');
+      const rolesList = await rolesService.getAllRoles();
+      setRoles(rolesList);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load roles');
+    } finally {
+      setRolesLoading(false);
+    }
+  };
+
+  const loadAllTilesAndLinks = async () => {
+    try {
+      const tiles = await getTiles();
+      setAllTiles(tiles);
+      
+      // Extract all links from tiles
+      const linksList: Array<{ id: string; label: string; url: string; tileId: string; tileTitle: string }> = [];
+      tiles.forEach(tile => {
+        tile.tabs?.forEach(tab => {
+          tab.sections?.forEach(section => {
+            section.links?.forEach(link => {
+              linksList.push({
+                id: link.id,
+                label: link.label,
+                url: link.url,
+                tileId: tile.id,
+                tileTitle: tile.title
+              });
+            });
+          });
+        });
+      });
+      setAllLinks(linksList);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load tiles and links');
+    }
+  };
+
   const handleAddPermission = () => {
     setPermissionForm({
       userId: 0,
@@ -688,6 +755,178 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       await loadPermissions();
     } catch (err: any) {
       setError(err.message || 'Failed to delete permission');
+    }
+  };
+
+  // Roles management handlers
+  const handleAddRole = () => {
+    setRoleForm({ name: '', description: '' });
+    setSelectedRole(null);
+    setShowRoleModal(true);
+  };
+
+  const handleEditRole = (role: Role) => {
+    setRoleForm({ name: role.name, description: role.description || '' });
+    setSelectedRole(role);
+    setShowRoleModal(true);
+  };
+
+  const handleSaveRole = async () => {
+    if (!roleForm.name.trim()) {
+      setError('Role name is required');
+      return;
+    }
+
+    try {
+      setError('');
+      if (selectedRole) {
+        await rolesService.updateRole(selectedRole.id, roleForm);
+      } else {
+        await rolesService.createRole(roleForm);
+      }
+      setShowRoleModal(false);
+      setRoleForm({ name: '', description: '' });
+      setSelectedRole(null);
+      await loadRoles();
+    } catch (err: any) {
+      setError(err.message || 'Failed to save role');
+    }
+  };
+
+  const handleDeleteRole = async (roleId: number) => {
+    if (!confirm('Are you sure you want to delete this role? All permissions and user assignments will be removed.')) {
+      return;
+    }
+
+    try {
+      setError('');
+      await rolesService.deleteRole(roleId);
+      await loadRoles();
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete role');
+    }
+  };
+
+  const handleManageRoleTiles = async (role: Role) => {
+    setSelectedRole(role);
+    setRoleTilesLoading(true);
+    setTileSearchTerm('');
+    setSelectedTileIds(new Set());
+    try {
+      await loadAllTilesAndLinks();
+      // Load existing tile assignments for this role
+      try {
+        const roleTiles = await rolesService.getRoleTiles(role.id);
+        const existingTileIds = new Set(roleTiles.map(rt => rt.tileId));
+        setSelectedTileIds(existingTileIds);
+      } catch (err) {
+        // Ignore if no tiles assigned yet
+      }
+      setShowRoleTilesModal(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load tiles');
+    } finally {
+      setRoleTilesLoading(false);
+    }
+  };
+
+  const handleManageRoleLinks = async (role: Role) => {
+    setSelectedRole(role);
+    setRoleLinksLoading(true);
+    setLinkSearchTerm('');
+    setSelectedLinkIds(new Set());
+    try {
+      await loadAllTilesAndLinks();
+      // Load existing link assignments for this role
+      try {
+        const roleLinks = await rolesService.getRoleLinks(role.id);
+        const existingLinkIds = new Set(roleLinks.map(rl => rl.linkId));
+        setSelectedLinkIds(existingLinkIds);
+      } catch (err) {
+        // Ignore if no links assigned yet
+      }
+      setShowRoleLinksModal(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load links');
+    } finally {
+      setRoleLinksLoading(false);
+    }
+  };
+
+  const handleManageUserRoles = async (userId: number) => {
+    setSelectedUserForRoles(userId);
+    setUserRolesLoading(true);
+    try {
+      // Load existing roles for this user
+      const userRoles = await rolesService.getUserRoles(userId);
+      setUserSelectedRoleIds(userRoles.roles.map(r => r.id));
+    } catch (err) {
+      // User might not have roles yet, that's fine
+      setUserSelectedRoleIds([]);
+    } finally {
+      setUserRolesLoading(false);
+    }
+    setShowUserRolesModal(true);
+  };
+
+  const handleAssignTilesToRole = async () => {
+    if (!selectedRole || (selectedTileIds.size === 0 && selectedLinkIds.size === 0)) {
+      setError('Please select at least one tile or link');
+      return;
+    }
+
+    try {
+      setError('');
+      // Assign tiles if any selected
+      if (selectedTileIds.size > 0) {
+        await rolesService.assignTilesToRole(selectedRole.id, { tileIds: Array.from(selectedTileIds), canView: true });
+      }
+      // Assign links if any selected
+      if (selectedLinkIds.size > 0) {
+        await rolesService.assignLinksToRole(selectedRole.id, { linkIds: Array.from(selectedLinkIds), canView: true });
+      }
+      setShowRoleTilesModal(false);
+      setSelectedTileIds(new Set());
+      setSelectedLinkIds(new Set());
+      setTileSearchTerm('');
+      setExpandedTiles(new Set());
+      setExpandedLinks(new Set());
+      await loadRoles();
+    } catch (err: any) {
+      setError(err.message || 'Failed to assign tiles/links');
+    }
+  };
+
+  const handleAssignLinksToRole = async () => {
+    if (!selectedRole || selectedLinkIds.size === 0) {
+      setError('Please select at least one link');
+      return;
+    }
+
+    try {
+      setError('');
+      await rolesService.assignLinksToRole(selectedRole.id, { linkIds: Array.from(selectedLinkIds), canView: true });
+      setShowRoleLinksModal(false);
+      setSelectedLinkIds(new Set());
+      await loadRoles();
+    } catch (err: any) {
+      setError(err.message || 'Failed to assign links');
+    }
+  };
+
+  const handleAssignRolesToUser = async () => {
+    if (!selectedUserForRoles) return;
+
+    try {
+      setError('');
+      await rolesService.assignRolesToUser(selectedUserForRoles, { roleIds: userSelectedRoleIds });
+      setShowUserRolesModal(false);
+      setSelectedUserForRoles(null);
+      setUserSelectedRoleIds([]);
+      await loadRoles();
+      await loadData(); // Refresh user list to show updated role counts
+    } catch (err: any) {
+      setError(err.message || 'Failed to assign roles to user');
     }
   };
 
@@ -1616,6 +1855,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           </svg>
                                         )}
                                         Impersonate
+                                      </button>
+                                      <button
+                                        onClick={async () => {
+                                          try {
+                                            await handleManageUserRoles(user.id);
+                                          } catch (err: any) {
+                                            setError(err.message || 'Failed to load user roles');
+                                          }
+                                        }}
+                                        disabled={processing === user.id}
+                                        className="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
+                                        title="Assign Roles to User"
+                                      >
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                          <path d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                                        </svg>
+                                        Roles
                                       </button>
                                       <button
                                         onClick={() => handleDeleteUser(user.id, user.username)}
@@ -4196,6 +4452,128 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </div>
                     )}
                   </div>
+
+                  {/* Roles Management Section */}
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6 mt-6">
+                    <div className="flex justify-between items-center mb-4">
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Role-Based Access Control</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                          Create roles and assign tiles/links to roles. Users with roles will see only the content assigned to their roles.
+                        </p>
+                      </div>
+                      <button
+                        onClick={handleAddRole}
+                        className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                        </svg>
+                        Create Role
+                      </button>
+                    </div>
+
+                    {rolesLoading ? (
+                      <div className="flex items-center justify-center py-12">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                      </div>
+                    ) : roles.length === 0 ? (
+                      <div className="text-center py-12 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl">
+                        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-slate-400">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                          </svg>
+                        </div>
+                        <p className="text-slate-600 dark:text-slate-400 font-medium">No roles configured</p>
+                        <p className="text-slate-500 dark:text-slate-500 text-sm mt-1">Create roles to manage access to tiles and links</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                            <tr>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Role Name</th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Description</th>
+                              <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Users</th>
+                              <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Tiles</th>
+                              <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Links</th>
+                              <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                            {roles.map((role) => (
+                              <tr key={role.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <div className="text-sm font-medium text-slate-900 dark:text-white">{role.name}</div>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="text-sm text-slate-600 dark:text-slate-400">{role.description || '-'}</div>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-center">
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
+                                    {role.userCount || 0}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-center">
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
+                                    {role.tileCount || 0}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-center">
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
+                                    {role.linkCount || 0}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                  <div className="flex justify-end gap-2 flex-wrap">
+                                    <button
+                                      onClick={() => handleEditRole(role)}
+                                      className="text-brand-600 dark:text-brand-400 hover:text-brand-900 dark:hover:text-brand-300 transition-colors"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={() => handleManageRoleTiles(role)}
+                                      className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 transition-colors"
+                                    >
+                                      Tiles
+                                    </button>
+                                    <button
+                                      onClick={() => handleManageRoleLinks(role)}
+                                      className="text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-300 transition-colors"
+                                    >
+                                      Links
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteRole(role.id)}
+                                      className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition-colors"
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* User Roles Management - Add button to All Users tab or here */}
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6 mt-6">
+                    <div className="flex justify-between items-center mb-4">
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Assign Roles to Users</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                          Assign multiple roles to users. Users will see tiles and links from all their assigned roles.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-sm text-slate-600 dark:text-slate-400">
+                      Go to the "All Users" tab to assign roles to specific users. Users can have multiple roles assigned.
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -6020,6 +6398,922 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className="flex-1 px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
                 >
                   {adminPasswordLoading ? 'Changing...' : 'Change Password'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Permission Modal */}
+      {showPermissionModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Add/Edit Permission</h2>
+                <button
+                  onClick={() => {
+                    setShowPermissionModal(false);
+                    setError('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  User <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={permissionForm.userId}
+                  onChange={(e) => setPermissionForm({ ...permissionForm, userId: parseInt(e.target.value) })}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                >
+                  <option value="0">Select a user</option>
+                  {allUsers.filter(u => u.isApproved).map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.username} ({user.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Tile <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={permissionForm.tileId}
+                  onChange={(e) => setPermissionForm({ ...permissionForm, tileId: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                >
+                  <option value="">Select a tile</option>
+                  {allTiles.map((tile) => (
+                    <option key={tile.id} value={tile.id}>
+                      {tile.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Permissions</label>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={permissionForm.canView}
+                      onChange={(e) => setPermissionForm({ ...permissionForm, canView: e.target.checked })}
+                      className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">Can View</span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={permissionForm.canEdit}
+                      onChange={(e) => setPermissionForm({ ...permissionForm, canEdit: e.target.checked })}
+                      className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">Can Edit</span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={permissionForm.canDelete}
+                      onChange={(e) => setPermissionForm({ ...permissionForm, canDelete: e.target.checked })}
+                      className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">Can Delete</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => {
+                    setShowPermissionModal(false);
+                    setError('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSavePermission}
+                  disabled={!permissionForm.userId || !permissionForm.tileId}
+                  className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Save Permission
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Role Modal */}
+      {showRoleModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                  {selectedRole ? 'Edit Role' : 'Create Role'}
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowRoleModal(false);
+                    setRoleForm({ name: '', description: '' });
+                    setSelectedRole(null);
+                    setError('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Role Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={roleForm.name}
+                  onChange={(e) => setRoleForm({ ...roleForm, name: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                  placeholder="Enter role name (e.g., Managers, Developers)"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Description
+                </label>
+                <textarea
+                  value={roleForm.description}
+                  onChange={(e) => setRoleForm({ ...roleForm, description: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                  placeholder="Enter role description (optional)"
+                  rows={3}
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => {
+                    setShowRoleModal(false);
+                    setRoleForm({ name: '', description: '' });
+                    setSelectedRole(null);
+                    setError('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveRole}
+                  disabled={!roleForm.name.trim()}
+                  className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  {selectedRole ? 'Update Role' : 'Create Role'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Role Tiles Modal */}
+      {showRoleTilesModal && selectedRole && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                  Assign Tiles to Role: {selectedRole.name}
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowRoleTilesModal(false);
+                    setSelectedTileIds(new Set());
+                    setSelectedLinkIds(new Set());
+                    setTileSearchTerm('');
+                    setExpandedTiles(new Set());
+                    setExpandedLinks(new Set());
+                    setError('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              {roleTilesLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                </div>
+              ) : allTiles.length === 0 ? (
+                <div className="text-center py-12 text-slate-600 dark:text-slate-400">
+                  No tiles available
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    Select tiles that users with this role can access. Users will see only tiles assigned to their roles.
+                  </p>
+                  
+                  {/* Search Input */}
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={tileSearchTerm}
+                      onChange={(e) => setTileSearchTerm(e.target.value)}
+                      placeholder="Search tiles, tabs, sections, or links..."
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 pl-10 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                    />
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 absolute left-3 top-2.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    {tileSearchTerm && (
+                      <button
+                        onClick={() => setTileSearchTerm('')}
+                        className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                  
+                  {/* Tree Structure */}
+                  <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
+                    {allTiles
+                      .filter(tile => {
+                        if (!tileSearchTerm) return true;
+                        const searchLower = tileSearchTerm.toLowerCase();
+                        const matchesTile = (tile.title || '').toLowerCase().includes(searchLower) ||
+                                          (tile.description || '').toLowerCase().includes(searchLower);
+                        const matchesTab = tile.tabs?.some(tab => 
+                          (tab.title || '').toLowerCase().includes(searchLower)
+                        );
+                        const matchesSection = tile.tabs?.some(tab =>
+                          tab.sections?.some(section =>
+                            (section.title || '').toLowerCase().includes(searchLower) ||
+                            section.links?.some(link =>
+                              (link.label || '').toLowerCase().includes(searchLower) ||
+                              (link.url || '').toLowerCase().includes(searchLower)
+                            )
+                          )
+                        );
+                        return matchesTile || matchesTab || matchesSection;
+                      })
+                      .map((tile) => {
+                        const isExpanded = expandedTiles.has(tile.id);
+                        const isSelected = selectedTileIds.has(tile.id);
+                        const hasChildren = tile.tabs && tile.tabs.length > 0;
+                        
+                        return (
+                          <div key={tile.id} className="border-b border-slate-200 dark:border-slate-700 last:border-b-0">
+                            {/* Tile Level */}
+                            <div className="flex items-center gap-2 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50">
+                              {hasChildren && (
+                                <button
+                                  onClick={() => {
+                                    const newExpanded = new Set(expandedTiles);
+                                    if (isExpanded) {
+                                      newExpanded.delete(tile.id);
+                                    } else {
+                                      newExpanded.add(tile.id);
+                                    }
+                                    setExpandedTiles(newExpanded);
+                                  }}
+                                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-0.5"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                  </svg>
+                                </button>
+                              )}
+                              {!hasChildren && <div className="w-5" />}
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  const newSet = new Set(selectedTileIds);
+                                  if (e.target.checked) {
+                                    newSet.add(tile.id);
+                                  } else {
+                                    newSet.delete(tile.id);
+                                  }
+                                  setSelectedTileIds(newSet);
+                                }}
+                                className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                                  {tile.title || tile.id}
+                                </div>
+                                {tile.description && (
+                                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                                    {tile.description}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            
+                            {/* Tabs Level */}
+                            {isExpanded && tile.tabs && tile.tabs.map((tab) => {
+                              const tabKey = `${tile.id}_${tab.id}`;
+                              const isTabExpanded = expandedLinks.has(tabKey);
+                              const hasSections = tab.sections && tab.sections.length > 0;
+                              
+                              return (
+                                <div key={tab.id} className="bg-slate-100 dark:bg-slate-800/30 border-l-2 border-slate-300 dark:border-slate-600 ml-5">
+                                  <div className="flex items-center gap-2 p-2 pl-3 hover:bg-slate-200 dark:hover:bg-slate-700/50">
+                                    {hasSections && (
+                                      <button
+                                        onClick={() => {
+                                          const newExpanded = new Set(expandedLinks);
+                                          if (isTabExpanded) {
+                                            newExpanded.delete(tabKey);
+                                          } else {
+                                            newExpanded.add(tabKey);
+                                          }
+                                          setExpandedLinks(newExpanded);
+                                        }}
+                                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-0.5"
+                                      >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${isTabExpanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                        </svg>
+                                      </button>
+                                    )}
+                                    {!hasSections && <div className="w-5" />}
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                        📑 {tab.title || 'Untitled Tab'}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Sections Level */}
+                                  {isTabExpanded && tab.sections && tab.sections.map((section) => (
+                                    <div key={section.id} className="bg-slate-200 dark:bg-slate-700/30 border-l-2 border-slate-400 dark:border-slate-500 ml-5">
+                                      <div className="p-2 pl-3">
+                                        <div className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                                          📋 {section.title || 'Untitled Section'}
+                                        </div>
+                                        
+                                        {/* Links Level */}
+                                        {section.links && section.links.length > 0 && (
+                                          <div className="ml-4 space-y-1">
+                                            {section.links
+                                              .filter(link => {
+                                                if (!tileSearchTerm) return true;
+                                                const searchLower = tileSearchTerm.toLowerCase();
+                                                return (link.label || '').toLowerCase().includes(searchLower) ||
+                                                       (link.url || '').toLowerCase().includes(searchLower);
+                                              })
+                                              .map((link) => (
+                                                <label
+                                                  key={link.id}
+                                                  className="flex items-center gap-2 p-1.5 hover:bg-slate-300 dark:hover:bg-slate-600/50 rounded cursor-pointer"
+                                                >
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={selectedLinkIds.has(link.id)}
+                                                    onChange={(e) => {
+                                                      const newLinkSet = new Set(selectedLinkIds);
+                                                      if (e.target.checked) {
+                                                        newLinkSet.add(link.id);
+                                                        // Automatically select the parent tile when a link is selected
+                                                        const newTileSet = new Set(selectedTileIds);
+                                                        newTileSet.add(tile.id);
+                                                        setSelectedTileIds(newTileSet);
+                                                      } else {
+                                                        newLinkSet.delete(link.id);
+                                                      }
+                                                      setSelectedLinkIds(newLinkSet);
+                                                    }}
+                                                    className="w-3.5 h-3.5 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-1"
+                                                  />
+                                                  <div className="flex-1 min-w-0">
+                                                    <div className="text-xs text-slate-700 dark:text-slate-300 truncate">
+                                                      🔗 {link.label || 'Unnamed Link'}
+                                                    </div>
+                                                    <div className="text-xs text-slate-500 dark:text-slate-500 truncate">
+                                                      {link.url}
+                                                    </div>
+                                                  </div>
+                                                </label>
+                                              ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                  </div>
+
+                  <div className="text-sm text-slate-600 dark:text-slate-400 flex justify-between items-center">
+                    <span>
+                      {selectedTileIds.size} tile{selectedTileIds.size !== 1 ? 's' : ''} selected
+                      {selectedLinkIds.size > 0 && `, ${selectedLinkIds.size} link${selectedLinkIds.size !== 1 ? 's' : ''} selected`}
+                    </span>
+                    <button
+                      onClick={() => {
+                        const allExpanded = new Set<string>();
+                        allTiles.forEach(tile => {
+                          allExpanded.add(tile.id);
+                          tile.tabs?.forEach(tab => {
+                            allExpanded.add(`${tile.id}_${tab.id}`);
+                          });
+                        });
+                        setExpandedTiles(allExpanded);
+                        setExpandedLinks(allExpanded);
+                      }}
+                      className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                    >
+                      Expand All
+                    </button>
+                  </div>
+                </>
+              )}
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => {
+                    setShowRoleTilesModal(false);
+                    setSelectedTileIds(new Set());
+                    setSelectedLinkIds(new Set());
+                    setTileSearchTerm('');
+                    setExpandedTiles(new Set());
+                    setExpandedLinks(new Set());
+                    setError('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAssignTilesToRole}
+                  disabled={(selectedTileIds.size === 0 && selectedLinkIds.size === 0) || roleTilesLoading}
+                  className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Assign {selectedTileIds.size > 0 ? `${selectedTileIds.size} Tile${selectedTileIds.size !== 1 ? 's' : ''}` : ''}
+                  {selectedTileIds.size > 0 && selectedLinkIds.size > 0 ? ' & ' : ''}
+                  {selectedLinkIds.size > 0 ? `${selectedLinkIds.size} Link${selectedLinkIds.size !== 1 ? 's' : ''}` : ''}
+                  {selectedTileIds.size === 0 && selectedLinkIds.size === 0 ? 'Assign' : ''}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Role Links Modal */}
+      {showRoleLinksModal && selectedRole && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                  Assign Links to Role: {selectedRole.name}
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowRoleLinksModal(false);
+                    setSelectedLinkIds(new Set());
+                    setLinkSearchTerm('');
+                    setExpandedTiles(new Set());
+                    setExpandedLinks(new Set());
+                    setError('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              {roleLinksLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                </div>
+              ) : allLinks.length === 0 ? (
+                <div className="text-center py-12 text-slate-600 dark:text-slate-400">
+                  No links available
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    Select links that users with this role can access. Users will see only links assigned to their roles.
+                  </p>
+                  
+                  {/* Search Input */}
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={linkSearchTerm}
+                      onChange={(e) => setLinkSearchTerm(e.target.value)}
+                      placeholder="Search links by name, URL, tile, or section..."
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 pl-10 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                    />
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 absolute left-3 top-2.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    {linkSearchTerm && (
+                      <button
+                        onClick={() => setLinkSearchTerm('')}
+                        className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                  
+                  {/* Tree Structure for Links */}
+                  <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
+                    {allTiles
+                      .filter(tile => {
+                        if (!linkSearchTerm) return true;
+                        const searchLower = linkSearchTerm.toLowerCase();
+                        const matchesTile = (tile.title || '').toLowerCase().includes(searchLower);
+                        const hasMatchingLinks = tile.tabs?.some(tab =>
+                          tab.sections?.some(section =>
+                            section.links?.some(link =>
+                              (link.label || '').toLowerCase().includes(searchLower) ||
+                              (link.url || '').toLowerCase().includes(searchLower)
+                            )
+                          )
+                        );
+                        return matchesTile || hasMatchingLinks;
+                      })
+                      .map((tile) => {
+                        const isExpanded = expandedTiles.has(tile.id);
+                        const hasLinks = tile.tabs?.some(tab => tab.sections?.some(section => section.links && section.links.length > 0));
+                        
+                        return (
+                          <div key={tile.id} className="border-b border-slate-200 dark:border-slate-700 last:border-b-0">
+                            {/* Tile Level */}
+                            <div className="flex items-center gap-2 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50">
+                              {hasLinks && (
+                                <button
+                                  onClick={() => {
+                                    const newExpanded = new Set(expandedTiles);
+                                    if (isExpanded) {
+                                      newExpanded.delete(tile.id);
+                                    } else {
+                                      newExpanded.add(tile.id);
+                                    }
+                                    setExpandedTiles(newExpanded);
+                                  }}
+                                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-0.5"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                  </svg>
+                                </button>
+                              )}
+                              {!hasLinks && <div className="w-5" />}
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                                  {tile.title || tile.id}
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Tabs Level */}
+                            {isExpanded && tile.tabs && tile.tabs.map((tab) => {
+                              const tabKey = `${tile.id}_${tab.id}`;
+                              const isTabExpanded = expandedLinks.has(tabKey);
+                              const hasSections = tab.sections && tab.sections.length > 0;
+                              
+                              return (
+                                <div key={tab.id} className="bg-slate-100 dark:bg-slate-800/30 border-l-2 border-slate-300 dark:border-slate-600 ml-5">
+                                  <div className="flex items-center gap-2 p-2 pl-3 hover:bg-slate-200 dark:hover:bg-slate-700/50">
+                                    {hasSections && (
+                                      <button
+                                        onClick={() => {
+                                          const newExpanded = new Set(expandedLinks);
+                                          if (isTabExpanded) {
+                                            newExpanded.delete(tabKey);
+                                          } else {
+                                            newExpanded.add(tabKey);
+                                          }
+                                          setExpandedLinks(newExpanded);
+                                        }}
+                                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-0.5"
+                                      >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${isTabExpanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                        </svg>
+                                      </button>
+                                    )}
+                                    {!hasSections && <div className="w-5" />}
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                        📑 {tab.title || 'Untitled Tab'}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Sections Level */}
+                                  {isTabExpanded && tab.sections && tab.sections.map((section) => (
+                                    <div key={section.id} className="bg-slate-200 dark:bg-slate-700/30 border-l-2 border-slate-400 dark:border-slate-500 ml-5">
+                                      <div className="p-2 pl-3">
+                                        <div className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                                          📋 {section.title || 'Untitled Section'}
+                                        </div>
+                                        
+                                        {/* Links Level */}
+                                        {section.links && section.links.length > 0 && (
+                                          <div className="ml-4 space-y-1">
+                                            {section.links
+                                              .filter(link => {
+                                                if (!linkSearchTerm) return true;
+                                                const searchLower = linkSearchTerm.toLowerCase();
+                                                return (link.label || '').toLowerCase().includes(searchLower) ||
+                                                       (link.url || '').toLowerCase().includes(searchLower);
+                                              })
+                                              .map((link) => (
+                                                <label
+                                                  key={link.id}
+                                                  className="flex items-center gap-2 p-1.5 hover:bg-slate-300 dark:hover:bg-slate-600/50 rounded cursor-pointer"
+                                                >
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={selectedLinkIds.has(link.id)}
+                                                    onChange={(e) => {
+                                                      const newLinkSet = new Set(selectedLinkIds);
+                                                      if (e.target.checked) {
+                                                        newLinkSet.add(link.id);
+                                                        // Automatically select the parent tile when a link is selected
+                                                        const newTileSet = new Set(selectedTileIds);
+                                                        newTileSet.add(tile.id);
+                                                        setSelectedTileIds(newTileSet);
+                                                      } else {
+                                                        newLinkSet.delete(link.id);
+                                                      }
+                                                      setSelectedLinkIds(newLinkSet);
+                                                    }}
+                                                    className="w-3.5 h-3.5 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-1"
+                                                  />
+                                                  <div className="flex-1 min-w-0">
+                                                    <div className="text-xs text-slate-700 dark:text-slate-300 truncate">
+                                                      🔗 {link.label || 'Unnamed Link'}
+                                                    </div>
+                                                    <div className="text-xs text-slate-500 dark:text-slate-500 truncate">
+                                                      {link.url}
+                                                    </div>
+                                                  </div>
+                                                </label>
+                                              ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                  </div>
+
+                  <div className="text-sm text-slate-600 dark:text-slate-400 flex justify-between items-center">
+                    <span>
+                      {selectedLinkIds.size} link{selectedLinkIds.size !== 1 ? 's' : ''} selected
+                    </span>
+                    <button
+                      onClick={() => {
+                        const allExpanded = new Set<string>();
+                        allTiles.forEach(tile => {
+                          allExpanded.add(tile.id);
+                          tile.tabs?.forEach(tab => {
+                            allExpanded.add(`${tile.id}_${tab.id}`);
+                          });
+                        });
+                        setExpandedTiles(allExpanded);
+                        setExpandedLinks(allExpanded);
+                      }}
+                      className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                    >
+                      Expand All
+                    </button>
+                  </div>
+                </>
+              )}
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => {
+                    setShowRoleLinksModal(false);
+                    setSelectedLinkIds(new Set());
+                    setLinkSearchTerm('');
+                    setExpandedTiles(new Set());
+                    setExpandedLinks(new Set());
+                    setError('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAssignLinksToRole}
+                  disabled={selectedLinkIds.size === 0 || roleLinksLoading}
+                  className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Assign {selectedLinkIds.size > 0 ? `${selectedLinkIds.size} ` : ''}Links
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* User Roles Modal */}
+      {showUserRolesModal && selectedUserForRoles && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                  Assign Roles to User
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowUserRolesModal(false);
+                    setSelectedUserForRoles(null);
+                    setUserSelectedRoleIds([]);
+                    setError('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              {(() => {
+                const user = allUsers.find(u => u.id === selectedUserForRoles);
+                return user ? (
+                  <div className="mb-4">
+                    <div className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">User:</div>
+                    <div className="text-lg font-semibold text-slate-900 dark:text-white">{user.username}</div>
+                    <div className="text-sm text-slate-500 dark:text-slate-400">{user.email}</div>
+                  </div>
+                ) : null;
+              })()}
+
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Select roles to assign to this user. Users can have multiple roles and will see content from all assigned roles.
+              </p>
+
+              {userRolesLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                </div>
+              ) : rolesLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                </div>
+              ) : roles.length === 0 ? (
+                <div className="text-center py-12 text-slate-600 dark:text-slate-400">
+                  No roles available. Create roles first in the Access Manager tab.
+                </div>
+              ) : (
+                <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
+                  <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                    {roles.map((role) => (
+                      <label
+                        key={role.id}
+                        className="flex items-center gap-3 p-4 hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={userSelectedRoleIds.includes(role.id)}
+                          onChange={(e) => {
+                            const newRoles = [...userSelectedRoleIds];
+                            if (e.target.checked) {
+                              newRoles.push(role.id);
+                            } else {
+                              const index = newRoles.indexOf(role.id);
+                              if (index > -1) {
+                                newRoles.splice(index, 1);
+                              }
+                            }
+                            setUserSelectedRoleIds(newRoles);
+                          }}
+                          className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                        />
+                        <div className="flex-1">
+                          <div className="text-sm font-medium text-slate-900 dark:text-white">
+                            {role.name}
+                          </div>
+                          {role.description && (
+                            <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                              {role.description}
+                            </div>
+                          )}
+                          <div className="flex gap-3 mt-2 text-xs text-slate-500 dark:text-slate-400">
+                            <span>{role.userCount || 0} users</span>
+                            <span>•</span>
+                            <span>{role.tileCount || 0} tiles</span>
+                            <span>•</span>
+                            <span>{role.linkCount || 0} links</span>
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="text-sm text-slate-600 dark:text-slate-400">
+                {userSelectedRoleIds.length} role{userSelectedRoleIds.length !== 1 ? 's' : ''} selected
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => {
+                    setShowUserRolesModal(false);
+                    setSelectedUserForRoles(null);
+                    setUserSelectedRoleIds([]);
+                    setError('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAssignRolesToUser}
+                  disabled={userRolesLoading || rolesLoading}
+                  className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Assign {userSelectedRoleIds.length > 0 ? `${userSelectedRoleIds.length} ` : ''}Roles
                 </button>
               </div>
             </div>

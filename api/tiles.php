@@ -135,6 +135,11 @@ function handleGetTiles() {
             $isTileVisible = in_array($user['id'], $tileAllowedUsers);
         }
         
+        // Check role-based access for authenticated users
+        if ($user && !$isTileVisible && !$user['is_admin']) {
+            $isTileVisible = canUserViewTileByRole($user['id'], $row['id'], $db);
+        }
+        
         if (!$isTileVisible) {
             continue; // Skip this tile
         }
@@ -281,6 +286,11 @@ function handleGetTiles() {
                         $isVisible = in_array($user['id'], $allowedUsers);
                     }
                     
+                    // Check role-based access for authenticated users
+                    if ($user && !$isVisible && !$user['is_admin']) {
+                        $isVisible = canUserViewLinkByRole($user['id'], $linkRow['id'], $db);
+                    }
+                    
                     if (!$isVisible) {
                         continue; // Skip this link
                     }
@@ -372,6 +382,11 @@ function handleGetTiles() {
                             $isVisible = true;
                         } elseif ($visibility === 'private' && $user) {
                             $isVisible = in_array($user['id'], $allowedUsers);
+                        }
+                        
+                        // Check role-based access for authenticated users
+                        if ($user && !$isVisible && !$user['is_admin']) {
+                            $isVisible = canUserViewLinkByRole($user['id'], $linkRow['id'], $db);
                         }
                         
                         if (!$isVisible) {
@@ -733,6 +748,11 @@ function handleGetTile($tileId) {
                     $isVisible = in_array($user['id'], $allowedUsers);
                 }
                 
+                // Check role-based access for authenticated users
+                if ($user && !$isVisible && !$user['is_admin']) {
+                    $isVisible = canUserViewLinkByRole($user['id'], $linkRow['id'], $db);
+                }
+                
                 if (!$isVisible) {
                     continue;
                 }
@@ -830,6 +850,11 @@ function handleGetTile($tileId) {
                         $isVisible = true;
                     } elseif ($visibility === 'private' && $user) {
                         $isVisible = in_array($user['id'], $allowedUsers);
+                    }
+                    
+                    // Check role-based access for authenticated users
+                    if ($user && !$isVisible && !$user['is_admin']) {
+                        $isVisible = canUserViewLinkByRole($user['id'], $linkRow['id'], $db);
                     }
                     
                     if (!$isVisible) {

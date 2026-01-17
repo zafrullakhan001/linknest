@@ -91,6 +91,9 @@ if ($path === '/') {
 } elseif (strpos($path, '/access') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 7); // Remove '/access'
     require __DIR__ . '/access.php';
+} elseif (strpos($path, '/roles') === 0) {
+    $_SERVER['PATH_INFO'] = substr($path, 6); // Remove '/roles'
+    require __DIR__ . '/roles.php';
 } elseif (strpos($path, '/clone') === 0) {
     error_log("api/index.php: Matched /clone route");
     $remainingPath = substr($path, 6); // Remove '/clone'

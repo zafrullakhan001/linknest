@@ -1424,6 +1424,49 @@ function initDatabase() {
             error_log('Migration error: ' . $e->getMessage());
         }
         
+        // Create roles table for role-based access control
+        $db->exec('CREATE TABLE IF NOT EXISTS roles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            description TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )');
+        
+        // Create user_roles table for assigning multiple roles to users
+        $db->exec('CREATE TABLE IF NOT EXISTS user_roles (
+            user_id INTEGER NOT NULL,
+            role_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, role_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+        )');
+        
+        // Create role_tile_permissions table for role-based tile access
+        $db->exec('CREATE TABLE IF NOT EXISTS role_tile_permissions (
+            role_id INTEGER NOT NULL,
+            tile_id TEXT NOT NULL,
+            can_view INTEGER DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (role_id, tile_id),
+            FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
+            FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
+        )');
+        
+        // Create role_link_permissions table for role-based link access
+        $db->exec('CREATE TABLE IF NOT EXISTS role_link_permissions (
+            role_id INTEGER NOT NULL,
+            link_id TEXT NOT NULL,
+            can_view INTEGER DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (role_id, link_id),
+            FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
+            FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE
+        )');
+        
         // Initialize default settings if they don't exist
         $defaultSettings = [
             ['app_name', 'LinkNest', time()],
@@ -1493,6 +1536,18 @@ function createDatabaseIndexes($db) {
         try {
             $db->exec('CREATE INDEX IF NOT EXISTS idx_category_arrangements_user_id ON category_arrangements(user_id)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_category_arrangements_position ON category_arrangements(user_id, position)');
+        } catch (PDOException $e) {
+            // Table might not exist yet, ignore
+        }
+        
+        // Roles and permissions table indexes
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON user_roles(user_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_user_roles_role_id ON user_roles(role_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_role_tile_permissions_role_id ON role_tile_permissions(role_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_role_tile_permissions_tile_id ON role_tile_permissions(tile_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_role_link_permissions_role_id ON role_link_permissions(role_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_role_link_permissions_link_id ON role_link_permissions(link_id)');
         } catch (PDOException $e) {
             // Table might not exist yet, ignore
         }
@@ -1618,6 +1673,59 @@ function canUserEditTile($userId, $tileId, $db) {
     }
     
     return (bool)$permission['can_edit'];
+}
+
+// Helper function to get user's role IDs
+function getUserRoleIds($userId, $db) {
+    if (!$userId) {
+        return [];
+    }
+    
+    $stmt = $db->prepare('SELECT role_id FROM user_roles WHERE user_id = ?');
+    $stmt->execute([$userId]);
+    $roleIds = [];
+    while ($row = $stmt->fetch()) {
+        $roleIds[] = (int)$row['role_id'];
+    }
+    return $roleIds;
+}
+
+// Helper function to check if user can view a tile based on roles
+function canUserViewTileByRole($userId, $tileId, $db) {
+    if (!$userId) {
+        return false;
+    }
+    
+    $roleIds = getUserRoleIds($userId, $db);
+    if (empty($roleIds)) {
+        return false; // No roles, no access via roles
+    }
+    
+    $placeholders = implode(',', array_fill(0, count($roleIds), '?'));
+    $stmt = $db->prepare("SELECT COUNT(*) FROM role_tile_permissions WHERE role_id IN ($placeholders) AND tile_id = ? AND can_view = 1");
+    $params = array_merge($roleIds, [$tileId]);
+    $stmt->execute($params);
+    
+    return (int)$stmt->fetchColumn() > 0;
+}
+
+// Helper function to check if user can view a link based on roles
+function canUserViewLinkByRole($userId, $linkId, $db) {
+    if (!$userId) {
+        return false;
+    }
+    
+    $roleIds = getUserRoleIds($userId, $db);
+    if (empty($roleIds)) {
+        return false; // No roles, no access via roles
+    }
+    
+    $placeholders = implode(',', array_fill(0, count($roleIds), '?'));
+    $stmt = $db->prepare("SELECT COUNT(*) FROM role_link_permissions WHERE role_id IN ($placeholders) AND link_id = ? AND can_view = 1");
+    $params = array_merge($roleIds, [$linkId]);
+    $stmt->execute($params);
+    
+    return (int)$stmt->fetchColumn() > 0;
 }
 
 // Helper function to check if user has permission to delete a tile
