@@ -83,6 +83,11 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
     themeColor: string;
     links: Bookmark[];
   }>>([]);
+  
+  // Offline AI prompt state
+  const [showOfflinePrompt, setShowOfflinePrompt] = useState(false);
+  const [offlinePrompt, setOfflinePrompt] = useState<string>('');
+  const [offlineResponse, setOfflineResponse] = useState<string>('');
 
   // Auto-generate tiles from bookmarks by domain (for manual organization)
   const autoGenerateTilesByDomain = (bookmarkList: Bookmark[]) => {
@@ -1180,6 +1185,670 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
     URL.revokeObjectURL(url);
   };
 
+  // Generate offline AI prompt (for testing without API calls)
+  const generateOfflinePrompt = () => {
+    if (manualTiles.length === 0) {
+      setError('Please organize bookmarks into categories first');
+      return;
+    }
+
+    // Extract unique domain names from tiles
+    const domainToTileIndex = new Map<string, number>();
+    const domainNames = manualTiles.map((tile, index) => {
+      const firstLink = tile.links[0];
+      let domainKey = '';
+      if (firstLink) {
+        try {
+          const url = new URL(firstLink.url);
+          let domain = url.hostname.replace('www.', '').replace(/^\.+/, '').toLowerCase();
+          
+          const twoPartTlds = ['co.uk', 'co.in', 'co.il', 'co.za', 'com.au', 'com.br', 'com.mx', 'net.au', 'org.uk'];
+          const parts = domain.split('.');
+          
+          if (parts.length >= 3) {
+            const lastTwo = parts.slice(-2).join('.');
+            if (twoPartTlds.includes(lastTwo)) {
+              domainKey = parts.slice(-3).join('.');
+            } else {
+              domainKey = parts.slice(-2).join('.');
+            }
+          } else if (parts.length === 2) {
+            domainKey = domain;
+          } else {
+            domainKey = domain;
+          }
+          
+          domainToTileIndex.set(domainKey, index);
+          domainToTileIndex.set(domain, index);
+          domainToTileIndex.set(url.hostname.toLowerCase(), index);
+          
+          return domainKey;
+        } catch {
+          domainKey = tile.title.toLowerCase();
+          domainToTileIndex.set(domainKey, index);
+          return domainKey;
+        }
+      }
+      domainKey = tile.title.toLowerCase();
+      domainToTileIndex.set(domainKey, index);
+      return domainKey;
+    });
+
+    // Create the prompt
+    const prompt = `Given these domain names, provide a concise, professional tile title and description for each.
+
+Format your response as JSON object with this structure:
+{
+  "enhancements": [
+    {
+      "domain": "example.com",
+      "title": "Short Title (max 30 chars)",
+      "description": "Brief description (max 60 chars)"
+    }
+  ]
+}
+
+Domain names:
+${domainNames.map((domain, i) => `${i + 1}. ${domain}`).join('\n')}
+
+Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
+
+    setOfflinePrompt(prompt);
+    setShowOfflinePrompt(true);
+    
+    // Copy to clipboard
+    navigator.clipboard.writeText(prompt).then(() => {
+      setError(null);
+      // Show success message briefly
+      const originalError = error;
+      setError('✅ Prompt copied to clipboard! Paste it into ChatGPT/Claude and paste the response below.');
+      setTimeout(() => setError(originalError), 3000);
+    }).catch(() => {
+      setError('Failed to copy to clipboard. Please manually copy the prompt.');
+    });
+  };
+
+  // Process offline AI response
+  const processOfflineResponse = async () => {
+    if (!offlineResponse.trim()) {
+      setError('Please paste the AI response');
+      return;
+    }
+
+    if (manualTiles.length === 0) {
+      setError('Please organize bookmarks into categories first');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Extract domain names (same as generateHybridJSON)
+      const domainToTileIndex = new Map<string, number>();
+      const domainNames = manualTiles.map((tile, index) => {
+        const firstLink = tile.links[0];
+        let domainKey = '';
+        if (firstLink) {
+          try {
+            const url = new URL(firstLink.url);
+            let domain = url.hostname.replace('www.', '').replace(/^\.+/, '').toLowerCase();
+            
+            const twoPartTlds = ['co.uk', 'co.in', 'co.il', 'co.za', 'com.au', 'com.br', 'com.mx', 'net.au', 'org.uk'];
+            const parts = domain.split('.');
+            
+            if (parts.length >= 3) {
+              const lastTwo = parts.slice(-2).join('.');
+              if (twoPartTlds.includes(lastTwo)) {
+                domainKey = parts.slice(-3).join('.');
+              } else {
+                domainKey = parts.slice(-2).join('.');
+              }
+            } else if (parts.length === 2) {
+              domainKey = domain;
+            } else {
+              domainKey = domain;
+            }
+            
+            domainToTileIndex.set(domainKey, index);
+            domainToTileIndex.set(domain, index);
+            domainToTileIndex.set(url.hostname.toLowerCase(), index);
+            
+            return domainKey;
+          } catch {
+            domainKey = tile.title.toLowerCase();
+            domainToTileIndex.set(domainKey, index);
+            return domainKey;
+          }
+        }
+        domainKey = tile.title.toLowerCase();
+        domainToTileIndex.set(domainKey, index);
+        return domainKey;
+      });
+
+      // Parse AI response (same logic as generateHybridJSON)
+      let jsonText = offlineResponse.trim();
+      jsonText = jsonText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+      const firstBrace = jsonText.indexOf('{');
+      const lastBrace = jsonText.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1) {
+        jsonText = jsonText.substring(firstBrace, lastBrace + 1);
+      }
+
+      let aiEnhancements: Array<{ domain: string; title: string; description: string }> = [];
+      try {
+        const parsed = JSON.parse(jsonText);
+        aiEnhancements = parsed.enhancements || [];
+        console.log('AI Enhancements received (offline):', aiEnhancements);
+      } catch (parseError) {
+        console.error('Failed to parse AI response:', parseError);
+        console.error('Raw JSON text:', jsonText);
+        throw new Error('Invalid JSON response. Please check the AI response format.');
+      }
+
+      // Process enhancements (same as generateHybridJSON)
+      await processAIEnhancements(aiEnhancements, domainNames, domainToTileIndex);
+      
+      setShowOfflinePrompt(false);
+      setOfflineResponse('');
+    } catch (err: any) {
+      setError(err.message || 'Failed to process AI response');
+      console.error('Error processing offline response:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Generate enhanced JSON with AI titles/descriptions (hybrid mode)
+  const generateHybridJSON = async () => {
+    if (bookmarks.length === 0) {
+      setError('Please extract or enter bookmarks first');
+      return;
+    }
+
+    if (!apiKey.trim()) {
+      setError('Please enter your OpenRouter API key for AI enhancement');
+      return;
+    }
+
+    if (manualTiles.length === 0) {
+      setError('Please organize bookmarks into categories first');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Extract unique domain names from tiles (using same logic as autoGenerateTilesByDomain)
+      // Also create a mapping from domain to tile index for reliable matching
+      const domainToTileIndex = new Map<string, number>();
+      const domainNames = manualTiles.map((tile, index) => {
+        // Try to extract domain from tile links
+        const firstLink = tile.links[0];
+        let domainKey = '';
+        if (firstLink) {
+          try {
+            const url = new URL(firstLink.url);
+            let domain = url.hostname.replace('www.', '').replace(/^\.+/, '').toLowerCase();
+            
+            // Handle special cases like co.uk, co.in, co.il (these are valid 2-part TLDs)
+            const twoPartTlds = ['co.uk', 'co.in', 'co.il', 'co.za', 'com.au', 'com.br', 'com.mx', 'net.au', 'org.uk'];
+            const parts = domain.split('.');
+            
+            if (parts.length >= 3) {
+              const lastTwo = parts.slice(-2).join('.');
+              if (twoPartTlds.includes(lastTwo)) {
+                // For domains like example.co.uk, use last 3 parts
+                domainKey = parts.slice(-3).join('.');
+              } else {
+                // For normal domains, use last 2 parts
+                domainKey = parts.slice(-2).join('.');
+              }
+            } else if (parts.length === 2) {
+              domainKey = domain;
+            } else {
+              domainKey = domain;
+            }
+            
+            // Store mapping for reliable matching
+            domainToTileIndex.set(domainKey, index);
+            // Also store variations
+            domainToTileIndex.set(domain, index);
+            domainToTileIndex.set(url.hostname.toLowerCase(), index);
+            
+            return domainKey;
+          } catch {
+            domainKey = tile.title.toLowerCase();
+            domainToTileIndex.set(domainKey, index);
+            return domainKey;
+          }
+        }
+        domainKey = tile.title.toLowerCase();
+        domainToTileIndex.set(domainKey, index);
+        return domainKey;
+      });
+
+      // Create a simple prompt asking only for titles and descriptions
+      const prompt = `Given these domain names, provide a concise, professional tile title and description for each.
+
+Format your response as JSON object with this structure:
+{
+  "enhancements": [
+    {
+      "domain": "example.com",
+      "title": "Short Title (max 30 chars)",
+      "description": "Brief description (max 60 chars)"
+    }
+  ]
+}
+
+Domain names:
+${domainNames.map((domain, i) => `${i + 1}. ${domain}`).join('\n')}
+
+Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
+
+      // Call AI API with minimal tokens
+      const response = await fetch(OPENROUTER_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey.trim()}`,
+          'HTTP-Referer': window.location.origin,
+          'X-Title': 'LinkNest Fav Organizer'
+        },
+        body: JSON.stringify({
+          model: selectedModel,
+          messages: [
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: 0.3,
+          max_tokens: Math.min(2000, domainNames.length * 50), // Very low token usage
+          response_format: { type: 'json_object' }
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error?.message || `API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+
+      if (!content) {
+        throw new Error('No response from API');
+      }
+
+      // Parse AI response
+      let jsonText = content.trim();
+      jsonText = jsonText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+      const firstBrace = jsonText.indexOf('{');
+      const lastBrace = jsonText.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1) {
+        jsonText = jsonText.substring(firstBrace, lastBrace + 1);
+      }
+
+      let aiEnhancements: Array<{ domain: string; title: string; description: string }> = [];
+      try {
+        const parsed = JSON.parse(jsonText);
+        aiEnhancements = parsed.enhancements || [];
+        console.log('AI Enhancements received:', aiEnhancements);
+      } catch (parseError) {
+        // If parsing fails, continue without AI enhancements
+        console.error('Failed to parse AI response:', parseError);
+        console.error('Raw JSON text:', jsonText);
+        throw new Error('Failed to parse AI response. Please try again.');
+      }
+
+      // Process enhancements using shared function
+      await processAIEnhancements(aiEnhancements, domainNames, domainToTileIndex);
+    } catch (err: any) {
+      setError(err.message || 'Failed to enhance with AI');
+      console.error('Error in generateHybridJSON:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Shared function to process AI enhancements (used by both API and offline modes)
+  const processAIEnhancements = async (
+    aiEnhancements: Array<{ domain: string; title: string; description: string }>,
+    domainNames: string[],
+    domainToTileIndex: Map<string, number>
+  ) => {
+    try {
+      // Create a map of domain to AI enhancement (match by index first, then by domain)
+      const enhancementByIndex: Array<{ title: string; description: string } | null> = new Array(manualTiles.length).fill(null);
+      const enhancementMap = new Map<string, { title: string; description: string }>();
+      
+      aiEnhancements.forEach((enh: any, index: number) => {
+        if (enh.domain && enh.title && enh.description) {
+          // Normalize domain to base domain (same logic as extraction)
+          let normalizedDomain = enh.domain.toLowerCase().trim().replace('www.', '').replace(/^\.+/, '');
+          
+          // Handle special cases like co.uk, co.in, co.il (these are valid 2-part TLDs)
+          const twoPartTlds = ['co.uk', 'co.in', 'co.il', 'co.za', 'com.au', 'com.br', 'com.mx', 'net.au', 'org.uk'];
+          const parts = normalizedDomain.split('.');
+          let baseDomain = normalizedDomain;
+          
+          if (parts.length >= 3) {
+            const lastTwo = parts.slice(-2).join('.');
+            if (twoPartTlds.includes(lastTwo)) {
+              // For domains like example.co.uk, use last 3 parts
+              baseDomain = parts.slice(-3).join('.');
+            } else {
+              // For normal domains, use last 2 parts
+              baseDomain = parts.slice(-2).join('.');
+            }
+          } else if (parts.length === 2) {
+            baseDomain = normalizedDomain;
+          }
+          
+          // Match by the exact domain that was sent to AI (most reliable)
+          // The AI returns domains in the same format we sent, so match by the original domain from domainNames array
+          if (index < domainNames.length) {
+            const originalDomainSent = domainNames[index];
+            const tileIndexFromOriginal = domainToTileIndex.get(originalDomainSent);
+            
+            if (tileIndexFromOriginal !== undefined && tileIndexFromOriginal < manualTiles.length) {
+              if (!enhancementByIndex[tileIndexFromOriginal]) {
+                enhancementByIndex[tileIndexFromOriginal] = {
+                  title: enh.title,
+                  description: enh.description
+                };
+                console.log(`✅ PRIMARY [${tileIndexFromOriginal}]:`, originalDomainSent, '->', enh.title);
+              }
+            } else {
+              console.warn(`⚠️ Could not find tile index for domain:`, originalDomainSent, 'AI index:', index);
+              // Debug: show what's in domainToTileIndex
+              if (index < 5) {
+                console.log('  domainToTileIndex sample keys:', Array.from(domainToTileIndex.keys()).slice(0, 10));
+              }
+            }
+          }
+          
+          // Also try to match by index (fallback - in case order is preserved)
+          if (index < manualTiles.length && !enhancementByIndex[index]) {
+            enhancementByIndex[index] = {
+              title: enh.title,
+              description: enh.description
+            };
+            console.log(`✅ Matched by index [${index}]:`, baseDomain, '->', enh.title);
+          }
+          
+          // Also try to match by domain name using domainToTileIndex
+          const tileIndexFromDomain = domainToTileIndex.get(baseDomain) ?? domainToTileIndex.get(normalizedDomain);
+          if (tileIndexFromDomain !== undefined && tileIndexFromDomain < manualTiles.length && !enhancementByIndex[tileIndexFromDomain]) {
+            enhancementByIndex[tileIndexFromDomain] = {
+              title: enh.title,
+              description: enh.description
+            };
+            console.log(`✅ Matched by domain [${tileIndexFromDomain}]:`, baseDomain, '->', enh.title);
+          }
+          
+          // Store in map for domain-based lookup with multiple variations
+          // Store with the exact domain from AI response (most important - this is what AI returns)
+          const aiDomainExact = enh.domain.toLowerCase().trim();
+          enhancementMap.set(aiDomainExact, {
+            title: enh.title,
+            description: enh.description
+          });
+          
+          // Store normalized variations for flexible matching
+          enhancementMap.set(baseDomain, {
+            title: enh.title,
+            description: enh.description
+          });
+          enhancementMap.set(normalizedDomain, {
+            title: enh.title,
+            description: enh.description
+          });
+          
+          // Also store without TLD for very flexible matching (e.g., "abcya" from "abcya.com")
+          const domainWithoutTld = aiDomainExact.split('.')[0];
+          if (domainWithoutTld && domainWithoutTld.length > 2) {
+            enhancementMap.set(domainWithoutTld, {
+              title: enh.title,
+              description: enh.description
+            });
+          }
+        }
+      });
+      
+      const matchedCount = enhancementByIndex.filter(e => e !== null).length;
+      console.log('=== ENHANCEMENT MATCHING SUMMARY ===');
+      console.log('Enhancement by index:', matchedCount, 'out of', manualTiles.length);
+      console.log('Enhancement map size:', enhancementMap.size);
+      console.log('Sample enhancement keys:', Array.from(enhancementMap.keys()).slice(0, 10));
+      if (matchedCount === 0) {
+        console.warn('⚠️ WARNING: No enhancements matched by index! Will try domain-based matching.');
+      }
+
+      // Generate final JSON with AI-enhanced titles/descriptions
+      const currentTimestamp = Math.floor(Date.now() / 1000);
+      const generateId = (prefix: string, index: number) => `${prefix}_${index + 1}`;
+
+      const tiles = manualTiles.map((tile, tileIndex) => {
+        // Try to get domain for lookup (using same base domain logic)
+        let domainKey = '';
+        const firstLink = tile.links[0];
+        if (firstLink) {
+          try {
+            const url = new URL(firstLink.url);
+            let domain = url.hostname.replace('www.', '').replace(/^\.+/, '').toLowerCase();
+            
+            // Handle special cases like co.uk, co.in, co.il (these are valid 2-part TLDs)
+            const twoPartTlds = ['co.uk', 'co.in', 'co.il', 'co.za', 'com.au', 'com.br', 'com.mx'];
+            const parts = domain.split('.');
+            
+            if (parts.length >= 3) {
+              const lastTwo = parts.slice(-2).join('.');
+              if (twoPartTlds.includes(lastTwo)) {
+                // For domains like example.co.uk, use last 3 parts
+                domainKey = parts.slice(-3).join('.');
+              } else {
+                // For normal domains, use last 2 parts
+                domainKey = parts.slice(-2).join('.');
+              }
+            } else if (parts.length === 2) {
+              domainKey = domain;
+            } else {
+              domainKey = domain;
+            }
+          } catch {
+            domainKey = tile.title.toLowerCase();
+          }
+        } else {
+          domainKey = tile.title.toLowerCase();
+        }
+
+        // Get AI enhancement - try by index first (most reliable), then by domain
+        let enhancement = enhancementByIndex[tileIndex] || null;
+        
+        // If no match by index, try domain-based matching with multiple strategies
+        if (!enhancement && firstLink) {
+          try {
+            const url = new URL(firstLink.url);
+            const fullDomain = url.hostname.toLowerCase();
+            const domainWithoutWww = fullDomain.replace('www.', '');
+            
+            // Strategy 1: Try exact domain key match (what we extracted)
+            enhancement = enhancementMap.get(domainKey);
+            
+            // Strategy 2: Try full domain variations (with/without www)
+            if (!enhancement) {
+              enhancement = enhancementMap.get(fullDomain) || 
+                           enhancementMap.get(domainWithoutWww);
+            }
+            
+            // Strategy 3: The AI returns domains like "abcya.com" exactly
+            // Try to match by normalizing our domain to that format
+            if (!enhancement) {
+              // Normalize to base domain format (e.g., "abcya.com")
+              const normalizedForAI = domainWithoutWww.split('.').slice(-2).join('.');
+              enhancement = enhancementMap.get(normalizedForAI);
+            }
+            
+            // Strategy 4: Try matching by main domain name (without TLD)
+            // The AI returns "abcya.com", so if our domainKey is "abcya.com", try matching "abcya"
+            if (!enhancement) {
+              const domainNameOnly = domainKey.split('.')[0];
+              if (domainNameOnly && domainNameOnly.length > 2) {
+                enhancement = enhancementMap.get(domainNameOnly);
+              }
+            }
+            
+            // Strategy 5: Try matching by checking all keys for domain name match
+            // The AI returns exact domains like "abcya.com", so check if any key matches our domain
+            if (!enhancement) {
+              const domainName = domainKey.split('.')[0];
+              for (const [key, value] of enhancementMap.entries()) {
+                // Check if the key matches our domain in any way
+                if (key === domainKey || 
+                    key === domainWithoutWww || 
+                    key === fullDomain ||
+                    key === domainKey.split('.').slice(-2).join('.') ||
+                    (key.includes('.') && key.split('.')[0] === domainName)) {
+                  enhancement = value;
+                  console.log('✅ Found domain match:', domainKey, '->', key, '->', value.title);
+                  break;
+                }
+              }
+            }
+            
+            // Strategy 6: Last resort - partial matching by main domain part
+            if (!enhancement) {
+              const domainParts = domainKey.split('.');
+              const mainPart = domainParts[0];
+              if (mainPart && mainPart.length > 2) {
+                for (const [key, value] of enhancementMap.entries()) {
+                  const keyMainPart = key.split('.')[0];
+                  if (keyMainPart === mainPart) {
+                    enhancement = value;
+                    console.log('✅ Found partial match:', domainKey, '->', key, '->', value.title);
+                    break;
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('Error matching domain:', e);
+          }
+        }
+        
+        const finalTitle = enhancement?.title || tile.title;
+        const finalDescription = enhancement?.description || tile.description;
+        
+        // Debug logging - show what's being used
+        if (enhancement) {
+          console.log(`✅ [${tileIndex}] Using AI enhancement:`, tile.title, '->', finalTitle);
+        } else {
+          console.log(`❌ [${tileIndex}] No enhancement found for:`, tile.title, 'Domain:', domainKey, 'Using original:', tile.title);
+          // Show available enhancements for debugging
+          if (enhancementMap.size > 0) {
+            const sampleKeys = Array.from(enhancementMap.keys()).slice(0, 5);
+            console.log('  Available enhancement keys (sample):', sampleKeys);
+          }
+        }
+
+        const sections = tile.links.length > 0 ? [{
+          id: generateId('sec', 0),
+          title: 'Links',
+          textColor: null,
+          visibleFrom: null,
+          expiresAt: null,
+          forceStackedView: false,
+          position: 0,
+          links: tile.links.map((link, linkIndex) => ({
+            id: generateId('link', linkIndex),
+            label: link.title,
+            url: link.url,
+            icon: null,
+            textColor: null,
+            visibility: 'public',
+            allowedUsers: [],
+            notes: null,
+            tooltip: null,
+            visibleFrom: null,
+            expiresAt: null,
+            browser: null,
+            isFavorite: false,
+            hasRoleAccess: false,
+            position: linkIndex,
+            health: {
+              status: 'unknown',
+              httpCode: null,
+              error: null,
+              checkedAt: null
+            }
+          })),
+          richTextContent: []
+        }] : [];
+
+        return {
+          id: tile.id,
+          title: finalTitle,
+          description: finalDescription,
+          htmlContent: '',
+          emoji: tile.emoji,
+          themeColor: tile.themeColor,
+          group: 'group1',
+          createdAt: currentTimestamp,
+          tabs: [],
+          sections,
+          visibility: 'public',
+          allowedUsers: [],
+          isFavorite: false,
+          isHyperlink: false,
+          openInNewTab: true,
+          canView: true,
+          canEdit: true,
+          canDelete: true
+        };
+      });
+
+      const organized = {
+        version: '1.1',
+        type: 'category',
+        exportedAt: Date.now(),
+        categoryName: 'Main',
+        tiles
+      };
+
+      const jsonString = JSON.stringify(organized, null, 2);
+      setOrganizedJson(jsonString);
+
+      // Calculate stats
+      const totalLinks = bookmarks.length;
+      const processedLinksCount = tiles.reduce((sum, tile) => 
+        sum + (tile.sections?.reduce((secSum: number, sec: any) => secSum + (sec.links?.length || 0), 0) || 0), 0
+      );
+      
+      setStats({
+        totalLinks,
+        uniqueLinks: totalLinks,
+        duplicateLinks: duplicateCount,
+        processedLinks: processedLinksCount,
+        unprocessedLinks: totalLinks - processedLinksCount,
+        totalTiles: tiles.length,
+        totalSections: tiles.reduce((sum, tile) => sum + (tile.sections?.length || 0), 0),
+        processingTime: 0,
+        chunksProcessed: 1,
+        totalCost: 0
+      });
+
+      setProcessedLinks(bookmarks);
+      setUnprocessedLinks([]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate enhanced JSON');
+      throw err; // Re-throw to let caller handle
+    }
+  };
+
   // Generate JSON manually without AI
   const generateManualJSON = () => {
     if (bookmarks.length === 0) {
@@ -1773,8 +2442,28 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
             <p className="font-medium mb-1">Manual Organization</p>
             <p className="text-xs">
               Organize your bookmarks manually without AI. Import bookmarks first, then create categories and assign links.
+              Use "Enhance Titles with AI" to get AI-generated titles/descriptions for your categories (very low cost - only sends domain names).
             </p>
           </div>
+
+          {/* API Key Input for Hybrid Mode */}
+          {manualTiles.length > 0 && (
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                OpenRouter API Key (Optional - for AI title enhancement)
+              </label>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => handleApiKeyChange(e.target.value)}
+                placeholder="sk-or-v1-..."
+                className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Only needed for AI title enhancement. Very low cost - only sends domain names, not full URLs.
+              </p>
+            </div>
+          )}
 
           {/* Import Method for Manual Tab */}
           <div className="mb-4">
@@ -1966,21 +2655,107 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
             </div>
           )}
 
-          {/* Generate JSON Button for Manual Tab */}
+          {/* Generate JSON Buttons for Manual Tab */}
           {bookmarks.length > 0 && (
-            <div className="mb-4">
+            <div className="mb-4 space-y-2">
               <button
                 onClick={generateManualJSON}
                 disabled={loading}
                 className="w-full px-4 py-2 bg-emerald-500 text-white rounded hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {loading ? 'Generating JSON...' : 'Generate JSON'}
+                {loading ? 'Generating JSON...' : 'Generate JSON (No AI)'}
               </button>
+              {manualTiles.length > 0 && (
+                <div className="space-y-2">
+                  <button
+                    onClick={generateHybridJSON}
+                    disabled={loading || !apiKey.trim()}
+                    className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {loading ? 'Enhancing with AI...' : '🤖 Enhance Titles with AI (Low Cost)'}
+                  </button>
+                  <button
+                    onClick={generateOfflinePrompt}
+                    disabled={loading}
+                    className="w-full px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    📋 Generate Offline Prompt (Free Testing)
+                  </button>
+                </div>
+              )}
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 text-center">
                 {manualTiles.length === 0 
                   ? 'Will auto-organize by domain if no categories are created'
-                  : `Will use ${manualTiles.length} categor${manualTiles.length !== 1 ? 'ies' : 'y'}`}
+                  : `Will use ${manualTiles.length} categor${manualTiles.length !== 1 ? 'ies' : 'y'}. AI enhancement only generates titles/descriptions (very low cost - only sends domain names).`}
               </p>
+              
+              {/* Offline AI Prompt Section */}
+              {showOfflinePrompt && (
+                <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Offline AI Prompt (Testing Mode)</h3>
+                    <button
+                      onClick={() => {
+                        setShowOfflinePrompt(false);
+                        setOfflinePrompt('');
+                        setOfflineResponse('');
+                      }}
+                      className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                      AI Prompt (copied to clipboard):
+                    </label>
+                    <textarea
+                      value={offlinePrompt}
+                      onChange={(e) => setOfflinePrompt(e.target.value)}
+                      readOnly
+                      className="w-full p-2 text-xs font-mono bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded text-slate-700 dark:text-slate-300 resize-none"
+                      rows={8}
+                      placeholder="The prompt will appear here..."
+                    />
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(offlinePrompt);
+                        setError('✅ Prompt copied to clipboard again!');
+                        setTimeout(() => setError(null), 2000);
+                      }}
+                      className="mt-1 text-xs text-purple-600 dark:text-purple-400 hover:underline"
+                    >
+                      📋 Copy Prompt Again
+                    </button>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                      Paste AI Response Here:
+                    </label>
+                    <textarea
+                      value={offlineResponse}
+                      onChange={(e) => setOfflineResponse(e.target.value)}
+                      className="w-full p-2 text-xs font-mono bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded text-slate-700 dark:text-slate-300 resize-y"
+                      rows={8}
+                      placeholder="Paste the JSON response from ChatGPT/Claude here..."
+                    />
+                  </div>
+                  
+                  <button
+                    onClick={processOfflineResponse}
+                    disabled={loading || !offlineResponse.trim()}
+                    className="w-full px-4 py-2 bg-emerald-500 text-white rounded hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {loading ? 'Processing...' : '✅ Process AI Response'}
+                  </button>
+                  
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    💡 Tip: Copy the prompt above, paste it into ChatGPT or Claude, then paste the JSON response here.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </>
