@@ -43,6 +43,15 @@ export interface UserRolesResponse {
   }>;
 }
 
+export interface BatchUserRolesResponse {
+  userId: number;
+  roles: Array<{
+    id: number;
+    name: string;
+    description?: string;
+  }>;
+}
+
 export interface CreateRoleRequest {
   name: string;
   description?: string;
@@ -169,6 +178,20 @@ export const rolesService = {
     if (!response.ok) {
       const data = await response.json();
       throw new Error(data.error || 'Failed to fetch user roles');
+    }
+
+    return response.json();
+  },
+
+  async getBatchUserRoles(): Promise<BatchUserRolesResponse[]> {
+    const response = await fetch(`${API_BASE}/roles/users/batch-roles`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to fetch batch user roles');
     }
 
     return response.json();

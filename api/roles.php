@@ -20,6 +20,8 @@ switch ($method) {
             handleGetCurrentUserTabs();
         } elseif (preg_match('#^/user/(\d+)$#', $path, $matches)) {
             handleGetUserRoles($matches[1]);
+        } elseif (preg_match('#^/users/batch-roles$#', $path)) {
+            handleGetBatchUserRoles();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -264,6 +266,51 @@ function handleGetUserRoles($userId) {
         'email' => $user['email'],
         'roles' => $roles
     ]);
+}
+
+function handleGetBatchUserRoles() {
+    requireAdmin();
+    $db = getDB();
+    
+    // Get all user roles in a single optimized query, grouped by user_id
+    $stmt = $db->prepare('
+        SELECT 
+            ur.user_id,
+            r.id as role_id,
+            r.name as role_name,
+            r.description as role_description,
+            ur.created_at
+        FROM user_roles ur
+        INNER JOIN roles r ON ur.role_id = r.id
+        ORDER BY ur.user_id, r.name
+    ');
+    $stmt->execute();
+    
+    // Group roles by user_id
+    $rolesByUser = [];
+    while ($row = $stmt->fetch()) {
+        $userId = (int)$row['user_id'];
+        if (!isset($rolesByUser[$userId])) {
+            $rolesByUser[$userId] = [];
+        }
+        
+        $rolesByUser[$userId][] = [
+            'id' => (int)$row['role_id'],
+            'name' => $row['role_name'],
+            'description' => $row['role_description'] ?: null
+        ];
+    }
+    
+    // Convert to array format for JSON response
+    $result = [];
+    foreach ($rolesByUser as $userId => $roles) {
+        $result[] = [
+            'userId' => $userId,
+            'roles' => $roles
+        ];
+    }
+    
+    sendJSON($result);
 }
 
 function handleCreateRole() {

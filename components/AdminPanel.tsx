@@ -71,6 +71,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(new Set());
   const [bulkProcessing, setBulkProcessing] = useState(false);
   const [allUsersSearchTerm, setAllUsersSearchTerm] = useState('');
+  const [allUsersPage, setAllUsersPage] = useState(1);
+  const [allUsersPerPage, setAllUsersPerPage] = useState(25);
   const [resetPasswordModal, setResetPasswordModal] = useState<{ open: boolean; userId: number | null; username: string }>({ open: false, userId: null, username: '' });
   const [newPassword, setNewPassword] = useState('');
   const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
@@ -337,13 +339,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         loadPermissions();
       }
     }
-    // Load permissions when viewing All Users tab to show tile admin badges
+    // Load permissions and roles when viewing All Users tab to show badges
     if (activeTab === 'all') {
       loadPermissions();
-      // Load user roles for all users
-      if (allUsers.length > 0) {
-        loadUserRolesForBulk();
-      }
+      loadRoles(); // Ensure roles are loaded before loading user roles
     }
     if (activeTab === 'clone') {
       loadClonesList();
@@ -391,6 +390,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       loadSettings();
     }
   }, [activeTab]);
+
+  // Load user roles when All Users tab is active and users are loaded
+  useEffect(() => {
+    const loadUserRolesWhenReady = async () => {
+      if (activeTab === 'all' && allUsers.length > 0) {
+        // Load user roles after users are loaded
+        await loadUserRolesForBulk();
+      }
+    };
+    
+    loadUserRolesWhenReady();
+  }, [activeTab, allUsers.length]);
 
   const loadSnapshots = async () => {
     try {
@@ -1251,28 +1262,39 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const loadUserRolesForBulk = async () => {
     if (allUsers.length === 0) return;
     
-    const rolesMap: Record<number, Array<{ id: number; name: string; description?: string }>> = {};
-    const loadingSet = new Set<number>();
-    
-    // Load roles for all users in parallel
-    const promises = allUsers.map(async (user) => {
-      loadingSet.add(user.id);
-      setLoadingUserRoles(new Set(loadingSet));
+    try {
+      setUserRolesLoading(true);
+      // Use batch endpoint for much faster loading
+      const batchRoles = await rolesService.getBatchUserRoles();
       
-      try {
-        const userRoles = await rolesService.getUserRoles(user.id);
-        rolesMap[user.id] = userRoles.roles.map(r => ({ id: r.id, name: r.name, description: r.description }));
-      } catch (err) {
-        // User might not have roles yet, that's fine
-        rolesMap[user.id] = [];
-      } finally {
-        loadingSet.delete(user.id);
-        setLoadingUserRoles(new Set(loadingSet));
+      // Convert batch response to map format
+      const rolesMap: Record<number, Array<{ id: number; name: string; description?: string }>> = {};
+      for (const item of batchRoles) {
+        rolesMap[item.userId] = item.roles.map(r => ({ 
+          id: r.id, 
+          name: r.name, 
+          description: r.description 
+        }));
       }
-    });
-    
-    await Promise.all(promises);
-    setUserRolesMap(rolesMap);
+      
+      // Ensure all users have an entry (even if empty)
+      for (const user of allUsers) {
+        if (!rolesMap[user.id]) {
+          rolesMap[user.id] = [];
+        }
+      }
+      
+      setUserRolesMap(rolesMap);
+    } catch (err) {
+      // If batch fails, fall back to empty map
+      const rolesMap: Record<number, Array<{ id: number; name: string; description?: string }>> = {};
+      for (const user of allUsers) {
+        rolesMap[user.id] = [];
+      }
+      setUserRolesMap(rolesMap);
+    } finally {
+      setUserRolesLoading(false);
+    }
   };
 
   const handleBulkAssignRoles = async () => {
@@ -2070,24 +2092,174 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               {/* All Users Tab */}
               {activeTab === 'all' && (
                 <div className="space-y-4">
-                  <div className="flex justify-end">
-                    <button
-                      onClick={openAddUserModal}
-                      className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                        <path d="M10 5a3 3 0 100 6 3 3 0 000-6zM3.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM15.75 6a3 3 0 11-6 0 3 3 0 016 0zm1.423 11.285a1.224 1.224 0 00-.569-1.175 5.964 5.964 0 00-1.576-.19 5.964 5.964 0 00-2.383.676.224.224 0 00-.12.219c0 .288.09.567.26.804a5.96 5.96 0 013.5 2.377 5.96 5.96 0 003.5-2.377c.17-.237.26-.516.26-.804a.225.225 0 00-.12-.219z" />
-                      </svg>
-                      Add User
-                    </button>
+                  <div className="flex items-center justify-between gap-4">
+                    {/* Search Input */}
+                    <div className="flex-1 max-w-md">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Search users by name or email..."
+                          value={allUsersSearchTerm}
+                          onChange={(e) => {
+                            setAllUsersSearchTerm(e.target.value);
+                            setAllUsersPage(1); // Reset to first page when searching
+                          }}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 pl-10 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                        />
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                          className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        {allUsersSearchTerm && (
+                          <button
+                            onClick={() => setAllUsersSearchTerm('')}
+                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {selectedUserIds.size > 0 && (
+                        <button
+                          onClick={async () => {
+                            const selectedCount = selectedUserIds.size;
+                            const userNames = allUsers
+                              .filter(u => selectedUserIds.has(u.id))
+                              .map(u => u.username)
+                              .join(', ');
+                            
+                            if (!confirm(`Are you sure you want to delete ${selectedCount} user(s)?\n\nUsers: ${userNames}\n\nThis will permanently delete their accounts and all their data. This action cannot be undone.`)) {
+                              return;
+                            }
+
+                            try {
+                              setBulkProcessing(true);
+                              setError('');
+                              const userIdsArray = Array.from(selectedUserIds);
+                              
+                              // Delete users one by one (since there's no bulk delete endpoint)
+                              let successCount = 0;
+                              let failCount = 0;
+                              for (const userId of userIdsArray) {
+                                try {
+                                  await authService.deleteUser(userId);
+                                  successCount++;
+                                } catch (err) {
+                                  failCount++;
+                                  console.error(`Failed to delete user ${userId}:`, err);
+                                }
+                              }
+                              
+                              if (failCount > 0) {
+                                setError(`${successCount} user(s) deleted successfully, but ${failCount} user(s) failed to delete.`);
+                              }
+                              
+                              await loadData();
+                              setSelectedUserIds(new Set());
+                              if (onUserApproved) {
+                                onUserApproved();
+                              }
+                            } catch (err: any) {
+                              setError(err.message || 'Failed to delete users');
+                            } finally {
+                              setBulkProcessing(false);
+                            }
+                          }}
+                          disabled={bulkProcessing}
+                          className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                        >
+                          {bulkProcessing ? (
+                            <>
+                              <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Deleting...
+                            </>
+                          ) : (
+                            <>
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                              </svg>
+                              Delete Selected ({selectedUserIds.size})
+                            </>
+                          )}
+                        </button>
+                      )}
+                      <button
+                        onClick={openAddUserModal}
+                        className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path d="M10 5a3 3 0 100 6 3 3 0 000-6zM3.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM15.75 6a3 3 0 11-6 0 3 3 0 016 0zm1.423 11.285a1.224 1.224 0 00-.569-1.175 5.964 5.964 0 00-1.576-.19 5.964 5.964 0 00-2.383.676.224.224 0 00-.12.219c0 .288.09.567.26.804a5.96 5.96 0 013.5 2.377 5.96 5.96 0 003.5-2.377c.17-.237.26-.516.26-.804a.225.225 0 00-.12-.219z" />
+                        </svg>
+                        Add User
+                      </button>
+                    </div>
                   </div>
                   <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
                           <tr>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                              <input
+                                type="checkbox"
+                                checked={(() => {
+                                  const filteredUsers = allUsers.filter(user => {
+                                    if (!allUsersSearchTerm) return true;
+                                    const search = allUsersSearchTerm.toLowerCase();
+                                    return user.username.toLowerCase().includes(search) ||
+                                           user.email.toLowerCase().includes(search);
+                                  });
+                                  const paginatedUsers = filteredUsers.slice(
+                                    (allUsersPage - 1) * allUsersPerPage,
+                                    allUsersPage * allUsersPerPage
+                                  );
+                                  return paginatedUsers.length > 0 && paginatedUsers.every(user => selectedUserIds.has(user.id));
+                                })()}
+                                onChange={() => {
+                                  const filteredUsers = allUsers.filter(user => {
+                                    if (!allUsersSearchTerm) return true;
+                                    const search = allUsersSearchTerm.toLowerCase();
+                                    return user.username.toLowerCase().includes(search) ||
+                                           user.email.toLowerCase().includes(search);
+                                  });
+                                  const paginatedUsers = filteredUsers.slice(
+                                    (allUsersPage - 1) * allUsersPerPage,
+                                    allUsersPage * allUsersPerPage
+                                  );
+                                  
+                                  if (paginatedUsers.every(user => selectedUserIds.has(user.id))) {
+                                    // Deselect all paginated users
+                                    const newSelection = new Set(selectedUserIds);
+                                    paginatedUsers.forEach(user => newSelection.delete(user.id));
+                                    setSelectedUserIds(newSelection);
+                                  } else {
+                                    // Select all paginated users
+                                    const newSelection = new Set(selectedUserIds);
+                                    paginatedUsers.forEach(user => newSelection.add(user.id));
+                                    setSelectedUserIds(newSelection);
+                                  }
+                                }}
+                                className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                              />
+                            </th>
                             <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">User</th>
                             <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Email</th>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Badges</th>
                             <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Status</th>
                             <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Registered</th>
                             <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
@@ -2111,6 +2283,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               
                               return (
                                 <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-colors">
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedUserIds.has(user.id)}
+                                      onChange={() => {
+                                        const newSelection = new Set(selectedUserIds);
+                                        if (newSelection.has(user.id)) {
+                                          newSelection.delete(user.id);
+                                        } else {
+                                          newSelection.add(user.id);
+                                        }
+                                        setSelectedUserIds(newSelection);
+                                      }}
+                                      className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+                                    />
+                                  </td>
                                   <td className="px-6 py-4">
                                     <div className="flex items-center gap-3">
                                       <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 ${user.is_admin
@@ -2136,37 +2324,50 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                               Local
                                             </span>
                                           )}
-                                          {/* Role badges */}
-                                          {userRoles.map((role) => (
-                                            <span
-                                              key={role.id}
-                                              className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-xs font-semibold whitespace-nowrap flex items-center gap-1"
-                                              title={role.description || `Role: ${role.name}`}
-                                            >
-                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                                <path d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
-                                              </svg>
-                                              {role.name}
-                                            </span>
-                                          ))}
-                                          {/* Tile Admin badge */}
-                                          {tileAdminCount > 0 && (
-                                            <span
-                                              className="px-2 py-0.5 rounded-full bg-brand-100 dark:bg-brand-500/20 text-brand-700 dark:text-brand-400 text-xs font-semibold whitespace-nowrap flex items-center gap-1"
-                                              title={`Tile Admin for ${tileAdminCount} tile${tileAdminCount !== 1 ? 's' : ''}`}
-                                            >
-                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-5.5-2.5a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0zM10 12a5.98 5.98 0 00-4.93 2.26l.896 1.79a1 1 0 101.788.894l-1.062-2.12A5.98 5.98 0 0110 12z" clipRule="evenodd" />
-                                              </svg>
-                                              Tile Admin ({tileAdminCount})
-                                            </span>
-                                          )}
                                         </div>
                                       </div>
                                     </div>
                                   </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">
                                 {user.email}
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {userRolesLoading ? (
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-brand-500"></div>
+                                  ) : (
+                                    <>
+                                      {/* Role badges */}
+                                      {userRoles.map((role) => (
+                                        <span
+                                          key={role.id}
+                                          className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-xs font-semibold whitespace-nowrap flex items-center gap-1"
+                                          title={role.description || `Role: ${role.name}`}
+                                        >
+                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                            <path d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                                          </svg>
+                                          {role.name}
+                                        </span>
+                                      ))}
+                                      {/* Tile Admin badge */}
+                                      {tileAdminCount > 0 && (
+                                        <span
+                                          className="px-2 py-0.5 rounded-full bg-brand-100 dark:bg-brand-500/20 text-brand-700 dark:text-brand-400 text-xs font-semibold whitespace-nowrap flex items-center gap-1"
+                                          title={`Tile Admin for ${tileAdminCount} tile${tileAdminCount !== 1 ? 's' : ''}`}
+                                        >
+                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-5.5-2.5a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0zM10 12a5.98 5.98 0 00-4.93 2.26l.896 1.79a1 1 0 101.788.894l-1.062-2.12A5.98 5.98 0 0110 12z" clipRule="evenodd" />
+                                          </svg>
+                                          Tile Admin ({tileAdminCount})
+                                        </span>
+                                      )}
+                                      {userRoles.length === 0 && tileAdminCount === 0 && (
+                                        <span className="text-xs text-slate-400 dark:text-slate-500 italic">No badges</span>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                 {user.is_approved ? (
@@ -2344,10 +2545,106 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               </td>
                             </tr>
                           );
-                            })}
+                            })
+                            .slice((allUsersPage - 1) * allUsersPerPage, allUsersPage * allUsersPerPage)}
                         </tbody>
                       </table>
                     </div>
+                    
+                    {/* Pagination Controls */}
+                    {(() => {
+                      const filteredUsers = allUsers.filter(user => {
+                        if (!allUsersSearchTerm) return true;
+                        const search = allUsersSearchTerm.toLowerCase();
+                        return user.username.toLowerCase().includes(search) ||
+                               user.email.toLowerCase().includes(search);
+                      });
+                      const totalUsers = filteredUsers.length;
+                      const totalPages = Math.ceil(totalUsers / allUsersPerPage);
+                      const startUser = totalUsers === 0 ? 0 : (allUsersPage - 1) * allUsersPerPage + 1;
+                      const endUser = Math.min(allUsersPage * allUsersPerPage, totalUsers);
+                      
+                      return (
+                        <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-4">
+                              <div className="text-sm text-slate-600 dark:text-slate-400">
+                                Showing <span className="font-medium text-slate-900 dark:text-white">{startUser}</span> to{' '}
+                                <span className="font-medium text-slate-900 dark:text-white">{endUser}</span> of{' '}
+                                <span className="font-medium text-slate-900 dark:text-white">{totalUsers}</span> users
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <label className="text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                                  Show:
+                                </label>
+                                <select
+                                  value={allUsersPerPage}
+                                  onChange={(e) => {
+                                    setAllUsersPerPage(parseInt(e.target.value));
+                                    setAllUsersPage(1); // Reset to first page when changing items per page
+                                  }}
+                                  className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                >
+                                  <option value={10}>10</option>
+                                  <option value={25}>25</option>
+                                  <option value={50}>50</option>
+                                  <option value={100}>100</option>
+                                </select>
+                              </div>
+                            </div>
+                            
+                            {totalPages > 1 && (
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => setAllUsersPage(prev => Math.max(1, prev - 1))}
+                                  disabled={allUsersPage === 1}
+                                  className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                  Previous
+                                </button>
+                                
+                                <div className="flex items-center gap-1">
+                                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                    let pageNum;
+                                    if (totalPages <= 5) {
+                                      pageNum = i + 1;
+                                    } else if (allUsersPage <= 3) {
+                                      pageNum = i + 1;
+                                    } else if (allUsersPage >= totalPages - 2) {
+                                      pageNum = totalPages - 4 + i;
+                                    } else {
+                                      pageNum = allUsersPage - 2 + i;
+                                    }
+                                    
+                                    return (
+                                      <button
+                                        key={pageNum}
+                                        onClick={() => setAllUsersPage(pageNum)}
+                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                                          allUsersPage === pageNum
+                                            ? 'bg-brand-600 text-white'
+                                            : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                        }`}
+                                      >
+                                        {pageNum}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                
+                                <button
+                                  onClick={() => setAllUsersPage(prev => Math.min(totalPages, prev + 1))}
+                                  disabled={allUsersPage === totalPages}
+                                  className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                  Next
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
