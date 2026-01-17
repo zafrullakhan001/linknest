@@ -28,6 +28,7 @@ import { FloatingPageZoomControl } from './components/FloatingPageZoomControl';
 import { PageZoomWidget } from './components/PageZoomControl';
 import { FloatingThemeWidget } from './components/FloatingThemeWidget';
 import { ThemeWidget } from './components/ThemeWidget';
+import { themeService } from './services/themeService';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -172,9 +173,7 @@ const AppContent: React.FC = () => {
 
   // Initialize theme service on mount
   useEffect(() => {
-    import('./services/themeService').then(({ themeService }) => {
-      themeService.initialize();
-    });
+    themeService.initialize();
   }, []);
 
   // Theme State

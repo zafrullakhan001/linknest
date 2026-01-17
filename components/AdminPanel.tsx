@@ -165,6 +165,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     canDelete: false
   });
 
+  // Tile Admins state
+  const [showTileAdminsModal, setShowTileAdminsModal] = useState(false);
+  const [selectedTileIdsForAdmins, setSelectedTileIdsForAdmins] = useState<Set<string>>(new Set());
+  const [tileAdminsLoading, setTileAdminsLoading] = useState(false);
+  const [tileAdminsMap, setTileAdminsMap] = useState<Record<string, TilePermission[]>>({});
+  const [tileAdminTileSearchTerm, setTileAdminTileSearchTerm] = useState('');
+  const [tileAdminUserSearchTerm, setTileAdminUserSearchTerm] = useState('');
+  const [tileAdminsUsersLoaded, setTileAdminsUsersLoaded] = useState(false);
+
   // Roles management state
   const [roles, setRoles] = useState<Role[]>([]);
   const [rolesLoading, setRolesLoading] = useState(false);
@@ -645,6 +654,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setError('');
       const perms = await accessService.getAllPermissions();
       setPermissions(perms);
+      // Also load tiles if not loaded yet
+      if (allTiles.length === 0) {
+        await loadAllTilesAndLinks();
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to load permissions');
     } finally {
@@ -769,6 +782,186 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   };
 
+  // Tile Admins handlers
+  const handleManageTileAdmins = async () => {
+    setSelectedTileIdsForAdmins(new Set());
+    setTileAdminTileSearchTerm('');
+    setTileAdminUserSearchTerm('');
+    setTileAdminsMap({});
+    setTileAdminsUsersLoaded(false);
+    setTileAdminsLoading(true);
+    try {
+      // Always load users and tiles to ensure fresh data
+      await Promise.all([
+        loadAllUsers(),
+        loadAllTilesAndLinks()
+      ]);
+      
+      // Set flag that users are loaded (state will update)
+      setTileAdminsUsersLoaded(true);
+      
+      // Load all permissions for all tiles
+      // Use getTiles() to get fresh data since state might not be updated yet
+      const currentTiles = await getTiles();
+      const permissionsMap: Record<string, TilePermission[]> = {};
+      
+      for (const tile of currentTiles) {
+        try {
+          const tilePerms = await accessService.getTilePermissions(tile.id);
+          // Filter to only show users with edit permission (tile admins)
+          const admins = tilePerms.permissions
+            .filter(perm => perm.canEdit)
+            .map(perm => ({
+              userId: perm.userId,
+              tileId: tile.id,
+              canView: perm.canView,
+              canEdit: perm.canEdit,
+              canDelete: perm.canDelete,
+              createdAt: perm.createdAt,
+              updatedAt: perm.updatedAt,
+              username: perm.username,
+              email: perm.email,
+              tileTitle: tile.title
+            }));
+          permissionsMap[tile.id] = admins;
+        } catch (err) {
+          // Tile might not have permissions yet
+          permissionsMap[tile.id] = [];
+        }
+      }
+      setTileAdminsMap(permissionsMap);
+      setShowTileAdminsModal(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load tile admins');
+    } finally {
+      setTileAdminsLoading(false);
+    }
+  };
+
+  const handleAddTileAdmin = async (userId: number, tileId: string) => {
+    try {
+      setError('');
+      // Set user as tile admin (can view, edit, and delete)
+      await accessService.setPermission({
+        userId,
+        tileId,
+        canView: true,
+        canEdit: true,
+        canDelete: true
+      });
+      
+      // Reload admins for this tile
+      const tilePerms = await accessService.getTilePermissions(tileId);
+      const admins = tilePerms.permissions
+        .filter(perm => perm.canEdit)
+        .map(perm => ({
+          userId: perm.userId,
+          tileId: tileId,
+          canView: perm.canView,
+          canEdit: perm.canEdit,
+          canDelete: perm.canDelete,
+          createdAt: perm.createdAt,
+          updatedAt: perm.updatedAt,
+          username: perm.username,
+          email: perm.email,
+          tileTitle: allTiles.find(t => t.id === tileId)?.title || tileId
+        }));
+      
+      setTileAdminsMap(prev => ({ ...prev, [tileId]: admins }));
+      await loadPermissions();
+    } catch (err: any) {
+      setError(err.message || 'Failed to add tile admin');
+    }
+  };
+
+  const handleRemoveTileAdmin = async (userId: number, tileId: string) => {
+    try {
+      setError('');
+      await accessService.deletePermission(userId, tileId);
+      
+      // Reload admins for this tile
+      const tilePerms = await accessService.getTilePermissions(tileId);
+      const admins = tilePerms.permissions
+        .filter(perm => perm.canEdit)
+        .map(perm => ({
+          userId: perm.userId,
+          tileId: tileId,
+          canView: perm.canView,
+          canEdit: perm.canEdit,
+          canDelete: perm.canDelete,
+          createdAt: perm.createdAt,
+          updatedAt: perm.updatedAt,
+          username: perm.username,
+          email: perm.email,
+          tileTitle: allTiles.find(t => t.id === tileId)?.title || tileId
+        }));
+      
+      setTileAdminsMap(prev => ({ ...prev, [tileId]: admins }));
+      await loadPermissions();
+    } catch (err: any) {
+      setError(err.message || 'Failed to remove tile admin');
+    }
+  };
+
+  const handleBulkAddTileAdmins = async () => {
+    if (selectedTileIdsForAdmins.size === 0) {
+      setError('Please select at least one tile');
+      return;
+    }
+
+    const selectedUserIds = Array.from(
+      document.querySelectorAll<HTMLInputElement>('input[data-tile-admin-user]:checked')
+    ).map(input => parseInt(input.dataset.tileAdminUser || '0')).filter(id => id > 0);
+
+    if (selectedUserIds.length === 0) {
+      setError('Please select at least one user');
+      return;
+    }
+
+    try {
+      setError('');
+      setTileAdminsLoading(true);
+      
+      // Add selected users as admins to all selected tiles
+      for (const tileId of selectedTileIdsForAdmins) {
+        for (const userId of selectedUserIds) {
+          await accessService.setPermission({
+            userId,
+            tileId,
+            canView: true,
+            canEdit: true,
+            canDelete: true
+          });
+        }
+        
+        // Reload admins for this tile
+        const tilePerms = await accessService.getTilePermissions(tileId);
+        const admins = tilePerms.permissions
+          .filter(perm => perm.canEdit)
+          .map(perm => ({
+            userId: perm.userId,
+            tileId: tileId,
+            canView: perm.canView,
+            canEdit: perm.canEdit,
+            canDelete: perm.canDelete,
+            createdAt: perm.createdAt,
+            updatedAt: perm.updatedAt,
+            username: perm.username,
+            email: perm.email,
+            tileTitle: allTiles.find(t => t.id === tileId)?.title || tileId
+          }));
+        
+        setTileAdminsMap(prev => ({ ...prev, [tileId]: admins }));
+      }
+      
+      await loadPermissions();
+    } catch (err: any) {
+      setError(err.message || 'Failed to add tile admins');
+    } finally {
+      setTileAdminsLoading(false);
+    }
+  };
+
   // Roles management handlers
   const handleAddRole = () => {
     setRoleForm({ name: '', description: '' });
@@ -847,6 +1040,78 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   };
 
+  // Select/Deselect all tiles handler
+  const handleSelectAllTiles = () => {
+    const allTileIds = new Set(allTiles.map(tile => tile.id));
+    setSelectedTileIds(allTileIds);
+    
+    // Also select all links from all tiles
+    const allLinkIds = new Set<string>();
+    allTiles.forEach(tile => {
+      tile.tabs?.forEach(tab => {
+        tab.sections?.forEach(section => {
+          section.links?.forEach(link => {
+            allLinkIds.add(link.id);
+          });
+        });
+        tab.links?.forEach(link => {
+          allLinkIds.add(link.id);
+        });
+      });
+    });
+    setSelectedLinkIds(allLinkIds);
+  };
+
+  // Deselect all tiles handler
+  const handleDeselectAllTiles = () => {
+    setSelectedTileIds(new Set());
+    setSelectedLinkIds(new Set());
+  };
+
+  // Select/Deselect all links in a section handler
+  const handleSelectAllLinksInSection = (tileId: string, sectionId: string, sectionLinks: any[]) => {
+    const newLinkSet = new Set(selectedLinkIds);
+    const allSelected = sectionLinks.every(link => selectedLinkIds.has(link.id));
+    
+    if (allSelected) {
+      // Deselect all links in this section
+      sectionLinks.forEach(link => newLinkSet.delete(link.id));
+    } else {
+      // Select all links in this section
+      sectionLinks.forEach(link => {
+        newLinkSet.add(link.id);
+      });
+      // Automatically select the parent tile
+      const newTileSet = new Set(selectedTileIds);
+      newTileSet.add(tileId);
+      setSelectedTileIds(newTileSet);
+    }
+    setSelectedLinkIds(newLinkSet);
+  };
+
+  // Select/Deselect all links directly in a tab (not from sections)
+  const handleSelectAllTabLevelLinks = (tileId: string, tabLinks: any[]) => {
+    if (tabLinks.length === 0) return;
+    
+    const allSelected = tabLinks.every((link: any) => selectedLinkIds.has(link.id));
+    const newLinkSet = new Set(selectedLinkIds);
+    
+    if (allSelected) {
+      // Deselect all tab-level links
+      tabLinks.forEach((link: any) => newLinkSet.delete(link.id));
+    } else {
+      // Select all tab-level links
+      tabLinks.forEach((link: any) => {
+        newLinkSet.add(link.id);
+      });
+      // Automatically select the parent tile
+      const newTileSet = new Set(selectedTileIds);
+      newTileSet.add(tileId);
+      setSelectedTileIds(newTileSet);
+    }
+    setSelectedLinkIds(newLinkSet);
+  };
+
   const handleManageUserRoles = async (userId: number) => {
     setSelectedUserForRoles(userId);
     setUserRolesLoading(true);
@@ -911,21 +1176,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       }
     }
 
-    if (selectedTilesArray.length === 0 && selectedLinksArray.length === 0) {
-      setError('Please select at least one tile or link');
-      return;
-    }
-
     try {
       setError('');
-      // Assign tiles if any selected
-      if (selectedTilesArray.length > 0) {
-        await rolesService.assignTilesToRole(selectedRole.id, { tileIds: selectedTilesArray, canView: true });
-      }
-      // Assign links if any selected
-      if (selectedLinksArray.length > 0) {
-        await rolesService.assignLinksToRole(selectedRole.id, { linkIds: selectedLinksArray, canView: true });
-      }
+      // Always call both APIs to ensure unchecked items are removed
+      // The backend will replace all assignments with the new selection
+      await rolesService.assignTilesToRole(selectedRole.id, { tileIds: selectedTilesArray, canView: true });
+      await rolesService.assignLinksToRole(selectedRole.id, { linkIds: selectedLinksArray, canView: true });
       setShowRoleTilesModal(false);
       setSelectedTileIds(new Set());
       setSelectedLinkIds(new Set());
@@ -4496,6 +4752,99 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               {/* Access Manager Tab */}
               {activeTab === 'access' && (
                 <div className="space-y-6">
+                  {/* Tile Admins Section */}
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                    <div className="flex justify-between items-center mb-4">
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Tile Admins</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                          Assign users as tile administrators. Tile admins can add, edit, and delete links for their assigned tiles.
+                        </p>
+                      </div>
+                      <button
+                        onClick={handleManageTileAdmins}
+                        className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                        </svg>
+                        Manage Tile Admins
+                      </button>
+                    </div>
+
+                    <div className="mb-4">
+                      {permissionsLoading ? (
+                        <div className="flex items-center justify-center py-8">
+                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-brand-500"></div>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {allTiles.length === 0 ? (
+                            <div className="text-center py-8 text-slate-600 dark:text-slate-400">
+                              No tiles available. Create tiles first.
+                            </div>
+                          ) : (
+                            allTiles.map((tile) => {
+                              // Get tile admins for this tile (users with canEdit=true)
+                              const tileAdminPerms = permissions.filter(
+                                p => p.tileId === tile.id && p.canEdit
+                              );
+                              
+                              return (
+                                <div
+                                  key={tile.id}
+                                  className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors"
+                                >
+                                  <div className="flex items-start justify-between">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <span className="text-base">{tile.emoji || '📄'}</span>
+                                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                                          {tile.title || tile.id}
+                                        </h4>
+                                      </div>
+                                      {tile.description && (
+                                        <p className="text-xs text-slate-600 dark:text-slate-400 mb-2 line-clamp-1">
+                                          {tile.description}
+                                        </p>
+                                      )}
+                                      
+                                      {/* Tile Admins List */}
+                                      {tileAdminPerms.length > 0 ? (
+                                        <div className="mt-2 space-y-1">
+                                          <div className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                            Tile Admins ({tileAdminPerms.length}):
+                                          </div>
+                                          <div className="flex flex-wrap gap-2">
+                                            {tileAdminPerms.map((perm) => (
+                                              <div
+                                                key={`${perm.userId}_${perm.tileId}`}
+                                                className="inline-flex items-center gap-1.5 px-2 py-1 bg-brand-50 dark:bg-brand-500/20 border border-brand-200 dark:border-brand-500/30 rounded text-xs text-brand-700 dark:text-brand-300"
+                                              >
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                  <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                                                </svg>
+                                                <span>{perm.username || perm.email}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                                          No tile admins assigned
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
                     <div className="flex justify-between items-center mb-4">
                       <div>
@@ -6580,6 +6929,411 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         </div>
       )}
 
+      {/* Tile Admins Modal */}
+      {showTileAdminsModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                    Manage Tile Admins
+                  </h2>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                    Select tiles on the left and users on the right to assign tile admin privileges. Tile admins can add, edit, and delete links for their assigned tiles.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowTileAdminsModal(false);
+                    setSelectedTileIdsForAdmins(new Set());
+                    setTileAdminsMap({});
+                    setTileAdminTileSearchTerm('');
+                    setTileAdminUserSearchTerm('');
+                    setTileAdminsUsersLoaded(false);
+                    setError('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Tiles Selection */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Select Tiles
+                    </label>
+                    <button
+                      onClick={() => {
+                        const filteredTiles = allTiles.filter(tile => 
+                          (tile.title || '').toLowerCase().includes(tileAdminTileSearchTerm.toLowerCase()) ||
+                          (tile.description || '').toLowerCase().includes(tileAdminTileSearchTerm.toLowerCase())
+                        );
+                        const filteredTileIds = filteredTiles.map(t => t.id);
+                        const allFilteredSelected = filteredTileIds.every(id => selectedTileIdsForAdmins.has(id));
+                        
+                        if (allFilteredSelected) {
+                          const newSet = new Set(selectedTileIdsForAdmins);
+                          filteredTileIds.forEach(id => newSet.delete(id));
+                          setSelectedTileIdsForAdmins(newSet);
+                        } else {
+                          const newSet = new Set(selectedTileIdsForAdmins);
+                          filteredTileIds.forEach(id => newSet.add(id));
+                          setSelectedTileIdsForAdmins(newSet);
+                        }
+                      }}
+                      className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                    >
+                      {(() => {
+                        const filteredTiles = allTiles.filter(tile => 
+                          (tile.title || '').toLowerCase().includes(tileAdminTileSearchTerm.toLowerCase()) ||
+                          (tile.description || '').toLowerCase().includes(tileAdminTileSearchTerm.toLowerCase())
+                        );
+                        const filteredTileIds = filteredTiles.map(t => t.id);
+                        const allFilteredSelected = filteredTileIds.length > 0 && filteredTileIds.every(id => selectedTileIdsForAdmins.has(id));
+                        return allFilteredSelected ? 'Deselect All' : 'Select All';
+                      })()}
+                    </button>
+                  </div>
+                  
+                  {/* Search Input */}
+                  <div className="mb-3">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Search tiles..."
+                        value={tileAdminTileSearchTerm}
+                        onChange={(e) => setTileAdminTileSearchTerm(e.target.value)}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                      />
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                      {tileAdminTileSearchTerm && (
+                        <button
+                          onClick={() => setTileAdminTileSearchTerm('')}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {tileAdminsLoading ? (
+                    <div className="flex items-center justify-center py-12 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                    </div>
+                  ) : allTiles.length === 0 ? (
+                    <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
+                      No tiles available
+                    </div>
+                  ) : (
+                    <>
+                      <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
+                        <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                          {allTiles
+                            .filter(tile => {
+                              if (!tileAdminTileSearchTerm) return true;
+                              const search = tileAdminTileSearchTerm.toLowerCase();
+                              return (tile.title || '').toLowerCase().includes(search) ||
+                                     (tile.description || '').toLowerCase().includes(search);
+                            })
+                            .map((tile) => {
+                              const admins = tileAdminsMap[tile.id] || [];
+                              return (
+                                <label
+                                  key={tile.id}
+                                  className="flex items-start gap-3 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedTileIdsForAdmins.has(tile.id)}
+                                    onChange={(e) => {
+                                      const newSet = new Set(selectedTileIdsForAdmins);
+                                      if (e.target.checked) {
+                                        newSet.add(tile.id);
+                                      } else {
+                                        newSet.delete(tile.id);
+                                      }
+                                      setSelectedTileIdsForAdmins(newSet);
+                                    }}
+                                    className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2 mt-0.5"
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="text-base">{tile.emoji || '📄'}</span>
+                                      <div className="text-sm font-medium text-slate-900 dark:text-white truncate">
+                                        {tile.title || tile.id}
+                                      </div>
+                                    </div>
+                                    {tile.description && (
+                                      <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mb-1">
+                                        {tile.description}
+                                      </div>
+                                    )}
+                                    <div className="flex items-center gap-2 mt-1">
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-300">
+                                        {admins.length} admin{admins.length !== 1 ? 's' : ''}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                        </div>
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                        {selectedTileIdsForAdmins.size} tile{selectedTileIdsForAdmins.size !== 1 ? 's' : ''} selected
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Users Selection */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Select Users
+                    </label>
+                    <button
+                      onClick={() => {
+                        const filteredUsers = allUsers.filter(user => 
+                          user.is_approved &&
+                          (user.username.toLowerCase().includes(tileAdminUserSearchTerm.toLowerCase()) ||
+                           user.email.toLowerCase().includes(tileAdminUserSearchTerm.toLowerCase()))
+                        );
+                        const filteredUserIds = filteredUsers.map(u => u.id);
+                        const selectedTileIds = Array.from(selectedTileIdsForAdmins);
+                        
+                        if (selectedTileIds.length === 0) return;
+                        
+                        // Check if all filtered users are already admins for all selected tiles
+                        const allFilteredSelected = filteredUserIds.every(userId => {
+                          return selectedTileIds.every(tileId => {
+                            const admins = tileAdminsMap[tileId] || [];
+                            return admins.some(admin => admin.userId === userId);
+                          });
+                        });
+                        
+                        // Toggle all filtered users for all selected tiles
+                        filteredUserIds.forEach(async userId => {
+                          for (const tileId of selectedTileIds) {
+                            const admins = tileAdminsMap[tileId] || [];
+                            const isAdmin = admins.some(admin => admin.userId === userId);
+                            
+                            if (!allFilteredSelected && !isAdmin) {
+                              // Add admin
+                              await handleAddTileAdmin(userId, tileId);
+                            } else if (allFilteredSelected && isAdmin) {
+                              // Remove admin
+                              await handleRemoveTileAdmin(userId, tileId);
+                            }
+                          }
+                        });
+                      }}
+                      className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                    >
+                      {(() => {
+                        const filteredUsers = allUsers.filter(user => 
+                          user.is_approved &&
+                          (user.username.toLowerCase().includes(tileAdminUserSearchTerm.toLowerCase()) ||
+                           user.email.toLowerCase().includes(tileAdminUserSearchTerm.toLowerCase()))
+                        );
+                        return filteredUsers.length > 0 ? 'Select All' : '';
+                      })()}
+                    </button>
+                  </div>
+                  
+                  {/* Search Input */}
+                  <div className="mb-3">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Search users..."
+                        value={tileAdminUserSearchTerm}
+                        onChange={(e) => setTileAdminUserSearchTerm(e.target.value)}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                      />
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                      {tileAdminUserSearchTerm && (
+                        <button
+                          onClick={() => setTileAdminUserSearchTerm('')}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {selectedTileIdsForAdmins.size === 0 ? (
+                    <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
+                      Select tiles on the left to manage their admins
+                    </div>
+                  ) : !tileAdminsUsersLoaded || allUsers.length === 0 ? (
+                    <div className="flex items-center justify-center py-12 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                    </div>
+                  ) : (() => {
+                    const approvedUsers = allUsers.filter(user => user.is_approved);
+                    const filteredUsers = approvedUsers.filter(user => {
+                      if (!tileAdminUserSearchTerm) return true;
+                      const search = tileAdminUserSearchTerm.toLowerCase();
+                      return user.username.toLowerCase().includes(search) ||
+                             user.email.toLowerCase().includes(search);
+                    });
+                    
+                    if (approvedUsers.length === 0) {
+                      return (
+                        <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
+                          No approved users available
+                        </div>
+                      );
+                    }
+                    
+                    if (filteredUsers.length === 0) {
+                      return (
+                        <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
+                          No users match your search
+                        </div>
+                      );
+                    }
+                    
+                    return (
+                      <>
+                        <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
+                          <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                            {filteredUsers.map((user) => {
+                              const selectedTileIds = Array.from(selectedTileIdsForAdmins);
+                              
+                              return (
+                                <div
+                                  key={user.id}
+                                  className="p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors"
+                                >
+                                  <div className="flex items-center gap-3 mb-2">
+                                    <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center flex-shrink-0">
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-600 dark:text-slate-400">
+                                        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                                      </svg>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-medium text-slate-900 dark:text-white truncate">
+                                        {user.username}
+                                      </div>
+                                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                        {user.email}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Checkboxes for each selected tile */}
+                                  {selectedTileIds.length > 0 && (
+                                    <div className="ml-11 space-y-1">
+                                      {selectedTileIds.map((tileId) => {
+                                        const tile = allTiles.find(t => t.id === tileId);
+                                        const isAdmin = tileAdminsMap[tileId]?.some(admin => admin.userId === user.id) || false;
+                                        
+                                        return (
+                                          <label
+                                            key={tileId}
+                                            className="flex items-center gap-2 cursor-pointer py-0.5"
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              data-tile-admin-user={user.id}
+                                              data-tile-admin-tile={tileId}
+                                              checked={isAdmin}
+                                              onChange={async (e) => {
+                                                if (e.target.checked) {
+                                                  await handleAddTileAdmin(user.id, tileId);
+                                                } else {
+                                                  await handleRemoveTileAdmin(user.id, tileId);
+                                                }
+                                              }}
+                                              className="w-3.5 h-3.5 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-1"
+                                            />
+                                            <span className="text-xs text-slate-700 dark:text-slate-300">
+                                              {tile?.emoji || '📄'} {tile?.title || tileId}
+                                            </span>
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                          {approvedUsers.length} approved user{approvedUsers.length !== 1 ? 's' : ''} available
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => {
+                    setShowTileAdminsModal(false);
+                    setSelectedTileIdsForAdmins(new Set());
+                    setTileAdminsMap({});
+                    setTileAdminTileSearchTerm('');
+                    setTileAdminUserSearchTerm('');
+                    setTileAdminsUsersLoaded(false);
+                    setError('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Permission Modal */}
       {showPermissionModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -6967,25 +7721,102 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     </div>
                                   </div>
                                   
-                                  {/* Sections Level */}
-                                  {isTabExpanded && tab.sections && tab.sections.map((section) => (
-                                    <div key={section.id} className="bg-slate-200 dark:bg-slate-700/30 border-l-2 border-slate-400 dark:border-slate-500 ml-5">
+                                  {/* Tab-level links (if any) */}
+                                  {isTabExpanded && tab.links && tab.links.length > 0 && (() => {
+                                    const filteredTabLinks = tab.links.filter((link: any) => {
+                                      if (!tileSearchTerm) return true;
+                                      const searchLower = tileSearchTerm.toLowerCase();
+                                      return (link.label || '').toLowerCase().includes(searchLower) ||
+                                             (link.url || '').toLowerCase().includes(searchLower);
+                                    });
+                                    const allTabLinksSelected = filteredTabLinks.length > 0 && filteredTabLinks.every((link: any) => selectedLinkIds.has(link.id));
+                                    
+                                    return (
+                                    <div className="bg-slate-200 dark:bg-slate-700/30 border-l-2 border-slate-400 dark:border-slate-500 ml-5">
                                       <div className="p-2 pl-3">
-                                        <div className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                                          📋 {section.title || 'Untitled Section'}
+                                        <div className="flex items-center justify-between mb-1">
+                                          <div className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                                            📋 Tab Links
+                                          </div>
+                                          {filteredTabLinks.length > 0 && (
+                                            <button
+                                              onClick={() => handleSelectAllTabLevelLinks(tile.id, filteredTabLinks)}
+                                              className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                                            >
+                                              {allTabLinksSelected ? 'Deselect All' : 'Select All'}
+                                            </button>
+                                          )}
                                         </div>
-                                        
-                                        {/* Links Level */}
-                                        {section.links && section.links.length > 0 && (
-                                          <div className="ml-4 space-y-1">
-                                            {section.links
-                                              .filter(link => {
-                                                if (!tileSearchTerm) return true;
-                                                const searchLower = tileSearchTerm.toLowerCase();
-                                                return (link.label || '').toLowerCase().includes(searchLower) ||
-                                                       (link.url || '').toLowerCase().includes(searchLower);
-                                              })
-                                              .map((link) => (
+                                        <div className="ml-4 space-y-1">
+                                          {filteredTabLinks.map((link: any) => (
+                                              <label
+                                                key={link.id}
+                                                className="flex items-center gap-2 p-1.5 hover:bg-slate-300 dark:hover:bg-slate-600/50 rounded cursor-pointer"
+                                              >
+                                                <input
+                                                  type="checkbox"
+                                                  checked={selectedLinkIds.has(link.id)}
+                                                  onChange={(e) => {
+                                                    const newLinkSet = new Set(selectedLinkIds);
+                                                    if (e.target.checked) {
+                                                      newLinkSet.add(link.id);
+                                                      const newTileSet = new Set(selectedTileIds);
+                                                      newTileSet.add(tile.id);
+                                                      setSelectedTileIds(newTileSet);
+                                                    } else {
+                                                      newLinkSet.delete(link.id);
+                                                    }
+                                                    setSelectedLinkIds(newLinkSet);
+                                                  }}
+                                                  className="w-3.5 h-3.5 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-1"
+                                                />
+                                                <div className="flex-1 min-w-0">
+                                                  <div className="text-xs text-slate-700 dark:text-slate-300 truncate">
+                                                    🔗 {link.label || 'Unnamed Link'}
+                                                  </div>
+                                                  <div className="text-xs text-slate-500 dark:text-slate-500 truncate">
+                                                    {link.url}
+                                                  </div>
+                                                </div>
+                                              </label>
+                                            ))}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    );
+                                  })()}
+
+                                  {/* Sections Level */}
+                                  {isTabExpanded && tab.sections && tab.sections.map((section) => {
+                                    const filteredLinks = section.links?.filter(link => {
+                                      if (!tileSearchTerm) return true;
+                                      const searchLower = tileSearchTerm.toLowerCase();
+                                      return (link.label || '').toLowerCase().includes(searchLower) ||
+                                             (link.url || '').toLowerCase().includes(searchLower);
+                                    }) || [];
+                                    const allSectionLinksSelected = filteredLinks.length > 0 && filteredLinks.every(link => selectedLinkIds.has(link.id));
+                                    
+                                    return (
+                                      <div key={section.id} className="bg-slate-200 dark:bg-slate-700/30 border-l-2 border-slate-400 dark:border-slate-500 ml-5">
+                                        <div className="p-2 pl-3">
+                                          <div className="flex items-center justify-between mb-1">
+                                            <div className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                                              📋 {section.title || 'Untitled Section'}
+                                            </div>
+                                            {filteredLinks.length > 0 && (
+                                              <button
+                                                onClick={() => handleSelectAllLinksInSection(tile.id, section.id, filteredLinks)}
+                                                className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                                              >
+                                                {allSectionLinksSelected ? 'Deselect All' : 'Select All'}
+                                              </button>
+                                            )}
+                                          </div>
+                                          
+                                          {/* Links Level */}
+                                          {section.links && section.links.length > 0 && (
+                                            <div className="ml-4 space-y-1">
+                                              {filteredLinks.map((link) => (
                                                 <label
                                                   key={link.id}
                                                   className="flex items-center gap-2 p-1.5 hover:bg-slate-300 dark:hover:bg-slate-600/50 rounded cursor-pointer"
@@ -7018,11 +7849,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                                   </div>
                                                 </label>
                                               ))}
-                                          </div>
-                                        )}
+                                            </div>
+                                          )}
+                                        </div>
                                       </div>
-                                    </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                               );
                             })}
@@ -7031,27 +7863,45 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       })}
                   </div>
 
-                  <div className="text-sm text-slate-600 dark:text-slate-400 flex justify-between items-center">
+                  <div className="text-sm text-slate-600 dark:text-slate-400 flex justify-between items-center gap-4">
                     <span>
                       {selectedTileIds.size} tile{selectedTileIds.size !== 1 ? 's' : ''} selected
                       {selectedLinkIds.size > 0 && `, ${selectedLinkIds.size} link${selectedLinkIds.size !== 1 ? 's' : ''} selected`}
                     </span>
-                    <button
-                      onClick={() => {
-                        const allExpanded = new Set<string>();
-                        allTiles.forEach(tile => {
-                          allExpanded.add(tile.id);
-                          tile.tabs?.forEach(tab => {
-                            allExpanded.add(`${tile.id}_${tab.id}`);
+                    <div className="flex items-center gap-2">
+                      {selectedTileIds.size === allTiles.length && allTiles.length > 0 ? (
+                        <button
+                          onClick={handleDeselectAllTiles}
+                          className="text-xs text-red-600 dark:text-red-400 hover:underline font-medium"
+                        >
+                          Deselect All Tiles
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handleSelectAllTiles}
+                          className="text-xs text-brand-600 dark:text-brand-400 hover:underline font-medium"
+                        >
+                          Select All Tiles
+                        </button>
+                      )}
+                      <span className="text-slate-400">|</span>
+                      <button
+                        onClick={() => {
+                          const allExpanded = new Set<string>();
+                          allTiles.forEach(tile => {
+                            allExpanded.add(tile.id);
+                            tile.tabs?.forEach(tab => {
+                              allExpanded.add(`${tile.id}_${tab.id}`);
+                            });
                           });
-                        });
-                        setExpandedTiles(allExpanded);
-                        setExpandedLinks(allExpanded);
-                      }}
-                      className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
-                    >
-                      Expand All
-                    </button>
+                          setExpandedTiles(allExpanded);
+                          setExpandedLinks(allExpanded);
+                        }}
+                        className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                      >
+                        Expand All
+                      </button>
+                    </div>
                   </div>
                 </>
               )}

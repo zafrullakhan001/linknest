@@ -391,20 +391,27 @@ function handleAssignTilesToRole($roleId) {
     
     $db->beginTransaction();
     try {
-        $stmt = $db->prepare('
-            INSERT OR REPLACE INTO role_tile_permissions (role_id, tile_id, can_view, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-        ');
+        // First, delete all existing tile assignments for this role
+        $deleteStmt = $db->prepare('DELETE FROM role_tile_permissions WHERE role_id = ?');
+        $deleteStmt->execute([$roleId]);
         
-        foreach ($data['tileIds'] as $tileId) {
-            // Verify tile exists
-            $tileCheck = $db->prepare('SELECT id FROM tiles WHERE id = ?');
-            $tileCheck->execute([$tileId]);
-            if (!$tileCheck->fetch()) {
-                continue; // Skip invalid tiles
-            }
+        // Then, insert only the selected tiles (if any)
+        if (!empty($data['tileIds'])) {
+            $stmt = $db->prepare('
+                INSERT INTO role_tile_permissions (role_id, tile_id, can_view, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+            ');
             
-            $stmt->execute([$roleId, $tileId, $canView, $currentTime, $currentTime]);
+            foreach ($data['tileIds'] as $tileId) {
+                // Verify tile exists
+                $tileCheck = $db->prepare('SELECT id FROM tiles WHERE id = ?');
+                $tileCheck->execute([$tileId]);
+                if (!$tileCheck->fetch()) {
+                    continue; // Skip invalid tiles
+                }
+                
+                $stmt->execute([$roleId, $tileId, $canView, $currentTime, $currentTime]);
+            }
         }
         
         $db->commit();
@@ -437,20 +444,27 @@ function handleAssignLinksToRole($roleId) {
     
     $db->beginTransaction();
     try {
-        $stmt = $db->prepare('
-            INSERT OR REPLACE INTO role_link_permissions (role_id, link_id, can_view, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-        ');
+        // First, delete all existing link assignments for this role
+        $deleteStmt = $db->prepare('DELETE FROM role_link_permissions WHERE role_id = ?');
+        $deleteStmt->execute([$roleId]);
         
-        foreach ($data['linkIds'] as $linkId) {
-            // Verify link exists
-            $linkCheck = $db->prepare('SELECT id FROM links WHERE id = ?');
-            $linkCheck->execute([$linkId]);
-            if (!$linkCheck->fetch()) {
-                continue; // Skip invalid links
-            }
+        // Then, insert only the selected links (if any)
+        if (!empty($data['linkIds'])) {
+            $stmt = $db->prepare('
+                INSERT INTO role_link_permissions (role_id, link_id, can_view, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+            ');
             
-            $stmt->execute([$roleId, $linkId, $canView, $currentTime, $currentTime]);
+            foreach ($data['linkIds'] as $linkId) {
+                // Verify link exists
+                $linkCheck = $db->prepare('SELECT id FROM links WHERE id = ?');
+                $linkCheck->execute([$linkId]);
+                if (!$linkCheck->fetch()) {
+                    continue; // Skip invalid links
+                }
+                
+                $stmt->execute([$roleId, $linkId, $canView, $currentTime, $currentTime]);
+            }
         }
         
         $db->commit();
