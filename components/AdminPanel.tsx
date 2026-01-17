@@ -172,9 +172,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [showRoleTilesModal, setShowRoleTilesModal] = useState(false);
   const [showRoleTabsModal, setShowRoleTabsModal] = useState(false);
   const [showUserRolesModal, setShowUserRolesModal] = useState(false);
+  const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
   const [selectedUserForRoles, setSelectedUserForRoles] = useState<number | null>(null);
   const [userSelectedRoleIds, setUserSelectedRoleIds] = useState<number[]>([]);
+  const [bulkSelectedUserIds, setBulkSelectedUserIds] = useState<number[]>([]);
+  const [bulkSelectedRoleIds, setBulkSelectedRoleIds] = useState<number[]>([]);
+  const [bulkAssignMode, setBulkAssignMode] = useState<'add' | 'replace' | 'remove'>('add');
+  const [bulkAssignLoading, setBulkAssignLoading] = useState(false);
+  const [bulkUserSearchTerm, setBulkUserSearchTerm] = useState('');
+  const [bulkRoleSearchTerm, setBulkRoleSearchTerm] = useState('');
+  const [userRolesMap, setUserRolesMap] = useState<Record<number, Array<{ id: number; name: string; description?: string }>>>({});
+  const [loadingUserRoles, setLoadingUserRoles] = useState<Set<number>>(new Set());
   const [userRolesLoading, setUserRolesLoading] = useState(false);
   const [roleForm, setRoleForm] = useState({ name: '', description: '' });
   const [allTiles, setAllTiles] = useState<Tile[]>([]);
@@ -985,6 +994,95 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       await loadData(); // Refresh user list to show updated role counts
     } catch (err: any) {
       setError(err.message || 'Failed to assign roles to user');
+    }
+  };
+
+  const loadUserRolesForBulk = async () => {
+    if (allUsers.length === 0) return;
+    
+    const rolesMap: Record<number, Array<{ id: number; name: string; description?: string }>> = {};
+    const loadingSet = new Set<number>();
+    
+    // Load roles for all users in parallel
+    const promises = allUsers.map(async (user) => {
+      loadingSet.add(user.id);
+      setLoadingUserRoles(new Set(loadingSet));
+      
+      try {
+        const userRoles = await rolesService.getUserRoles(user.id);
+        rolesMap[user.id] = userRoles.roles.map(r => ({ id: r.id, name: r.name, description: r.description }));
+      } catch (err) {
+        // User might not have roles yet, that's fine
+        rolesMap[user.id] = [];
+      } finally {
+        loadingSet.delete(user.id);
+        setLoadingUserRoles(new Set(loadingSet));
+      }
+    });
+    
+    await Promise.all(promises);
+    setUserRolesMap(rolesMap);
+  };
+
+  const handleBulkAssignRoles = async () => {
+    if (bulkSelectedUserIds.length === 0) {
+      setError('Please select at least one user');
+      return;
+    }
+
+    if (bulkSelectedRoleIds.length === 0) {
+      setError('Please select at least one role');
+      return;
+    }
+
+    try {
+      setError('');
+      setBulkAssignLoading(true);
+      
+      let result;
+      if (bulkAssignMode === 'remove') {
+        // Remove roles from users
+        result = await rolesService.bulkRemoveRolesFromUsers({
+          userIds: bulkSelectedUserIds,
+          roleIds: bulkSelectedRoleIds
+        });
+      } else {
+        // Assign roles to users (add or replace)
+        result = await rolesService.bulkAssignRolesToUsers({
+          userIds: bulkSelectedUserIds,
+          roleIds: bulkSelectedRoleIds,
+          mode: bulkAssignMode
+        });
+      }
+      
+      setShowBulkAssignModal(false);
+      setBulkSelectedUserIds([]);
+      setBulkSelectedRoleIds([]);
+      setBulkAssignMode('add');
+      setBulkUserSearchTerm('');
+      setBulkRoleSearchTerm('');
+      setUserRolesMap({});
+      
+      await loadRoles();
+      await loadData(); // Refresh user list to show updated role counts
+      
+      if (bulkAssignMode === 'remove') {
+        if (result.failed > 0) {
+          alert(`Bulk removal completed with some errors:\n- Successfully removed: ${result.removed} users\n- Failed: ${result.failed} users${result.errors ? '\n\nErrors:\n' + result.errors.join('\n') : ''}`);
+        } else {
+          alert(`Successfully removed roles from ${result.removed} user${result.removed !== 1 ? 's' : ''}!`);
+        }
+      } else {
+        if (result.failed > 0) {
+          alert(`Bulk assignment completed with some errors:\n- Successfully assigned: ${result.assigned} users\n- Failed: ${result.failed} users${result.errors ? '\n\nErrors:\n' + result.errors.join('\n') : ''}`);
+        } else {
+          alert(`Successfully assigned roles to ${result.assigned} user${result.assigned !== 1 ? 's' : ''}!`);
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || `Failed to ${bulkAssignMode === 'remove' ? 'remove' : 'assign'} roles`);
+    } finally {
+      setBulkAssignLoading(false);
     }
   };
 
@@ -4627,9 +4725,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           Assign multiple roles to users. Users will see tiles and links from all their assigned roles.
                         </p>
                       </div>
+                      <button
+                        onClick={async () => {
+                          setShowBulkAssignModal(true);
+                          setBulkSelectedUserIds([]);
+                          setBulkSelectedRoleIds([]);
+                          setBulkAssignMode('add');
+                          setBulkUserSearchTerm('');
+                          setBulkRoleSearchTerm('');
+                          setError('');
+                          // Load user roles when modal opens
+                          await loadUserRolesForBulk();
+                        }}
+                        className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
+                        </svg>
+                        Bulk Assign Roles
+                      </button>
                     </div>
                     <div className="text-sm text-slate-600 dark:text-slate-400">
-                      Go to the "All Users" tab to assign roles to specific users. Users can have multiple roles assigned.
+                      Go to the "All Users" tab to assign roles to specific users, or use "Bulk Assign Roles" to assign roles to multiple users at once. Users can have multiple roles assigned.
                     </div>
                   </div>
                 </div>
@@ -7485,6 +7602,489 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
                 >
                   Assign {userSelectedRoleIds.length > 0 ? `${userSelectedRoleIds.length} ` : ''}Roles
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Assign Roles Modal */}
+      {showBulkAssignModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                  Bulk Manage User Roles
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowBulkAssignModal(false);
+                    setBulkSelectedUserIds([]);
+                    setBulkSelectedRoleIds([]);
+                    setBulkAssignMode('add');
+                    setBulkUserSearchTerm('');
+                    setBulkRoleSearchTerm('');
+                    setUserRolesMap({});
+                    setError('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              {/* Assignment Mode */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Operation Mode
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => setBulkAssignMode('add')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      bulkAssignMode === 'add'
+                        ? 'bg-brand-600 text-white'
+                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    Add Roles
+                  </button>
+                  <button
+                    onClick={() => setBulkAssignMode('replace')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      bulkAssignMode === 'replace'
+                        ? 'bg-brand-600 text-white'
+                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    Replace All
+                  </button>
+                  <button
+                    onClick={() => setBulkAssignMode('remove')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      bulkAssignMode === 'remove'
+                        ? 'bg-red-600 text-white'
+                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    Remove Roles
+                  </button>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                  {bulkAssignMode === 'add' 
+                    ? 'Selected roles will be added to existing user roles'
+                    : bulkAssignMode === 'replace'
+                    ? 'Selected roles will replace all existing user roles'
+                    : 'Selected roles will be removed from the selected users'}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Users Selection */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Select Users
+                    </label>
+                    <div className="flex gap-2 items-center">
+                      <button
+                        onClick={loadUserRolesForBulk}
+                        className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition-colors"
+                        title="Refresh user roles"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => {
+                          const filteredUsers = allUsers.filter(user => 
+                            user.username.toLowerCase().includes(bulkUserSearchTerm.toLowerCase()) ||
+                            user.email.toLowerCase().includes(bulkUserSearchTerm.toLowerCase())
+                          );
+                          const filteredUserIds = filteredUsers.map(u => u.id);
+                          const allFilteredSelected = filteredUserIds.every(id => bulkSelectedUserIds.includes(id));
+                          
+                          if (allFilteredSelected) {
+                            // Deselect all filtered users
+                            setBulkSelectedUserIds(bulkSelectedUserIds.filter(id => !filteredUserIds.includes(id)));
+                          } else {
+                            // Select all filtered users
+                            const newSelected = [...bulkSelectedUserIds];
+                            filteredUserIds.forEach(id => {
+                              if (!newSelected.includes(id)) {
+                                newSelected.push(id);
+                              }
+                            });
+                            setBulkSelectedUserIds(newSelected);
+                          }
+                        }}
+                        className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                      >
+                        {(() => {
+                          const filteredUsers = allUsers.filter(user => 
+                            user.username.toLowerCase().includes(bulkUserSearchTerm.toLowerCase()) ||
+                            user.email.toLowerCase().includes(bulkUserSearchTerm.toLowerCase())
+                          );
+                          const filteredUserIds = filteredUsers.map(u => u.id);
+                          const allFilteredSelected = filteredUserIds.length > 0 && filteredUserIds.every(id => bulkSelectedUserIds.includes(id));
+                          return allFilteredSelected ? 'Deselect All' : 'Select All';
+                        })()}
+                      </button>
+                    </div>
+                  </div>
+                  {/* Search Input */}
+                  <div className="mb-3">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Search users..."
+                        value={bulkUserSearchTerm}
+                        onChange={(e) => setBulkUserSearchTerm(e.target.value)}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                      />
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                      {bulkUserSearchTerm && (
+                        <button
+                          onClick={() => setBulkUserSearchTerm('')}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
+                    <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                      {(() => {
+                        const filteredUsers = allUsers.filter(user => 
+                          user.username.toLowerCase().includes(bulkUserSearchTerm.toLowerCase()) ||
+                          user.email.toLowerCase().includes(bulkUserSearchTerm.toLowerCase())
+                        );
+                        
+                        if (filteredUsers.length === 0) {
+                          return (
+                            <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">
+                              {allUsers.length === 0 ? 'No users available' : 'No users match your search'}
+                            </div>
+                          );
+                        }
+                        
+                        return filteredUsers.map((user) => {
+                          const userRoles = userRolesMap[user.id] || [];
+                          const isLoading = loadingUserRoles.has(user.id);
+                          
+                          return (
+                            <label
+                              key={user.id}
+                              className="flex items-start gap-3 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={bulkSelectedUserIds.includes(user.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setBulkSelectedUserIds([...bulkSelectedUserIds, user.id]);
+                                  } else {
+                                    setBulkSelectedUserIds(bulkSelectedUserIds.filter(id => id !== user.id));
+                                  }
+                                }}
+                                className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2 mt-0.5"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <div className="text-sm font-medium text-slate-900 dark:text-white truncate">
+                                    {user.username}
+                                  </div>
+                                  {isLoading && (
+                                    <svg className="animate-spin h-3 w-3 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                  )}
+                                </div>
+                                <div className="text-xs text-slate-500 dark:text-slate-400 truncate mb-1">
+                                  {user.email}
+                                </div>
+                                {userRoles.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    {userRoles.map((role) => (
+                                      <span
+                                        key={role.id}
+                                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+                                        title={role.description || role.name}
+                                      >
+                                        {role.name}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                                {!isLoading && userRoles.length === 0 && (
+                                  <div className="text-xs text-slate-400 dark:text-slate-500 italic mt-1">
+                                    No roles assigned
+                                  </div>
+                                )}
+                              </div>
+                            </label>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                    {bulkSelectedUserIds.length} user{bulkSelectedUserIds.length !== 1 ? 's' : ''} selected
+                  </div>
+                </div>
+
+                {/* Roles Selection */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Select Roles
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          const filteredRoles = roles.filter(role => 
+                            role.name.toLowerCase().includes(bulkRoleSearchTerm.toLowerCase()) ||
+                            (role.description && role.description.toLowerCase().includes(bulkRoleSearchTerm.toLowerCase()))
+                          );
+                          const filteredRoleIds = filteredRoles.map(r => r.id);
+                          const allFilteredSelected = filteredRoleIds.every(id => bulkSelectedRoleIds.includes(id));
+                          
+                          if (allFilteredSelected) {
+                            // Deselect all filtered roles
+                            setBulkSelectedRoleIds(bulkSelectedRoleIds.filter(id => !filteredRoleIds.includes(id)));
+                          } else {
+                            // Select all filtered roles
+                            const newSelected = [...bulkSelectedRoleIds];
+                            filteredRoleIds.forEach(id => {
+                              if (!newSelected.includes(id)) {
+                                newSelected.push(id);
+                              }
+                            });
+                            setBulkSelectedRoleIds(newSelected);
+                          }
+                        }}
+                        className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                      >
+                        {(() => {
+                          const filteredRoles = roles.filter(role => 
+                            role.name.toLowerCase().includes(bulkRoleSearchTerm.toLowerCase()) ||
+                            (role.description && role.description.toLowerCase().includes(bulkRoleSearchTerm.toLowerCase()))
+                          );
+                          const filteredRoleIds = filteredRoles.map(r => r.id);
+                          const allFilteredSelected = filteredRoleIds.length > 0 && filteredRoleIds.every(id => bulkSelectedRoleIds.includes(id));
+                          return allFilteredSelected ? 'Deselect All' : 'Select All';
+                        })()}
+                      </button>
+                    </div>
+                  </div>
+                  {/* Search Input */}
+                  <div className="mb-3">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Search roles..."
+                        value={bulkRoleSearchTerm}
+                        onChange={(e) => setBulkRoleSearchTerm(e.target.value)}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                      />
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                      {bulkRoleSearchTerm && (
+                        <button
+                          onClick={() => setBulkRoleSearchTerm('')}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {rolesLoading ? (
+                    <div className="flex items-center justify-center py-12 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                    </div>
+                  ) : roles.length === 0 ? (
+                    <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
+                      No roles available. Create roles first.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
+                        <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                          {(() => {
+                            let filteredRoles = roles.filter(role => 
+                              role.name.toLowerCase().includes(bulkRoleSearchTerm.toLowerCase()) ||
+                              (role.description && role.description.toLowerCase().includes(bulkRoleSearchTerm.toLowerCase()))
+                            );
+                            
+                            // In remove mode, only show roles that at least one selected user has
+                            if (bulkAssignMode === 'remove' && bulkSelectedUserIds.length > 0) {
+                              const userRoleIds = new Set<number>();
+                              bulkSelectedUserIds.forEach(userId => {
+                                const userRoles = userRolesMap[userId] || [];
+                                userRoles.forEach(role => userRoleIds.add(role.id));
+                              });
+                              
+                              filteredRoles = filteredRoles.filter(role => userRoleIds.has(role.id));
+                            }
+                            
+                            if (filteredRoles.length === 0) {
+                              return (
+                                <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">
+                                  {roles.length === 0 
+                                    ? 'No roles available. Create roles first.' 
+                                    : bulkAssignMode === 'remove' && bulkSelectedUserIds.length > 0
+                                    ? 'No roles found for selected users'
+                                    : 'No roles match your search'}
+                                </div>
+                              );
+                            }
+                            
+                            return filteredRoles.map((role) => {
+                              // Check if all selected users have this role (for remove mode)
+                              const allUsersHaveRole = bulkAssignMode === 'remove' && bulkSelectedUserIds.length > 0
+                                ? bulkSelectedUserIds.every(userId => {
+                                    const userRoles = userRolesMap[userId] || [];
+                                    return userRoles.some(r => r.id === role.id);
+                                  })
+                                : true;
+                              
+                              return (
+                            <label
+                              key={role.id}
+                              className={`flex items-center gap-3 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors ${
+                                !allUsersHaveRole && bulkAssignMode === 'remove' ? 'opacity-50' : ''
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={bulkSelectedRoleIds.includes(role.id)}
+                                disabled={!allUsersHaveRole && bulkAssignMode === 'remove'}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setBulkSelectedRoleIds([...bulkSelectedRoleIds, role.id]);
+                                  } else {
+                                    setBulkSelectedRoleIds(bulkSelectedRoleIds.filter(id => id !== role.id));
+                                  }
+                                }}
+                                className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                              />
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <div className="text-sm font-medium text-slate-900 dark:text-white">
+                                    {role.name}
+                                  </div>
+                                  {bulkAssignMode === 'remove' && !allUsersHaveRole && (
+                                    <span className="text-xs text-slate-400 dark:text-slate-500 italic">
+                                      (not all users have this role)
+                                    </span>
+                                  )}
+                                </div>
+                                {role.description && (
+                                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                    {role.description}
+                                  </div>
+                                )}
+                                <div className="flex gap-3 mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                  <span>{role.userCount || 0} users</span>
+                                  <span>•</span>
+                                  <span>{role.tileCount || 0} tiles</span>
+                                  <span>•</span>
+                                  <span>{role.linkCount || 0} links</span>
+                                </div>
+                              </div>
+                            </label>
+                          );
+                          });
+                          })()}
+                        </div>
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                        {bulkSelectedRoleIds.length} role{bulkSelectedRoleIds.length !== 1 ? 's' : ''} selected
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => {
+                    setShowBulkAssignModal(false);
+                    setBulkSelectedUserIds([]);
+                    setBulkSelectedRoleIds([]);
+                    setBulkAssignMode('add');
+                    setBulkUserSearchTerm('');
+                    setBulkRoleSearchTerm('');
+                    setUserRolesMap({});
+                    setError('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleBulkAssignRoles}
+                  disabled={bulkAssignLoading || bulkSelectedUserIds.length === 0 || bulkSelectedRoleIds.length === 0}
+                  className={`flex-1 px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors ${
+                    bulkAssignMode === 'remove'
+                      ? 'bg-red-600 hover:bg-red-500'
+                      : 'bg-brand-600 hover:bg-brand-500'
+                  }`}
+                >
+                  {bulkAssignLoading ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4 inline-block mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      {bulkAssignMode === 'remove' ? 'Removing...' : 'Assigning...'}
+                    </>
+                  ) : (
+                    bulkAssignMode === 'remove'
+                      ? `Remove ${bulkSelectedRoleIds.length} Role${bulkSelectedRoleIds.length !== 1 ? 's' : ''} from ${bulkSelectedUserIds.length} User${bulkSelectedUserIds.length !== 1 ? 's' : ''}`
+                      : `Assign ${bulkSelectedRoleIds.length} Role${bulkSelectedRoleIds.length !== 1 ? 's' : ''} to ${bulkSelectedUserIds.length} User${bulkSelectedUserIds.length !== 1 ? 's' : ''}`
+                  )}
                 </button>
               </div>
             </div>

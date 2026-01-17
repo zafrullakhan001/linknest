@@ -67,6 +67,17 @@ export interface AssignRolesToUserRequest {
   roleIds: number[];
 }
 
+export interface BulkAssignRolesRequest {
+  userIds: number[];
+  roleIds: number[];
+  mode?: 'add' | 'replace'; // 'add' adds roles to existing, 'replace' replaces all roles
+}
+
+export interface BulkRemoveRolesRequest {
+  userIds: number[];
+  roleIds: number[];
+}
+
 export interface RoleTabPermission {
   tabId: string;
   canView: boolean;
@@ -245,6 +256,38 @@ export const rolesService = {
       const data = await response.json();
       throw new Error(data.error || 'Failed to assign roles to user');
     }
+  },
+
+  async bulkAssignRolesToUsers(request: BulkAssignRolesRequest): Promise<{ assigned: number; failed: number; errors?: string[] }> {
+    const response = await fetch(`${API_BASE}/roles/bulk-assign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to bulk assign roles to users');
+    }
+
+    return response.json();
+  },
+
+  async bulkRemoveRolesFromUsers(request: BulkRemoveRolesRequest): Promise<{ removed: number; failed: number; errors?: string[] }> {
+    const response = await fetch(`${API_BASE}/roles/bulk-remove`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to bulk remove roles from users');
+    }
+
+    return response.json();
   },
 
   async assignTabsToRole(roleId: number, request: AssignTabsRequest): Promise<void> {

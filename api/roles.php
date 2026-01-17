@@ -36,6 +36,10 @@ switch ($method) {
             handleAssignTabsToRole($matches[1]);
         } elseif (preg_match('#^/user/(\d+)/assign$#', $path, $matches)) {
             handleAssignRolesToUser($matches[1]);
+        } elseif ($path === '/bulk-assign' || $path === '/bulk-assign/') {
+            handleBulkAssignRolesToUsers();
+        } elseif ($path === '/bulk-remove' || $path === '/bulk-remove/') {
+            handleBulkRemoveRolesFromUsers();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -506,6 +510,103 @@ function handleAssignRolesToUser($userId) {
     }
 }
 
+function handleBulkAssignRolesToUsers() {
+    requireAdmin();
+    $data = getJSONInput();
+    
+    if (!isset($data['userIds']) || !is_array($data['userIds']) || empty($data['userIds'])) {
+        sendJSON(['error' => 'userIds array is required and must not be empty'], 400);
+    }
+    
+    if (!isset($data['roleIds']) || !is_array($data['roleIds']) || empty($data['roleIds'])) {
+        sendJSON(['error' => 'roleIds array is required and must not be empty'], 400);
+    }
+    
+    $db = getDB();
+    $currentTime = time();
+    $successCount = 0;
+    $errorCount = 0;
+    $errors = [];
+    
+    $db->beginTransaction();
+    try {
+        // Verify all users exist
+        $placeholders = str_repeat('?,', count($data['userIds']) - 1) . '?';
+        $userCheck = $db->prepare("SELECT id FROM users WHERE id IN ($placeholders)");
+        $userCheck->execute($data['userIds']);
+        $validUserIds = [];
+        while ($row = $userCheck->fetch()) {
+            $validUserIds[] = (int)$row['id'];
+        }
+        
+        if (empty($validUserIds)) {
+            $db->rollBack();
+            sendJSON(['error' => 'No valid users found'], 400);
+        }
+        
+        // Verify all roles exist
+        $rolePlaceholders = str_repeat('?,', count($data['roleIds']) - 1) . '?';
+        $roleCheck = $db->prepare("SELECT id FROM roles WHERE id IN ($rolePlaceholders)");
+        $roleCheck->execute($data['roleIds']);
+        $validRoleIds = [];
+        while ($row = $roleCheck->fetch()) {
+            $validRoleIds[] = (int)$row['id'];
+        }
+        
+        if (empty($validRoleIds)) {
+            $db->rollBack();
+            sendJSON(['error' => 'No valid roles found'], 400);
+        }
+        
+        // Determine mode
+        $mode = isset($data['mode']) && $data['mode'] === 'replace' ? 'replace' : 'add';
+        
+        // Prepare statements
+        $deleteStmt = $db->prepare('DELETE FROM user_roles WHERE user_id = ?');
+        // Use INSERT OR IGNORE for add mode to avoid duplicates, regular INSERT for replace mode
+        $insertStmt = $db->prepare($mode === 'add' 
+            ? 'INSERT OR IGNORE INTO user_roles (user_id, role_id, created_at) VALUES (?, ?, ?)'
+            : 'INSERT INTO user_roles (user_id, role_id, created_at) VALUES (?, ?, ?)');
+        
+        // Process each user
+        foreach ($validUserIds as $userId) {
+            try {
+                // Remove existing roles for this user (if replace mode)
+                if ($mode === 'replace') {
+                    $deleteStmt->execute([$userId]);
+                }
+                
+                // Assign new roles
+                foreach ($validRoleIds as $roleId) {
+                    $insertStmt->execute([$userId, $roleId, $currentTime]);
+                }
+                
+                $successCount++;
+            } catch (PDOException $e) {
+                $errorCount++;
+                $errors[] = "User ID $userId: " . $e->getMessage();
+            }
+        }
+        
+        $db->commit();
+        
+        $response = [
+            'success' => true,
+            'assigned' => $successCount,
+            'failed' => $errorCount
+        ];
+        
+        if (!empty($errors)) {
+            $response['errors'] = $errors;
+        }
+        
+        sendJSON($response);
+    } catch (PDOException $e) {
+        $db->rollBack();
+        sendJSON(['error' => 'Failed to bulk assign roles: ' . $e->getMessage()], 500);
+    }
+}
+
 function handleRemoveTileFromRole($roleId, $tileId) {
     requireAdmin();
     $db = getDB();
@@ -638,6 +739,87 @@ function handleAssignTabsToRole($roleId) {
     } catch (PDOException $e) {
         $db->rollBack();
         sendJSON(['error' => 'Failed to assign tabs: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleBulkRemoveRolesFromUsers() {
+    requireAdmin();
+    $data = getJSONInput();
+    
+    if (!isset($data['userIds']) || !is_array($data['userIds']) || empty($data['userIds'])) {
+        sendJSON(['error' => 'userIds array is required and must not be empty'], 400);
+    }
+    
+    if (!isset($data['roleIds']) || !is_array($data['roleIds']) || empty($data['roleIds'])) {
+        sendJSON(['error' => 'roleIds array is required and must not be empty'], 400);
+    }
+    
+    $db = getDB();
+    $successCount = 0;
+    $errorCount = 0;
+    $errors = [];
+    
+    $db->beginTransaction();
+    try {
+        // Verify all users exist
+        $placeholders = str_repeat('?,', count($data['userIds']) - 1) . '?';
+        $userCheck = $db->prepare("SELECT id FROM users WHERE id IN ($placeholders)");
+        $userCheck->execute($data['userIds']);
+        $validUserIds = [];
+        while ($row = $userCheck->fetch()) {
+            $validUserIds[] = (int)$row['id'];
+        }
+        
+        if (empty($validUserIds)) {
+            $db->rollBack();
+            sendJSON(['error' => 'No valid users found'], 400);
+        }
+        
+        // Verify all roles exist
+        $rolePlaceholders = str_repeat('?,', count($data['roleIds']) - 1) . '?';
+        $roleCheck = $db->prepare("SELECT id FROM roles WHERE id IN ($rolePlaceholders)");
+        $roleCheck->execute($data['roleIds']);
+        $validRoleIds = [];
+        while ($row = $roleCheck->fetch()) {
+            $validRoleIds[] = (int)$row['id'];
+        }
+        
+        if (empty($validRoleIds)) {
+            $db->rollBack();
+            sendJSON(['error' => 'No valid roles found'], 400);
+        }
+        
+        // Prepare statement to remove roles
+        $placeholders = str_repeat('?,', count($validRoleIds) - 1) . '?';
+        $deleteStmt = $db->prepare("DELETE FROM user_roles WHERE user_id = ? AND role_id IN ($placeholders)");
+        
+        // Process each user
+        foreach ($validUserIds as $userId) {
+            try {
+                $deleteStmt->execute([$userId, ...$validRoleIds]);
+                $successCount++;
+            } catch (PDOException $e) {
+                $errorCount++;
+                $errors[] = "User ID $userId: " . $e->getMessage();
+            }
+        }
+        
+        $db->commit();
+        
+        $response = [
+            'success' => true,
+            'removed' => $successCount,
+            'failed' => $errorCount
+        ];
+        
+        if (!empty($errors)) {
+            $response['errors'] = $errors;
+        }
+        
+        sendJSON($response);
+    } catch (PDOException $e) {
+        $db->rollBack();
+        sendJSON(['error' => 'Failed to bulk remove roles: ' . $e->getMessage()], 500);
     }
 }
 
