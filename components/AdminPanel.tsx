@@ -3,6 +3,7 @@ import { authService, PendingUser, AllUser } from '../services/authService';
 import { settingsService, AppSettings } from '../services/settingsService';
 import { databaseService } from '../services/databaseService';
 import { useSettings } from '../contexts/SettingsContext';
+import { useAuth } from '../contexts/AuthContext';
 import { getTiles, createTile } from '../services/storageService';
 import { bulkImportTiles } from '../services/storageService';
 import { exportAllCategoriesToFile, parseSpaceExportObject, normalizeImportedTiles } from '../services/spaceTransferService';
@@ -1587,6 +1588,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           Reset
                                         </button>
                                       )}
+                                      <button
+                                        onClick={async () => {
+                                          try {
+                                            setProcessing(user.id);
+                                            setError('');
+                                            await authService.startImpersonation(user.id);
+                                            // Reload the page to apply impersonation session
+                                            window.location.reload();
+                                          } catch (err: any) {
+                                            setError(err.message || 'Failed to start impersonation');
+                                            setProcessing(null);
+                                          }
+                                        }}
+                                        disabled={processing === user.id}
+                                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
+                                        title="Impersonate User - See the app as this user"
+                                      >
+                                        {processing === user.id ? (
+                                          <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                          </svg>
+                                        ) : (
+                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                            <path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM16 8a2 2 0 11-4 0 2 2 0 014 0zm-1.615 8.428a1.224 1.224 0 00.569-1.175 5.966 5.966 0 00-2.081-.416 5.967 5.967 0 00-1.788.27A9.953 9.953 0 0013 18a9.953 9.953 0 003.385-.572z" />
+                                          </svg>
+                                        )}
+                                        Impersonate
+                                      </button>
                                       <button
                                         onClick={() => handleDeleteUser(user.id, user.username)}
                                         disabled={processing === user.id}

@@ -41,6 +41,10 @@ switch ($method) {
             handleBulkImportLocalUsers();
         } elseif ($path === '/bulk-import-ldap') {
             handleBulkImportLdapUsers();
+        } elseif (preg_match('#^/impersonate/(\d+)$#', $path, $matches)) {
+            handleStartImpersonation((int)$matches[1]);
+        } elseif ($path === '/stop-impersonation') {
+            handleStopImpersonation();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -2153,3 +2157,94 @@ function handleBulkImportLdapUsers() {
     ]);
 }
 
+function handleStartImpersonation($targetUserId) {
+    requireAdmin(); // Only admins can impersonate users
+    
+    $db = getDB();
+    $adminUser = getAuthenticatedUser();
+    
+    // Store the original admin ID before starting impersonation
+    // We need to temporarily switch to admin user ID to check if they're admin
+    if (!isset($_SESSION['impersonating_admin_id'])) {
+        $_SESSION['impersonating_admin_id'] = $adminUser['id'];
+    }
+    
+    // Check if target user exists
+    $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved FROM users WHERE id = ?');
+    $stmt->execute([$targetUserId]);
+    $targetUser = $stmt->fetch();
+    
+    if (!$targetUser) {
+        sendJSON(['error' => 'User not found'], 404);
+    }
+    
+    // Prevent impersonating yourself
+    if ((int)$targetUserId === (int)$adminUser['id']) {
+        sendJSON(['error' => 'You cannot impersonate yourself'], 400);
+    }
+    
+    // Prevent impersonating other admins (security measure)
+    if ($targetUser['is_admin']) {
+        sendJSON(['error' => 'Cannot impersonate admin users'], 403);
+    }
+    
+    // Set impersonation session variables
+    $_SESSION['impersonating_user_id'] = $targetUserId;
+    
+    // Fetch the target user data
+    $userData = [
+        'id' => (int)$targetUser['id'],
+        'username' => $targetUser['username'],
+        'email' => $targetUser['email'],
+        'is_admin' => false,
+        'is_approved' => (bool)$targetUser['is_approved'],
+        'impersonating' => true,
+        'impersonating_admin_id' => (int)$_SESSION['impersonating_admin_id'],
+        'impersonating_admin_username' => $adminUser['username']
+    ];
+    
+    sendJSON([
+        'success' => true,
+        'message' => "Now impersonating user: {$targetUser['username']}",
+        'user' => $userData
+    ]);
+}
+
+function handleStopImpersonation() {
+    // Check if we're actually impersonating
+    if (!isset($_SESSION['impersonating_user_id']) || !isset($_SESSION['impersonating_admin_id'])) {
+        sendJSON(['error' => 'Not currently impersonating any user'], 400);
+    }
+    
+    // Get the admin user ID before clearing impersonation
+    $adminUserId = $_SESSION['impersonating_admin_id'];
+    
+    // Restore original user session
+    unset($_SESSION['impersonating_user_id']);
+    unset($_SESSION['impersonating_admin_id']);
+    
+    // Get the admin user data
+    $db = getDB();
+    $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved FROM users WHERE id = ?');
+    $stmt->execute([$adminUserId]);
+    $adminUser = $stmt->fetch();
+    
+    if ($adminUser) {
+        $userData = [
+            'id' => (int)$adminUser['id'],
+            'username' => $adminUser['username'],
+            'email' => $adminUser['email'],
+            'is_admin' => (bool)$adminUser['is_admin'],
+            'is_approved' => (bool)$adminUser['is_approved'],
+            'impersonating' => false
+        ];
+        
+        sendJSON([
+            'success' => true,
+            'message' => 'Impersonation stopped',
+            'user' => $userData
+        ]);
+    } else {
+        sendJSON(['error' => 'Admin user not found'], 404);
+    }
+}

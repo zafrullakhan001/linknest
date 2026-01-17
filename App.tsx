@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspens
 import { Tile, Link } from './types';
 import { getTiles, saveTiles, createTile, deleteTile, cloneTile } from './services/storageService';
 import { settingsService } from './services/settingsService';
+import { authService } from './services/authService';
 import { Navigation } from './components/Navigation';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
@@ -700,6 +701,35 @@ const AppContent: React.FC = () => {
         onLoginClick={() => setAuthModalOpen(true)}
         onHelpClick={() => setHelpAboutOpen(true)}
       />
+      {user?.impersonating && (
+        <div className="bg-amber-500 dark:bg-amber-600 text-white px-4 py-3 flex items-center justify-between border-b border-amber-600 dark:border-amber-700">
+          <div className="flex items-center gap-3">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 flex-shrink-0">
+              <path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM16 8a2 2 0 11-4 0 2 2 0 014 0zm-1.615 8.428a1.224 1.224 0 00.569-1.175 5.966 5.966 0 00-2.081-.416 5.967 5.967 0 00-1.788.27A9.953 9.953 0 0013 18a9.953 9.953 0 003.385-.572z" />
+            </svg>
+            <span className="font-medium">
+              You are viewing the app as <strong>{user.username}</strong> (Impersonated by {user.impersonating_admin_username})
+            </span>
+          </div>
+          <button
+            onClick={async () => {
+              try {
+                await authService.stopImpersonation();
+                window.location.reload();
+              } catch (error) {
+                console.error('Failed to stop impersonation:', error);
+                alert('Failed to stop impersonation. Please refresh the page.');
+              }
+            }}
+            className="px-4 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+            </svg>
+            Stop Impersonation
+          </button>
+        </div>
+      )}
       <BroadcastBanner />
       <main className={`flex-grow container mx-auto px-4 py-8 max-w-6xl-plus linknest-page-content ${styles?.backgroundRaised ? 'linknest-page-background' : ''} ${!guestAccessEnabled && !isAuthenticated ? 'flex items-center justify-center' : ''}`}>
         {content}

@@ -4,6 +4,9 @@ export interface User {
   email: string;
   is_admin?: boolean;
   is_approved?: boolean;
+  impersonating?: boolean;
+  impersonating_admin_id?: number;
+  impersonating_admin_username?: string;
 }
 
 export interface PendingUser {
@@ -344,6 +347,36 @@ export const authService = {
       summary: data.summary,
       message: data.message
     };
+  },
+
+  async startImpersonation(targetUserId: number): Promise<User> {
+    const response = await fetch(`${API_BASE}/auth/impersonate/${targetUserId}`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to start impersonation');
+    }
+    
+    return data.user;
+  },
+
+  async stopImpersonation(): Promise<User> {
+    const response = await fetch(`${API_BASE}/auth/stop-impersonation`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to stop impersonation');
+    }
+    
+    return data.user;
   }
 };
 

@@ -1537,14 +1537,37 @@ function getAuthenticatedUser() {
     }
     
     $db = getDB();
+    
+    // Check if we're impersonating a user
+    $userId = $_SESSION['user_id'];
+    if (isset($_SESSION['impersonating_user_id'])) {
+        $userId = $_SESSION['impersonating_user_id'];
+    }
+    
     $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved FROM users WHERE id = ?');
-    $stmt->execute([$_SESSION['user_id']]);
+    $stmt->execute([$userId]);
     $user = $stmt->fetch();
     
     if ($user) {
         // Convert integer to boolean
         $user['is_admin'] = (bool)$user['is_admin'];
         $user['is_approved'] = (bool)$user['is_approved'];
+        
+        // Add impersonation info if applicable
+        if (isset($_SESSION['impersonating_user_id']) && isset($_SESSION['impersonating_admin_id'])) {
+            $user['impersonating'] = true;
+            $user['impersonating_admin_id'] = (int)$_SESSION['impersonating_admin_id'];
+            
+            // Get admin user info for display
+            $adminStmt = $db->prepare('SELECT id, username FROM users WHERE id = ?');
+            $adminStmt->execute([$_SESSION['impersonating_admin_id']]);
+            $adminUser = $adminStmt->fetch();
+            if ($adminUser) {
+                $user['impersonating_admin_username'] = $adminUser['username'];
+            }
+        } else {
+            $user['impersonating'] = false;
+        }
     }
     
     return $user ?: null;
