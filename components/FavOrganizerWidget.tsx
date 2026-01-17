@@ -55,7 +55,7 @@ interface ChunkProgress {
 }
 
 export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose }) => {
-  const [activeTab, setActiveTab] = useState<'ai' | 'manual'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'manual'>('manual');
   const [apiKey, setApiKey] = useState<string>('');
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [loading, setLoading] = useState(false);
@@ -2179,7 +2179,8 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
       {/* Tabs */}
       <div className="mb-4">
         <div className="flex gap-2 border-b border-slate-200 dark:border-slate-700">
-          <button
+          {/* AI Organization tab hidden */}
+          {/* <button
             onClick={() => setActiveTab('ai')}
             className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
               activeTab === 'ai'
@@ -2188,7 +2189,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
             }`}
           >
             🤖 AI Organization
-          </button>
+          </button> */}
           <button
             onClick={() => setActiveTab('manual')}
             className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
@@ -2202,7 +2203,8 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
         </div>
       </div>
 
-      {activeTab === 'ai' ? (
+      {/* AI Organization tab content - hidden */}
+      {false ? (
         <>
 
       {/* API Key Input */}
