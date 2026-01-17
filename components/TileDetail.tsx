@@ -2440,12 +2440,33 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
 
         // Filter sections and links by schedule in view mode
+        // Apply role-based filtering if tile has links with role access (from "Your Apps" tab)
+        // Otherwise, show all links based on their own visibility settings (Public, Private, Authenticated tabs)
         if (!isEditing) {
+            // Check if this tile has any links with role-based access
+            // If it does, it means it's being viewed from "Your Apps" tab context
+            const hasRoleBasedAccess = tile.tabs?.some(tab => 
+                tab.sections?.some(section => 
+                    section.links?.some(link => link.hasRoleAccess)
+                ) || tab.links?.some(link => link.hasRoleAccess)
+            ) || tile.sections?.some(section => 
+                section.links?.some(link => link.hasRoleAccess)
+            );
+
             sectionsToFilter = sectionsToFilter
                 .filter(section => isContentVisible(section))
                 .map(section => ({
                     ...section,
-                    links: section.links.filter(link => isContentVisible(link))
+                    links: section.links.filter(link => {
+                        // Always filter by schedule
+                        if (!isContentVisible(link)) return false;
+                        // If tile has links with role access, only show those links (Your Apps tab context)
+                        // Otherwise, show all links based on their visibility settings (Public/Private/Authenticated tabs)
+                        if (hasRoleBasedAccess) {
+                            return link.hasRoleAccess === true;
+                        }
+                        return true;
+                    })
                 }))
                 .filter(section => section.links.length > 0);
         }
@@ -2695,7 +2716,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 {displayTabs.map((tab) => {
                                     const isActive = selectedTabId === tab.id;
                                     const tabSections = tab.sections || [];
-                                    const tabLinksCount = tabSections.reduce((acc, s) => acc + (s.links?.length || 0), 0);
+                                    // Check if tile has role-based access to filter link count
+                                    const hasRoleBasedAccess = tile.tabs?.some(t => 
+                                        t.sections?.some(s => 
+                                            s.links?.some(link => link.hasRoleAccess)
+                                        ) || t.links?.some(link => link.hasRoleAccess)
+                                    ) || tile.sections?.some(s => 
+                                        s.links?.some(link => link.hasRoleAccess)
+                                    );
+                                    // Count links, filtering by role access if needed
+                                    const tabLinksCount = tabSections.reduce((acc, s) => {
+                                        const links = s.links || [];
+                                        const filteredLinks = hasRoleBasedAccess 
+                                            ? links.filter(link => link.hasRoleAccess === true)
+                                            : links;
+                                        return acc + filteredLinks.length;
+                                    }, 0);
 
                                     return (
                                         <button
