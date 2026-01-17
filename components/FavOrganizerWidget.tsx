@@ -53,6 +53,7 @@ interface ChunkProgress {
 }
 
 export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose }) => {
+  const [activeTab, setActiveTab] = useState<'ai' | 'manual'>('ai');
   const [apiKey, setApiKey] = useState<string>('');
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [loading, setLoading] = useState(false);
@@ -72,6 +73,70 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
   const [chunkCosts, setChunkCosts] = useState<number[]>([]);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [isCancelled, setIsCancelled] = useState<boolean>(false);
+  
+  // Manual organization state
+  const [manualTiles, setManualTiles] = useState<Array<{
+    id: string;
+    title: string;
+    description: string;
+    emoji: string;
+    themeColor: string;
+    links: Bookmark[];
+  }>>([]);
+
+  // Auto-generate tiles from bookmarks by domain (for manual organization)
+  const autoGenerateTilesByDomain = (bookmarkList: Bookmark[]) => {
+    if (bookmarkList.length === 0) {
+      setManualTiles([]);
+      return;
+    }
+
+    const domainMap = new Map<string, Bookmark[]>();
+    
+    bookmarkList.forEach(bookmark => {
+      try {
+        const url = new URL(bookmark.url);
+        const domain = url.hostname.replace('www.', '').replace(/^\.+/, '');
+        const baseDomain = domain.split('.').slice(-2).join('.'); // Get main domain (e.g., google.com from mail.google.com)
+        
+        if (!domainMap.has(baseDomain)) {
+          domainMap.set(baseDomain, []);
+        }
+        domainMap.get(baseDomain)!.push(bookmark);
+      } catch {
+        // Invalid URL, put in misc
+        if (!domainMap.has('misc')) {
+          domainMap.set('misc', []);
+        }
+        domainMap.get('misc')!.push(bookmark);
+      }
+    });
+
+    // Create tiles from domains
+    const emojis = ['💻', '🌐', '📚', '🛠️', '🎨', '🚀', '📱', '☁️', '🔐', '💰', '📊', '🎮', '🎵', '📷', '✈️', '🛒', '🏥', '🎓', '📝', '💡'];
+    const colors = ['blue', 'emerald', 'violet', 'amber', 'rose', 'cyan', 'fuchsia', 'orange', 'indigo', 'lime', 'sky', 'slate', 'teal', 'pink', 'purple', 'yellow', 'zinc', 'red', 'green', 'gray'];
+    
+    const generatedTiles = Array.from(domainMap.entries()).map(([domain, links], index) => {
+      const domainName = domain === 'misc' ? 'Miscellaneous' : domain.charAt(0).toUpperCase() + domain.slice(1);
+      return {
+        id: `tile_${Date.now()}_${index}`,
+        title: domainName,
+        description: `${links.length} link${links.length !== 1 ? 's' : ''} from ${domain}`,
+        emoji: emojis[index % emojis.length],
+        themeColor: colors[index % colors.length],
+        links
+      };
+    });
+
+    // Sort by domain name (misc at the end)
+    generatedTiles.sort((a, b) => {
+      if (a.title === 'Miscellaneous') return 1;
+      if (b.title === 'Miscellaneous') return -1;
+      return a.title.localeCompare(b.title);
+    });
+
+    setManualTiles(generatedTiles);
+  };
 
   // Load settings from localStorage on mount
   useEffect(() => {
@@ -92,6 +157,16 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
       }
     }
   }, []);
+
+  // Auto-generate tiles when bookmarks are loaded in manual organization tab
+  useEffect(() => {
+    if (activeTab === 'manual' && bookmarks.length > 0) {
+      // Only auto-generate if tiles are empty (don't overwrite user's manual organization)
+      if (manualTiles.length === 0) {
+        autoGenerateTilesByDomain(bookmarks);
+      }
+    }
+  }, [activeTab, bookmarks.length]); // Only trigger when tab changes or bookmarks are added
 
   // Save API key to localStorage when changed
   const handleApiKeyChange = (value: string) => {
@@ -184,6 +259,11 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
       setUniqueBookmarks(unique);
       setDuplicateCount(duplicateCount);
       
+      // Auto-generate tiles if in manual organization tab
+      if (activeTab === 'manual') {
+        autoGenerateTilesByDomain(unique);
+      }
+      
       if (unique.length === 0) {
         setError('No bookmarks found in the HTML file. Please ensure it\'s a valid bookmark export file.');
       } else {
@@ -242,6 +322,11 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
     setBookmarks(unique);
     setUniqueBookmarks(unique);
     setDuplicateCount(duplicateCount);
+    
+    // Auto-generate tiles if in manual organization tab
+    if (activeTab === 'manual') {
+      autoGenerateTilesByDomain(unique);
+    }
     
     if (unique.length === 0 && lines.length > 0) {
       setError('No valid URLs found. Please use format: "Title|URL" or just "URL"');
@@ -1095,6 +1180,174 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
     URL.revokeObjectURL(url);
   };
 
+  // Generate JSON manually without AI
+  const generateManualJSON = () => {
+    if (bookmarks.length === 0) {
+      setError('Please extract or enter bookmarks first');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const currentTimestamp = Math.floor(Date.now() / 1000);
+      const generateId = (prefix: string, index: number) => `${prefix}_${index + 1}`;
+
+      // Use manual tiles (should already be auto-generated by domain when bookmarks were imported)
+      let tilesToUse = manualTiles;
+      if (tilesToUse.length === 0) {
+        // Fallback: auto-generate if somehow tiles weren't created
+        autoGenerateTilesByDomain(bookmarks);
+        tilesToUse = manualTiles;
+      }
+
+      // Convert manual tiles to JSON format
+      const tiles = tilesToUse.map((tile, tileIndex) => {
+        const sections = tile.links.length > 0 ? [{
+          id: generateId('sec', 0),
+          title: 'Links',
+          textColor: null,
+          visibleFrom: null,
+          expiresAt: null,
+          forceStackedView: false,
+          position: 0,
+          links: tile.links.map((link, linkIndex) => ({
+            id: generateId('link', linkIndex),
+            label: link.title,
+            url: link.url,
+            icon: null,
+            textColor: null,
+            visibility: 'public',
+            allowedUsers: [],
+            notes: null,
+            tooltip: null,
+            visibleFrom: null,
+            expiresAt: null,
+            browser: null,
+            isFavorite: false,
+            hasRoleAccess: false,
+            position: linkIndex,
+            health: {
+              status: 'unknown',
+              httpCode: null,
+              error: null,
+              checkedAt: null
+            }
+          })),
+          richTextContent: []
+        }] : [];
+
+        return {
+          id: tile.id,
+          title: tile.title,
+          description: tile.description,
+          htmlContent: '',
+          emoji: tile.emoji,
+          themeColor: tile.themeColor,
+          group: 'group1',
+          createdAt: currentTimestamp,
+          tabs: [],
+          sections,
+          visibility: 'public',
+          allowedUsers: [],
+          isFavorite: false,
+          isHyperlink: false,
+          openInNewTab: true,
+          canView: true,
+          canEdit: true,
+          canDelete: true
+        };
+      });
+
+      const organized = {
+        version: '1.1',
+        type: 'category',
+        exportedAt: Date.now(),
+        categoryName: 'Main',
+        tiles
+      };
+
+      const jsonString = JSON.stringify(organized, null, 2);
+      setOrganizedJson(jsonString);
+
+      // Calculate stats
+      const totalLinks = bookmarks.length;
+      const processedLinksCount = tiles.reduce((sum, tile) => 
+        sum + (tile.sections?.reduce((secSum: number, sec: any) => secSum + (sec.links?.length || 0), 0) || 0), 0
+      );
+      
+      setStats({
+        totalLinks,
+        uniqueLinks: totalLinks,
+        duplicateLinks: duplicateCount,
+        processedLinks: processedLinksCount,
+        unprocessedLinks: totalLinks - processedLinksCount,
+        totalTiles: tiles.length,
+        totalSections: tiles.reduce((sum, tile) => sum + (tile.sections?.length || 0), 0),
+        processingTime: 0,
+        chunksProcessed: 1,
+        totalCost: 0
+      });
+
+      setProcessedLinks(bookmarks);
+      setUnprocessedLinks([]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate JSON');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Add new manual tile
+  const addManualTile = () => {
+    const newTile = {
+      id: `tile_${Date.now()}`,
+      title: 'New Category',
+      description: '',
+      emoji: '📁',
+      themeColor: 'blue',
+      links: []
+    };
+    setManualTiles([...manualTiles, newTile]);
+  };
+
+  // Update manual tile
+  const updateManualTile = (tileId: string, updates: Partial<typeof manualTiles[0]>) => {
+    setManualTiles(manualTiles.map(tile => 
+      tile.id === tileId ? { ...tile, ...updates } : tile
+    ));
+  };
+
+  // Delete manual tile
+  const deleteManualTile = (tileId: string) => {
+    setManualTiles(manualTiles.filter(tile => tile.id !== tileId));
+  };
+
+  // Add link to manual tile
+  const addLinkToTile = (tileId: string, bookmark: Bookmark) => {
+    setManualTiles(manualTiles.map(tile => {
+      if (tile.id === tileId) {
+        // Check if link already exists
+        if (tile.links.some(l => l.url === bookmark.url)) {
+          return tile;
+        }
+        return { ...tile, links: [...tile.links, bookmark] };
+      }
+      return tile;
+    }));
+  };
+
+  // Remove link from manual tile
+  const removeLinkFromTile = (tileId: string, linkUrl: string) => {
+    setManualTiles(manualTiles.map(tile => {
+      if (tile.id === tileId) {
+        return { ...tile, links: tile.links.filter(l => l.url !== linkUrl) };
+      }
+      return tile;
+    }));
+  };
+
   // Download AI prompt as text file
   const handleDownloadPrompt = () => {
     if (!lastPrompt) return;
@@ -1119,9 +1372,38 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
           </h3>
         </div>
         <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-          Extract browser favorites and organize them into tiles, sections, and links using AI
+          Extract browser favorites and organize them into tiles, sections, and links
         </p>
       </div>
+
+      {/* Tabs */}
+      <div className="mb-4">
+        <div className="flex gap-2 border-b border-slate-200 dark:border-slate-700">
+          <button
+            onClick={() => setActiveTab('ai')}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+              activeTab === 'ai'
+                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+          >
+            🤖 AI Organization
+          </button>
+          <button
+            onClick={() => setActiveTab('manual')}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+              activeTab === 'manual'
+                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+          >
+            ✋ Manual Organization
+          </button>
+        </div>
+      </div>
+
+      {activeTab === 'ai' ? (
+        <>
 
       {/* API Key Input */}
       <div className="mb-4">
@@ -1483,7 +1765,262 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
         </div>
       )}
 
-      {/* Organized JSON Display */}
+        </>
+      ) : (
+        <>
+          {/* Manual Organization Tab */}
+          <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded text-sm text-blue-800 dark:text-blue-300">
+            <p className="font-medium mb-1">Manual Organization</p>
+            <p className="text-xs">
+              Organize your bookmarks manually without AI. Import bookmarks first, then create categories and assign links.
+            </p>
+          </div>
+
+          {/* Import Method for Manual Tab */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+              Import Method
+            </label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setExtractionMethod('html')}
+                className={`flex-1 px-3 py-2 text-sm rounded transition-colors ${
+                  extractionMethod === 'html'
+                    ? 'bg-brand-500 text-white'
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                }`}
+              >
+                HTML File
+              </button>
+              <button
+                onClick={() => setExtractionMethod('manual')}
+                className={`flex-1 px-3 py-2 text-sm rounded transition-colors ${
+                  extractionMethod === 'manual'
+                    ? 'bg-brand-500 text-white'
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                }`}
+              >
+                Manual Input
+              </button>
+            </div>
+          </div>
+
+          {/* Bookmark Import for Manual Tab */}
+          {extractionMethod === 'html' ? (
+            <div className="mb-4">
+              <label className="block w-full px-4 py-3 bg-brand-500 text-white rounded hover:bg-brand-600 cursor-pointer transition-colors text-center">
+                <input
+                  type="file"
+                  accept=".html,.htm"
+                  onChange={handleHTMLFileImport}
+                  className="hidden"
+                  disabled={loading}
+                />
+                {loading ? 'Importing...' : 'Import HTML Bookmark File'}
+              </label>
+            </div>
+          ) : (
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                Paste Bookmarks (one per line, format: Title|URL or just URL)
+              </label>
+              <textarea
+                onChange={(e) => handleManualInput(e.target.value)}
+                placeholder="https://example.com&#10;Google|https://google.com&#10;GitHub|https://github.com"
+                className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                rows={6}
+              />
+            </div>
+          )}
+
+          {/* Bookmarks Count for Manual Tab */}
+          {bookmarks.length > 0 && (
+            <div className="mb-4 p-2 bg-slate-50 dark:bg-slate-700/50 rounded text-sm text-slate-600 dark:text-slate-400">
+              <span>
+                Found {bookmarks.length} bookmark{bookmarks.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+          )}
+
+          {/* Manual Tiles Management */}
+          {bookmarks.length > 0 && (
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Categories ({manualTiles.length})
+                </h4>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      if (confirm('This will regenerate categories by domain and overwrite your current organization. Continue?')) {
+                        autoGenerateTilesByDomain(bookmarks);
+                      }
+                    }}
+                    className="px-3 py-1.5 text-xs bg-blue-500 text-white hover:bg-blue-600 rounded transition-colors"
+                    title="Regenerate categories by domain"
+                  >
+                    🔄 Regenerate
+                  </button>
+                  <button
+                    onClick={addManualTile}
+                    className="px-3 py-1.5 text-xs bg-brand-500 text-white hover:bg-brand-600 rounded transition-colors"
+                  >
+                    + Add Category
+                  </button>
+                </div>
+              </div>
+
+              {manualTiles.length === 0 && bookmarks.length > 0 && (
+                <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded text-sm text-blue-800 dark:text-blue-300">
+                  Categories will be auto-generated by domain when you import bookmarks. Click "Regenerate" to recreate them, or "Add Category" to create custom categories.
+                </div>
+              )}
+
+              <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                {manualTiles.map((tile, tileIndex) => (
+                  <div key={tile.id} className="p-3 border border-slate-200 dark:border-slate-700 rounded">
+                    <div className="flex items-start gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={tile.emoji}
+                        onChange={(e) => updateManualTile(tile.id, { emoji: e.target.value })}
+                        className="w-10 px-2 py-1 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+                        placeholder="💻"
+                      />
+                      <input
+                        type="text"
+                        value={tile.title}
+                        onChange={(e) => updateManualTile(tile.id, { title: e.target.value })}
+                        className="flex-1 px-2 py-1 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+                        placeholder="Category Name"
+                      />
+                      <select
+                        value={tile.themeColor}
+                        onChange={(e) => updateManualTile(tile.id, { themeColor: e.target.value })}
+                        className="px-2 py-1 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+                      >
+                        <option value="blue">Blue</option>
+                        <option value="emerald">Emerald</option>
+                        <option value="violet">Violet</option>
+                        <option value="amber">Amber</option>
+                        <option value="rose">Rose</option>
+                        <option value="cyan">Cyan</option>
+                        <option value="fuchsia">Fuchsia</option>
+                        <option value="orange">Orange</option>
+                      </select>
+                      <button
+                        onClick={() => deleteManualTile(tile.id)}
+                        className="px-2 py-1 text-xs bg-red-500 text-white hover:bg-red-600 rounded transition-colors"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      value={tile.description}
+                      onChange={(e) => updateManualTile(tile.id, { description: e.target.value })}
+                      className="w-full px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 mb-2"
+                      placeholder="Description (optional)"
+                    />
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                      {tile.links.length} link{tile.links.length !== 1 ? 's' : ''} in this category
+                    </div>
+                    <div className="max-h-[100px] overflow-y-auto space-y-1">
+                      {tile.links.map((link, linkIndex) => (
+                        <div key={linkIndex} className="flex items-center justify-between p-1.5 bg-slate-50 dark:bg-slate-700/50 rounded text-xs">
+                          <span className="truncate flex-1">{link.title}</span>
+                          <button
+                            onClick={() => removeLinkFromTile(tile.id, link.url)}
+                            className="ml-2 px-1.5 py-0.5 text-xs bg-red-500 text-white hover:bg-red-600 rounded"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-2">
+                      <select
+                        onChange={(e) => {
+                          const bookmark = bookmarks.find(b => `${b.title}|${b.url}` === e.target.value);
+                          if (bookmark) {
+                            addLinkToTile(tile.id, bookmark);
+                            e.target.value = '';
+                          }
+                        }}
+                        className="w-full px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+                        defaultValue=""
+                      >
+                        <option value="">+ Add link to this category</option>
+                        {bookmarks
+                          .filter(b => !tile.links.some(l => l.url === b.url))
+                          .map(bookmark => (
+                            <option key={bookmark.url} value={`${bookmark.title}|${bookmark.url}`}>
+                              {bookmark.title}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Generate JSON Button for Manual Tab */}
+          {bookmarks.length > 0 && (
+            <div className="mb-4">
+              <button
+                onClick={generateManualJSON}
+                disabled={loading}
+                className="w-full px-4 py-2 bg-emerald-500 text-white rounded hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {loading ? 'Generating JSON...' : 'Generate JSON'}
+              </button>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 text-center">
+                {manualTiles.length === 0 
+                  ? 'Will auto-organize by domain if no categories are created'
+                  : `Will use ${manualTiles.length} categor${manualTiles.length !== 1 ? 'ies' : 'y'}`}
+              </p>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Shared: Error Display */}
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-sm text-red-700 dark:text-red-400">
+          {error}
+        </div>
+      )}
+
+      {/* Shared: Statistics Display */}
+      {stats && (
+        <div className="mb-4 p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded">
+          <h4 className="text-sm font-semibold text-emerald-800 dark:text-emerald-300 mb-3">
+            Processing Complete! 📊
+          </h4>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <span className="text-slate-600 dark:text-slate-400">Total Links:</span>
+              <span className="ml-2 font-medium text-slate-900 dark:text-slate-100">{stats.totalLinks}</span>
+            </div>
+            <div>
+              <span className="text-slate-600 dark:text-slate-400">Links Processed:</span>
+              <span className="ml-2 font-medium text-emerald-700 dark:text-emerald-400">{stats.processedLinks}</span>
+            </div>
+            <div>
+              <span className="text-slate-600 dark:text-slate-400">Tiles Generated:</span>
+              <span className="ml-2 font-medium text-slate-900 dark:text-slate-100">{stats.totalTiles}</span>
+            </div>
+            <div>
+              <span className="text-slate-600 dark:text-slate-400">Sections Created:</span>
+              <span className="ml-2 font-medium text-slate-900 dark:text-slate-100">{stats.totalSections}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Shared: Organized JSON Display */}
       {organizedJson && (
         <div className="mb-4">
           <div className="flex items-center justify-between mb-2">
