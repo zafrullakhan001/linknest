@@ -28,6 +28,8 @@ import { FloatingPageZoomControl } from './components/FloatingPageZoomControl';
 import { PageZoomWidget } from './components/PageZoomControl';
 import { FloatingThemeWidget } from './components/FloatingThemeWidget';
 import { ThemeWidget } from './components/ThemeWidget';
+import { FloatingFavOrganizerWidget } from './components/FloatingFavOrganizerWidget';
+import { FavOrganizerWidget } from './components/FavOrganizerWidget';
 import { themeService } from './services/themeService';
 
 // Lazy load heavy components for better initial load performance
@@ -170,6 +172,16 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('linknest_show_theme_widget', showTheme.toString());
   }, [showTheme]);
+
+  // Fav Organizer Widget Visibility State
+  const [showFavOrganizer, setShowFavOrganizer] = useState(() => {
+    const saved = localStorage.getItem('linknest_show_fav_organizer_widget');
+    return saved !== null ? saved === 'true' : false; // Default to hidden
+  });
+
+  useEffect(() => {
+    localStorage.setItem('linknest_show_fav_organizer_widget', showFavOrganizer.toString());
+  }, [showFavOrganizer]);
 
   // Initialize theme service on mount
   useEffect(() => {
@@ -343,6 +355,10 @@ const AppContent: React.FC = () => {
 
   const toggleThemeWidget = () => {
     setShowTheme(!showTheme);
+  };
+
+  const toggleFavOrganizer = () => {
+    setShowFavOrganizer(!showFavOrganizer);
   };
 
   const handleTabClick = (tab: string) => {
@@ -727,6 +743,8 @@ const AppContent: React.FC = () => {
         toggleZoomControl={toggleZoomControl}
         showTheme={showTheme}
         toggleThemeWidget={toggleThemeWidget}
+        showFavOrganizer={showFavOrganizer}
+        toggleFavOrganizer={toggleFavOrganizer}
         user={user}
         onLoginClick={() => setAuthModalOpen(true)}
         onHelpClick={() => setHelpAboutOpen(true)}
@@ -959,6 +977,11 @@ const AppContent: React.FC = () => {
         <FloatingThemeWidget onClose={toggleThemeWidget}>
           <ThemeWidget onClose={toggleThemeWidget} />
         </FloatingThemeWidget>
+      )}
+      {showFavOrganizer && (
+        <FloatingFavOrganizerWidget>
+          <FavOrganizerWidget onClose={toggleFavOrganizer} />
+        </FloatingFavOrganizerWidget>
       )}
       <AuthModal
         isOpen={authModalOpen}

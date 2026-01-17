@@ -22,12 +22,14 @@ interface NavigationProps {
   toggleZoomControl: () => void;
   showTheme: boolean;
   toggleThemeWidget: () => void;
+  showFavOrganizer: boolean;
+  toggleFavOrganizer: () => void;
   user: { id: number; username: string; email: string; is_admin?: boolean } | null;
   onLoginClick: () => void;
   onHelpClick: () => void;
 }
 
-export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: toggleDarkMode, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, showWeather, toggleWeather, showCalculator, toggleCalculator, showPasswordGenerator, togglePasswordGenerator, showZoomControl, toggleZoomControl, showTheme, toggleThemeWidget, user, onLoginClick, onHelpClick }) => {
+export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: toggleDarkMode, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, showWeather, toggleWeather, showCalculator, toggleCalculator, showPasswordGenerator, togglePasswordGenerator, showZoomControl, toggleZoomControl, showTheme, toggleThemeWidget, showFavOrganizer, toggleFavOrganizer, user, onLoginClick, onHelpClick }) => {
   const { logout } = useAuth();
   const { settings } = useSettings();
   const disabledTabs = getDisabledTabsFromSettings(settings);
@@ -209,6 +211,19 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
                 <circle cx="8.5" cy="7.5" r=".5"></circle>
                 <circle cx="6.5" cy="12.5" r=".5"></circle>
                 <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path>
+              </svg>
+            </button>
+            <button
+              onClick={toggleFavOrganizer}
+              className={`p-2 rounded-full transition-all ${showFavOrganizer ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+              title={showFavOrganizer ? "Hide Favorite Organizer Widget" : "Show Favorite Organizer Widget"}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+                <path d="M12 2v14"></path>
+                <path d="M8 6h8"></path>
+                <path d="M8 10h8"></path>
+                <path d="M8 14h6"></path>
               </svg>
             </button>
           </div>
