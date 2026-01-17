@@ -283,32 +283,45 @@ export const themeService = {
         return '#' + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
       };
 
+      // Check if this is a glassmorphism theme or default theme
+      const isGlassmorphismTheme = themeName !== 'default' && themeName !== 'classic' && themeName !== 'minimal';
+      const useBlur = isGlassmorphismTheme && customization.blurIntensity > 0;
+
       const css = `
         .theme-${themeName} .linknest-app-container {
-          background: linear-gradient(135deg, ${customization.primaryColor} 0%, ${customization.secondaryColor} 50%, ${customization.primaryColor} 100%) !important;
+          background: ${isGlassmorphismTheme 
+            ? `linear-gradient(135deg, ${customization.primaryColor} 0%, ${customization.secondaryColor} 50%, ${customization.primaryColor} 100%)` 
+            : customization.primaryColor} !important;
+          ${isGlassmorphismTheme ? 'background-attachment: fixed;' : ''}
         }
         .theme-${themeName} nav,
         .theme-${themeName} .bg-white,
         .theme-${themeName} .dark\\:bg-slate-800 {
-          background: ${hexToRgba(customization.secondaryColor, customization.opacity)} !important;
-          backdrop-filter: blur(${customization.blurIntensity}px) saturate(180%) !important;
-          -webkit-backdrop-filter: blur(${customization.blurIntensity}px) saturate(180%) !important;
+          background: ${isGlassmorphismTheme 
+            ? hexToRgba(customization.secondaryColor, customization.opacity)
+            : customization.secondaryColor} !important;
+          ${useBlur ? `backdrop-filter: blur(${customization.blurIntensity}px) saturate(180%) !important;` : ''}
+          ${useBlur ? `-webkit-backdrop-filter: blur(${customization.blurIntensity}px) saturate(180%) !important;` : ''}
           border-color: ${hexToRgba(customization.accentColor, customization.borderOpacity)} !important;
         }
         .theme-${themeName} [class*="rounded"],
         .theme-${themeName} .linknest-tile {
-          background: ${hexToRgba(customization.secondaryColor, customization.opacity - 0.1)} !important;
-          backdrop-filter: blur(${customization.blurIntensity}px) saturate(180%) !important;
-          -webkit-backdrop-filter: blur(${customization.blurIntensity}px) saturate(180%) !important;
+          background: ${isGlassmorphismTheme 
+            ? hexToRgba(customization.secondaryColor, customization.opacity - 0.1)
+            : customization.secondaryColor} !important;
+          ${useBlur ? `backdrop-filter: blur(${customization.blurIntensity}px) saturate(180%) !important;` : ''}
+          ${useBlur ? `-webkit-backdrop-filter: blur(${customization.blurIntensity}px) saturate(180%) !important;` : ''}
           border: 1px solid ${hexToRgba(customization.accentColor, customization.borderOpacity)} !important;
         }
         .theme-${themeName} .linknest-tile:hover {
           border-color: ${hexToRgba(customization.accentColor, customization.borderOpacity + 0.2)} !important;
-          box-shadow: 0 12px 40px 0 ${hexToRgba(customization.accentColor, 0.3)} !important;
+          ${isGlassmorphismTheme ? `box-shadow: 0 12px 40px 0 ${hexToRgba(customization.accentColor, 0.3)} !important;` : ''}
         }
         .theme-${themeName} .bg-brand-500,
         .theme-${themeName} .bg-brand-600 {
-          background: linear-gradient(135deg, ${customization.accentColor} 0%, ${adjustBrightness(customization.accentColor, 20)} 100%) !important;
+          background: ${isGlassmorphismTheme 
+            ? `linear-gradient(135deg, ${customization.accentColor} 0%, ${adjustBrightness(customization.accentColor, 20)} 100%)`
+            : customization.accentColor} !important;
         }
         .theme-${themeName} .text-brand-500,
         .theme-${themeName} .text-brand-600 {
