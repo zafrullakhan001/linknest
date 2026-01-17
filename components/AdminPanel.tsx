@@ -170,7 +170,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [rolesLoading, setRolesLoading] = useState(false);
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [showRoleTilesModal, setShowRoleTilesModal] = useState(false);
-  const [showRoleLinksModal, setShowRoleLinksModal] = useState(false);
   const [showUserRolesModal, setShowUserRolesModal] = useState(false);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
   const [selectedUserForRoles, setSelectedUserForRoles] = useState<number | null>(null);
@@ -812,44 +811,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     setRoleTilesLoading(true);
     setTileSearchTerm('');
     setSelectedTileIds(new Set());
-    try {
-      await loadAllTilesAndLinks();
-      // Load existing tile assignments for this role
-      try {
-        const roleTiles = await rolesService.getRoleTiles(role.id);
-        const existingTileIds = new Set(roleTiles.map(rt => rt.tileId));
-        setSelectedTileIds(existingTileIds);
-      } catch (err) {
-        // Ignore if no tiles assigned yet
-      }
-      setShowRoleTilesModal(true);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load tiles');
-    } finally {
-      setRoleTilesLoading(false);
-    }
-  };
-
-  const handleManageRoleLinks = async (role: Role) => {
-    setSelectedRole(role);
-    setRoleLinksLoading(true);
-    setLinkSearchTerm('');
     setSelectedLinkIds(new Set());
     try {
       await loadAllTilesAndLinks();
-      // Load existing link assignments for this role
+      // Load existing tile and link assignments for this role
       try {
-        const roleLinks = await rolesService.getRoleLinks(role.id);
+        const [roleTiles, roleLinks] = await Promise.all([
+          rolesService.getRoleTiles(role.id),
+          rolesService.getRoleLinks(role.id)
+        ]);
+        const existingTileIds = new Set(roleTiles.map(rt => rt.tileId));
         const existingLinkIds = new Set(roleLinks.map(rl => rl.linkId));
+        setSelectedTileIds(existingTileIds);
         setSelectedLinkIds(existingLinkIds);
       } catch (err) {
-        // Ignore if no links assigned yet
+        // Ignore if no tiles/links assigned yet
       }
-      setShowRoleLinksModal(true);
+      setShowRoleTilesModal(true);
     } catch (err: any) {
-      setError(err.message || 'Failed to load links');
+      setError(err.message || 'Failed to load tiles and links');
     } finally {
-      setRoleLinksLoading(false);
+      setRoleTilesLoading(false);
     }
   };
 
@@ -870,7 +852,54 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   };
 
   const handleAssignTilesToRole = async () => {
-    if (!selectedRole || (selectedTileIds.size === 0 && selectedLinkIds.size === 0)) {
+    if (!selectedRole) {
+      setError('No role selected');
+      return;
+    }
+
+    // Validation: If a tile is selected, at least one link from that tile must be selected
+    const selectedTilesArray = Array.from(selectedTileIds);
+    const selectedLinksArray = Array.from(selectedLinkIds);
+    
+    // Get all links for selected tiles
+    const linksInSelectedTiles = new Set<string>();
+    allTiles.forEach(tile => {
+      if (selectedTilesArray.includes(tile.id)) {
+        tile.tabs?.forEach(tab => {
+          tab.sections?.forEach(section => {
+            section.links?.forEach(link => {
+              linksInSelectedTiles.add(link.id);
+            });
+          });
+          tab.links?.forEach(link => {
+            linksInSelectedTiles.add(link.id);
+          });
+        });
+      }
+    });
+
+    // Check if any selected tile has no selected links
+    for (const tileId of selectedTilesArray) {
+      const tile = allTiles.find(t => t.id === tileId);
+      if (tile) {
+        const tileLinks = new Set<string>();
+        tile.tabs?.forEach(tab => {
+          tab.sections?.forEach(section => {
+            section.links?.forEach(link => tileLinks.add(link.id));
+          });
+          tab.links?.forEach(link => tileLinks.add(link.id));
+        });
+        
+        // Check if at least one link from this tile is selected
+        const hasSelectedLink = Array.from(tileLinks).some(linkId => selectedLinksArray.includes(linkId));
+        if (!hasSelectedLink && tileLinks.size > 0) {
+          setError(`Tile "${tile.title}" is selected but no links from it are selected. Please select at least one link from this tile.`);
+          return;
+        }
+      }
+    }
+
+    if (selectedTilesArray.length === 0 && selectedLinksArray.length === 0) {
       setError('Please select at least one tile or link');
       return;
     }
@@ -878,12 +907,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     try {
       setError('');
       // Assign tiles if any selected
-      if (selectedTileIds.size > 0) {
-        await rolesService.assignTilesToRole(selectedRole.id, { tileIds: Array.from(selectedTileIds), canView: true });
+      if (selectedTilesArray.length > 0) {
+        await rolesService.assignTilesToRole(selectedRole.id, { tileIds: selectedTilesArray, canView: true });
       }
       // Assign links if any selected
-      if (selectedLinkIds.size > 0) {
-        await rolesService.assignLinksToRole(selectedRole.id, { linkIds: Array.from(selectedLinkIds), canView: true });
+      if (selectedLinksArray.length > 0) {
+        await rolesService.assignLinksToRole(selectedRole.id, { linkIds: selectedLinksArray, canView: true });
       }
       setShowRoleTilesModal(false);
       setSelectedTileIds(new Set());
@@ -894,23 +923,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       await loadRoles();
     } catch (err: any) {
       setError(err.message || 'Failed to assign tiles/links');
-    }
-  };
-
-  const handleAssignLinksToRole = async () => {
-    if (!selectedRole || selectedLinkIds.size === 0) {
-      setError('Please select at least one link');
-      return;
-    }
-
-    try {
-      setError('');
-      await rolesService.assignLinksToRole(selectedRole.id, { linkIds: Array.from(selectedLinkIds), canView: true });
-      setShowRoleLinksModal(false);
-      setSelectedLinkIds(new Set());
-      await loadRoles();
-    } catch (err: any) {
-      setError(err.message || 'Failed to assign links');
     }
   };
 
@@ -4536,13 +4548,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       onClick={() => handleManageRoleTiles(role)}
                                       className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 transition-colors"
                                     >
-                                      Tiles
-                                    </button>
-                                    <button
-                                      onClick={() => handleManageRoleLinks(role)}
-                                      className="text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-300 transition-colors"
-                                    >
-                                      Links
+                                      Tiles & Links
                                     </button>
                                     <button
                                       onClick={() => handleDeleteRole(role.id)}
@@ -6615,7 +6621,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             <div className="p-6 border-b border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  Assign Tiles to Role: {selectedRole.name}
+                  Assign Tiles & Links to Role: {selectedRole.name}
                 </h2>
                 <button
                   onClick={() => {
@@ -6653,9 +6659,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 </div>
               ) : (
                 <>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                    Select tiles that users with this role can access. Users will see only tiles assigned to their roles.
-                  </p>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Select tiles and links that users with this role can access. If you select a tile, you must select at least one link from that tile. When you select a link, its parent tile is automatically selected. Users will see only the specific links assigned to their roles.
+              </p>
                   
                   {/* Search Input */}
                   <div className="relative">
@@ -6912,8 +6918,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         </div>
       )}
 
-      {/* Role Links Modal */}
-      {showRoleLinksModal && selectedRole && (
+      {/* Role Links Modal - REMOVED - Now combined with Tiles Modal */}
+      {false && showRoleLinksModal && selectedRole && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-slate-200 dark:border-slate-700">

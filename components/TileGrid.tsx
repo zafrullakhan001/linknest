@@ -851,7 +851,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
   );
 };
 
-type TabType = 'favorites' | 'public' | 'public-favorites' | 'private' | 'scheduled' | 'expired' | 'archive' | 'recycle-bin' | 'monitoring';
+type TabType = 'favorites' | 'public' | 'public-favorites' | 'your-apps' | 'private' | 'scheduled' | 'expired' | 'archive' | 'recycle-bin' | 'monitoring';
 
 export const TileGrid: React.FC<TileGridProps> = ({
   tiles,
@@ -871,6 +871,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     // Favorites setting controls both favorites + public-favorites
     if (tab === 'favorites' || tab === 'public-favorites') return disabledAppTabs.has('favorites');
     if (tab === 'public') return disabledAppTabs.has('public');
+    if (tab === 'your-apps') return disabledAppTabs.has('your-apps');
     if (tab === 'private') return disabledAppTabs.has('private');
     if (tab === 'scheduled') return disabledAppTabs.has('scheduled');
     if (tab === 'expired') return disabledAppTabs.has('expired');
@@ -884,6 +885,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     const candidates: TabType[] = isAuthenticated
       ? ([
         'public',
+        'your-apps',
         'favorites',
         'private',
         'scheduled',
@@ -911,7 +913,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     try {
       const saved = localStorage.getItem('linknest_active_tab');
-      const validTabs = ['favorites', 'public', 'public-favorites', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+      const validTabs = ['favorites', 'public', 'public-favorites', 'your-apps', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
 
       if (saved && validTabs.includes(saved)) {
         // If not authenticated, force public-accessible tabs only
@@ -970,7 +972,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   useEffect(() => {
     const handleSwitchTab = (e: any) => {
       const tab = e.detail as TabType;
-      const validTabs: TabType[] = ['favorites', 'public', 'public-favorites', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+      const validTabs: TabType[] = ['favorites', 'public', 'public-favorites', 'your-apps', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
 
       if (tab && validTabs.includes(tab)) {
         if (isTabDisabledBySettings(tab)) {
@@ -1678,6 +1680,53 @@ export const TileGrid: React.FC<TileGridProps> = ({
     } else if (activeTab === 'public') {
       // Show only public tiles (same as current public access)
       filteredTiles = tiles.filter(t => t.visibility === 'public');
+    } else if (activeTab === 'your-apps') {
+      // Show tiles/links accessible via user roles - only show specific assigned links
+      if (isAuthenticated && user) {
+        // First, find all tiles that have links with role access
+        filteredTiles = tiles.filter(t => {
+          // Check if any link within the tile has role access
+          const hasLinkWithRoleAccess = t.tabs?.some(tab => 
+            tab.sections?.some(section => 
+              section.links?.some(link => link.hasRoleAccess)
+            )
+          ) || t.tabs?.some(tab => 
+            tab.links?.some(link => link.hasRoleAccess)
+          );
+          return hasLinkWithRoleAccess;
+        });
+        
+        // Filter links within tiles to ONLY show those with role access (even if tile has role access)
+        filteredTiles = filteredTiles.map(tile => {
+          // Always filter to only show links with role access, regardless of tile access
+          const filteredTabs = tile.tabs?.map(tab => {
+            const filteredSections = tab.sections?.map(section => ({
+              ...section,
+              links: section.links?.filter(link => link.hasRoleAccess) || []
+            })).filter(section => section.links && section.links.length > 0);
+            const filteredTabLinks = tab.links?.filter(link => link.hasRoleAccess) || [];
+            return {
+              ...tab,
+              sections: filteredSections && filteredSections.length > 0 ? filteredSections : undefined,
+              links: filteredTabLinks.length > 0 ? filteredTabLinks : undefined
+            };
+          }).filter(tab => 
+            (tab.sections && tab.sections.length > 0) || 
+            (tab.links && tab.links.length > 0)
+          );
+          return {
+            ...tile,
+            tabs: filteredTabs && filteredTabs.length > 0 ? filteredTabs : []
+          };
+        }).filter(tile => 
+          tile.tabs && tile.tabs.length > 0 && tile.tabs.some(tab => 
+            (tab.sections && tab.sections.length > 0) || 
+            (tab.links && tab.links.length > 0)
+          )
+        );
+      } else {
+        filteredTiles = []; // No role-based content for unauthenticated users
+      }
     } else if (activeTab === 'private') {
       // Show only authenticated and private tiles that belong to the user
       if (isAuthenticated && user) {
@@ -1715,10 +1764,11 @@ export const TileGrid: React.FC<TileGridProps> = ({
       });
     }
 
-    // For all tabs except 'scheduled' and 'expired', filter out scheduled and expired tiles
+    // For all tabs except 'scheduled', 'expired', and 'your-apps', filter out scheduled and expired tiles
     // Scheduled tiles should only appear in the scheduled tab
     // Expired tiles should only appear in the expired tab
-    if (activeTab !== 'scheduled' && activeTab !== 'expired' && activeTab !== 'recycle-bin' && activeTab !== 'archive') {
+    // 'your-apps' shows role-based content which may include scheduled/expired items
+    if (activeTab !== 'scheduled' && activeTab !== 'expired' && activeTab !== 'your-apps' && activeTab !== 'recycle-bin' && activeTab !== 'archive') {
       const now = new Date();
       filteredTiles = filteredTiles.filter(t => {
         // Hide tiles that are scheduled for the future
@@ -3434,6 +3484,28 @@ export const TileGrid: React.FC<TileGridProps> = ({
             className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'public' ? 'active' : ''}`}
           >
             Public
+          </button>
+        )}
+        {isAuthenticated && !disabledAppTabs.has('your-apps') && (
+          <button
+            onClick={() => requestTab('your-apps')}
+            data-active={activeTab === 'your-apps'}
+            className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'your-apps' ? 'active' : ''}`}
+          >
+            Your Apps
+            {(() => {
+              const roleBasedTiles = tiles.filter(t => t.hasRoleAccess || 
+                t.tabs?.some(tab => 
+                  tab.sections?.some(section => section.links?.some(link => link.hasRoleAccess)) ||
+                  tab.links?.some(link => link.hasRoleAccess)
+                )
+              );
+              return roleBasedTiles.length > 0 ? (
+                <span className="ml-2 px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
+                  {roleBasedTiles.length}
+                </span>
+              ) : null;
+            })()}
           </button>
         )}
         {!isAuthenticated && !disabledAppTabs.has('favorites') && (

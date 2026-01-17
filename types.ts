@@ -23,6 +23,7 @@ export interface Link {
   expiresAt?: string; // ISO date string - link expires at this date/time
   browser?: string; // Browser to open link in (e.g., 'chrome-stable', 'edge-stable', 'default')
   isFavorite?: boolean; // Whether this link is favorited by the current user
+  hasRoleAccess?: boolean; // Whether this link is accessible via user roles
   position?: number; // Position for ordering mixed content
 }
 
@@ -82,6 +83,7 @@ export interface Tile {
   canView?: boolean; // Whether the current user can view this tile (based on tile access permissions)
   canEdit?: boolean; // Whether the current user can edit this tile (based on tile access permissions)
   canDelete?: boolean; // Whether the current user can delete this tile (based on tile access permissions)
+  hasRoleAccess?: boolean; // Whether this tile is accessible via user roles
   deletedAt?: number; // Timestamp when tile was deleted (for recycle bin)
   visibleFrom?: string; // ISO date string - tile becomes visible from this date/time
   expiresAt?: string; // ISO date string - tile expires at this date/time

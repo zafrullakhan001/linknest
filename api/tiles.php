@@ -135,9 +135,13 @@ function handleGetTiles() {
             $isTileVisible = in_array($user['id'], $tileAllowedUsers);
         }
         
-        // Check role-based access for authenticated users
-        if ($user && !$isTileVisible && !$user['is_admin']) {
-            $isTileVisible = canUserViewTileByRole($user['id'], $row['id'], $db);
+        // Always check role-based access for authenticated users (for "Your Apps" tab)
+        $hasRoleAccess = false;
+        if ($user && !$user['is_admin']) {
+            $hasRoleAccess = canUserViewTileByRole($user['id'], $row['id'], $db);
+            if ($hasRoleAccess && !$isTileVisible) {
+                $isTileVisible = true; // Grant access if role-based
+            }
         }
         
         if (!$isTileVisible) {
@@ -222,6 +226,7 @@ function handleGetTiles() {
             'canDelete' => $canDelete,
             'visibleFrom' => $row['visible_from'] ?? null,
             'expiresAt' => $row['expires_at'] ?? null,
+            'hasRoleAccess' => $hasRoleAccess,
             'tabs' => []
         ];
         
@@ -286,9 +291,13 @@ function handleGetTiles() {
                         $isVisible = in_array($user['id'], $allowedUsers);
                     }
                     
-                    // Check role-based access for authenticated users
-                    if ($user && !$isVisible && !$user['is_admin']) {
-                        $isVisible = canUserViewLinkByRole($user['id'], $linkRow['id'], $db);
+                    // Always check role-based access for authenticated users (for "Your Apps" tab)
+                    $linkHasRoleAccess = false;
+                    if ($user && !$user['is_admin']) {
+                        $linkHasRoleAccess = canUserViewLinkByRole($user['id'], $linkRow['id'], $db);
+                        if ($linkHasRoleAccess && !$isVisible) {
+                            $isVisible = true; // Grant access if role-based
+                        }
                     }
                     
                     if (!$isVisible) {
@@ -309,6 +318,7 @@ function handleGetTiles() {
                         'expiresAt' => isset($linkRow['expires_at']) ? $linkRow['expires_at'] : null,
                         'browser' => isset($linkRow['browser']) ? $linkRow['browser'] : null,
                         'isFavorite' => (bool)($linkRow['is_favorite'] ?? false),
+                        'hasRoleAccess' => $linkHasRoleAccess,
                         'position' => (int)($linkRow['position'] ?? 0)
                     ];
                     
@@ -384,9 +394,13 @@ function handleGetTiles() {
                             $isVisible = in_array($user['id'], $allowedUsers);
                         }
                         
-                        // Check role-based access for authenticated users
-                        if ($user && !$isVisible && !$user['is_admin']) {
-                            $isVisible = canUserViewLinkByRole($user['id'], $linkRow['id'], $db);
+                        // Always check role-based access for authenticated users (for "Your Apps" tab)
+                        $linkHasRoleAccess = false;
+                        if ($user && !$user['is_admin']) {
+                            $linkHasRoleAccess = canUserViewLinkByRole($user['id'], $linkRow['id'], $db);
+                            if ($linkHasRoleAccess && !$isVisible) {
+                                $isVisible = true; // Grant access if role-based
+                            }
                         }
                         
                         if (!$isVisible) {
@@ -405,6 +419,7 @@ function handleGetTiles() {
                             'tooltip' => $linkRow['tooltip'] ?? null,
                             'browser' => $linkRow['browser'] ?? null,
                             'isFavorite' => (bool)($linkRow['is_favorite'] ?? false),
+                            'hasRoleAccess' => $linkHasRoleAccess,
                             'position' => (int)($linkRow['position'] ?? 0)
                         ];
                         
@@ -748,9 +763,13 @@ function handleGetTile($tileId) {
                     $isVisible = in_array($user['id'], $allowedUsers);
                 }
                 
-                // Check role-based access for authenticated users
-                if ($user && !$isVisible && !$user['is_admin']) {
-                    $isVisible = canUserViewLinkByRole($user['id'], $linkRow['id'], $db);
+                // Always check role-based access for authenticated users (for "Your Apps" tab)
+                $linkHasRoleAccess = false;
+                if ($user && !$user['is_admin']) {
+                    $linkHasRoleAccess = canUserViewLinkByRole($user['id'], $linkRow['id'], $db);
+                    if ($linkHasRoleAccess && !$isVisible) {
+                        $isVisible = true; // Grant access if role-based
+                    }
                 }
                 
                 if (!$isVisible) {
@@ -771,6 +790,7 @@ function handleGetTile($tileId) {
                     'expiresAt' => isset($linkRow['expires_at']) ? $linkRow['expires_at'] : null,
                     'browser' => isset($linkRow['browser']) ? $linkRow['browser'] : null,
                     'isFavorite' => (bool)($linkRow['is_favorite'] ?? false),
+                    'hasRoleAccess' => $linkHasRoleAccess,
                     'position' => (int)($linkRow['position'] ?? 0)
                 ];
                 
@@ -852,9 +872,13 @@ function handleGetTile($tileId) {
                         $isVisible = in_array($user['id'], $allowedUsers);
                     }
                     
-                    // Check role-based access for authenticated users
-                    if ($user && !$isVisible && !$user['is_admin']) {
-                        $isVisible = canUserViewLinkByRole($user['id'], $linkRow['id'], $db);
+                    // Always check role-based access for authenticated users (for "Your Apps" tab)
+                    $linkHasRoleAccess = false;
+                    if ($user && !$user['is_admin']) {
+                        $linkHasRoleAccess = canUserViewLinkByRole($user['id'], $linkRow['id'], $db);
+                        if ($linkHasRoleAccess && !$isVisible) {
+                            $isVisible = true; // Grant access if role-based
+                        }
                     }
                     
                     if (!$isVisible) {
@@ -872,6 +896,7 @@ function handleGetTile($tileId) {
                         'notes' => $linkRow['notes'] ?? null,
                         'tooltip' => $linkRow['tooltip'] ?? null,
                         'browser' => $linkRow['browser'] ?? null,
+                        'hasRoleAccess' => $linkHasRoleAccess,
                         'position' => (int)($linkRow['position'] ?? 0)
                     ];
                     
