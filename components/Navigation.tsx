@@ -20,12 +20,14 @@ interface NavigationProps {
   togglePasswordGenerator: () => void;
   showZoomControl: boolean;
   toggleZoomControl: () => void;
+  showTheme: boolean;
+  toggleThemeWidget: () => void;
   user: { id: number; username: string; email: string; is_admin?: boolean } | null;
   onLoginClick: () => void;
   onHelpClick: () => void;
 }
 
-export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, showWeather, toggleWeather, showCalculator, toggleCalculator, showPasswordGenerator, togglePasswordGenerator, showZoomControl, toggleZoomControl, user, onLoginClick, onHelpClick }) => {
+export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: toggleDarkMode, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, showWeather, toggleWeather, showCalculator, toggleCalculator, showPasswordGenerator, togglePasswordGenerator, showZoomControl, toggleZoomControl, showTheme, toggleThemeWidget, user, onLoginClick, onHelpClick }) => {
   const { logout } = useAuth();
   const { settings } = useSettings();
   const disabledTabs = getDisabledTabsFromSettings(settings);
@@ -196,12 +198,25 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme, s
                 <line x1="8" y1="11" x2="14" y2="11"></line>
               </svg>
             </button>
+            <button
+              onClick={toggleThemeWidget}
+              className={`p-2 rounded-full transition-all ${showTheme ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+              title={showTheme ? "Hide Theme Widget" : "Show Theme Widget"}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
+                <circle cx="13.5" cy="6.5" r=".5"></circle>
+                <circle cx="17.5" cy="10.5" r=".5"></circle>
+                <circle cx="8.5" cy="7.5" r=".5"></circle>
+                <circle cx="6.5" cy="12.5" r=".5"></circle>
+                <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path>
+              </svg>
+            </button>
           </div>
 
           {/* System Section */}
           <div className="flex items-center gap-1">
             <button
-              onClick={toggleTheme}
+              onClick={toggleDarkMode}
               className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
               title={darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
             >

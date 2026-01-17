@@ -28,6 +28,37 @@
   background: #475569;
 }
 
+/* Custom scrollbar for theme widget */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(148, 163, 184, 0.1);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.6);
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(51, 65, 85, 0.3);
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.5);
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.7);
+}
+
 /* View Layout Transitions */
 .linknest-category {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -80,6 +111,1224 @@
 /* Subtle page background pattern */
 .linknest-app-container {
   position: relative;
+}
+
+/* ========================================
+   THEME STYLES
+   ======================================== */
+
+/* Glassmorphism Theme */
+.theme-glassmorphism {
+  --theme-primary: #0f172a;
+  --theme-secondary: #1e293b;
+  --theme-tertiary: #334155;
+  --theme-accent: #06b6d4;
+  --theme-accent-hover: #0891b2;
+  --theme-text: #e2e8f0;
+  --theme-text-secondary: #cbd5e1;
+  --theme-border: rgba(148, 163, 184, 0.2);
+  --theme-bg-blur: blur(20px);
+  --theme-opacity: 0.85;
+}
+
+.theme-glassmorphism .linknest-app-container {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+  background-attachment: fixed;
+}
+
+.theme-glassmorphism .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(6, 182, 212, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.1) 0%, transparent 50%);
+}
+
+.theme-glassmorphism nav,
+.theme-glassmorphism .bg-white,
+.theme-glassmorphism .dark\:bg-slate-800,
+.theme-glassmorphism .dark\:bg-slate-900 {
+  background: rgba(30, 41, 59, 0.7) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-color: rgba(148, 163, 184, 0.2) !important;
+}
+
+.theme-glassmorphism .border-slate-200,
+.theme-glassmorphism .dark\:border-slate-700,
+.theme-glassmorphism .border-slate-800 {
+  border-color: rgba(148, 163, 184, 0.25) !important;
+}
+
+.theme-glassmorphism .bg-slate-50,
+.theme-glassmorphism .dark\:bg-slate-900 {
+  background: rgba(15, 23, 42, 0.6) !important;
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+}
+
+.theme-glassmorphism .bg-white {
+  background: rgba(30, 41, 59, 0.75) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* Cards and containers with glass effect */
+.theme-glassmorphism [class*="rounded"],
+.theme-glassmorphism [class*="card"],
+.theme-glassmorphism .linknest-tile {
+  background: rgba(30, 41, 59, 0.6) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(148, 163, 184, 0.2) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.theme-glassmorphism .linknest-tile:hover {
+  background: rgba(51, 65, 85, 0.7) !important;
+  border-color: rgba(6, 182, 212, 0.4) !important;
+  box-shadow: 0 12px 40px 0 rgba(6, 182, 212, 0.2);
+  transform: translateY(-2px);
+  transition: all 0.3s ease;
+}
+
+/* Navigation glass effect */
+.theme-glassmorphism nav {
+  background: rgba(30, 41, 59, 0.8) !important;
+  backdrop-filter: blur(25px) saturate(180%);
+  -webkit-backdrop-filter: blur(25px) saturate(180%);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2) !important;
+  box-shadow: 0 4px 24px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* Buttons with glass effect */
+.theme-glassmorphism button:not(.bg-brand-600):not(.bg-blue-600):not(.bg-red-500):not(.bg-green-500) {
+  background: rgba(51, 65, 85, 0.5) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-color: rgba(148, 163, 184, 0.3) !important;
+}
+
+.theme-glassmorphism button:hover:not(.bg-brand-600):not(.bg-blue-600):not(.bg-red-500):not(.bg-green-500) {
+  background: rgba(71, 85, 105, 0.6) !important;
+  border-color: rgba(6, 182, 212, 0.4) !important;
+}
+
+/* Text colors for glassmorphism */
+.theme-glassmorphism .text-slate-900,
+.theme-glassmorphism .dark\:text-white {
+  color: #e2e8f0 !important;
+}
+
+.theme-glassmorphism .text-slate-600,
+.theme-glassmorphism .dark\:text-slate-400 {
+  color: #cbd5e1 !important;
+}
+
+.theme-glassmorphism .text-slate-500,
+.theme-glassmorphism .dark\:text-slate-500 {
+  color: #94a3b8 !important;
+}
+
+/* Brand colors with cyan accent for glassmorphism */
+.theme-glassmorphism .bg-brand-500,
+.theme-glassmorphism .bg-brand-600 {
+  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%) !important;
+}
+
+.theme-glassmorphism .text-brand-500,
+.theme-glassmorphism .text-brand-600 {
+  color: #06b6d4 !important;
+}
+
+.theme-glassmorphism .border-brand-500,
+.theme-glassmorphism .border-brand-600 {
+  border-color: #06b6d4 !important;
+}
+
+/* Modern Theme */
+.theme-modern {
+  --theme-primary: #1a1a2e;
+  --theme-secondary: #16213e;
+  --theme-tertiary: #0f3460;
+  --theme-accent: #533483;
+}
+
+.theme-modern .linknest-app-container {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  background-attachment: fixed;
+}
+
+/* Classic Theme */
+.theme-classic {
+  --theme-primary: #1f2937;
+  --theme-secondary: #374151;
+  --theme-tertiary: #4b5563;
+}
+
+.theme-classic .linknest-app-container {
+  background: linear-gradient(to bottom, #1f2937 0%, #374151 100%);
+}
+
+/* Minimal Theme */
+.theme-minimal {
+  --theme-primary: #ffffff;
+  --theme-secondary: #f3f4f6;
+  --theme-tertiary: #e5e7eb;
+}
+
+.theme-minimal .linknest-app-container {
+  background: #ffffff;
+}
+
+.theme-minimal.dark .linknest-app-container {
+  background: #0f172a;
+}
+
+/* Default Theme (existing styles) */
+.theme-default {
+  /* Uses existing dark/light mode styles */
+}
+
+/* ========================================
+   NEW GLASSMORPHISM THEMES
+   ======================================== */
+
+/* Ocean Blue Theme */
+.theme-ocean-blue {
+  --theme-primary: #0c4a6e;
+  --theme-secondary: #075985;
+  --theme-tertiary: #0369a1;
+  --theme-accent: #0ea5e9;
+}
+
+.theme-ocean-blue .linknest-app-container {
+  background: linear-gradient(135deg, #0c4a6e 0%, #075985 50%, #0c4a6e 100%);
+  background-attachment: fixed;
+}
+
+.theme-ocean-blue .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(14, 165, 233, 0.2) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(6, 182, 212, 0.1) 0%, transparent 50%);
+}
+
+.theme-ocean-blue nav,
+.theme-ocean-blue .bg-white,
+.theme-ocean-blue .dark\:bg-slate-800,
+.theme-ocean-blue .dark\:bg-slate-900 {
+  background: rgba(7, 89, 133, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-color: rgba(56, 189, 248, 0.25) !important;
+}
+
+.theme-ocean-blue [class*="rounded"],
+.theme-ocean-blue .linknest-tile {
+  background: rgba(7, 89, 133, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(56, 189, 248, 0.25) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+}
+
+.theme-ocean-blue .linknest-tile:hover {
+  background: rgba(3, 105, 161, 0.75) !important;
+  border-color: rgba(14, 165, 233, 0.5) !important;
+  box-shadow: 0 12px 40px 0 rgba(14, 165, 233, 0.3);
+}
+
+.theme-ocean-blue .bg-brand-500,
+.theme-ocean-blue .bg-brand-600 {
+  background: linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%) !important;
+}
+
+.theme-ocean-blue .text-brand-500,
+.theme-ocean-blue .text-brand-600 {
+  color: #0ea5e9 !important;
+}
+
+/* Forest Green Theme */
+.theme-forest-green {
+  --theme-primary: #14532d;
+  --theme-secondary: #166534;
+  --theme-tertiary: #15803d;
+  --theme-accent: #22c55e;
+}
+
+.theme-forest-green .linknest-app-container {
+  background: linear-gradient(135deg, #14532d 0%, #166534 50%, #14532d 100%);
+  background-attachment: fixed;
+}
+
+.theme-forest-green .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(34, 197, 94, 0.2) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(74, 222, 128, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(16, 185, 129, 0.1) 0%, transparent 50%);
+}
+
+.theme-forest-green nav,
+.theme-forest-green .bg-white,
+.theme-forest-green .dark\:bg-slate-800 {
+  background: rgba(22, 101, 52, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-color: rgba(34, 197, 94, 0.25) !important;
+}
+
+.theme-forest-green [class*="rounded"],
+.theme-forest-green .linknest-tile {
+  background: rgba(22, 101, 52, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(34, 197, 94, 0.25) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+}
+
+.theme-forest-green .linknest-tile:hover {
+  background: rgba(21, 128, 61, 0.75) !important;
+  border-color: rgba(34, 197, 94, 0.5) !important;
+  box-shadow: 0 12px 40px 0 rgba(34, 197, 94, 0.3);
+}
+
+.theme-forest-green .bg-brand-500,
+.theme-forest-green .bg-brand-600 {
+  background: linear-gradient(135deg, #22c55e 0%, #4ade80 100%) !important;
+}
+
+/* Cyan Mist Theme */
+.theme-cyan-mist {
+  --theme-primary: #155e75;
+  --theme-secondary: #0891b2;
+  --theme-tertiary: #06b6d4;
+  --theme-accent: #67e8f9;
+}
+
+.theme-cyan-mist .linknest-app-container {
+  background: linear-gradient(135deg, #155e75 0%, #0891b2 50%, #155e75 100%);
+  background-attachment: fixed;
+}
+
+.theme-cyan-mist .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(103, 232, 249, 0.25) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(6, 182, 212, 0.2) 0%, transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(8, 145, 178, 0.15) 0%, transparent 50%);
+}
+
+.theme-cyan-mist nav,
+.theme-cyan-mist .bg-white,
+.theme-cyan-mist .dark\:bg-slate-800 {
+  background: rgba(8, 145, 178, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-color: rgba(103, 232, 249, 0.3) !important;
+}
+
+.theme-cyan-mist [class*="rounded"],
+.theme-cyan-mist .linknest-tile {
+  background: rgba(8, 145, 178, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(103, 232, 249, 0.3) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+}
+
+.theme-cyan-mist .linknest-tile:hover {
+  background: rgba(6, 182, 212, 0.75) !important;
+  border-color: rgba(103, 232, 249, 0.5) !important;
+  box-shadow: 0 12px 40px 0 rgba(103, 232, 249, 0.3);
+}
+
+.theme-cyan-mist .bg-brand-500 {
+  background: linear-gradient(135deg, #06b6d4 0%, #67e8f9 100%) !important;
+}
+
+/* Emerald Glass Theme */
+.theme-emerald-glass {
+  --theme-primary: #064e3b;
+  --theme-secondary: #047857;
+  --theme-tertiary: #059669;
+  --theme-accent: #10b981;
+}
+
+.theme-emerald-glass .linknest-app-container {
+  background: linear-gradient(135deg, #064e3b 0%, #047857 50%, #064e3b 100%);
+  background-attachment: fixed;
+}
+
+.theme-emerald-glass .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(16, 185, 129, 0.2) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(52, 211, 153, 0.15) 0%, transparent 50%);
+}
+
+.theme-emerald-glass nav,
+.theme-emerald-glass .bg-white,
+.theme-emerald-glass .dark\:bg-slate-800 {
+  background: rgba(4, 120, 87, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-color: rgba(16, 185, 129, 0.25) !important;
+}
+
+.theme-emerald-glass [class*="rounded"],
+.theme-emerald-glass .linknest-tile {
+  background: rgba(4, 120, 87, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(16, 185, 129, 0.25) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+}
+
+.theme-emerald-glass .linknest-tile:hover {
+  background: rgba(5, 150, 105, 0.75) !important;
+  border-color: rgba(16, 185, 129, 0.5) !important;
+  box-shadow: 0 12px 40px 0 rgba(16, 185, 129, 0.3);
+}
+
+.theme-emerald-glass .bg-brand-500 {
+  background: linear-gradient(135deg, #10b981 0%, #34d399 100%) !important;
+}
+
+/* Azure Sky Theme */
+.theme-azure-sky {
+  --theme-primary: #1e40af;
+  --theme-secondary: #2563eb;
+  --theme-tertiary: #3b82f6;
+  --theme-accent: #60a5fa;
+}
+
+.theme-azure-sky .linknest-app-container {
+  background: linear-gradient(135deg, #1e40af 0%, #2563eb 50%, #1e40af 100%);
+  background-attachment: fixed;
+}
+
+.theme-azure-sky .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(96, 165, 250, 0.25) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(59, 130, 246, 0.2) 0%, transparent 50%);
+}
+
+.theme-azure-sky nav,
+.theme-azure-sky .bg-white,
+.theme-azure-sky .dark\:bg-slate-800 {
+  background: rgba(37, 99, 235, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-color: rgba(96, 165, 250, 0.3) !important;
+}
+
+.theme-azure-sky [class*="rounded"],
+.theme-azure-sky .linknest-tile {
+  background: rgba(37, 99, 235, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(96, 165, 250, 0.3) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+}
+
+.theme-azure-sky .linknest-tile:hover {
+  background: rgba(59, 130, 246, 0.75) !important;
+  border-color: rgba(96, 165, 250, 0.5) !important;
+  box-shadow: 0 12px 40px 0 rgba(96, 165, 250, 0.3);
+}
+
+.theme-azure-sky .bg-brand-500 {
+  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%) !important;
+}
+
+/* Teal Waves Theme */
+.theme-teal-waves {
+  --theme-primary: #134e4a;
+  --theme-secondary: #0f766e;
+  --theme-tertiary: #14b8a6;
+  --theme-accent: #5eead4;
+}
+
+.theme-teal-waves .linknest-app-container {
+  background: linear-gradient(135deg, #134e4a 0%, #0f766e 50%, #134e4a 100%);
+  background-attachment: fixed;
+}
+
+.theme-teal-waves .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(94, 234, 212, 0.25) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(20, 184, 166, 0.2) 0%, transparent 50%);
+}
+
+.theme-teal-waves nav,
+.theme-teal-waves .bg-white,
+.theme-teal-waves .dark\:bg-slate-800 {
+  background: rgba(15, 118, 110, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-color: rgba(94, 234, 212, 0.3) !important;
+}
+
+.theme-teal-waves [class*="rounded"],
+.theme-teal-waves .linknest-tile {
+  background: rgba(15, 118, 110, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(94, 234, 212, 0.3) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+}
+
+.theme-teal-waves .linknest-tile:hover {
+  background: rgba(20, 184, 166, 0.75) !important;
+  border-color: rgba(94, 234, 212, 0.5) !important;
+  box-shadow: 0 12px 40px 0 rgba(94, 234, 212, 0.3);
+}
+
+.theme-teal-waves .bg-brand-500 {
+  background: linear-gradient(135deg, #14b8a6 0%, #5eead4 100%) !important;
+}
+
+/* Mint Frost Theme */
+.theme-mint-frost {
+  --theme-primary: #065f46;
+  --theme-secondary: #047857;
+  --theme-tertiary: #10b981;
+  --theme-accent: #6ee7b7;
+}
+
+.theme-mint-frost .linknest-app-container {
+  background: linear-gradient(135deg, #065f46 0%, #047857 50%, #065f46 100%);
+  background-attachment: fixed;
+}
+
+.theme-mint-frost .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(110, 231, 183, 0.2) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(16, 185, 129, 0.15) 0%, transparent 50%);
+}
+
+.theme-mint-frost nav,
+.theme-mint-frost .bg-white,
+.theme-mint-frost .dark\:bg-slate-800 {
+  background: rgba(4, 120, 87, 0.75) !important;
+  backdrop-filter: blur(25px) saturate(180%);
+  -webkit-backdrop-filter: blur(25px) saturate(180%);
+  border-color: rgba(110, 231, 183, 0.25) !important;
+}
+
+.theme-mint-frost [class*="rounded"],
+.theme-mint-frost .linknest-tile {
+  background: rgba(4, 120, 87, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(110, 231, 183, 0.25) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+}
+
+.theme-mint-frost .linknest-tile:hover {
+  background: rgba(16, 185, 129, 0.75) !important;
+  border-color: rgba(110, 231, 183, 0.5) !important;
+  box-shadow: 0 12px 40px 0 rgba(110, 231, 183, 0.3);
+}
+
+.theme-mint-frost .bg-brand-500 {
+  background: linear-gradient(135deg, #10b981 0%, #6ee7b7 100%) !important;
+}
+
+/* Sapphire Night Theme */
+.theme-sapphire-night {
+  --theme-primary: #1e3a8a;
+  --theme-secondary: #1e40af;
+  --theme-tertiary: #2563eb;
+  --theme-accent: #3b82f6;
+}
+
+.theme-sapphire-night .linknest-app-container {
+  background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #1e3a8a 100%);
+  background-attachment: fixed;
+}
+
+.theme-sapphire-night .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(59, 130, 246, 0.2) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(37, 99, 235, 0.15) 0%, transparent 50%);
+}
+
+.theme-sapphire-night nav,
+.theme-sapphire-night .bg-white,
+.theme-sapphire-night .dark\:bg-slate-800 {
+  background: rgba(30, 64, 175, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-color: rgba(59, 130, 246, 0.25) !important;
+}
+
+.theme-sapphire-night [class*="rounded"],
+.theme-sapphire-night .linknest-tile {
+  background: rgba(30, 64, 175, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(59, 130, 246, 0.25) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45);
+}
+
+.theme-sapphire-night .linknest-tile:hover {
+  background: rgba(37, 99, 235, 0.75) !important;
+  border-color: rgba(59, 130, 246, 0.5) !important;
+  box-shadow: 0 12px 40px 0 rgba(59, 130, 246, 0.3);
+}
+
+.theme-sapphire-night .bg-brand-500 {
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%) !important;
+}
+
+/* Aqua Marine Theme */
+.theme-aqua-marine {
+  --theme-primary: #164e63;
+  --theme-secondary: #0e7490;
+  --theme-tertiary: #06b6d4;
+  --theme-accent: #22d3ee;
+}
+
+.theme-aqua-marine .linknest-app-container {
+  background: linear-gradient(135deg, #164e63 0%, #0e7490 50%, #164e63 100%);
+  background-attachment: fixed;
+}
+
+.theme-aqua-marine .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(34, 211, 238, 0.25) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(6, 182, 212, 0.2) 0%, transparent 50%);
+}
+
+.theme-aqua-marine nav,
+.theme-aqua-marine .bg-white,
+.theme-aqua-marine .dark\:bg-slate-800 {
+  background: rgba(14, 116, 144, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-color: rgba(34, 211, 238, 0.3) !important;
+}
+
+.theme-aqua-marine [class*="rounded"],
+.theme-aqua-marine .linknest-tile {
+  background: rgba(14, 116, 144, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(34, 211, 238, 0.3) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+}
+
+.theme-aqua-marine .linknest-tile:hover {
+  background: rgba(6, 182, 212, 0.75) !important;
+  border-color: rgba(34, 211, 238, 0.5) !important;
+  box-shadow: 0 12px 40px 0 rgba(34, 211, 238, 0.3);
+}
+
+.theme-aqua-marine .bg-brand-500 {
+  background: linear-gradient(135deg, #06b6d4 0%, #22d3ee 100%) !important;
+}
+
+/* Jade Shimmer Theme */
+.theme-jade-shimmer {
+  --theme-primary: #064e3b;
+  --theme-secondary: #047857;
+  --theme-tertiary: #34d399;
+  --theme-accent: #6ee7b7;
+}
+
+.theme-jade-shimmer .linknest-app-container {
+  background: linear-gradient(135deg, #064e3b 0%, #047857 50%, #064e3b 100%);
+  background-attachment: fixed;
+}
+
+.theme-jade-shimmer .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(52, 211, 153, 0.25) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(110, 231, 183, 0.2) 0%, transparent 50%);
+}
+
+.theme-jade-shimmer nav,
+.theme-jade-shimmer .bg-white,
+.theme-jade-shimmer .dark\:bg-slate-800 {
+  background: rgba(4, 120, 87, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-color: rgba(52, 211, 153, 0.3) !important;
+}
+
+.theme-jade-shimmer [class*="rounded"],
+.theme-jade-shimmer .linknest-tile {
+  background: rgba(4, 120, 87, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(52, 211, 153, 0.3) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+}
+
+.theme-jade-shimmer .linknest-tile:hover {
+  background: rgba(52, 211, 153, 0.75) !important;
+  border-color: rgba(110, 231, 183, 0.5) !important;
+  box-shadow: 0 12px 40px 0 rgba(52, 211, 153, 0.3);
+}
+
+.theme-jade-shimmer .bg-brand-500 {
+  background: linear-gradient(135deg, #34d399 0%, #6ee7b7 100%) !important;
+}
+
+/* Arctic Ice Theme */
+.theme-arctic-ice {
+  --theme-primary: #0c4a6e;
+  --theme-secondary: #075985;
+  --theme-tertiary: #0ea5e9;
+  --theme-accent: #7dd3fc;
+}
+
+.theme-arctic-ice .linknest-app-container {
+  background: linear-gradient(135deg, #0c4a6e 0%, #075985 50%, #0c4a6e 100%);
+  background-attachment: fixed;
+}
+
+.theme-arctic-ice .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(125, 211, 252, 0.25) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(14, 165, 233, 0.2) 0%, transparent 50%);
+}
+
+.theme-arctic-ice nav,
+.theme-arctic-ice .bg-white,
+.theme-arctic-ice .dark\:bg-slate-800 {
+  background: rgba(7, 89, 133, 0.75) !important;
+  backdrop-filter: blur(25px) saturate(180%);
+  -webkit-backdrop-filter: blur(25px) saturate(180%);
+  border-color: rgba(125, 211, 252, 0.3) !important;
+}
+
+.theme-arctic-ice [class*="rounded"],
+.theme-arctic-ice .linknest-tile {
+  background: rgba(7, 89, 133, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(125, 211, 252, 0.3) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+}
+
+.theme-arctic-ice .linknest-tile:hover {
+  background: rgba(14, 165, 233, 0.75) !important;
+  border-color: rgba(125, 211, 252, 0.5) !important;
+  box-shadow: 0 12px 40px 0 rgba(125, 211, 252, 0.3);
+}
+
+.theme-arctic-ice .bg-brand-500 {
+  background: linear-gradient(135deg, #0ea5e9 0%, #7dd3fc 100%) !important;
+}
+
+/* Tropical Lagoon Theme */
+.theme-tropical-lagoon {
+  --theme-primary: #155e75;
+  --theme-secondary: #0891b2;
+  --theme-tertiary: #22d3ee;
+  --theme-accent: #67e8f9;
+}
+
+.theme-tropical-lagoon .linknest-app-container {
+  background: linear-gradient(135deg, #155e75 0%, #0891b2 50%, #155e75 100%);
+  background-attachment: fixed;
+}
+
+.theme-tropical-lagoon .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(34, 211, 238, 0.3) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(103, 232, 249, 0.25) 0%, transparent 50%);
+}
+
+.theme-tropical-lagoon nav,
+.theme-tropical-lagoon .bg-white,
+.theme-tropical-lagoon .dark\:bg-slate-800 {
+  background: rgba(8, 145, 178, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-color: rgba(34, 211, 238, 0.3) !important;
+}
+
+.theme-tropical-lagoon [class*="rounded"],
+.theme-tropical-lagoon .linknest-tile {
+  background: rgba(8, 145, 178, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(34, 211, 238, 0.3) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+}
+
+.theme-tropical-lagoon .linknest-tile:hover {
+  background: rgba(34, 211, 238, 0.75) !important;
+  border-color: rgba(103, 232, 249, 0.5) !important;
+  box-shadow: 0 12px 40px 0 rgba(34, 211, 238, 0.3);
+}
+
+.theme-tropical-lagoon .bg-brand-500 {
+  background: linear-gradient(135deg, #22d3ee 0%, #67e8f9 100%) !important;
+}
+
+/* Deep Sea Theme */
+.theme-deep-sea {
+  --theme-primary: #0c1222;
+  --theme-secondary: #1e3a5f;
+  --theme-tertiary: #3b82f6;
+  --theme-accent: #60a5fa;
+}
+
+.theme-deep-sea .linknest-app-container {
+  background: linear-gradient(135deg, #0c1222 0%, #1e3a5f 50%, #0c1222 100%);
+  background-attachment: fixed;
+}
+
+.theme-deep-sea .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(96, 165, 250, 0.1) 0%, transparent 50%);
+}
+
+.theme-deep-sea nav,
+.theme-deep-sea .bg-white,
+.theme-deep-sea .dark\:bg-slate-800 {
+  background: rgba(30, 58, 95, 0.8) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-color: rgba(59, 130, 246, 0.25) !important;
+}
+
+.theme-deep-sea [class*="rounded"],
+.theme-deep-sea .linknest-tile {
+  background: rgba(30, 58, 95, 0.7) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(59, 130, 246, 0.25) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+}
+
+.theme-deep-sea .linknest-tile:hover {
+  background: rgba(59, 130, 246, 0.75) !important;
+  border-color: rgba(96, 165, 250, 0.5) !important;
+  box-shadow: 0 12px 40px 0 rgba(59, 130, 246, 0.3);
+}
+
+.theme-deep-sea .bg-brand-500 {
+  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%) !important;
+}
+
+/* Neon Cyan Theme */
+.theme-neon-cyan {
+  --theme-primary: #164e63;
+  --theme-secondary: #0891b2;
+  --theme-tertiary: #67e8f9;
+  --theme-accent: #a5f3fc;
+}
+
+.theme-neon-cyan .linknest-app-container {
+  background: linear-gradient(135deg, #164e63 0%, #0891b2 50%, #164e63 100%);
+  background-attachment: fixed;
+}
+
+.theme-neon-cyan .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(103, 232, 249, 0.3) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(165, 243, 252, 0.25) 0%, transparent 50%);
+}
+
+.theme-neon-cyan nav,
+.theme-neon-cyan .bg-white,
+.theme-neon-cyan .dark\:bg-slate-800 {
+  background: rgba(8, 145, 178, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-color: rgba(103, 232, 249, 0.35) !important;
+}
+
+.theme-neon-cyan [class*="rounded"],
+.theme-neon-cyan .linknest-tile {
+  background: rgba(8, 145, 178, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(103, 232, 249, 0.35) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4), 0 0 20px rgba(103, 232, 249, 0.2);
+}
+
+.theme-neon-cyan .linknest-tile:hover {
+  background: rgba(103, 232, 249, 0.75) !important;
+  border-color: rgba(165, 243, 252, 0.6) !important;
+  box-shadow: 0 12px 40px 0 rgba(103, 232, 249, 0.4), 0 0 30px rgba(103, 232, 249, 0.3);
+}
+
+.theme-neon-cyan .bg-brand-500 {
+  background: linear-gradient(135deg, #67e8f9 0%, #a5f3fc 100%) !important;
+}
+
+/* Pastel Blue Theme */
+.theme-pastel-blue {
+  --theme-primary: #3b82f6;
+  --theme-secondary: #60a5fa;
+  --theme-tertiary: #93c5fd;
+  --theme-accent: #bfdbfe;
+}
+
+.theme-pastel-blue .linknest-app-container {
+  background: linear-gradient(135deg, #1e40af 0%, #3b82f6 50%, #1e40af 100%);
+  background-attachment: fixed;
+}
+
+.theme-pastel-blue .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(191, 219, 254, 0.3) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(147, 197, 253, 0.25) 0%, transparent 50%);
+}
+
+.theme-pastel-blue nav,
+.theme-pastel-blue .bg-white,
+.theme-pastel-blue .dark\:bg-slate-800 {
+  background: rgba(96, 165, 250, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-color: rgba(191, 219, 254, 0.3) !important;
+}
+
+.theme-pastel-blue [class*="rounded"],
+.theme-pastel-blue .linknest-tile {
+  background: rgba(96, 165, 250, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(191, 219, 254, 0.3) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+}
+
+.theme-pastel-blue .linknest-tile:hover {
+  background: rgba(147, 197, 253, 0.75) !important;
+  border-color: rgba(191, 219, 254, 0.5) !important;
+  box-shadow: 0 12px 40px 0 rgba(191, 219, 254, 0.3);
+}
+
+.theme-pastel-blue .bg-brand-500 {
+  background: linear-gradient(135deg, #93c5fd 0%, #bfdbfe 100%) !important;
+}
+
+/* Sea Foam Theme */
+.theme-sea-foam {
+  --theme-primary: #047857;
+  --theme-secondary: #10b981;
+  --theme-tertiary: #6ee7b7;
+  --theme-accent: #a7f3d0;
+}
+
+.theme-sea-foam .linknest-app-container {
+  background: linear-gradient(135deg, #047857 0%, #10b981 50%, #047857 100%);
+  background-attachment: fixed;
+}
+
+.theme-sea-foam .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(110, 231, 183, 0.25) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(167, 243, 208, 0.2) 0%, transparent 50%);
+}
+
+.theme-sea-foam nav,
+.theme-sea-foam .bg-white,
+.theme-sea-foam .dark\:bg-slate-800 {
+  background: rgba(16, 185, 129, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-color: rgba(110, 231, 183, 0.3) !important;
+}
+
+.theme-sea-foam [class*="rounded"],
+.theme-sea-foam .linknest-tile {
+  background: rgba(16, 185, 129, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(110, 231, 183, 0.3) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+}
+
+.theme-sea-foam .linknest-tile:hover {
+  background: rgba(110, 231, 183, 0.75) !important;
+  border-color: rgba(167, 243, 208, 0.5) !important;
+  box-shadow: 0 12px 40px 0 rgba(110, 231, 183, 0.3);
+}
+
+.theme-sea-foam .bg-brand-500 {
+  background: linear-gradient(135deg, #6ee7b7 0%, #a7f3d0 100%) !important;
+}
+
+/* Glacier Theme */
+.theme-glacier {
+  --theme-primary: #0e7490;
+  --theme-secondary: #06b6d4;
+  --theme-tertiary: #67e8f9;
+  --theme-accent: #cffafe;
+}
+
+.theme-glacier .linknest-app-container {
+  background: linear-gradient(135deg, #0e7490 0%, #06b6d4 50%, #0e7490 100%);
+  background-attachment: fixed;
+}
+
+.theme-glacier .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(103, 232, 249, 0.25) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(207, 250, 254, 0.2) 0%, transparent 50%);
+}
+
+.theme-glacier nav,
+.theme-glacier .bg-white,
+.theme-glacier .dark\:bg-slate-800 {
+  background: rgba(6, 182, 212, 0.75) !important;
+  backdrop-filter: blur(25px) saturate(180%);
+  -webkit-backdrop-filter: blur(25px) saturate(180%);
+  border-color: rgba(103, 232, 249, 0.3) !important;
+}
+
+.theme-glacier [class*="rounded"],
+.theme-glacier .linknest-tile {
+  background: rgba(6, 182, 212, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(103, 232, 249, 0.3) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+}
+
+.theme-glacier .linknest-tile:hover {
+  background: rgba(103, 232, 249, 0.75) !important;
+  border-color: rgba(207, 250, 254, 0.5) !important;
+  box-shadow: 0 12px 40px 0 rgba(103, 232, 249, 0.3);
+}
+
+.theme-glacier .bg-brand-500 {
+  background: linear-gradient(135deg, #67e8f9 0%, #cffafe 100%) !important;
+}
+
+/* Pacific Blue Theme */
+.theme-pacific-blue {
+  --theme-primary: #1e40af;
+  --theme-secondary: #2563eb;
+  --theme-tertiary: #60a5fa;
+  --theme-accent: #93c5fd;
+}
+
+.theme-pacific-blue .linknest-app-container {
+  background: linear-gradient(135deg, #1e40af 0%, #2563eb 50%, #1e40af 100%);
+  background-attachment: fixed;
+}
+
+.theme-pacific-blue .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(96, 165, 250, 0.25) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(147, 197, 253, 0.2) 0%, transparent 50%);
+}
+
+.theme-pacific-blue nav,
+.theme-pacific-blue .bg-white,
+.theme-pacific-blue .dark\:bg-slate-800 {
+  background: rgba(37, 99, 235, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-color: rgba(96, 165, 250, 0.3) !important;
+}
+
+.theme-pacific-blue [class*="rounded"],
+.theme-pacific-blue .linknest-tile {
+  background: rgba(37, 99, 235, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(96, 165, 250, 0.3) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+}
+
+.theme-pacific-blue .linknest-tile:hover {
+  background: rgba(96, 165, 250, 0.75) !important;
+  border-color: rgba(147, 197, 253, 0.5) !important;
+  box-shadow: 0 12px 40px 0 rgba(96, 165, 250, 0.3);
+}
+
+.theme-pacific-blue .bg-brand-500 {
+  background: linear-gradient(135deg, #60a5fa 0%, #93c5fd 100%) !important;
+}
+
+/* Mint Glass Theme */
+.theme-mint-glass {
+  --theme-primary: #065f46;
+  --theme-secondary: #10b981;
+  --theme-tertiary: #6ee7b7;
+  --theme-accent: #a7f3d0;
+}
+
+.theme-mint-glass .linknest-app-container {
+  background: linear-gradient(135deg, #065f46 0%, #10b981 50%, #065f46 100%);
+  background-attachment: fixed;
+}
+
+.theme-mint-glass .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(110, 231, 183, 0.25) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(167, 243, 208, 0.2) 0%, transparent 50%);
+}
+
+.theme-mint-glass nav,
+.theme-mint-glass .bg-white,
+.theme-mint-glass .dark\:bg-slate-800 {
+  background: rgba(16, 185, 129, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-color: rgba(110, 231, 183, 0.3) !important;
+}
+
+.theme-mint-glass [class*="rounded"],
+.theme-mint-glass .linknest-tile {
+  background: rgba(16, 185, 129, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(110, 231, 183, 0.3) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+}
+
+.theme-mint-glass .linknest-tile:hover {
+  background: rgba(110, 231, 183, 0.75) !important;
+  border-color: rgba(167, 243, 208, 0.5) !important;
+  box-shadow: 0 12px 40px 0 rgba(110, 231, 183, 0.3);
+}
+
+.theme-mint-glass .bg-brand-500 {
+  background: linear-gradient(135deg, #6ee7b7 0%, #a7f3d0 100%) !important;
+}
+
+/* Turquoise Dream Theme */
+.theme-turquoise-dream {
+  --theme-primary: #0f766e;
+  --theme-secondary: #14b8a6;
+  --theme-tertiary: #5eead4;
+  --theme-accent: #99f6e4;
+}
+
+.theme-turquoise-dream .linknest-app-container {
+  background: linear-gradient(135deg, #0f766e 0%, #14b8a6 50%, #0f766e 100%);
+  background-attachment: fixed;
+}
+
+.theme-turquoise-dream .linknest-app-container::before {
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(94, 234, 212, 0.3) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(153, 246, 228, 0.25) 0%, transparent 50%);
+}
+
+.theme-turquoise-dream nav,
+.theme-turquoise-dream .bg-white,
+.theme-turquoise-dream .dark\:bg-slate-800 {
+  background: rgba(20, 184, 166, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-color: rgba(94, 234, 212, 0.3) !important;
+}
+
+.theme-turquoise-dream [class*="rounded"],
+.theme-turquoise-dream .linknest-tile {
+  background: rgba(20, 184, 166, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(94, 234, 212, 0.3) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+}
+
+.theme-turquoise-dream .linknest-tile:hover {
+  background: rgba(94, 234, 212, 0.75) !important;
+  border-color: rgba(153, 246, 228, 0.5) !important;
+  box-shadow: 0 12px 40px 0 rgba(94, 234, 212, 0.3);
+}
+
+.theme-turquoise-dream .bg-brand-500 {
+  background: linear-gradient(135deg, #5eead4 0%, #99f6e4 100%) !important;
+}
+
+/* Common text colors for all new themes */
+.theme-ocean-blue .text-slate-900,
+.theme-forest-green .text-slate-900,
+.theme-cyan-mist .text-slate-900,
+.theme-emerald-glass .text-slate-900,
+.theme-azure-sky .text-slate-900,
+.theme-teal-waves .text-slate-900,
+.theme-mint-frost .text-slate-900,
+.theme-sapphire-night .text-slate-900,
+.theme-aqua-marine .text-slate-900,
+.theme-jade-shimmer .text-slate-900,
+.theme-arctic-ice .text-slate-900,
+.theme-tropical-lagoon .text-slate-900,
+.theme-deep-sea .text-slate-900,
+.theme-neon-cyan .text-slate-900,
+.theme-pastel-blue .text-slate-900,
+.theme-sea-foam .text-slate-900,
+.theme-glacier .text-slate-900,
+.theme-pacific-blue .text-slate-900,
+.theme-mint-glass .text-slate-900,
+.theme-turquoise-dream .text-slate-900,
+.theme-ocean-blue .dark\:text-white,
+.theme-forest-green .dark\:text-white,
+.theme-cyan-mist .dark\:text-white,
+.theme-emerald-glass .dark\:text-white,
+.theme-azure-sky .dark\:text-white,
+.theme-teal-waves .dark\:text-white,
+.theme-mint-frost .dark\:text-white,
+.theme-sapphire-night .dark\:text-white,
+.theme-aqua-marine .dark\:text-white,
+.theme-jade-shimmer .dark\:text-white,
+.theme-arctic-ice .dark\:text-white,
+.theme-tropical-lagoon .dark\:text-white,
+.theme-deep-sea .dark\:text-white,
+.theme-neon-cyan .dark\:text-white,
+.theme-pastel-blue .dark\:text-white,
+.theme-sea-foam .dark\:text-white,
+.theme-glacier .dark\:text-white,
+.theme-pacific-blue .dark\:text-white,
+.theme-mint-glass .dark\:text-white,
+.theme-turquoise-dream .dark\:text-white {
+  color: #e2e8f0 !important;
+}
+
+.theme-ocean-blue .text-slate-600,
+.theme-forest-green .text-slate-600,
+.theme-cyan-mist .text-slate-600,
+.theme-emerald-glass .text-slate-600,
+.theme-azure-sky .text-slate-600,
+.theme-teal-waves .text-slate-600,
+.theme-mint-frost .text-slate-600,
+.theme-sapphire-night .text-slate-600,
+.theme-aqua-marine .text-slate-600,
+.theme-jade-shimmer .text-slate-600,
+.theme-arctic-ice .text-slate-600,
+.theme-tropical-lagoon .text-slate-600,
+.theme-deep-sea .text-slate-600,
+.theme-neon-cyan .text-slate-600,
+.theme-pastel-blue .text-slate-600,
+.theme-sea-foam .text-slate-600,
+.theme-glacier .text-slate-600,
+.theme-pacific-blue .text-slate-600,
+.theme-mint-glass .text-slate-600,
+.theme-turquoise-dream .text-slate-600,
+.theme-ocean-blue .dark\:text-slate-400,
+.theme-forest-green .dark\:text-slate-400,
+.theme-cyan-mist .dark\:text-slate-400,
+.theme-emerald-glass .dark\:text-slate-400,
+.theme-azure-sky .dark\:text-slate-400,
+.theme-teal-waves .dark\:text-slate-400,
+.theme-mint-frost .dark\:text-slate-400,
+.theme-sapphire-night .dark\:text-slate-400,
+.theme-aqua-marine .dark\:text-slate-400,
+.theme-jade-shimmer .dark\:text-slate-400,
+.theme-arctic-ice .dark\:text-slate-400,
+.theme-tropical-lagoon .dark\:text-slate-400,
+.theme-deep-sea .dark\:text-slate-400,
+.theme-neon-cyan .dark\:text-slate-400,
+.theme-pastel-blue .dark\:text-slate-400,
+.theme-sea-foam .dark\:text-slate-400,
+.theme-glacier .dark\:text-slate-400,
+.theme-pacific-blue .dark\:text-slate-400,
+.theme-mint-glass .dark\:text-slate-400,
+.theme-turquoise-dream .dark\:text-slate-400 {
+  color: #cbd5e1 !important;
 }
 
 /* Add padding when broadcast banner is visible */

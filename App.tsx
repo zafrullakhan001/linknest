@@ -26,6 +26,8 @@ import { BroadcastBanner } from './components/BroadcastBanner';
 import { MaintenancePage } from './components/MaintenancePage';
 import { FloatingPageZoomControl } from './components/FloatingPageZoomControl';
 import { PageZoomWidget } from './components/PageZoomControl';
+import { FloatingThemeWidget } from './components/FloatingThemeWidget';
+import { ThemeWidget } from './components/ThemeWidget';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -157,6 +159,23 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('linknest_show_zoom_control_widget', showZoomControl.toString());
   }, [showZoomControl]);
+
+  // Theme Widget Visibility State
+  const [showTheme, setShowTheme] = useState(() => {
+    const saved = localStorage.getItem('linknest_show_theme_widget');
+    return saved !== null ? saved === 'true' : false; // Default to hidden
+  });
+
+  useEffect(() => {
+    localStorage.setItem('linknest_show_theme_widget', showTheme.toString());
+  }, [showTheme]);
+
+  // Initialize theme service on mount
+  useEffect(() => {
+    import('./services/themeService').then(({ themeService }) => {
+      themeService.initialize();
+    });
+  }, []);
 
   // Theme State
   const [darkMode, setDarkMode] = useState(() => {
@@ -321,6 +340,10 @@ const AppContent: React.FC = () => {
 
   const toggleZoomControl = () => {
     setShowZoomControl(!showZoomControl);
+  };
+
+  const toggleThemeWidget = () => {
+    setShowTheme(!showTheme);
   };
 
   const handleTabClick = (tab: string) => {
@@ -703,6 +726,8 @@ const AppContent: React.FC = () => {
         togglePasswordGenerator={togglePasswordGenerator}
         showZoomControl={showZoomControl}
         toggleZoomControl={toggleZoomControl}
+        showTheme={showTheme}
+        toggleThemeWidget={toggleThemeWidget}
         user={user}
         onLoginClick={() => setAuthModalOpen(true)}
         onHelpClick={() => setHelpAboutOpen(true)}
@@ -930,6 +955,11 @@ const AppContent: React.FC = () => {
         <FloatingPageZoomControl onClose={toggleZoomControl}>
           <PageZoomWidget />
         </FloatingPageZoomControl>
+      )}
+      {showTheme && (
+        <FloatingThemeWidget onClose={toggleThemeWidget}>
+          <ThemeWidget onClose={toggleThemeWidget} />
+        </FloatingThemeWidget>
       )}
       <AuthModal
         isOpen={authModalOpen}
