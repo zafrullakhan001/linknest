@@ -70,6 +70,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [processing, setProcessing] = useState<number | null>(null);
   const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(new Set());
   const [bulkProcessing, setBulkProcessing] = useState(false);
+  const [allUsersSearchTerm, setAllUsersSearchTerm] = useState('');
   const [resetPasswordModal, setResetPasswordModal] = useState<{ open: boolean; userId: number | null; username: string }>({ open: false, userId: null, username: '' });
   const [newPassword, setNewPassword] = useState('');
   const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
@@ -154,16 +155,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   // Access Manager state
   const [permissions, setPermissions] = useState<TilePermission[]>([]);
   const [permissionsLoading, setPermissionsLoading] = useState(false);
-  const [selectedTileId, setSelectedTileId] = useState<string | null>(null);
-  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
-  const [showPermissionModal, setShowPermissionModal] = useState(false);
-  const [permissionForm, setPermissionForm] = useState({
-    userId: 0,
-    tileId: '',
-    canView: true,
-    canEdit: false,
-    canDelete: false
-  });
+  const [accessSubTab, setAccessSubTab] = useState<'roles' | 'assign' | 'admins'>('roles');
 
   // Tile Admins state
   const [showTileAdminsModal, setShowTileAdminsModal] = useState(false);
@@ -338,9 +330,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       loadSpaces();
     }
     if (activeTab === 'access') {
-      loadPermissions();
       loadRoles();
       loadAllTilesAndLinks();
+      // Only load permissions if we're on the Tile Admins sub-tab
+      if (accessSubTab === 'admins') {
+        loadPermissions();
+      }
+    }
+    // Load permissions when viewing All Users tab to show tile admin badges
+    if (activeTab === 'all') {
+      loadPermissions();
+      // Load user roles for all users
+      if (allUsers.length > 0) {
+        loadUserRolesForBulk();
+      }
     }
     if (activeTab === 'clone') {
       loadClonesList();
@@ -405,6 +408,71 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   useEffect(() => {
     localStorage.setItem('adminPanelActiveTab', activeTab);
   }, [activeTab]);
+
+  // ESC key handler for Access Manager modals
+  useEffect(() => {
+    const handleEscKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' || event.keyCode === 27) {
+        // Close modals in priority order (most specific first)
+        if (showTileAdminsModal) {
+          setShowTileAdminsModal(false);
+          setSelectedTileIdsForAdmins(new Set());
+          setTileAdminsMap({});
+          setTileAdminTileSearchTerm('');
+          setTileAdminUserSearchTerm('');
+          setTileAdminsUsersLoaded(false);
+        } else if (showRoleTilesModal) {
+          setShowRoleTilesModal(false);
+          setSelectedRole(null);
+          setSelectedTileIds(new Set());
+          setSelectedLinkIds(new Set());
+          setSelectedTabIds(new Set());
+        } else if (showRoleTabsModal) {
+          setShowRoleTabsModal(false);
+          setSelectedRole(null);
+          setSelectedTabIds(new Set());
+        } else if (showBulkAssignModal) {
+          setShowBulkAssignModal(false);
+          setBulkSelectedUserIds([]);
+          setBulkSelectedRoleIds([]);
+          setBulkAssignMode('add');
+          setBulkUserSearchTerm('');
+          setBulkRoleSearchTerm('');
+        } else if (showUserRolesModal) {
+          setShowUserRolesModal(false);
+          setSelectedUserForRoles(null);
+          setUserSelectedRoleIds([]);
+        } else if (showRoleModal) {
+          setShowRoleModal(false);
+          setSelectedRole(null);
+          setRoleForm({ name: '', description: '' });
+        }
+      }
+    };
+
+    // Only attach listener when in Access Manager tab and a modal is open
+    if (activeTab === 'access' && (
+      showTileAdminsModal ||
+      showRoleModal ||
+      showRoleTilesModal ||
+      showRoleTabsModal ||
+      showUserRolesModal ||
+      showBulkAssignModal
+    )) {
+      window.addEventListener('keydown', handleEscKey);
+      return () => {
+        window.removeEventListener('keydown', handleEscKey);
+      };
+    }
+  }, [
+    activeTab,
+    showTileAdminsModal,
+    showRoleModal,
+    showRoleTilesModal,
+    showRoleTabsModal,
+    showUserRolesModal,
+    showBulkAssignModal
+  ]);
 
   // Persist tabLayout to localStorage whenever it changes
   useEffect(() => {
@@ -706,81 +774,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   };
 
-  const handleAddPermission = () => {
-    setPermissionForm({
-      userId: 0,
-      tileId: '',
-      canView: true,
-      canEdit: false,
-      canDelete: false
-    });
-    setShowPermissionModal(true);
-  };
-
-  const handleEditPermission = (perm: TilePermission) => {
-    setPermissionForm({
-      userId: perm.userId,
-      tileId: perm.tileId,
-      canView: perm.canView,
-      canEdit: perm.canEdit,
-      canDelete: perm.canDelete
-    });
-    setShowPermissionModal(true);
-  };
-
-  const handleSavePermission = async () => {
-    if (!permissionForm.userId || !permissionForm.tileId) {
-      setError('Please select both user and tile');
-      return;
-    }
-
-    try {
-      setError('');
-      // Check if this is an update (permission already exists)
-      const existingPerm = permissions.find(
-        p => p.userId === permissionForm.userId && p.tileId === permissionForm.tileId
-      );
-
-      if (existingPerm) {
-        // Update existing permission
-        await accessService.updatePermission(
-          permissionForm.userId,
-          permissionForm.tileId,
-          permissionForm.canView,
-          permissionForm.canEdit,
-          permissionForm.canDelete
-        );
-      } else {
-        // Create new permission
-        await accessService.setPermission(permissionForm);
-      }
-      setShowPermissionModal(false);
-      setPermissionForm({
-        userId: 0,
-        tileId: '',
-        canView: true,
-        canEdit: false,
-        canDelete: false
-      });
-      await loadPermissions();
-    } catch (err: any) {
-      setError(err.message || 'Failed to save permission');
-    }
-  };
-
-  const handleDeletePermission = async (userId: number, tileId: string) => {
-    if (!confirm('Are you sure you want to remove this permission?')) {
-      return;
-    }
-
-    try {
-      setError('');
-      await accessService.deletePermission(userId, tileId);
-      await loadPermissions();
-    } catch (err: any) {
-      setError(err.message || 'Failed to delete permission');
-    }
-  };
 
   // Tile Admins handlers
   const handleManageTileAdmins = async () => {
@@ -800,35 +793,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       // Set flag that users are loaded (state will update)
       setTileAdminsUsersLoaded(true);
       
-      // Load all permissions for all tiles
-      // Use getTiles() to get fresh data since state might not be updated yet
-      const currentTiles = await getTiles();
+      // Load all permissions for all tiles in a single batch call (much faster)
+      const batchPermissions = await accessService.getBatchPermissions();
       const permissionsMap: Record<string, TilePermission[]> = {};
       
+      // Process batch response and filter to only tile admins (canEdit = true)
+      for (const tilePerms of batchPermissions) {
+        const admins = tilePerms.permissions
+          .filter(perm => perm.canEdit)
+          .map(perm => ({
+            userId: perm.userId,
+            tileId: tilePerms.tileId,
+            canView: perm.canView,
+            canEdit: perm.canEdit,
+            canDelete: perm.canDelete,
+            createdAt: perm.createdAt,
+            updatedAt: perm.updatedAt,
+            username: perm.username,
+            email: perm.email,
+            tileTitle: tilePerms.tileTitle
+          }));
+        permissionsMap[tilePerms.tileId] = admins;
+      }
+      
+      // Ensure all tiles have an entry (even if empty)
+      const currentTiles = await getTiles();
       for (const tile of currentTiles) {
-        try {
-          const tilePerms = await accessService.getTilePermissions(tile.id);
-          // Filter to only show users with edit permission (tile admins)
-          const admins = tilePerms.permissions
-            .filter(perm => perm.canEdit)
-            .map(perm => ({
-              userId: perm.userId,
-              tileId: tile.id,
-              canView: perm.canView,
-              canEdit: perm.canEdit,
-              canDelete: perm.canDelete,
-              createdAt: perm.createdAt,
-              updatedAt: perm.updatedAt,
-              username: perm.username,
-              email: perm.email,
-              tileTitle: tile.title
-            }));
-          permissionsMap[tile.id] = admins;
-        } catch (err) {
-          // Tile might not have permissions yet
+        if (!permissionsMap[tile.id]) {
           permissionsMap[tile.id] = [];
         }
       }
+      
       setTileAdminsMap(permissionsMap);
       setShowTileAdminsModal(true);
     } catch (err: any) {
@@ -2099,37 +2094,77 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                          {allUsers.map((user) => (
-                            <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-colors">
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="flex items-center gap-3">
-                                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${user.is_admin
-                                    ? 'bg-gradient-to-br from-amber-500 to-orange-600'
-                                    : 'bg-gradient-to-br from-brand-500 to-brand-600'
-                                    }`}>
-                                    {user.username.charAt(0).toUpperCase()}
-                                  </div>
-                                  <div>
-                                    <span className="font-medium text-slate-900 dark:text-white">{user.username}</span>
-                                    <div className="flex items-center gap-2 mt-1">
-                                      {user.is_admin && (
-                                        <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-semibold">
-                                          Admin
-                                        </span>
-                                      )}
-                                      {user.auth_source === 'ldap' ? (
-                                        <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs font-semibold">
-                                          LDAP
-                                        </span>
-                                      ) : (
-                                        <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold">
-                                          Local
-                                        </span>
-                                      )}
+                          {allUsers
+                            .filter(user => {
+                              if (!allUsersSearchTerm) return true;
+                              const search = allUsersSearchTerm.toLowerCase();
+                              return user.username.toLowerCase().includes(search) ||
+                                     user.email.toLowerCase().includes(search);
+                            })
+                            .map((user) => {
+                              // Get user's roles
+                              const userRoles = userRolesMap[user.id] || [];
+                              // Get user's tile admin count (tiles where they have canEdit=true)
+                              const tileAdminCount = permissions.filter(
+                                p => p.userId === user.id && p.canEdit
+                              ).length;
+                              
+                              return (
+                                <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-colors">
+                                  <td className="px-6 py-4">
+                                    <div className="flex items-center gap-3">
+                                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 ${user.is_admin
+                                        ? 'bg-gradient-to-br from-amber-500 to-orange-600'
+                                        : 'bg-gradient-to-br from-brand-500 to-brand-600'
+                                        }`}>
+                                        {user.username.charAt(0).toUpperCase()}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <span className="font-medium text-slate-900 dark:text-white block">{user.username}</span>
+                                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                          {user.is_admin && (
+                                            <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-semibold whitespace-nowrap">
+                                              Admin
+                                            </span>
+                                          )}
+                                          {user.auth_source === 'ldap' ? (
+                                            <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs font-semibold whitespace-nowrap">
+                                              LDAP
+                                            </span>
+                                          ) : (
+                                            <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold whitespace-nowrap">
+                                              Local
+                                            </span>
+                                          )}
+                                          {/* Role badges */}
+                                          {userRoles.map((role) => (
+                                            <span
+                                              key={role.id}
+                                              className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-xs font-semibold whitespace-nowrap flex items-center gap-1"
+                                              title={role.description || `Role: ${role.name}`}
+                                            >
+                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                <path d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                                              </svg>
+                                              {role.name}
+                                            </span>
+                                          ))}
+                                          {/* Tile Admin badge */}
+                                          {tileAdminCount > 0 && (
+                                            <span
+                                              className="px-2 py-0.5 rounded-full bg-brand-100 dark:bg-brand-500/20 text-brand-700 dark:text-brand-400 text-xs font-semibold whitespace-nowrap flex items-center gap-1"
+                                              title={`Tile Admin for ${tileAdminCount} tile${tileAdminCount !== 1 ? 's' : ''}`}
+                                            >
+                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-5.5-2.5a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0zM10 12a5.98 5.98 0 00-4.93 2.26l.896 1.79a1 1 0 101.788.894l-1.062-2.12A5.98 5.98 0 0110 12z" clipRule="evenodd" />
+                                              </svg>
+                                              Tile Admin ({tileAdminCount})
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
                                     </div>
-                                  </div>
-                                </div>
-                              </td>
+                                  </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">
                                 {user.email}
                               </td>
@@ -2308,7 +2343,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 </div>
                               </td>
                             </tr>
-                          ))}
+                          );
+                            })}
                         </tbody>
                       </table>
                     </div>
@@ -4752,352 +4788,291 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               {/* Access Manager Tab */}
               {activeTab === 'access' && (
                 <div className="space-y-6">
-                  {/* Tile Admins Section */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex justify-between items-center mb-4">
-                      <div>
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Tile Admins</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                          Assign users as tile administrators. Tile admins can add, edit, and delete links for their assigned tiles.
-                        </p>
-                      </div>
+                  {/* Access Manager Sub-Tabs */}
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-1">
+                    <div className="flex gap-1">
                       <button
-                        onClick={handleManageTileAdmins}
-                        className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                        onClick={() => {
+                          setAccessSubTab('roles');
+                        }}
+                        className={`flex-1 px-4 py-2 text-sm font-medium transition-colors rounded-lg ${
+                          accessSubTab === 'roles'
+                            ? 'bg-brand-600 text-white'
+                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        }`}
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                          <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-                        </svg>
-                        Manage Tile Admins
+                        Role-Based Access Control
+                      </button>
+                      <button
+                        onClick={() => {
+                          setAccessSubTab('assign');
+                        }}
+                        className={`flex-1 px-4 py-2 text-sm font-medium transition-colors rounded-lg ${
+                          accessSubTab === 'assign'
+                            ? 'bg-brand-600 text-white'
+                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        Assign Roles to Users
+                      </button>
+                      <button
+                        onClick={() => {
+                          setAccessSubTab('admins');
+                          // Load permissions when switching to Tile Admins tab
+                          if (permissions.length === 0 && !permissionsLoading) {
+                            loadPermissions();
+                          }
+                        }}
+                        className={`flex-1 px-4 py-2 text-sm font-medium transition-colors rounded-lg ${
+                          accessSubTab === 'admins'
+                            ? 'bg-brand-600 text-white'
+                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        Tile Admins
                       </button>
                     </div>
+                  </div>
 
-                    <div className="mb-4">
-                      {permissionsLoading ? (
-                        <div className="flex items-center justify-center py-8">
-                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-brand-500"></div>
+                  {/* Role-Based Access Control Tab */}
+                  {accessSubTab === 'roles' && (
+                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                      <div className="flex justify-between items-center mb-4">
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Role-Based Access Control</h3>
+                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                            Create roles and assign tiles/links to roles. Users with roles will see only the content assigned to their roles.
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleAddRole}
+                          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                          </svg>
+                          Create Role
+                        </button>
+                      </div>
+
+                      {rolesLoading ? (
+                        <div className="flex items-center justify-center py-12">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                        </div>
+                      ) : roles.length === 0 ? (
+                        <div className="text-center py-12 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl">
+                          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-slate-400">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                            </svg>
+                          </div>
+                          <p className="text-slate-600 dark:text-slate-400 font-medium">No roles configured</p>
+                          <p className="text-slate-500 dark:text-slate-500 text-sm mt-1">Create roles to manage access to tiles and links</p>
                         </div>
                       ) : (
-                        <div className="space-y-3">
-                          {allTiles.length === 0 ? (
-                            <div className="text-center py-8 text-slate-600 dark:text-slate-400">
-                              No tiles available. Create tiles first.
-                            </div>
-                          ) : (
-                            allTiles.map((tile) => {
-                              // Get tile admins for this tile (users with canEdit=true)
-                              const tileAdminPerms = permissions.filter(
-                                p => p.tileId === tile.id && p.canEdit
-                              );
-                              
-                              return (
-                                <div
-                                  key={tile.id}
-                                  className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors"
-                                >
-                                  <div className="flex items-start justify-between">
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-2 mb-2">
-                                        <span className="text-base">{tile.emoji || '📄'}</span>
-                                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white truncate">
-                                          {tile.title || tile.id}
-                                        </h4>
-                                      </div>
-                                      {tile.description && (
-                                        <p className="text-xs text-slate-600 dark:text-slate-400 mb-2 line-clamp-1">
-                                          {tile.description}
-                                        </p>
-                                      )}
-                                      
-                                      {/* Tile Admins List */}
-                                      {tileAdminPerms.length > 0 ? (
-                                        <div className="mt-2 space-y-1">
-                                          <div className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                            Tile Admins ({tileAdminPerms.length}):
-                                          </div>
-                                          <div className="flex flex-wrap gap-2">
-                                            {tileAdminPerms.map((perm) => (
-                                              <div
-                                                key={`${perm.userId}_${perm.tileId}`}
-                                                className="inline-flex items-center gap-1.5 px-2 py-1 bg-brand-50 dark:bg-brand-500/20 border border-brand-200 dark:border-brand-500/30 rounded text-xs text-brand-700 dark:text-brand-300"
-                                              >
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                                  <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                                                </svg>
-                                                <span>{perm.username || perm.email}</span>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                                          No tile admins assigned
-                                        </div>
-                                      )}
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                              <tr>
+                                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Role Name</th>
+                                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Description</th>
+                                <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Users</th>
+                                <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Tiles</th>
+                                <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Links</th>
+                                <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                              {roles.map((role) => (
+                                <tr key={role.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <div className="text-sm font-medium text-slate-900 dark:text-white">{role.name}</div>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <div className="text-sm text-slate-600 dark:text-slate-400">{role.description || '-'}</div>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
+                                      {role.userCount || 0}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
+                                      {role.tileCount || 0}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
+                                      {role.linkCount || 0}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <div className="flex justify-end gap-2 flex-wrap">
+                                      <button
+                                        onClick={() => handleEditRole(role)}
+                                        className="text-brand-600 dark:text-brand-400 hover:text-brand-900 dark:hover:text-brand-300 transition-colors"
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        onClick={() => handleManageRoleTiles(role)}
+                                        className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 transition-colors"
+                                      >
+                                        Tiles & Links
+                                      </button>
+                                      <button
+                                        onClick={() => handleManageRoleTabs(role)}
+                                        className="text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-300 transition-colors"
+                                      >
+                                        Tabs
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteRole(role.id)}
+                                        className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition-colors"
+                                      >
+                                        Delete
+                                      </button>
                                     </div>
-                                  </div>
-                                </div>
-                              );
-                            })
-                          )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
                       )}
                     </div>
-                  </div>
+                  )}
 
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex justify-between items-center mb-4">
-                      <div>
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Tile Access Permissions</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                          Manage which users can view, edit, or delete specific tiles
-                        </p>
-                      </div>
-                      <button
-                        onClick={handleAddPermission}
-                        className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                          <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-                        </svg>
-                        Add Permission
-                      </button>
-                    </div>
-
-                    {permissionsLoading ? (
-                      <div className="flex items-center justify-center py-12">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
-                      </div>
-                    ) : permissions.length === 0 ? (
-                      <div className="text-center py-12 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl">
-                        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-slate-400">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
+                  {/* Assign Roles to Users Tab */}
+                  {accessSubTab === 'assign' && (
+                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                      <div className="flex justify-between items-center mb-4">
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Assign Roles to Users</h3>
+                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                            Assign multiple roles to users. Users will see tiles and links from all their assigned roles.
+                          </p>
                         </div>
-                        <p className="text-slate-600 dark:text-slate-400 font-medium">No permissions configured</p>
-                        <p className="text-slate-500 dark:text-slate-500 text-sm mt-1">Add permissions to restrict tile access</p>
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
-                            <tr>
-                              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">User</th>
-                              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Tile</th>
-                              <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">View</th>
-                              <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Edit</th>
-                              <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Delete</th>
-                              <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                            {permissions.map((perm) => (
-                              <tr key={`${perm.userId}_${perm.tileId}`} className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="text-sm font-medium text-slate-900 dark:text-white">{perm.username}</div>
-                                  <div className="text-xs text-slate-500 dark:text-slate-400">{perm.email}</div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="text-sm text-slate-900 dark:text-white">{perm.tileTitle || perm.tileId}</div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-center">
-                                  {perm.canView ? (
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-500/20 text-green-800 dark:text-green-400">
-                                      âœ“
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-400">
-                                      âœ—
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-center">
-                                  {perm.canEdit ? (
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-500/20 text-green-800 dark:text-green-400">
-                                      âœ“
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-400">
-                                      âœ—
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-center">
-                                  {perm.canDelete ? (
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-500/20 text-green-800 dark:text-green-400">
-                                      âœ“
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-400">
-                                      âœ—
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                  <div className="flex justify-end gap-3">
-                                    <button
-                                      onClick={() => handleEditPermission(perm)}
-                                      className="text-brand-600 dark:text-brand-400 hover:text-brand-900 dark:hover:text-brand-300 transition-colors"
-                                    >
-                                      Edit
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeletePermission(perm.userId, perm.tileId)}
-                                      className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition-colors"
-                                    >
-                                      Remove
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Roles Management Section */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6 mt-6">
-                    <div className="flex justify-between items-center mb-4">
-                      <div>
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Role-Based Access Control</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                          Create roles and assign tiles/links to roles. Users with roles will see only the content assigned to their roles.
-                        </p>
-                      </div>
-                      <button
-                        onClick={handleAddRole}
-                        className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                          <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-                        </svg>
-                        Create Role
-                      </button>
-                    </div>
-
-                    {rolesLoading ? (
-                      <div className="flex items-center justify-center py-12">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
-                      </div>
-                    ) : roles.length === 0 ? (
-                      <div className="text-center py-12 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl">
-                        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-slate-400">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                        <button
+                          onClick={async () => {
+                            setShowBulkAssignModal(true);
+                            setBulkSelectedUserIds([]);
+                            setBulkSelectedRoleIds([]);
+                            setBulkAssignMode('add');
+                            setBulkUserSearchTerm('');
+                            setBulkRoleSearchTerm('');
+                            setError('');
+                            // Load user roles when modal opens
+                            await loadUserRolesForBulk();
+                          }}
+                          className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
                           </svg>
-                        </div>
-                        <p className="text-slate-600 dark:text-slate-400 font-medium">No roles configured</p>
-                        <p className="text-slate-500 dark:text-slate-500 text-sm mt-1">Create roles to manage access to tiles and links</p>
+                          Bulk Assign Roles
+                        </button>
                       </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
-                            <tr>
-                              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Role Name</th>
-                              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Description</th>
-                              <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Users</th>
-                              <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Tiles</th>
-                              <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Links</th>
-                              <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                            {roles.map((role) => (
-                              <tr key={role.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="text-sm font-medium text-slate-900 dark:text-white">{role.name}</div>
-                                </td>
-                                <td className="px-6 py-4">
-                                  <div className="text-sm text-slate-600 dark:text-slate-400">{role.description || '-'}</div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-center">
-                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
-                                    {role.userCount || 0}
-                                  </span>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-center">
-                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
-                                    {role.tileCount || 0}
-                                  </span>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-center">
-                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
-                                    {role.linkCount || 0}
-                                  </span>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                  <div className="flex justify-end gap-2 flex-wrap">
-                                    <button
-                                      onClick={() => handleEditRole(role)}
-                                      className="text-brand-600 dark:text-brand-400 hover:text-brand-900 dark:hover:text-brand-300 transition-colors"
-                                    >
-                                      Edit
-                                    </button>
-                                    <button
-                                      onClick={() => handleManageRoleTiles(role)}
-                                      className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 transition-colors"
-                                    >
-                                      Tiles & Links
-                                    </button>
-                                    <button
-                                      onClick={() => handleManageRoleTabs(role)}
-                                      className="text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-300 transition-colors"
-                                    >
-                                      Tabs
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteRole(role.id)}
-                                      className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition-colors"
-                                    >
-                                      Delete
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                      <div className="text-sm text-slate-600 dark:text-slate-400">
+                        Go to the "All Users" tab to assign roles to specific users, or use "Bulk Assign Roles" to assign roles to multiple users at once. Users can have multiple roles assigned.
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
-                  {/* User Roles Management - Add button to All Users tab or here */}
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6 mt-6">
-                    <div className="flex justify-between items-center mb-4">
-                      <div>
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Assign Roles to Users</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                          Assign multiple roles to users. Users will see tiles and links from all their assigned roles.
-                        </p>
+                  {/* Tile Admins Tab */}
+                  {accessSubTab === 'admins' && (
+                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                      <div className="flex justify-between items-center mb-4">
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Tile Admins</h3>
+                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                            Assign users as tile administrators. Tile admins can add, edit, and delete links for their assigned tiles.
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleManageTileAdmins}
+                          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                          </svg>
+                          Manage Tile Admins
+                        </button>
                       </div>
-                      <button
-                        onClick={async () => {
-                          setShowBulkAssignModal(true);
-                          setBulkSelectedUserIds([]);
-                          setBulkSelectedRoleIds([]);
-                          setBulkAssignMode('add');
-                          setBulkUserSearchTerm('');
-                          setBulkRoleSearchTerm('');
-                          setError('');
-                          // Load user roles when modal opens
-                          await loadUserRolesForBulk();
-                        }}
-                        className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                          <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
-                        </svg>
-                        Bulk Assign Roles
-                      </button>
+
+                      <div className="mb-4">
+                        {permissionsLoading ? (
+                          <div className="flex items-center justify-center py-8">
+                            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-brand-500"></div>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {allTiles.length === 0 ? (
+                              <div className="text-center py-8 text-slate-600 dark:text-slate-400">
+                                No tiles available. Create tiles first.
+                              </div>
+                            ) : (
+                              allTiles.map((tile) => {
+                                // Get tile admins for this tile (users with canEdit=true)
+                                const tileAdminPerms = permissions.filter(
+                                  p => p.tileId === tile.id && p.canEdit
+                                );
+                                
+                                return (
+                                  <div
+                                    key={tile.id}
+                                    className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors"
+                                  >
+                                    <div className="flex items-start justify-between">
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-2">
+                                          <span className="text-base">{tile.emoji || '📄'}</span>
+                                          <h4 className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                                            {tile.title || tile.id}
+                                          </h4>
+                                        </div>
+                                        {tile.description && (
+                                          <p className="text-xs text-slate-600 dark:text-slate-400 mb-2 line-clamp-1">
+                                            {tile.description}
+                                          </p>
+                                        )}
+                                        
+                                        {/* Tile Admins List */}
+                                        {tileAdminPerms.length > 0 ? (
+                                          <div className="mt-2 space-y-1">
+                                            <div className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                              Tile Admins ({tileAdminPerms.length}):
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                              {tileAdminPerms.map((perm) => (
+                                                <div
+                                                  key={`${perm.userId}_${perm.tileId}`}
+                                                  className="inline-flex items-center gap-1.5 px-2 py-1 bg-brand-50 dark:bg-brand-500/20 border border-brand-200 dark:border-brand-500/30 rounded text-xs text-brand-700 dark:text-brand-300"
+                                                >
+                                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                    <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                                                  </svg>
+                                                  <span>{perm.username || perm.email}</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                                            No tile admins assigned
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-sm text-slate-600 dark:text-slate-400">
-                      Go to the "All Users" tab to assign roles to specific users, or use "Bulk Assign Roles" to assign roles to multiple users at once. Users can have multiple roles assigned.
-                    </div>
-                  </div>
+                  )}
                 </div>
               )}
 
@@ -7327,126 +7302,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
                 >
                   Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Permission Modal */}
-      {showPermissionModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Add/Edit Permission</h2>
-                <button
-                  onClick={() => {
-                    setShowPermissionModal(false);
-                    setError('');
-                  }}
-                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-4">
-              {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
-                  {error}
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  User <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={permissionForm.userId}
-                  onChange={(e) => setPermissionForm({ ...permissionForm, userId: parseInt(e.target.value) })}
-                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                >
-                  <option value="0">Select a user</option>
-                  {allUsers.filter(u => u.isApproved).map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.username} ({user.email})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Tile <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={permissionForm.tileId}
-                  onChange={(e) => setPermissionForm({ ...permissionForm, tileId: e.target.value })}
-                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                >
-                  <option value="">Select a tile</option>
-                  {allTiles.map((tile) => (
-                    <option key={tile.id} value={tile.id}>
-                      {tile.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Permissions</label>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={permissionForm.canView}
-                      onChange={(e) => setPermissionForm({ ...permissionForm, canView: e.target.checked })}
-                      className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
-                    />
-                    <span className="text-sm text-slate-700 dark:text-slate-300">Can View</span>
-                  </label>
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={permissionForm.canEdit}
-                      onChange={(e) => setPermissionForm({ ...permissionForm, canEdit: e.target.checked })}
-                      className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
-                    />
-                    <span className="text-sm text-slate-700 dark:text-slate-300">Can Edit</span>
-                  </label>
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={permissionForm.canDelete}
-                      onChange={(e) => setPermissionForm({ ...permissionForm, canDelete: e.target.checked })}
-                      className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
-                    />
-                    <span className="text-sm text-slate-700 dark:text-slate-300">Can Delete</span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
-                <button
-                  onClick={() => {
-                    setShowPermissionModal(false);
-                    setError('');
-                  }}
-                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSavePermission}
-                  disabled={!permissionForm.userId || !permissionForm.tileId}
-                  className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  Save Permission
                 </button>
               </div>
             </div>

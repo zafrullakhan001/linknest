@@ -1561,6 +1561,11 @@ function createDatabaseIndexes($db) {
             $db->exec('CREATE INDEX IF NOT EXISTS idx_role_link_permissions_link_id ON role_link_permissions(link_id)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_role_tab_permissions_role_id ON role_tab_permissions(role_id)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_role_tab_permissions_tab_id ON role_tab_permissions(tab_id)');
+            
+            // User tile permissions indexes for faster lookups
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_user_tile_permissions_user_id ON user_tile_permissions(user_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_user_tile_permissions_tile_id ON user_tile_permissions(tile_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_user_tile_permissions_tile_edit ON user_tile_permissions(tile_id, can_edit)');
         } catch (PDOException $e) {
             // Table might not exist yet, ignore
         }

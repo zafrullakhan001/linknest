@@ -51,6 +51,21 @@ export interface SetPermissionRequest {
   canDelete?: boolean;
 }
 
+export interface BatchTilePermissionsResponse {
+  tileId: string;
+  tileTitle: string;
+  permissions: Array<{
+    userId: number;
+    canView: boolean;
+    canEdit: boolean;
+    canDelete: boolean;
+    createdAt: number;
+    updatedAt: number;
+    username: string;
+    email: string;
+  }>;
+}
+
 export const accessService = {
   async getAllPermissions(): Promise<TilePermission[]> {
     const response = await fetch(`${API_BASE}/access`, {
@@ -61,6 +76,20 @@ export const accessService = {
     if (!response.ok) {
       const data = await response.json();
       throw new Error(data.error || 'Failed to fetch permissions');
+    }
+
+    return response.json();
+  },
+
+  async getBatchPermissions(): Promise<BatchTilePermissionsResponse[]> {
+    const response = await fetch(`${API_BASE}/access/batch`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to fetch batch permissions');
     }
 
     return response.json();

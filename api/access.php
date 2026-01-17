@@ -8,6 +8,8 @@ switch ($method) {
     case 'GET':
         if ($path === '' || $path === '/') {
             handleGetPermissions();
+        } elseif (preg_match('#^/batch$#', $path)) {
+            handleGetBatchPermissions();
         } elseif (preg_match('#^/tile/([^/]+)$#', $path, $matches)) {
             handleGetTilePermissions($matches[1]);
         } elseif (preg_match('#^/user/(\d+)$#', $path, $matches)) {
@@ -85,6 +87,60 @@ function handleGetPermissions() {
     }
     
     sendJSON($permissions);
+}
+
+function handleGetBatchPermissions() {
+    requireAdmin();
+    $db = getDB();
+    
+    // Get all tile permissions in a single optimized query, grouped by tile_id
+    $stmt = $db->prepare('
+        SELECT 
+            utp.tile_id,
+            utp.user_id,
+            utp.can_view,
+            utp.can_edit,
+            utp.can_delete,
+            utp.created_at,
+            utp.updated_at,
+            u.username,
+            u.email,
+            t.title as tile_title
+        FROM user_tile_permissions utp
+        INNER JOIN users u ON utp.user_id = u.id
+        INNER JOIN tiles t ON utp.tile_id = t.id
+        ORDER BY utp.tile_id, u.username
+    ');
+    $stmt->execute();
+    
+    // Group permissions by tile_id
+    $permissionsByTile = [];
+    while ($row = $stmt->fetch()) {
+        $tileId = $row['tile_id'];
+        if (!isset($permissionsByTile[$tileId])) {
+            $permissionsByTile[$tileId] = [
+                'tileId' => $tileId,
+                'tileTitle' => $row['tile_title'],
+                'permissions' => []
+            ];
+        }
+        
+        $permissionsByTile[$tileId]['permissions'][] = [
+            'userId' => (int)$row['user_id'],
+            'canView' => (bool)$row['can_view'],
+            'canEdit' => (bool)$row['can_edit'],
+            'canDelete' => (bool)$row['can_delete'],
+            'createdAt' => (int)$row['created_at'],
+            'updatedAt' => (int)$row['updated_at'],
+            'username' => $row['username'],
+            'email' => $row['email']
+        ];
+    }
+    
+    // Convert to array format for JSON response
+    $result = array_values($permissionsByTile);
+    
+    sendJSON($result);
 }
 
 function handleGetTilePermissions($tileId) {
