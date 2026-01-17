@@ -72,7 +72,9 @@ function safeParseSize(raw: string | null): Size | null {
 export const FloatingFavOrganizerWidget: React.FC<{
   children: React.ReactNode;
   defaultPosition?: Point;
-}> = ({ children, defaultPosition }) => {
+  defaultSize?: Size;
+  onClose?: () => void;
+}> = ({ children, defaultPosition, defaultSize, onClose }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const initialPos = useMemo<Point>(() => {
@@ -306,12 +308,29 @@ export const FloatingFavOrganizerWidget: React.FC<{
           className={`absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-7 rounded-full shadow-md border border-blue-300/70 dark:border-blue-600/60 bg-blue-500/90 dark:bg-blue-600/90 backdrop-blur flex items-center justify-center text-white ${
             isDragging ? 'cursor-grabbing' : 'cursor-grab'
           }`}
+          style={{ zIndex: 2147483647 }}
           onPointerDown={startDrag}
           title="Drag fav organizer widget"
           aria-label="Drag fav organizer widget"
         >
           <span className="text-[16px] leading-none tracking-widest flex items-center">⋮⋮⋮</span>
         </button>
+
+        {/* Close button */}
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute -top-3 -right-3 w-6 h-6 rounded-full shadow-md border border-red-300/70 dark:border-red-600/60 bg-red-500/90 dark:bg-red-600/90 backdrop-blur flex items-center justify-center text-white hover:bg-red-600 dark:hover:bg-red-700 transition-colors"
+            style={{ zIndex: 2147483647 }}
+            title="Close Favorite Organizer Widget"
+            aria-label="Close Favorite Organizer Widget"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+            </svg>
+          </button>
+        )}
 
         <div
           className="absolute top-0 right-0 w-3 h-3 cursor-ne-resize opacity-0 hover:opacity-100 transition-opacity"

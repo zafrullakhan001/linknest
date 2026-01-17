@@ -22,10 +22,10 @@ const AVAILABLE_MODELS = [
   { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', cost: '$$', free: false },
   { id: 'anthropic/claude-3-haiku', name: 'Claude 3 Haiku', cost: '$', free: false },
   { id: 'google/gemini-pro-1.5', name: 'Gemini Pro 1.5', cost: '$', free: false },
-  { id: 'meta-llama/llama-3.1-70b-instruct:free', name: 'Llama 3.1 70B (FREE)', cost: 'FREE', free: true },
-  { id: 'google/gemini-flash-1.5:free', name: 'Gemini Flash 1.5 (FREE)', cost: 'FREE', free: true },
-  { id: 'mistralai/mistral-7b-instruct:free', name: 'Mistral 7B (FREE)', cost: 'FREE', free: true },
-  { id: 'qwen/qwen-2.5-72b-instruct:free', name: 'Qwen 2.5 72B (FREE)', cost: 'FREE', free: true },
+  { id: 'meta-llama/llama-3.1-70b-instruct', name: 'Llama 3.1 70B (FREE)', cost: 'FREE', free: true },
+  { id: 'google/gemini-flash-1.5', name: 'Gemini Flash 1.5 (FREE)', cost: 'FREE', free: true },
+  { id: 'mistralai/mistral-7b-instruct', name: 'Mistral 7B (FREE)', cost: 'FREE', free: true },
+  { id: 'qwen/qwen-2.5-72b-instruct', name: 'Qwen 2.5 72B (FREE)', cost: 'FREE', free: true },
 ];
 
 interface ProcessingStats {
@@ -62,6 +62,7 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
   const [progress, setProgress] = useState<ChunkProgress | null>(null);
   const [selectedModel, setSelectedModel] = useState<string>('openai/gpt-4o-mini');
   const [chunkSize, setChunkSize] = useState<number>(100);
+  const [chunkSizeInput, setChunkSizeInput] = useState<string>('100');
   const [stats, setStats] = useState<ProcessingStats | null>(null);
   const [uniqueBookmarks, setUniqueBookmarks] = useState<Bookmark[]>([]);
   const [duplicateCount, setDuplicateCount] = useState<number>(0);
@@ -87,6 +88,7 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
       const size = parseInt(savedChunkSize, 10);
       if (size >= 10 && size <= 500) {
         setChunkSize(size);
+        setChunkSizeInput(savedChunkSize);
       }
     }
   }, []);
@@ -335,10 +337,10 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
       'anthropic/claude-3.5-sonnet': { input: 3, output: 15 },
       'anthropic/claude-3-haiku': { input: 0.25, output: 1.25 },
       'google/gemini-pro-1.5': { input: 1.25, output: 5 },
-      'google/gemini-flash-1.5:free': { input: 0, output: 0 },
-      'meta-llama/llama-3.1-70b-instruct:free': { input: 0, output: 0 },
-      'mistralai/mistral-7b-instruct:free': { input: 0, output: 0 },
-      'qwen/qwen-2.5-72b-instruct:free': { input: 0, output: 0 },
+      'google/gemini-flash-1.5': { input: 0, output: 0 },
+      'meta-llama/llama-3.1-70b-instruct': { input: 0, output: 0 },
+      'mistralai/mistral-7b-instruct': { input: 0, output: 0 },
+      'qwen/qwen-2.5-72b-instruct': { input: 0, output: 0 },
       'openrouter/auto': { input: 2, output: 8 }, // Average estimate
     };
 
@@ -350,140 +352,180 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
   };
 
   // Process a single chunk of bookmarks
-  const processChunk = async (chunk: Bookmark[], chunkIndex: number, totalChunks: number, startTime: number, currentTotalCost: number): Promise<{ result: any; prompt: string; cost: number; inputTokens: number; outputTokens: number }> => {
+  const processChunk = async (chunk: Bookmark[], chunkIndex: number, totalChunks: number, startTime: number, currentTotalCost: number, signal?: AbortSignal): Promise<{ result: any; prompt: string; cost: number; inputTokens: number; outputTokens: number }> => {
     const bookmarksText = chunk.map((b, i) => `${i + 1}. ${b.title} - ${b.url}`).join('\n');
 
     const currentTimestamp = Math.floor(Date.now() / 1000);
     
-    const prompt = `Organize these browser bookmarks into a structured JSON format. Group related links into tiles, sections, and tabs.
-
-GUIDELINES:
-- Create logical tiles (categories) for related bookmarks
-- Use descriptive titles for tiles, tabs, and sections
-- Choose appropriate emojis: 💻 🎨 🚀 📚 🛠️ 🎮 🎵 🎬 📷 📝 💰 🏥 ✈️ 🛒 🍔 🏋️ 🏠 🎓 🔐 ☁️ 📱 🌐 💡 📅 🔍 ⚙️ 📂 📧 📊 📈
-- Use theme colors: blue, emerald, violet, amber, rose, cyan, fuchsia, orange, red, indigo, lime, sky, slate, teal, pink, purple, yellow, zinc (or hex codes)
-- Generate unique IDs for each item (use descriptive prefixes like tile_, tab_, sec_, link_)
-- Include ALL bookmarks - do not skip any links
-- Set createdAt to ${currentTimestamp}
-- Keep all null fields as null
-- Set visibility to "public" for all links
-
-TEMPLATE (replace placeholders with actual values):
-{
+    // Optimize prompt size for small batches
+    const isSmallBatch = chunk.length <= 20;
+    const templateExample = isSmallBatch ? `{
+  "version": "1.1",
+  "type": "category",
+  "exportedAt": ${Date.now()},
+  "categoryName": "Main",
+  "tiles": [{
+    "id": "tile_1",
+    "title": "Category Name",
+    "description": "Description",
+    "htmlContent": "",
+    "emoji": "💻",
+    "themeColor": "blue",
+    "group": "group1",
+    "createdAt": ${currentTimestamp},
+    "tabs": [{
+      "id": "tab_1",
+      "title": "Tab Name",
+      "position": 0,
+      "textColor": null,
+      "visibleFrom": null,
+      "expiresAt": null,
+      "sections": [{
+        "id": "sec_1",
+        "title": "Section Name",
+        "textColor": null,
+        "visibleFrom": null,
+        "expiresAt": null,
+        "forceStackedView": false,
+        "position": 0,
+        "links": [{
+          "id": "link_1",
+          "label": "Link Title",
+          "url": "https://example.com",
+          "icon": null,
+          "textColor": null,
+          "visibility": "public",
+          "allowedUsers": [],
+          "notes": null,
+          "tooltip": null,
+          "visibleFrom": null,
+          "expiresAt": null,
+          "browser": null,
+          "isFavorite": false,
+          "hasRoleAccess": false,
+          "position": 0,
+          "health": {"status": "unknown", "httpCode": null, "error": null, "checkedAt": null}
+        }],
+        "richTextContent": []
+      }]
+    }],
+    "sections": [],
+    "visibility": "public",
+    "allowedUsers": [],
+    "isFavorite": false,
+    "isHyperlink": false,
+    "openInNewTab": true,
+    "canView": true,
+    "canEdit": true,
+    "canDelete": true
+  }]
+}` : `{
   "version": "1.1",
   "type": "category",
   "exportedAt": ${Date.now()},
   "categoryName": "{CATEGORY_NAME}",
-  "tiles": [
-    {
+  "tiles": [{
+    "id": "{UNIQUE_ID}",
+    "title": "{TILE_TITLE}",
+    "description": "{TILE_DESCRIPTION}",
+    "htmlContent": "",
+    "emoji": "{EMOJI}",
+    "themeColor": "{COLOR}",
+    "group": "{GROUP}",
+    "createdAt": ${currentTimestamp},
+    "tabs": [{
       "id": "{UNIQUE_ID}",
-      "title": "{TILE_TITLE}",
-      "description": "{TILE_DESCRIPTION}",
-      "htmlContent": "",
-      "emoji": "{EMOJI}",
-      "themeColor": "{COLOR_NAME_OR_HEX}",
-      "group": "{GROUP_NAME}",
-      "createdAt": ${currentTimestamp},
-      "tabs": [
-        {
+      "title": "{TAB_TITLE}",
+      "position": 0,
+      "textColor": null,
+      "visibleFrom": null,
+      "expiresAt": null,
+      "sections": [{
+        "id": "{UNIQUE_ID}",
+        "title": "{SECTION_TITLE}",
+        "textColor": null,
+        "visibleFrom": null,
+        "expiresAt": null,
+        "forceStackedView": false,
+        "position": 0,
+        "links": [{
           "id": "{UNIQUE_ID}",
-          "title": "{TAB_TITLE}",
-          "position": 0,
+          "label": "{LINK_LABEL}",
+          "url": "{URL}",
+          "icon": null,
           "textColor": null,
+          "visibility": "public",
+          "allowedUsers": [],
+          "notes": null,
+          "tooltip": null,
           "visibleFrom": null,
           "expiresAt": null,
-          "sections": [
-            {
-              "id": "{UNIQUE_ID}",
-              "title": "{SECTION_TITLE}",
-              "textColor": null,
-              "visibleFrom": null,
-              "expiresAt": null,
-              "forceStackedView": false,
-              "position": 0,
-              "links": [
-                {
-                  "id": "{UNIQUE_ID}",
-                  "label": "{LINK_LABEL}",
-                  "url": "{URL}",
-                  "icon": null,
-                  "textColor": null,
-                  "visibility": "public",
-                  "allowedUsers": [],
-                  "notes": null,
-                  "tooltip": null,
-                  "visibleFrom": null,
-                  "expiresAt": null,
-                  "browser": null,
-                  "isFavorite": false,
-                  "hasRoleAccess": false,
-                  "position": 0,
-                  "health": {
-                    "status": "unknown",
-                    "httpCode": null,
-                    "error": null,
-                    "checkedAt": null
-                  }
-                }
-              ],
-              "richTextContent": []
-            }
-          ]
-        }
-      ],
-      "sections": [
-        {
-          "id": "{UNIQUE_ID}",
-          "title": "{SECTION_TITLE}",
-          "textColor": null,
-          "visibleFrom": null,
-          "expiresAt": null,
-          "forceStackedView": false,
+          "browser": null,
+          "isFavorite": false,
+          "hasRoleAccess": false,
           "position": 0,
-          "links": [
-            {
-              "id": "{UNIQUE_ID}",
-              "label": "{LINK_LABEL}",
-              "url": "{URL}",
-              "icon": null,
-              "textColor": null,
-              "visibility": "public",
-              "allowedUsers": [],
-              "notes": null,
-              "tooltip": null,
-              "visibleFrom": null,
-              "expiresAt": null,
-              "browser": null,
-              "isFavorite": false,
-              "hasRoleAccess": false,
-              "position": 0,
-              "health": {
-                "status": "unknown",
-                "httpCode": null,
-                "error": null,
-                "checkedAt": null
-              }
-            }
-          ],
-          "richTextContent": []
-        }
-      ],
-      "visibility": "public",
-      "allowedUsers": [],
-      "isFavorite": false,
-      "isHyperlink": false,
-      "openInNewTab": true,
-      "canView": true,
-      "canEdit": true,
-      "canDelete": true
-    }
-  ]
-}
+          "health": {"status": "unknown", "httpCode": null, "error": null, "checkedAt": null}
+        }],
+        "richTextContent": []
+      }]
+    }],
+    "sections": [{
+      "id": "{UNIQUE_ID}",
+      "title": "{SECTION_TITLE}",
+      "textColor": null,
+      "visibleFrom": null,
+      "expiresAt": null,
+      "forceStackedView": false,
+      "position": 0,
+      "links": [{
+        "id": "{UNIQUE_ID}",
+        "label": "{LINK_LABEL}",
+        "url": "{URL}",
+        "icon": null,
+        "textColor": null,
+        "visibility": "public",
+        "allowedUsers": [],
+        "notes": null,
+        "tooltip": null,
+        "visibleFrom": null,
+        "expiresAt": null,
+        "browser": null,
+        "isFavorite": false,
+        "hasRoleAccess": false,
+        "position": 0,
+        "health": {"status": "unknown", "httpCode": null, "error": null, "checkedAt": null}
+      }],
+      "richTextContent": []
+    }],
+    "visibility": "public",
+    "allowedUsers": [],
+    "isFavorite": false,
+    "isHyperlink": false,
+    "openInNewTab": true,
+    "canView": true,
+    "canEdit": true,
+    "canDelete": true
+  }]
+}`;
 
-Bookmarks to organize (Chunk ${chunkIndex + 1} of ${totalChunks}):
+    const prompt = `Organize these ${chunk.length} browser bookmarks into structured JSON. Group related links into tiles, sections, and tabs.
+
+Rules:
+- Create logical tiles (categories) for related bookmarks
+- Use descriptive titles and appropriate emojis: 💻 🎨 🚀 📚 🛠️ 🎮 🎵 🎬 📷 📝 💰 🏥 ✈️ 🛒 🍔 🏋️ 🏠 🎓 🔐 ☁️ 📱 🌐 💡 📅 🔍 ⚙️ 📂 📧 📊 📈
+- Use theme colors: blue, emerald, violet, amber, rose, cyan, fuchsia, orange, red, indigo, lime, sky, slate, teal, pink, purple, yellow, zinc
+- Generate unique IDs (prefixes: tile_, tab_, sec_, link_)
+- Include ALL ${chunk.length} bookmarks - do not skip any
+- Set createdAt to ${currentTimestamp}, visibility to "public" for all links
+- Keep null fields as null
+
+JSON Structure:
+${templateExample}
+
+Bookmarks (Chunk ${chunkIndex + 1}/${totalChunks}):
 ${bookmarksText}
 
-CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chunk.length} bookmarks. No markdown, no code blocks, no explanations.`;
+IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no text before or after. Start with { and end with }. Include ALL ${chunk.length} bookmarks.`;
 
     const response = await fetch(OPENROUTER_API_URL, {
       method: 'POST',
@@ -502,10 +544,10 @@ CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chun
           }
         ],
         temperature: 0.3,
-        max_tokens: 8000,
+        max_tokens: Math.min(16000, Math.max(4000, chunk.length * 300)), // Adaptive: ~300 tokens per link, min 4000, max 16000 (optimized for chunks up to 100 URLs)
         response_format: { type: 'json_object' }
       }),
-      signal: signal
+      ...(signal && { signal })
     });
 
     if (!response.ok) {
@@ -520,9 +562,15 @@ CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chun
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
+    const finishReason = data.choices?.[0]?.finish_reason;
 
     if (!content) {
       throw new Error('No response from API');
+    }
+
+    // Check if response was truncated
+    if (finishReason === 'length') {
+      console.warn('API response was truncated due to token limit. Consider increasing max_tokens or reducing chunk size.');
     }
 
     // Get token usage from response (if available)
@@ -533,10 +581,55 @@ CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chun
     // Calculate cost
     const cost = estimateCost(selectedModel, inputTokens, outputTokens);
 
-    // Clean the response - remove markdown code blocks if present
+    // Clean the response - extract JSON more robustly
     let jsonText = content.trim();
-    if (jsonText.startsWith('```')) {
-      jsonText = jsonText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+    
+    // Remove markdown code blocks (handle various formats)
+    jsonText = jsonText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+    jsonText = jsonText.replace(/^```\s*/i, '').replace(/\s*```$/i, '');
+    
+    // Try to extract JSON object if there's text before/after
+    // Look for first { and last } to extract JSON object
+    const firstBrace = jsonText.indexOf('{');
+    const lastBrace = jsonText.lastIndexOf('}');
+    
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      jsonText = jsonText.substring(firstBrace, lastBrace + 1);
+    }
+    
+    // Clean up any remaining whitespace and remove BOM/zero-width characters
+    jsonText = jsonText.trim().replace(/^\uFEFF/, '').replace(/[\u200B-\u200D\uFEFF]/g, '');
+    
+    // Validate JSON structure completeness before parsing
+    const openBraces = (jsonText.match(/{/g) || []).length;
+    const closeBraces = (jsonText.match(/}/g) || []).length;
+    const openBrackets = (jsonText.match(/\[/g) || []).length;
+    const closeBrackets = (jsonText.match(/\]/g) || []).length;
+    
+    if (openBraces !== closeBraces || openBrackets !== closeBrackets) {
+      console.warn('JSON structure appears incomplete:', {
+        braces: { open: openBraces, close: closeBraces },
+        brackets: { open: openBrackets, close: closeBrackets }
+      });
+      // Try to fix incomplete JSON by adding missing closing brackets/braces
+      // Close brackets first (inner structures), then braces (outer structure)
+      let fixedJson = jsonText.trim();
+      
+      // Remove any trailing incomplete property (ends with comma or incomplete string)
+      fixedJson = fixedJson.replace(/,\s*$/, ''); // Remove trailing comma
+      fixedJson = fixedJson.replace(/:\s*$/, ''); // Remove trailing colon
+      fixedJson = fixedJson.replace(/:\s*"[^"]*$/, ''); // Remove incomplete string value
+      fixedJson = fixedJson.replace(/:\s*[^,}\]]*$/, ''); // Remove incomplete value
+      
+      // Close brackets first (inner structures), then braces (outer structure)
+      for (let i = 0; i < openBrackets - closeBrackets; i++) {
+        fixedJson += ']';
+      }
+      for (let i = 0; i < openBraces - closeBraces; i++) {
+        fixedJson += '}';
+      }
+      jsonText = fixedJson;
+      console.log('Attempted to fix incomplete JSON by adding closing brackets/braces');
     }
 
     // Parse and validate JSON
@@ -544,7 +637,21 @@ CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chun
     try {
       organized = JSON.parse(jsonText);
     } catch (parseError) {
-      throw new Error('Invalid JSON response from API. Please try again.');
+      // Provide more helpful error message with snippet of response
+      const errorSnippet = content.substring(0, 200).replace(/\n/g, ' ');
+      const errorMsg = `Invalid JSON response from API. ${parseError instanceof Error ? parseError.message : 'Parse error'}. Response preview: ${errorSnippet}...`;
+      console.error('JSON Parse Error:', parseError);
+      console.error('Raw response length:', content.length);
+      console.error('Raw response (first 500 chars):', content.substring(0, 500));
+      console.error('Raw response (last 500 chars):', content.substring(Math.max(0, content.length - 500)));
+      console.error('Cleaned JSON text length:', jsonText.length);
+      console.error('Cleaned JSON text (first 500 chars):', jsonText.substring(0, 500));
+      console.error('Cleaned JSON text (last 500 chars):', jsonText.substring(Math.max(0, jsonText.length - 500)));
+      console.error('JSON structure check:', {
+        braces: { open: openBraces, close: closeBraces },
+        brackets: { open: openBrackets, close: closeBrackets }
+      });
+      throw new Error(errorMsg);
     }
 
     return { result: organized, prompt, cost, inputTokens, outputTokens };
@@ -716,7 +823,8 @@ CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chun
         });
         
         // Small delay to avoid rate limiting (longer for free models)
-        const delay = selectedModel.includes(':free') ? 1000 : 500;
+        const isFreeModel = AVAILABLE_MODELS.find(m => m.id === selectedModel)?.free || false;
+        const delay = isFreeModel ? 1000 : 500;
         if (i < chunks.length - 1) {
           await new Promise(resolve => setTimeout(resolve, delay));
         }
@@ -1009,18 +1117,6 @@ CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chun
           <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-300">
             📚 Favorite Organizer
           </h3>
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="text-slate-500 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-              title="Close Widget"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
-          )}
         </div>
         <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
           Extract browser favorites and organize them into tiles, sections, and links using AI
@@ -1079,11 +1175,29 @@ CRITICAL: Return ONLY valid JSON matching the template above. Include ALL ${chun
             type="number"
             min="10"
             max="500"
-            value={chunkSize}
+            value={chunkSizeInput}
             onChange={(e) => {
-              const val = parseInt(e.target.value, 10);
-              if (val >= 10 && val <= 500) {
+              const inputValue = e.target.value;
+              // Allow free typing - update input value
+              setChunkSizeInput(inputValue);
+              // Also update the numeric value if valid
+              const val = parseInt(inputValue, 10);
+              if (!isNaN(val) && val >= 10 && val <= 500) {
                 setChunkSize(val);
+              }
+            }}
+            onBlur={(e) => {
+              const val = parseInt(e.target.value, 10);
+              // Validate and clamp on blur
+              if (isNaN(val) || val < 10) {
+                setChunkSize(10);
+                setChunkSizeInput('10');
+              } else if (val > 500) {
+                setChunkSize(500);
+                setChunkSizeInput('500');
+              } else {
+                setChunkSize(val);
+                setChunkSizeInput(val.toString());
               }
             }}
             disabled={loading}

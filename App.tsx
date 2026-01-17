@@ -979,8 +979,8 @@ const AppContent: React.FC = () => {
         </FloatingThemeWidget>
       )}
       {showFavOrganizer && (
-        <FloatingFavOrganizerWidget>
-          <FavOrganizerWidget onClose={toggleFavOrganizer} />
+        <FloatingFavOrganizerWidget onClose={toggleFavOrganizer}>
+          <FavOrganizerWidget />
         </FloatingFavOrganizerWidget>
       )}
       <AuthModal
