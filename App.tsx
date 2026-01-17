@@ -643,7 +643,12 @@ const AppContent: React.FC = () => {
       content = null;
     }
   } else if (route.startsWith('#/tile/')) {
-    const tileId = route.split('/tile/')[1];
+    // Parse tile ID and optional 'from' query parameter
+    const tilePath = route.split('/tile/')[1];
+    const [tileId, queryString] = tilePath.split('?');
+    const urlParams = new URLSearchParams(queryString || '');
+    const sourceTab = urlParams.get('from') || null;
+    
     const tile = tiles.find((t) => t.id === tileId);
     if (tile) {
       content = (
@@ -654,6 +659,7 @@ const AppContent: React.FC = () => {
             onUpdateTiles={handleUpdateTiles}
             isAuthenticated={isAuthenticated}
             onAuthRequired={() => setAuthModalOpen(true)}
+            sourceTab={sourceTab as 'public' | 'your-apps' | 'private' | 'favorites' | 'public-favorites' | null}
           />
         </Suspense>
       );

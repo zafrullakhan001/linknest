@@ -14,6 +14,10 @@ switch ($method) {
             handleGetRoleTiles($matches[1]);
         } elseif (preg_match('#^/(\d+)/links$#', $path, $matches)) {
             handleGetRoleLinks($matches[1]);
+        } elseif (preg_match('#^/(\d+)/tabs$#', $path, $matches)) {
+            handleGetRoleTabs($matches[1]);
+        } elseif ($path === '/current-user/tabs' || $path === '/current-user/tabs/') {
+            handleGetCurrentUserTabs();
         } elseif (preg_match('#^/user/(\d+)$#', $path, $matches)) {
             handleGetUserRoles($matches[1]);
         } else {
@@ -28,6 +32,8 @@ switch ($method) {
             handleAssignTilesToRole($matches[1]);
         } elseif (preg_match('#^/(\d+)/assign-links$#', $path, $matches)) {
             handleAssignLinksToRole($matches[1]);
+        } elseif (preg_match('#^/(\d+)/assign-tabs$#', $path, $matches)) {
+            handleAssignTabsToRole($matches[1]);
         } elseif (preg_match('#^/user/(\d+)/assign$#', $path, $matches)) {
             handleAssignRolesToUser($matches[1]);
         } else {
@@ -518,6 +524,121 @@ function handleRemoveLinkFromRole($roleId, $linkId) {
     $stmt->execute([$roleId, $linkId]);
     
     sendJSON(['success' => true]);
+}
+
+function handleGetRoleTabs($roleId) {
+    requireAdmin();
+    $db = getDB();
+    
+    // Verify role exists
+    $roleCheck = $db->prepare('SELECT id FROM roles WHERE id = ?');
+    $roleCheck->execute([$roleId]);
+    if (!$roleCheck->fetch()) {
+        sendJSON(['error' => 'Role not found'], 404);
+    }
+    
+    $stmt = $db->prepare('
+        SELECT 
+            rtp.tab_id,
+            rtp.can_view,
+            rtp.created_at
+        FROM role_tab_permissions rtp
+        WHERE rtp.role_id = ?
+        ORDER BY rtp.tab_id
+    ');
+    $stmt->execute([$roleId]);
+    
+    $tabs = [];
+    while ($row = $stmt->fetch()) {
+        $tabs[] = [
+            'tabId' => $row['tab_id'],
+            'canView' => (bool)$row['can_view'],
+            'createdAt' => (int)$row['created_at']
+        ];
+    }
+    
+    sendJSON($tabs);
+}
+
+function handleGetCurrentUserTabs() {
+    $user = getAuthenticatedUser();
+    if (!$user) {
+        sendJSON(['error' => 'Authentication required'], 401);
+    }
+    
+    $db = getDB();
+    
+    // If user has no roles, return empty array (they use global settings only)
+    $roleIds = getUserRoleIds($user['id'], $db);
+    if (empty($roleIds)) {
+        sendJSON([]);
+    }
+    
+    // Get all tabs allowed by user's roles
+    $placeholders = implode(',', array_fill(0, count($roleIds), '?'));
+    $stmt = $db->prepare("SELECT DISTINCT tab_id FROM role_tab_permissions WHERE role_id IN ($placeholders) AND can_view = 1");
+    $stmt->execute($roleIds);
+    
+    $allowedTabs = [];
+    while ($row = $stmt->fetch()) {
+        $allowedTabs[] = $row['tab_id'];
+    }
+    
+    sendJSON($allowedTabs);
+}
+
+function handleAssignTabsToRole($roleId) {
+    requireAdmin();
+    $data = getJSONInput();
+    
+    if (!isset($data['tabIds']) || !is_array($data['tabIds'])) {
+        sendJSON(['error' => 'tabIds array is required'], 400);
+    }
+    
+    $db = getDB();
+    
+    // Verify role exists
+    $roleCheck = $db->prepare('SELECT id FROM roles WHERE id = ?');
+    $roleCheck->execute([$roleId]);
+    if (!$roleCheck->fetch()) {
+        sendJSON(['error' => 'Role not found'], 404);
+    }
+    
+    // Valid tab IDs
+    $validTabIds = ['public', 'your-apps', 'favorites', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+    
+    $currentTime = time();
+    $canView = isset($data['canView']) ? (int)(bool)$data['canView'] : 1;
+    
+    $db->beginTransaction();
+    try {
+        // First, remove all existing tab permissions for this role
+        $deleteStmt = $db->prepare('DELETE FROM role_tab_permissions WHERE role_id = ?');
+        $deleteStmt->execute([$roleId]);
+        
+        // Then, insert only the selected tabs
+        if (!empty($data['tabIds'])) {
+            $stmt = $db->prepare('
+                INSERT INTO role_tab_permissions (role_id, tab_id, can_view, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+            ');
+            
+            foreach ($data['tabIds'] as $tabId) {
+                // Validate tab ID
+                if (!in_array($tabId, $validTabIds)) {
+                    continue; // Skip invalid tab IDs
+                }
+                
+                $stmt->execute([$roleId, $tabId, $canView, $currentTime, $currentTime]);
+            }
+        }
+        
+        $db->commit();
+        sendJSON(['success' => true]);
+    } catch (PDOException $e) {
+        $db->rollBack();
+        sendJSON(['error' => 'Failed to assign tabs: ' . $e->getMessage()], 500);
+    }
 }
 
 function handleRemoveRoleFromUser($userId, $roleId) {

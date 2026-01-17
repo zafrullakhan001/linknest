@@ -1467,6 +1467,17 @@ function initDatabase() {
             FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE
         )');
         
+        // Create role_tab_permissions table for role-based tab access
+        $db->exec('CREATE TABLE IF NOT EXISTS role_tab_permissions (
+            role_id INTEGER NOT NULL,
+            tab_id TEXT NOT NULL,
+            can_view INTEGER DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (role_id, tab_id),
+            FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+        )');
+        
         // Initialize default settings if they don't exist
         $defaultSettings = [
             ['app_name', 'LinkNest', time()],
@@ -1548,6 +1559,8 @@ function createDatabaseIndexes($db) {
             $db->exec('CREATE INDEX IF NOT EXISTS idx_role_tile_permissions_tile_id ON role_tile_permissions(tile_id)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_role_link_permissions_role_id ON role_link_permissions(role_id)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_role_link_permissions_link_id ON role_link_permissions(link_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_role_tab_permissions_role_id ON role_tab_permissions(role_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_role_tab_permissions_tab_id ON role_tab_permissions(tab_id)');
         } catch (PDOException $e) {
             // Table might not exist yet, ignore
         }
@@ -1723,6 +1736,25 @@ function canUserViewLinkByRole($userId, $linkId, $db) {
     $placeholders = implode(',', array_fill(0, count($roleIds), '?'));
     $stmt = $db->prepare("SELECT COUNT(*) FROM role_link_permissions WHERE role_id IN ($placeholders) AND link_id = ? AND can_view = 1");
     $params = array_merge($roleIds, [$linkId]);
+    $stmt->execute($params);
+    
+    return (int)$stmt->fetchColumn() > 0;
+}
+
+// Helper function to check if user can view a tab based on roles
+function canUserViewTabByRole($userId, $tabId, $db) {
+    if (!$userId) {
+        return false; // Unauthenticated users use global settings only
+    }
+    
+    $roleIds = getUserRoleIds($userId, $db);
+    if (empty($roleIds)) {
+        return false; // No roles, no access via roles - use global settings
+    }
+    
+    $placeholders = implode(',', array_fill(0, count($roleIds), '?'));
+    $stmt = $db->prepare("SELECT COUNT(*) FROM role_tab_permissions WHERE role_id IN ($placeholders) AND tab_id = ? AND can_view = 1");
+    $params = array_merge($roleIds, [$tabId]);
     $stmt->execute($params);
     
     return (int)$stmt->fetchColumn() > 0;

@@ -89,6 +89,7 @@ function handleGetDatabaseInfo() {
                     'user_roles',
                     'role_tile_permissions',
                     'role_link_permissions',
+                    'role_tab_permissions',
                     'style_profiles',
                     'user_preferences',
                     'user_custom_timezones',
@@ -157,7 +158,7 @@ function handleExportDatabase() {
             'tile_arrangements', 'category_arrangements', 'rich_text_content',
             'user_tile_favorites', 'user_link_favorites', 'user_tile_permissions',
             'style_profiles', 'user_preferences', 'user_custom_timezones', 'user_alarms', 'monitors', 'monitor_logs',
-            'browser_list', 'browser_list_metadata', 'roles', 'user_roles', 'role_tile_permissions', 'role_link_permissions'
+            'browser_list', 'browser_list_metadata', 'roles', 'user_roles', 'role_tile_permissions', 'role_link_permissions', 'role_tab_permissions'
         ];
 
         foreach ($tables as $table) {

@@ -67,6 +67,17 @@ export interface AssignRolesToUserRequest {
   roleIds: number[];
 }
 
+export interface RoleTabPermission {
+  tabId: string;
+  canView: boolean;
+  createdAt: number;
+}
+
+export interface AssignTabsRequest {
+  tabIds: string[];
+  canView?: boolean;
+}
+
 export const rolesService = {
   async getAllRoles(): Promise<Role[]> {
     const response = await fetch(`${API_BASE}/roles`, {
@@ -119,6 +130,20 @@ export const rolesService = {
     if (!response.ok) {
       const data = await response.json();
       throw new Error(data.error || 'Failed to fetch role links');
+    }
+
+    return response.json();
+  },
+
+  async getRoleTabs(roleId: number): Promise<RoleTabPermission[]> {
+    const response = await fetch(`${API_BASE}/roles/${roleId}/tabs`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to fetch role tabs');
     }
 
     return response.json();
@@ -220,6 +245,34 @@ export const rolesService = {
       const data = await response.json();
       throw new Error(data.error || 'Failed to assign roles to user');
     }
+  },
+
+  async assignTabsToRole(roleId: number, request: AssignTabsRequest): Promise<void> {
+    const response = await fetch(`${API_BASE}/roles/${roleId}/assign-tabs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to assign tabs to role');
+    }
+  },
+
+  async getCurrentUserAllowedTabs(): Promise<string[]> {
+    const response = await fetch(`${API_BASE}/roles/current-user/tabs`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to fetch allowed tabs');
+    }
+
+    return response.json();
   },
 
   async removeTileFromRole(roleId: number, tileId: string): Promise<void> {

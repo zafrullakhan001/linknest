@@ -170,6 +170,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [rolesLoading, setRolesLoading] = useState(false);
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [showRoleTilesModal, setShowRoleTilesModal] = useState(false);
+  const [showRoleTabsModal, setShowRoleTabsModal] = useState(false);
   const [showUserRolesModal, setShowUserRolesModal] = useState(false);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
   const [selectedUserForRoles, setSelectedUserForRoles] = useState<number | null>(null);
@@ -180,8 +181,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [allLinks, setAllLinks] = useState<Array<{ id: string; label: string; url: string; tileId: string; tileTitle: string }>>([]);
   const [roleTilesLoading, setRoleTilesLoading] = useState(false);
   const [roleLinksLoading, setRoleLinksLoading] = useState(false);
+  const [roleTabsLoading, setRoleTabsLoading] = useState(false);
   const [selectedTileIds, setSelectedTileIds] = useState<Set<string>>(new Set());
   const [selectedLinkIds, setSelectedLinkIds] = useState<Set<string>>(new Set());
+  const [selectedTabIds, setSelectedTabIds] = useState<Set<string>>(new Set());
   const [tileSearchTerm, setTileSearchTerm] = useState('');
   const [linkSearchTerm, setLinkSearchTerm] = useState('');
   const [expandedTiles, setExpandedTiles] = useState<Set<string>>(new Set());
@@ -923,6 +926,49 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       await loadRoles();
     } catch (err: any) {
       setError(err.message || 'Failed to assign tiles/links');
+    }
+  };
+
+  const handleManageRoleTabs = async (role: Role) => {
+    setSelectedRole(role);
+    setRoleTabsLoading(true);
+    setSelectedTabIds(new Set());
+    try {
+      // Load existing tab assignments for this role
+      try {
+        const roleTabs = await rolesService.getRoleTabs(role.id);
+        const existingTabIds = new Set(roleTabs.map(rt => rt.tabId));
+        setSelectedTabIds(existingTabIds);
+      } catch (err) {
+        // Ignore if no tabs assigned yet
+      }
+      setShowRoleTabsModal(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load tabs');
+    } finally {
+      setRoleTabsLoading(false);
+    }
+  };
+
+  const handleAssignTabsToRole = async () => {
+    if (!selectedRole) {
+      setError('No role selected');
+      return;
+    }
+
+    if (selectedTabIds.size === 0) {
+      setError('Please select at least one tab');
+      return;
+    }
+
+    try {
+      setError('');
+      await rolesService.assignTabsToRole(selectedRole.id, { tabIds: Array.from(selectedTabIds), canView: true });
+      setShowRoleTabsModal(false);
+      setSelectedTabIds(new Set());
+      await loadRoles();
+    } catch (err: any) {
+      setError(err.message || 'Failed to assign tabs');
     }
   };
 
@@ -4551,6 +4597,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       Tiles & Links
                                     </button>
                                     <button
+                                      onClick={() => handleManageRoleTabs(role)}
+                                      className="text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-300 transition-colors"
+                                    >
+                                      Tabs
+                                    </button>
+                                    <button
                                       onClick={() => handleDeleteRole(role.id)}
                                       className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition-colors"
                                     >
@@ -7184,6 +7236,119 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
                 >
                   Assign {selectedLinkIds.size > 0 ? `${selectedLinkIds.size} ` : ''}Links
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Role Tabs Modal */}
+      {showRoleTabsModal && selectedRole && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                  Assign Tabs to Role: {selectedRole.name}
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowRoleTabsModal(false);
+                    setSelectedTabIds(new Set());
+                    setError('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              {roleTabsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    Select tabs that users with this role can access. Users will only see tabs that are both globally enabled and allowed by their roles.
+                  </p>
+                  
+                  <div className="space-y-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30 p-4">
+                    {[
+                      { id: 'public', label: 'Public', description: 'Public spaces visible to everyone' },
+                      { id: 'your-apps', label: 'Your Apps', description: 'Tiles and links assigned via roles' },
+                      { id: 'favorites', label: 'Favorites', description: 'User favorite spaces and links' },
+                      { id: 'private', label: 'Private', description: 'Private spaces (requires login)' },
+                      { id: 'scheduled', label: 'Scheduled', description: 'Spaces scheduled for future' },
+                      { id: 'expired', label: 'Expired', description: 'Expired spaces' },
+                      { id: 'archive', label: 'Archive', description: 'Archived spaces' },
+                      { id: 'recycle-bin', label: 'Recycle Bin', description: 'Deleted spaces' },
+                      { id: 'monitoring', label: 'Monitoring', description: 'Monitoring dashboard (admin only)' }
+                    ].map((tab) => (
+                      <label
+                        key={tab.id}
+                        className="flex items-start gap-3 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-lg cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedTabIds.has(tab.id)}
+                          onChange={(e) => {
+                            const newTabSet = new Set(selectedTabIds);
+                            if (e.target.checked) {
+                              newTabSet.add(tab.id);
+                            } else {
+                              newTabSet.delete(tab.id);
+                            }
+                            setSelectedTabIds(newTabSet);
+                          }}
+                          className="mt-1 w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-1"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-slate-900 dark:text-white">
+                            {tab.label}
+                          </div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400">
+                            {tab.description}
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+
+                  <div className="text-sm text-slate-600 dark:text-slate-400">
+                    {selectedTabIds.size} tab{selectedTabIds.size !== 1 ? 's' : ''} selected
+                  </div>
+                </>
+              )}
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => {
+                    setShowRoleTabsModal(false);
+                    setSelectedTabIds(new Set());
+                    setError('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAssignTabsToRole}
+                  disabled={selectedTabIds.size === 0 || roleTabsLoading}
+                  className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Assign {selectedTabIds.size > 0 ? `${selectedTabIds.size} ` : ''}Tab{selectedTabIds.size !== 1 ? 's' : ''}
                 </button>
               </div>
             </div>

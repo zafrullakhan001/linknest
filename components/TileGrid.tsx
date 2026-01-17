@@ -18,6 +18,7 @@ import { favoriteLinkHealthService, LinkHealthCheckResult } from '../services/fa
 import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, getTileDecorationClass, TileAnimation, TileDecoration } from './TileAnimationSelector';
 import { MonitoringDashboard } from './MonitoringDashboard';
 import { getDisabledTabsFromSettings } from '../services/tabVisibilityService';
+import { rolesService } from '../services/rolesService';
 
 
 interface TileGridProps {
@@ -864,22 +865,55 @@ export const TileGrid: React.FC<TileGridProps> = ({
 }) => {
   const { settings } = useSettings();
   const { user } = useAuth();
+  
+  // Store allowed tabs based on user's roles
+  const [allowedTabsByRole, setAllowedTabsByRole] = useState<Set<string>>(new Set());
+  const [allowedTabsLoading, setAllowedTabsLoading] = useState(false);
 
   const disabledAppTabs = useMemo(() => getDisabledTabsFromSettings(settings), [settings?.disabled_tabs]);
 
+  // Check if user has roles - if yes, check role permissions; if no, use global settings only
   const isTabDisabledBySettings = useCallback((tab: TabType) => {
-    // Favorites setting controls both favorites + public-favorites
-    if (tab === 'favorites' || tab === 'public-favorites') return disabledAppTabs.has('favorites');
-    if (tab === 'public') return disabledAppTabs.has('public');
-    if (tab === 'your-apps') return disabledAppTabs.has('your-apps');
-    if (tab === 'private') return disabledAppTabs.has('private');
-    if (tab === 'scheduled') return disabledAppTabs.has('scheduled');
-    if (tab === 'expired') return disabledAppTabs.has('expired');
-    if (tab === 'archive') return disabledAppTabs.has('archive');
-    if (tab === 'recycle-bin') return disabledAppTabs.has('recycle-bin');
-    if (tab === 'monitoring') return disabledAppTabs.has('monitoring');
+    // First check global settings - if disabled globally, hide from everyone
+    const disabledGlobally = (() => {
+      if (tab === 'favorites' || tab === 'public-favorites') return disabledAppTabs.has('favorites');
+      if (tab === 'public') return disabledAppTabs.has('public');
+      if (tab === 'your-apps') return disabledAppTabs.has('your-apps');
+      if (tab === 'private') return disabledAppTabs.has('private');
+      if (tab === 'scheduled') return disabledAppTabs.has('scheduled');
+      if (tab === 'expired') return disabledAppTabs.has('expired');
+      if (tab === 'archive') return disabledAppTabs.has('archive');
+      if (tab === 'recycle-bin') return disabledAppTabs.has('recycle-bin');
+      if (tab === 'monitoring') return disabledAppTabs.has('monitoring');
+      return false;
+    })();
+    
+    if (disabledGlobally) return true;
+    
+    // If user has roles, check role permissions
+    if (isAuthenticated && user && allowedTabsByRole.size > 0) {
+      // Convert TabType to the format stored in role_tab_permissions
+      const tabIdMap: Record<TabType, string> = {
+        'favorites': 'favorites',
+        'public-favorites': 'favorites',
+        'public': 'public',
+        'your-apps': 'your-apps',
+        'private': 'private',
+        'scheduled': 'scheduled',
+        'expired': 'expired',
+        'archive': 'archive',
+        'recycle-bin': 'recycle-bin',
+        'monitoring': 'monitoring'
+      };
+      
+      const tabId = tabIdMap[tab];
+      // If tab not in allowedTabsByRole, hide it (role-based restriction)
+      return !allowedTabsByRole.has(tabId);
+    }
+    
+    // User has no roles or not authenticated - use global settings only
     return false;
-  }, [disabledAppTabs]);
+  }, [disabledAppTabs, isAuthenticated, user, allowedTabsByRole]);
 
   const getFallbackTab = useCallback((): TabType | null => {
     const candidates: TabType[] = isAuthenticated
@@ -1002,6 +1036,30 @@ export const TileGrid: React.FC<TileGridProps> = ({
     window.addEventListener('switchTab', handleSwitchTab);
     return () => window.removeEventListener('switchTab', handleSwitchTab);
   }, [getFallbackTab, isAuthenticated, isTabDisabledBySettings, user]);
+
+  // Fetch allowed tabs based on user's roles when authenticated
+  useEffect(() => {
+    if (isAuthenticated && user && !user.is_admin) {
+      // Only check role permissions for non-admin users
+      // Admins can see all tabs (unless disabled globally)
+      setAllowedTabsLoading(true);
+      rolesService.getCurrentUserAllowedTabs()
+        .then(tabs => {
+          setAllowedTabsByRole(new Set(tabs));
+        })
+        .catch(err => {
+          console.error('Failed to fetch allowed tabs:', err);
+          // If fetch fails, allow all tabs (fallback to global settings)
+          setAllowedTabsByRole(new Set());
+        })
+        .finally(() => {
+          setAllowedTabsLoading(false);
+        });
+    } else {
+      // Not authenticated, admin, or no user - clear role-based restrictions
+      setAllowedTabsByRole(new Set());
+    }
+  }, [isAuthenticated, user]);
 
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [publicFavorites, setPublicFavorites] = useState<string[]>([]);
@@ -2537,7 +2595,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
         window.location.href = tile.hyperlinkUrl;
       }
     } else {
-      window.location.hash = `#/tile/${tileId}`;
+      // Include the active tab in the URL hash so TileDetail knows the source context
+      window.location.hash = `#/tile/${tileId}?from=${activeTab}`;
     }
   };
 

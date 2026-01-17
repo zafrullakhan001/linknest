@@ -17,6 +17,7 @@ interface TileDetailProps {
     onUpdateTiles: (tiles: Tile[], skipReload?: boolean) => void;
     isAuthenticated?: boolean;
     onAuthRequired?: () => void;
+    sourceTab?: 'public' | 'your-apps' | 'private' | 'favorites' | 'public-favorites' | null;
 }
 
 // Enhanced emoji categories with more emojis
@@ -157,7 +158,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     allTiles,
     onUpdateTiles,
     isAuthenticated = false,
-    onAuthRequired
+    onAuthRequired,
+    sourceTab = null
 }) => {
     const [isEditing, setIsEditing] = useState(false);
     const autoSavingRef = useRef(false);
@@ -2440,18 +2442,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
 
         // Filter sections and links by schedule in view mode
-        // Apply role-based filtering if tile has links with role access (from "Your Apps" tab)
-        // Otherwise, show all links based on their own visibility settings (Public, Private, Authenticated tabs)
+        // Apply role-based filtering ONLY if sourceTab is "your-apps"
+        // For all other tabs (public, private, etc.), show all links based on their own visibility settings
         if (!isEditing) {
-            // Check if this tile has any links with role-based access
-            // If it does, it means it's being viewed from "Your Apps" tab context
-            const hasRoleBasedAccess = tile.tabs?.some(tab => 
-                tab.sections?.some(section => 
-                    section.links?.some(link => link.hasRoleAccess)
-                ) || tab.links?.some(link => link.hasRoleAccess)
-            ) || tile.sections?.some(section => 
-                section.links?.some(link => link.hasRoleAccess)
-            );
+            // Only apply role-based filtering if we came from "Your Apps" tab
+            const shouldApplyRoleFiltering = sourceTab === 'your-apps';
 
             sectionsToFilter = sectionsToFilter
                 .filter(section => isContentVisible(section))
@@ -2460,9 +2455,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     links: section.links.filter(link => {
                         // Always filter by schedule
                         if (!isContentVisible(link)) return false;
-                        // If tile has links with role access, only show those links (Your Apps tab context)
-                        // Otherwise, show all links based on their visibility settings (Public/Private/Authenticated tabs)
-                        if (hasRoleBasedAccess) {
+                        // Only apply role-based filtering if source is "Your Apps" tab
+                        // For all other tabs (public, private, authenticated), show all links based on their visibility
+                        if (shouldApplyRoleFiltering) {
                             return link.hasRoleAccess === true;
                         }
                         return true;
@@ -2716,18 +2711,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 {displayTabs.map((tab) => {
                                     const isActive = selectedTabId === tab.id;
                                     const tabSections = tab.sections || [];
-                                    // Check if tile has role-based access to filter link count
-                                    const hasRoleBasedAccess = tile.tabs?.some(t => 
-                                        t.sections?.some(s => 
-                                            s.links?.some(link => link.hasRoleAccess)
-                                        ) || t.links?.some(link => link.hasRoleAccess)
-                                    ) || tile.sections?.some(s => 
-                                        s.links?.some(link => link.hasRoleAccess)
-                                    );
+                                    // Only apply role-based filtering if source is "Your Apps" tab
+                                    const shouldApplyRoleFiltering = sourceTab === 'your-apps';
                                     // Count links, filtering by role access if needed
                                     const tabLinksCount = tabSections.reduce((acc, s) => {
                                         const links = s.links || [];
-                                        const filteredLinks = hasRoleBasedAccess 
+                                        const filteredLinks = shouldApplyRoleFiltering 
                                             ? links.filter(link => link.hasRoleAccess === true)
                                             : links;
                                         return acc + filteredLinks.length;
