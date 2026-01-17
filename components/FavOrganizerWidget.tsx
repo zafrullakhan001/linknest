@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { createTile } from '../services/storageService';
+import { parseSpaceExportObject, normalizeImportedTiles } from '../services/spaceTransferService';
 
 interface Bookmark {
   title: string;
@@ -88,6 +90,16 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
   const [showOfflinePrompt, setShowOfflinePrompt] = useState(false);
   const [offlinePrompt, setOfflinePrompt] = useState<string>('');
   const [offlineResponse, setOfflineResponse] = useState<string>('');
+  
+  // Import to category state
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [categoryName, setCategoryName] = useState<string>('');
+  const [importProgress, setImportProgress] = useState<{
+    current: number;
+    total: number;
+    status: string;
+    errors: string[];
+  } | null>(null);
 
   // Auto-generate tiles from bookmarks by domain (for manual organization)
   const autoGenerateTilesByDomain = (bookmarkList: Bookmark[]) => {
@@ -1136,6 +1148,125 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
       alert('JSON copied to clipboard!');
     } catch (err) {
       setError('Failed to copy to clipboard');
+    }
+  };
+
+  // Import JSON directly into a new category
+  const handleImportToCategory = async () => {
+    if (!organizedJson) {
+      setError('No JSON to import. Please generate JSON first.');
+      return;
+    }
+
+    const finalCategoryName = categoryName.trim() || 'Imported Bookmarks';
+    
+    if (!finalCategoryName) {
+      setError('Please enter a category name');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      setImportProgress({
+        current: 0,
+        total: 0,
+        status: 'Parsing JSON...',
+        errors: []
+      });
+
+      // Parse the JSON
+      const data = JSON.parse(organizedJson);
+      
+      // Parse and normalize using the same functions as the app
+      const parsed = parseSpaceExportObject(data);
+      const normalizedTiles = normalizeImportedTiles(parsed);
+
+      // Update group to the new category name
+      const tilesToImport = normalizedTiles.map(tile => ({
+        ...tile,
+        group: finalCategoryName
+      }));
+
+      if (tilesToImport.length === 0) {
+        setError('No tiles found to import.');
+        setImportProgress(null);
+        return;
+      }
+
+      // Update progress
+      setImportProgress({
+        current: 0,
+        total: tilesToImport.length,
+        status: `Importing ${tilesToImport.length} tiles...`,
+        errors: []
+      });
+
+      // Import tiles one by one
+      let successCount = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      for (let i = 0; i < tilesToImport.length; i++) {
+        const tile = tilesToImport[i];
+        try {
+          await createTile(tile);
+          successCount++;
+          
+          // Update progress
+          setImportProgress({
+            current: i + 1,
+            total: tilesToImport.length,
+            status: `Imported ${i + 1} of ${tilesToImport.length} tiles...`,
+            errors: [...errors]
+          });
+        } catch (error) {
+          errorCount++;
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          errors.push(`Failed to import "${tile.title}": ${errorMsg}`);
+          console.error('Failed to import tile:', tile.title, error);
+          
+          // Update progress with error
+          setImportProgress({
+            current: i + 1,
+            total: tilesToImport.length,
+            status: `Imported ${i + 1} of ${tilesToImport.length} tiles... (${errorCount} errors)`,
+            errors: [...errors]
+          });
+        }
+      }
+
+      // Final status
+      if (errorCount === 0) {
+        setImportProgress({
+          current: tilesToImport.length,
+          total: tilesToImport.length,
+          status: `✅ Successfully imported ${successCount} tiles into category "${finalCategoryName}"!`,
+          errors: []
+        });
+        setError(null);
+        
+        // Clear the dialog after a delay
+        setTimeout(() => {
+          setShowImportDialog(false);
+          setCategoryName('');
+          setImportProgress(null);
+        }, 3000);
+      } else {
+        setImportProgress({
+          current: tilesToImport.length,
+          total: tilesToImport.length,
+          status: `⚠️ Imported ${successCount} tiles, ${errorCount} failed.`,
+          errors: errors
+        });
+        setError(`Import completed with ${errorCount} error(s). See details below.`);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to import JSON');
+      setImportProgress(null);
+      console.error('Error importing JSON:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -2826,6 +2957,117 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             You can import this JSON file using the category import feature in the app
           </p>
+          
+          {/* Import to Category Button */}
+          <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
+            <button
+              onClick={() => setShowImportDialog(true)}
+              disabled={loading}
+              className="w-full px-4 py-2 bg-emerald-500 text-white rounded hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+            >
+              📥 Import to New Category
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Import Dialog */}
+      {showImportDialog && organizedJson && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                  Import to Category
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowImportDialog(false);
+                    setCategoryName('');
+                    setImportProgress(null);
+                  }}
+                  className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                  disabled={loading}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Category Name
+                </label>
+                <input
+                  type="text"
+                  value={categoryName}
+                  onChange={(e) => setCategoryName(e.target.value)}
+                  placeholder="e.g., My Bookmarks, Work Links, etc."
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  disabled={loading}
+                />
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  A new category will be created with this name
+                </p>
+              </div>
+
+              {/* Progress Display */}
+              {importProgress && (
+                <div className="mb-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
+                  <div className="mb-2">
+                    <div className="flex items-center justify-between text-sm text-slate-700 dark:text-slate-300 mb-1">
+                      <span>{importProgress.status}</span>
+                      <span>{importProgress.current} / {importProgress.total}</span>
+                    </div>
+                    {importProgress.total > 0 && (
+                      <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-2">
+                        <div
+                          className="bg-brand-500 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  
+                  {importProgress.errors.length > 0 && (
+                    <div className="mt-3 max-h-32 overflow-y-auto">
+                      <p className="text-xs font-medium text-red-600 dark:text-red-400 mb-1">
+                        Errors ({importProgress.errors.length}):
+                      </p>
+                      <ul className="text-xs text-red-600 dark:text-red-400 space-y-1">
+                        {importProgress.errors.slice(0, 5).map((error, idx) => (
+                          <li key={idx}>• {error}</li>
+                        ))}
+                        {importProgress.errors.length > 5 && (
+                          <li>... and {importProgress.errors.length - 5} more</li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowImportDialog(false);
+                    setCategoryName('');
+                    setImportProgress(null);
+                  }}
+                  disabled={loading}
+                  className="flex-1 px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleImportToCategory}
+                  disabled={loading || !categoryName.trim()}
+                  className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                >
+                  {loading ? 'Importing...' : 'Import'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
