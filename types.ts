@@ -89,6 +89,15 @@ export interface Tile {
   expiresAt?: string; // ISO date string - tile expires at this date/time
   archivedAt?: number; // Timestamp when tile was archived
   browser?: string; // Browser to open links in: 'default', 'chrome', 'firefox', 'edge', 'safari', or custom browser ID
+  // Tile decoration properties
+  tileBackgroundColor?: string; // Background color (hex code)
+  tileGradientEnabled?: boolean; // Whether to use gradient background
+  tileGradientColors?: string[]; // Array of gradient colors (hex codes)
+  tileGradientDirection?: string; // Gradient direction (e.g., 'to right', 'to bottom', '45deg')
+  tileGradientType?: 'linear' | 'radial' | 'conic' | 'repeating-linear' | 'repeating-radial' | 'repeating-conic'; // Gradient type
+  tileGradientColorPositions?: number[]; // Array of color stop positions (0-100) for each gradient color
+  tileBorderRadius?: number; // Border radius in pixels
+  tileTextColor?: string; // Text color (hex code)
 }
 
 export const THEME_COLORS = [

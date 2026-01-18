@@ -251,6 +251,18 @@ function handleGetTiles() {
         
         $visibleTileIds[] = $row['id'];
         
+        // Load tile decoration fields
+        $tileGradientColors = null;
+        if (isset($row['tile_gradient_colors']) && $row['tile_gradient_colors']) {
+            $decoded = json_decode($row['tile_gradient_colors'], true);
+            $tileGradientColors = is_array($decoded) ? $decoded : null;
+        }
+        $tileGradientColorPositions = null;
+        if (isset($row['tile_gradient_color_positions']) && $row['tile_gradient_color_positions']) {
+            $decoded = json_decode($row['tile_gradient_color_positions'], true);
+            $tileGradientColorPositions = is_array($decoded) ? $decoded : null;
+        }
+        
         $tile = [
             'id' => $row['id'],
             'title' => $row['title'],
@@ -274,6 +286,14 @@ function handleGetTiles() {
             'visibleFrom' => $row['visible_from'] ?? null,
             'expiresAt' => $row['expires_at'] ?? null,
             'hasRoleAccess' => $hasRoleAccess,
+            'tileBackgroundColor' => !empty($row['tile_background_color']) ? $row['tile_background_color'] : null,
+            'tileGradientEnabled' => isset($row['tile_gradient_enabled']) && $row['tile_gradient_enabled'] !== null ? (bool)$row['tile_gradient_enabled'] : null,
+            'tileGradientColors' => $tileGradientColors,
+            'tileGradientColorPositions' => $tileGradientColorPositions,
+            'tileGradientDirection' => isset($row['tile_gradient_direction']) && $row['tile_gradient_direction'] !== null && $row['tile_gradient_direction'] !== '' ? (is_numeric($row['tile_gradient_direction']) ? (int)$row['tile_gradient_direction'] : $row['tile_gradient_direction']) : null,
+            'tileGradientType' => !empty($row['tile_gradient_type']) ? $row['tile_gradient_type'] : null,
+            'tileBorderRadius' => isset($row['tile_border_radius']) && $row['tile_border_radius'] !== null ? (int)$row['tile_border_radius'] : null,
+            'tileTextColor' => !empty($row['tile_text_color']) ? $row['tile_text_color'] : null,
             'tabs' => []
         ];
         
@@ -731,6 +751,18 @@ function handleGetTile($tileId) {
         sendJSON(['error' => 'Access denied. You do not have permission to view this tile.'], 403);
     }
     
+    // Load tile decoration fields
+    $tileGradientColors = null;
+    if (isset($row['tile_gradient_colors']) && $row['tile_gradient_colors']) {
+        $decoded = json_decode($row['tile_gradient_colors'], true);
+        $tileGradientColors = is_array($decoded) ? $decoded : null;
+    }
+    $tileGradientColorPositions = null;
+    if (isset($row['tile_gradient_color_positions']) && $row['tile_gradient_color_positions']) {
+        $decoded = json_decode($row['tile_gradient_color_positions'], true);
+        $tileGradientColorPositions = is_array($decoded) ? $decoded : null;
+    }
+    
     $tile = [
         'id' => $row['id'],
         'title' => $row['title'],
@@ -750,6 +782,16 @@ function handleGetTile($tileId) {
         'canView' => $canView,
         'canEdit' => $canEdit,
         'canDelete' => $canDelete,
+        'visibleFrom' => $row['visible_from'] ?? null,
+        'expiresAt' => $row['expires_at'] ?? null,
+        'tileBackgroundColor' => !empty($row['tile_background_color']) ? $row['tile_background_color'] : null,
+        'tileGradientEnabled' => isset($row['tile_gradient_enabled']) && $row['tile_gradient_enabled'] !== null ? (bool)$row['tile_gradient_enabled'] : null,
+        'tileGradientColors' => $tileGradientColors,
+        'tileGradientColorPositions' => $tileGradientColorPositions,
+        'tileGradientDirection' => isset($row['tile_gradient_direction']) && $row['tile_gradient_direction'] !== null && $row['tile_gradient_direction'] !== '' ? (is_numeric($row['tile_gradient_direction']) ? (int)$row['tile_gradient_direction'] : $row['tile_gradient_direction']) : null,
+        'tileGradientType' => !empty($row['tile_gradient_type']) ? $row['tile_gradient_type'] : null,
+        'tileBorderRadius' => isset($row['tile_border_radius']) && $row['tile_border_radius'] !== null ? (int)$row['tile_border_radius'] : null,
+        'tileTextColor' => !empty($row['tile_text_color']) ? $row['tile_text_color'] : null,
         'tabs' => []
     ];
     
@@ -1013,7 +1055,18 @@ function handleCreateTile() {
     $visibleFrom = isset($data['visibleFrom']) && $data['visibleFrom'] ? $data['visibleFrom'] : null;
     $expiresAt = isset($data['expiresAt']) && $data['expiresAt'] ? $data['expiresAt'] : null;
     
-    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    // Handle tile decoration fields - preserve values, only set to null if truly missing
+    $tileBackgroundColor = isset($data['tileBackgroundColor']) && $data['tileBackgroundColor'] !== null && $data['tileBackgroundColor'] !== '' ? $data['tileBackgroundColor'] : null;
+    // For tileGradientEnabled, check if key exists (not just truthy) to preserve false values
+    $tileGradientEnabled = array_key_exists('tileGradientEnabled', $data) ? ($data['tileGradientEnabled'] ? 1 : 0) : null;
+    $tileGradientColors = ($tileGradientEnabled === 1 && isset($data['tileGradientColors']) && is_array($data['tileGradientColors']) && count($data['tileGradientColors']) > 0) ? json_encode($data['tileGradientColors']) : null;
+    $tileGradientColorPositions = ($tileGradientEnabled === 1 && isset($data['tileGradientColorPositions']) && is_array($data['tileGradientColorPositions']) && count($data['tileGradientColorPositions']) > 0) ? json_encode($data['tileGradientColorPositions']) : null;
+    $tileGradientDirection = ($tileGradientEnabled === 1 && isset($data['tileGradientDirection']) && $data['tileGradientDirection'] !== null) ? (is_numeric($data['tileGradientDirection']) ? (int)$data['tileGradientDirection'] : $data['tileGradientDirection']) : null;
+    $tileGradientType = ($tileGradientEnabled === 1 && isset($data['tileGradientType']) && $data['tileGradientType']) ? $data['tileGradientType'] : null;
+    $tileBorderRadius = array_key_exists('tileBorderRadius', $data) && $data['tileBorderRadius'] !== null ? (int)$data['tileBorderRadius'] : null;
+    $tileTextColor = isset($data['tileTextColor']) && $data['tileTextColor'] !== null && $data['tileTextColor'] !== '' ? $data['tileTextColor'] : null;
+    
+    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     
     if (!$stmt->execute([
         $tileId,
@@ -1031,6 +1084,14 @@ function handleCreateTile() {
         $openInNewTab,
         $visibleFrom,
         $expiresAt,
+        $tileBackgroundColor,
+        $tileGradientEnabled,
+        $tileGradientColors,
+        $tileGradientColorPositions,
+        $tileGradientDirection,
+        $tileGradientType,
+        $tileBorderRadius,
+        $tileTextColor,
         $data['createdAt'] ?? time()
     ])) {
         sendJSON(['error' => 'Failed to create tile'], 500);
@@ -1272,8 +1333,19 @@ function handleUpdateTile($tileId) {
         // Handle browser field
         $browser = isset($data['browser']) && $data['browser'] !== 'default' ? $data['browser'] : null;
         
+        // Handle tile decoration fields - preserve values, only set to null if truly missing
+        $tileBackgroundColor = isset($data['tileBackgroundColor']) && $data['tileBackgroundColor'] !== null && $data['tileBackgroundColor'] !== '' ? $data['tileBackgroundColor'] : null;
+        // For tileGradientEnabled, check if key exists (not just truthy) to preserve false values
+        $tileGradientEnabled = array_key_exists('tileGradientEnabled', $data) ? ($data['tileGradientEnabled'] ? 1 : 0) : null;
+        $tileGradientColors = ($tileGradientEnabled === 1 && isset($data['tileGradientColors']) && is_array($data['tileGradientColors']) && count($data['tileGradientColors']) > 0) ? json_encode($data['tileGradientColors']) : null;
+        $tileGradientColorPositions = ($tileGradientEnabled === 1 && isset($data['tileGradientColorPositions']) && is_array($data['tileGradientColorPositions']) && count($data['tileGradientColorPositions']) > 0) ? json_encode($data['tileGradientColorPositions']) : null;
+        $tileGradientDirection = ($tileGradientEnabled === 1 && isset($data['tileGradientDirection']) && $data['tileGradientDirection'] !== null) ? (is_numeric($data['tileGradientDirection']) ? (int)$data['tileGradientDirection'] : $data['tileGradientDirection']) : null;
+        $tileGradientType = ($tileGradientEnabled === 1 && isset($data['tileGradientType']) && $data['tileGradientType']) ? $data['tileGradientType'] : null;
+        $tileBorderRadius = array_key_exists('tileBorderRadius', $data) && $data['tileBorderRadius'] !== null ? (int)$data['tileBorderRadius'] : null;
+        $tileTextColor = isset($data['tileTextColor']) && $data['tileTextColor'] !== null && $data['tileTextColor'] !== '' ? $data['tileTextColor'] : null;
+        
         // Update tile
-        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ? WHERE id = ?');
+        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ?, tile_background_color = ?, tile_gradient_enabled = ?, tile_gradient_colors = ?, tile_gradient_color_positions = ?, tile_gradient_direction = ?, tile_gradient_type = ?, tile_border_radius = ?, tile_text_color = ? WHERE id = ?');
         $stmt->execute([
             $data['title'] ?? '',
             $data['description'] ?? '',
@@ -1289,6 +1361,14 @@ function handleUpdateTile($tileId) {
             $visibleFrom,
             $expiresAt,
             $browser,
+            $tileBackgroundColor,
+            $tileGradientEnabled,
+            $tileGradientColors,
+            $tileGradientColorPositions,
+            $tileGradientDirection,
+            $tileGradientType,
+            $tileBorderRadius,
+            $tileTextColor,
             $tileId
         ]);
         
@@ -2799,12 +2879,32 @@ function handleGetRecycleBin() {
         // For recycle bin, we only show tiles owned by the user (already filtered in query)
         // No need for additional visibility/permission checks since recycle bin is user-specific
         
+        // Load visibility and permissions
+        $tileVisibility = $row['visibility'] ?? 'public';
+        $tileAllowedUsers = $row['allowed_users'] ? json_decode($row['allowed_users'], true) : [];
+        
+        // For recycle bin, user owns the tile (since it's filtered by user_id)
+        $canView = true;
+        $canEdit = false; // Deleted tiles cannot be edited
+        
         // Check if this tile is favorited by the current user
         $isFavorite = false;
         if ($user) {
             $favStmt = $db->prepare('SELECT 1 FROM user_tile_favorites WHERE user_id = ? AND tile_id = ?');
             $favStmt->execute([$user['id'], $row['id']]);
             $isFavorite = $favStmt->fetch() !== false;
+        }
+        
+        // Load tile decoration fields for recycle bin
+        $tileGradientColors = null;
+        if (isset($row['tile_gradient_colors']) && $row['tile_gradient_colors']) {
+            $decoded = json_decode($row['tile_gradient_colors'], true);
+            $tileGradientColors = is_array($decoded) ? $decoded : null;
+        }
+        $tileGradientColorPositions = null;
+        if (isset($row['tile_gradient_color_positions']) && $row['tile_gradient_color_positions']) {
+            $decoded = json_decode($row['tile_gradient_color_positions'], true);
+            $tileGradientColorPositions = is_array($decoded) ? $decoded : null;
         }
         
         $tile = [
@@ -2828,6 +2928,14 @@ function handleGetRecycleBin() {
             'canDelete' => true, // Can permanently delete from recycle bin
             'visibleFrom' => $row['visible_from'] ?? null,
             'expiresAt' => $row['expires_at'] ?? null,
+            'tileBackgroundColor' => !empty($row['tile_background_color']) ? $row['tile_background_color'] : null,
+            'tileGradientEnabled' => isset($row['tile_gradient_enabled']) && $row['tile_gradient_enabled'] !== null ? (bool)$row['tile_gradient_enabled'] : null,
+            'tileGradientColors' => $tileGradientColors,
+            'tileGradientColorPositions' => $tileGradientColorPositions,
+            'tileGradientDirection' => isset($row['tile_gradient_direction']) && $row['tile_gradient_direction'] !== null && $row['tile_gradient_direction'] !== '' ? (is_numeric($row['tile_gradient_direction']) ? (int)$row['tile_gradient_direction'] : $row['tile_gradient_direction']) : null,
+            'tileGradientType' => !empty($row['tile_gradient_type']) ? $row['tile_gradient_type'] : null,
+            'tileBorderRadius' => isset($row['tile_border_radius']) && $row['tile_border_radius'] !== null ? (int)$row['tile_border_radius'] : null,
+            'tileTextColor' => !empty($row['tile_text_color']) ? $row['tile_text_color'] : null,
             'tabs' => []
         ];
         
@@ -3116,6 +3224,18 @@ function handleGetArchive() {
                 }
             }
             
+            // Load tile decoration fields for archive
+            $tileGradientColors = null;
+            if (isset($row['tile_gradient_colors']) && $row['tile_gradient_colors']) {
+                $decoded = json_decode($row['tile_gradient_colors'], true);
+                $tileGradientColors = is_array($decoded) ? $decoded : null;
+            }
+            $tileGradientColorPositions = null;
+            if (isset($row['tile_gradient_color_positions']) && $row['tile_gradient_color_positions']) {
+                $decoded = json_decode($row['tile_gradient_color_positions'], true);
+                $tileGradientColorPositions = is_array($decoded) ? $decoded : null;
+            }
+            
             $tile = [
                 'id' => $row['id'],
                 'title' => $row['title'],
@@ -3137,6 +3257,14 @@ function handleGetArchive() {
                 'canDelete' => $canDelete, // Allow delete from archive (moves to recycle bin)
                 'visibleFrom' => $row['visible_from'] ?? null,
                 'expiresAt' => $row['expires_at'] ?? null,
+                'tileBackgroundColor' => !empty($row['tile_background_color']) ? $row['tile_background_color'] : null,
+                'tileGradientEnabled' => isset($row['tile_gradient_enabled']) && $row['tile_gradient_enabled'] !== null ? (bool)$row['tile_gradient_enabled'] : null,
+                'tileGradientColors' => $tileGradientColors,
+                'tileGradientColorPositions' => $tileGradientColorPositions,
+                'tileGradientDirection' => isset($row['tile_gradient_direction']) && $row['tile_gradient_direction'] !== null && $row['tile_gradient_direction'] !== '' ? (is_numeric($row['tile_gradient_direction']) ? (int)$row['tile_gradient_direction'] : $row['tile_gradient_direction']) : null,
+                'tileGradientType' => !empty($row['tile_gradient_type']) ? $row['tile_gradient_type'] : null,
+                'tileBorderRadius' => isset($row['tile_border_radius']) && $row['tile_border_radius'] !== null ? (int)$row['tile_border_radius'] : null,
+                'tileTextColor' => !empty($row['tile_text_color']) ? $row['tile_text_color'] : null,
                 'tabs' => []
             ];
             

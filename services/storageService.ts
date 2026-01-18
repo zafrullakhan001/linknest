@@ -30,7 +30,16 @@ const transformTile = (apiTile: any): Tile => {
     archivedAt: apiTile.archivedAt || undefined, // Include archivedAt if present (for archive)
     visibleFrom: apiTile.visibleFrom || undefined,
     expiresAt: apiTile.expiresAt || undefined,
-    browser: apiTile.browser || undefined // Include browser if present
+    browser: apiTile.browser || undefined, // Include browser if present
+    // Tile decoration properties - preserve all values including false/0, only use undefined for null/missing
+    tileBackgroundColor: apiTile.tileBackgroundColor !== undefined && apiTile.tileBackgroundColor !== null && apiTile.tileBackgroundColor !== '' ? apiTile.tileBackgroundColor : undefined,
+    tileGradientEnabled: apiTile.tileGradientEnabled !== undefined && apiTile.tileGradientEnabled !== null ? Boolean(apiTile.tileGradientEnabled) : undefined,
+    tileGradientColors: apiTile.tileGradientColors !== undefined && apiTile.tileGradientColors !== null && Array.isArray(apiTile.tileGradientColors) && apiTile.tileGradientColors.length > 0 ? apiTile.tileGradientColors : undefined,
+    tileGradientColorPositions: apiTile.tileGradientColorPositions !== undefined && apiTile.tileGradientColorPositions !== null && Array.isArray(apiTile.tileGradientColorPositions) && apiTile.tileGradientColorPositions.length > 0 ? apiTile.tileGradientColorPositions : undefined,
+    tileGradientDirection: apiTile.tileGradientDirection !== undefined && apiTile.tileGradientDirection !== null ? (typeof apiTile.tileGradientDirection === 'number' ? apiTile.tileGradientDirection : Number(apiTile.tileGradientDirection) || 90) : undefined,
+    tileGradientType: apiTile.tileGradientType !== undefined && apiTile.tileGradientType !== null && apiTile.tileGradientType !== '' ? apiTile.tileGradientType : undefined,
+    tileBorderRadius: apiTile.tileBorderRadius !== undefined && apiTile.tileBorderRadius !== null ? Number(apiTile.tileBorderRadius) : undefined,
+    tileTextColor: apiTile.tileTextColor !== undefined && apiTile.tileTextColor !== null && apiTile.tileTextColor !== '' ? apiTile.tileTextColor : undefined
   };
 };
 

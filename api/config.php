@@ -420,6 +420,30 @@ function initDatabase() {
             error_log('Tiles browser migration warning: ' . $e->getMessage());
         }
         
+        // Migrate existing tiles table to add tile decoration columns if they don't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $columnNames = array_column($columns, 'name');
+            $decorationColumns = [
+                'tile_background_color' => 'TEXT',
+                'tile_gradient_enabled' => 'INTEGER DEFAULT 0',
+                'tile_gradient_colors' => 'TEXT',
+                'tile_gradient_color_positions' => 'TEXT',
+                'tile_gradient_direction' => 'TEXT',
+                'tile_gradient_type' => 'TEXT',
+                'tile_border_radius' => 'INTEGER',
+                'tile_text_color' => 'TEXT'
+            ];
+            
+            foreach ($decorationColumns as $columnName => $columnType) {
+                if (!in_array($columnName, $columnNames)) {
+                    $db->exec("ALTER TABLE tiles ADD COLUMN $columnName $columnType");
+                }
+            }
+        } catch (PDOException $e) {
+            error_log('Tiles decoration migration warning: ' . $e->getMessage());
+        }
+        
         // Create tabs table
         $db->exec('CREATE TABLE IF NOT EXISTS tabs (
             id TEXT PRIMARY KEY,

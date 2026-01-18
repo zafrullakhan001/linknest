@@ -846,15 +846,98 @@ const SortableTile: React.FC<SortableTileProps> = ({
 
   const animationDelay = (groupIndex * 80) + (tileIndex * 50);
 
-  const style = {
+  // Check if tile has local decoration (takes precedence over global)
+  const hasLocalDecoration = !!(
+    tile.tileBackgroundColor ||
+    (tile.tileGradientEnabled && tile.tileGradientColors && tile.tileGradientColors.length > 0) ||
+    (tile.tileBorderRadius !== undefined && tile.tileBorderRadius >= 0) ||
+    tile.tileTextColor
+  );
+
+  // Build decoration styles (local decoration takes precedence)
+  const decorationStyles: React.CSSProperties = {
     animationDelay: `${animationDelay}ms`,
   };
 
-  const tileAnimatedClass = animationClass ? 'linknest-tile-animated' : '';
+  // Apply local decoration if it exists, using CSS custom properties for !important override
+  if (hasLocalDecoration) {
+    // Background color or gradient (local takes precedence - use CSS variables)
+    if (tile.tileGradientEnabled && tile.tileGradientColors && tile.tileGradientColors.length > 0) {
+      // Build gradient with color positions
+      const hasPositions = tile.tileGradientColorPositions && tile.tileGradientColorPositions.length === tile.tileGradientColors.length;
+      const gradientStops = tile.tileGradientColors.map((color, i) => {
+        if (hasPositions) {
+          return `${color} ${tile.tileGradientColorPositions![i]}%`;
+        }
+        return color;
+      }).join(', ');
+      
+      let gradientValue = '';
+      const angle = typeof tile.tileGradientDirection === 'number' ? tile.tileGradientDirection : (typeof tile.tileGradientDirection === 'string' ? parseInt(tile.tileGradientDirection.replace('deg', '')) || 90 : 90);
+      
+      if (tile.tileGradientType === 'linear' || tile.tileGradientType === 'repeating-linear') {
+        const prefix = tile.tileGradientType === 'repeating-linear' ? 'repeating-linear-gradient' : 'linear-gradient';
+        gradientValue = `${prefix}(${angle}deg, ${gradientStops})`;
+      } else if (tile.tileGradientType === 'radial' || tile.tileGradientType === 'repeating-radial') {
+        const prefix = tile.tileGradientType === 'repeating-radial' ? 'repeating-radial-gradient' : 'radial-gradient';
+        gradientValue = `${prefix}(circle, ${gradientStops})`;
+      } else if (tile.tileGradientType === 'conic' || tile.tileGradientType === 'repeating-conic') {
+        const prefix = tile.tileGradientType === 'repeating-conic' ? 'repeating-conic-gradient' : 'conic-gradient';
+        gradientValue = `${prefix}(from ${angle}deg, ${gradientStops})`;
+      }
+      // Set as CSS custom property so it can override !important rules
+      decorationStyles['--tile-local-background-image' as any] = gradientValue;
+      decorationStyles.backgroundImage = gradientValue;
+      decorationStyles.background = gradientValue;
+      decorationStyles.backgroundColor = 'transparent';
+    } else if (tile.tileBackgroundColor) {
+      decorationStyles['--tile-local-background' as any] = tile.tileBackgroundColor;
+      decorationStyles.backgroundColor = tile.tileBackgroundColor;
+      decorationStyles.background = tile.tileBackgroundColor;
+      decorationStyles.backgroundImage = 'none'; // Explicitly clear any background images
+    } else {
+      // If no background is set locally, don't set CSS variables (let global styles apply)
+      // But we still mark it as having local decoration if other properties are set
+    }
+
+    // Border radius (local takes precedence) - always apply if defined
+    if (tile.tileBorderRadius !== undefined && tile.tileBorderRadius !== null) {
+      decorationStyles['--tile-local-border-radius' as any] = `${tile.tileBorderRadius}px`;
+      decorationStyles.borderRadius = `${tile.tileBorderRadius}px`;
+    }
+
+    // Text color (local takes precedence) - always apply if defined
+    if (tile.tileTextColor) {
+      decorationStyles['--tile-local-text-color' as any] = tile.tileTextColor;
+      decorationStyles.color = tile.tileTextColor;
+    }
+  }
+
+  // Split animation class - only apply decoration class if no local decoration
+  // Extract just the animation class (remove decoration class if local decoration exists)
+  let finalAnimationClass = animationClass || '';
+  if (hasLocalDecoration && animationClass) {
+    // Remove decoration classes from animationClass, keep only animation classes
+    const decorationClasses = ['tile-decor-christmas', 'tile-decor-thanksgiving', 'tile-decor-veterans', 
+      'tile-decor-halloween', 'tile-decor-new-year', 'tile-decor-valentine', 'tile-decor-st-patrick',
+      'tile-decor-easter', 'tile-decor-birthday', 'tile-decor-party', 'tile-decor-snow',
+      'tile-decor-autumn', 'tile-decor-spring', 'tile-decor-summer'];
+    
+    const classParts = animationClass.split(' ').filter(cls => {
+      // Keep animation classes, remove decoration classes
+      return !decorationClasses.some(decClass => cls.includes(decClass));
+    });
+    finalAnimationClass = classParts.join(' ');
+  }
+
+  const tileAnimatedClass = finalAnimationClass ? 'linknest-tile-animated' : '';
+
+  // Use default border class
+  const borderClass = 'border border-slate-200 dark:border-slate-700/50 hover:border-brand-300 dark:hover:border-brand-500/50';
 
   return (
     <div
-      style={style}
+      style={decorationStyles}
       onClick={() => onTileClick(tile.id)}
       role="button"
       tabIndex={0}
@@ -865,8 +948,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
         }
       }}
       className={`
-        linknest-tile ${tileAnimatedClass} ${animationClass} group relative rounded-xl border border-slate-200 dark:border-slate-700/50
-        hover:border-brand-300 dark:hover:border-brand-500/50
+        linknest-tile ${hasLocalDecoration ? 'has-local-decoration' : ''} ${tileAnimatedClass} ${finalAnimationClass} group relative ${!hasLocalDecoration || (tile.tileBorderRadius === undefined) ? 'rounded-xl' : ''} ${borderClass}
         transition-all duration-200 
         flex flex-col h-full min-h-[140px] cursor-pointer
       `}
@@ -1466,6 +1548,19 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
   // Emoji Picker State
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
+  // Edit Modal Tab State
+  const [editModalActiveTab, setEditModalActiveTab] = useState<'general' | 'decoration'>('general');
+
+  // Tile Decoration State
+  const [tileBackgroundColor, setTileBackgroundColor] = useState<string>('');
+  const [tileGradientEnabled, setTileGradientEnabled] = useState<boolean>(false);
+  const [tileGradientColors, setTileGradientColors] = useState<string[]>(['#3b82f6', '#8b5cf6']);
+  const [tileGradientColorPositions, setTileGradientColorPositions] = useState<number[]>([0, 100]);
+  const [tileGradientDirection, setTileGradientDirection] = useState<number>(90); // Angle in degrees (0-360)
+  const [tileGradientType, setTileGradientType] = useState<'linear' | 'radial' | 'conic' | 'repeating-linear' | 'repeating-radial' | 'repeating-conic'>('linear');
+  const [tileBorderRadius, setTileBorderRadius] = useState<number>(12);
+  const [tileTextColor, setTileTextColor] = useState<string>('');
 
   // Tile Animation & Decoration State
   const { animation: initialAnimation, decoration: initialDecoration } = useTileAnimation();
@@ -2670,6 +2765,16 @@ export const TileGrid: React.FC<TileGridProps> = ({
     setOpenInNewTab(true);
     setVisibleFrom('');
     setExpiresAt('');
+    setEditModalActiveTab('general');
+    // Reset decoration properties
+    setTileBackgroundColor('');
+    setTileGradientEnabled(false);
+    setTileGradientColors(['#3b82f6', '#8b5cf6']);
+    setTileGradientColorPositions([0, 100]);
+    setTileGradientDirection(90);
+    setTileGradientType('linear');
+    setTileBorderRadius(12);
+    setTileTextColor('');
   };
 
   // Fetch users when modal opens and visibility is private
@@ -2985,6 +3090,40 @@ export const TileGrid: React.FC<TileGridProps> = ({
     // Convert ISO date strings to datetime-local format (YYYY-MM-DDTHH:mm)
     setVisibleFrom(tile.visibleFrom ? new Date(tile.visibleFrom).toISOString().slice(0, 16) : '');
     setExpiresAt(tile.expiresAt ? new Date(tile.expiresAt).toISOString().slice(0, 16) : '');
+    // Load decoration properties (use explicit checks to preserve false/0 values)
+    setTileBackgroundColor(tile.tileBackgroundColor ?? '');
+    setTileGradientEnabled(tile.tileGradientEnabled ?? false);
+    const loadedColors = tile.tileGradientColors && tile.tileGradientColors.length > 0 ? tile.tileGradientColors : ['#3b82f6', '#8b5cf6'];
+    setTileGradientColors(loadedColors);
+    // Load color positions or generate defaults (evenly spaced)
+    if (tile.tileGradientColorPositions && tile.tileGradientColorPositions.length === loadedColors.length) {
+      setTileGradientColorPositions(tile.tileGradientColorPositions);
+    } else {
+      // Generate evenly spaced positions
+      const positions = loadedColors.map((_, i) => loadedColors.length > 1 ? (i / (loadedColors.length - 1)) * 100 : 0);
+      setTileGradientColorPositions(positions);
+    }
+    // Convert direction to angle if it's a string, otherwise use the number
+    if (typeof tile.tileGradientDirection === 'string') {
+      const dirMap: { [key: string]: number } = {
+        'to right': 90,
+        'to left': 270,
+        'to bottom': 180,
+        'to top': 0,
+        'to bottom right': 135,
+        'to bottom left': 225,
+        'to top right': 45,
+        'to top left': 315
+      };
+      const angle = dirMap[tile.tileGradientDirection] ?? (parseInt(tile.tileGradientDirection.replace('deg', '')) || 90);
+      setTileGradientDirection(angle);
+    } else {
+      setTileGradientDirection(tile.tileGradientDirection ?? 90);
+    }
+    setTileGradientType((tile.tileGradientType ?? 'linear') as 'linear' | 'radial' | 'conic' | 'repeating-linear' | 'repeating-radial' | 'repeating-conic');
+    setTileBorderRadius(tile.tileBorderRadius ?? 12);
+    setTileTextColor(tile.tileTextColor ?? '');
+    setEditModalActiveTab('general');
     setIsEditModalOpen(true);
 
     // Load users if needed for private visibility
@@ -3025,7 +3164,17 @@ export const TileGrid: React.FC<TileGridProps> = ({
       hyperlinkUrl: tileType === 'hyperlink' ? hyperlinkUrl.trim() : undefined,
       openInNewTab: tileType === 'hyperlink' ? openInNewTab : undefined,
       visibleFrom: visibleFrom.trim() ? new Date(visibleFrom).toISOString() : undefined,
-      expiresAt: expiresAt.trim() ? new Date(expiresAt).toISOString() : undefined
+      expiresAt: expiresAt.trim() ? new Date(expiresAt).toISOString() : undefined,
+      // Tile decoration properties - preserve false/0 values, only use undefined for empty
+      // When all values are empty/default, they'll be undefined and tile will use global style manager
+      tileBackgroundColor: tileBackgroundColor.trim() ? tileBackgroundColor.trim() : undefined,
+      tileGradientEnabled: tileGradientEnabled !== undefined ? tileGradientEnabled : undefined,
+      tileGradientColors: tileGradientEnabled && tileGradientColors && tileGradientColors.length > 0 ? tileGradientColors : undefined,
+      tileGradientColorPositions: tileGradientEnabled && tileGradientColors && tileGradientColorPositions && tileGradientColorPositions.length === tileGradientColors.length ? tileGradientColorPositions : undefined,
+      tileGradientDirection: tileGradientEnabled && tileGradientDirection !== undefined ? tileGradientDirection : undefined,
+      tileGradientType: tileGradientEnabled && tileGradientType ? tileGradientType : undefined,
+      tileBorderRadius: tileBorderRadius !== undefined && tileBorderRadius !== null ? tileBorderRadius : undefined,
+      tileTextColor: tileTextColor.trim() ? tileTextColor.trim() : undefined
     };
 
     try {
@@ -5802,7 +5951,35 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 </button>
               </div>
 
+              {/* Tab Navigation */}
+              <div className="flex gap-2 mb-6 border-b border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => setEditModalActiveTab('general')}
+                  className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                    editModalActiveTab === 'general'
+                      ? 'text-brand-600 dark:text-brand-400 border-brand-500'
+                      : 'text-slate-500 dark:text-slate-400 border-transparent hover:text-slate-700 dark:hover:text-slate-300'
+                  }`}
+                >
+                  General
+                </button>
+                {tileType === 'space' && (
+                  <button
+                    onClick={() => setEditModalActiveTab('decoration')}
+                    className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                      editModalActiveTab === 'decoration'
+                        ? 'text-brand-600 dark:text-brand-400 border-brand-500'
+                        : 'text-slate-500 dark:text-slate-400 border-transparent hover:text-slate-700 dark:hover:text-slate-300'
+                    }`}
+                  >
+                    Tile Decoration
+                  </button>
+                )}
+              </div>
+
               <div className="space-y-4">
+                {editModalActiveTab === 'general' ? (
+                  <>
                 {/* Title */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Title</label>
@@ -6073,6 +6250,446 @@ export const TileGrid: React.FC<TileGridProps> = ({
                       </div>
                     </div>
                   </div>
+                )}
+                  </>
+                ) : (
+                  <>
+                    {/* Reset All Decoration */}
+                    <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <p className="text-xs font-semibold text-amber-900 dark:text-amber-200 mb-0.5">Reset Tile Decoration</p>
+                          <p className="text-xs text-amber-700 dark:text-amber-300">Clear all decoration settings to use global style manager styles</p>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            if (confirm('Clear all tile decoration settings? This will reset the tile to use global style manager styles.')) {
+                              if (!editingTile) return;
+                              
+                              // Clear all decoration state
+                              setTileBackgroundColor('');
+                              setTileGradientEnabled(false);
+                              setTileGradientColors(['#3b82f6', '#8b5cf6']);
+                              setTileGradientColorPositions([0, 100]);
+                              setTileGradientDirection(90);
+                              setTileGradientType('linear');
+                              setTileBorderRadius(12);
+                              setTileTextColor('');
+                              
+                              // Create updated tile with all decoration properties set to undefined
+                              const updatedTile: Tile = {
+                                ...editingTile,
+                                tileBackgroundColor: undefined,
+                                tileGradientEnabled: undefined,
+                                tileGradientColors: undefined,
+                                tileGradientColorPositions: undefined,
+                                tileGradientDirection: undefined,
+                                tileGradientType: undefined,
+                                tileBorderRadius: undefined,
+                                tileTextColor: undefined
+                              };
+                              
+                              try {
+                                // Update local state
+                                const updatedTiles = tiles.map(t => t.id === updatedTile.id ? updatedTile : t);
+                                onUpdateTiles(updatedTiles);
+                                
+                                // Save to backend if authenticated
+                                if (isAuthenticated) {
+                                  await saveTile(updatedTile);
+                                }
+                                
+                                // Update editing tile to reflect changes
+                                setEditingTile(updatedTile);
+                              } catch (error) {
+                                console.error('Failed to reset tile decoration:', error);
+                                alert('Failed to reset tile decoration. Please try again.');
+                              }
+                            }
+                          }}
+                          className="px-4 py-2 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-600 rounded-lg transition-colors shadow-sm hover:shadow-md"
+                        >
+                          Reset All
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Background Color */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Background Color</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="color"
+                          value={tileBackgroundColor || '#ffffff'}
+                          onChange={(e) => setTileBackgroundColor(e.target.value)}
+                          className="w-16 h-10 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+                        />
+                        <input
+                          type="text"
+                          value={tileBackgroundColor}
+                          onChange={(e) => setTileBackgroundColor(e.target.value)}
+                          placeholder="#ffffff"
+                          className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                        />
+                        {tileBackgroundColor && (
+                          <button
+                            onClick={() => setTileBackgroundColor('')}
+                            className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty to use default theme color</p>
+                    </div>
+
+                    {/* Gradient Settings */}
+                    <div>
+                      <label className="flex items-center gap-2 mb-1.5">
+                        <input
+                          type="checkbox"
+                          checked={tileGradientEnabled}
+                          onChange={(e) => setTileGradientEnabled(e.target.checked)}
+                          className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
+                        />
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Enable Gradient Background</span>
+                      </label>
+
+                      {tileGradientEnabled && (
+                        <div className="space-y-3 mt-3 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700">
+                          {/* Gradient Type */}
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Gradient Type</label>
+                            <div className="grid grid-cols-3 gap-2">
+                              {(['linear', 'radial', 'conic', 'repeating-linear', 'repeating-radial', 'repeating-conic'] as const).map((type) => (
+                                <button
+                                  key={type}
+                                  onClick={() => setTileGradientType(type)}
+                                  className={`px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+                                    tileGradientType === type
+                                      ? 'bg-brand-600 text-white'
+                                      : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'
+                                  }`}
+                                >
+                                  {type.includes('repeating-') 
+                                    ? type.replace('repeating-', 'R-').charAt(0).toUpperCase() + type.replace('repeating-', 'R-').slice(1)
+                                    : type.charAt(0).toUpperCase() + type.slice(1)}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Gradient Direction - Slider */}
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                              Gradient Direction/Angle: {tileGradientDirection}°
+                            </label>
+                            <div className="flex gap-2 items-center">
+                              <input
+                                type="range"
+                                min="0"
+                                max="360"
+                                value={tileGradientDirection}
+                                onChange={(e) => setTileGradientDirection(parseInt(e.target.value))}
+                                className="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-brand-600"
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                max="360"
+                                value={tileGradientDirection}
+                                onChange={(e) => setTileGradientDirection(parseInt(e.target.value) || 0)}
+                                className="w-20 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                              />
+                              <span className="text-xs text-slate-500 dark:text-slate-400">deg</span>
+                            </div>
+                            <div className="mt-2 flex gap-1 justify-between text-xs text-slate-500 dark:text-slate-400">
+                              <span>0° (Top)</span>
+                              <span>90° (Right)</span>
+                              <span>180° (Bottom)</span>
+                              <span>270° (Left)</span>
+                              <span>360°</span>
+                            </div>
+                          </div>
+
+                          {/* Gradient Colors with Position Controls */}
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Gradient Colors</label>
+                            <div className="space-y-2">
+                              {tileGradientColors.map((color, index) => (
+                                <div key={index} className="space-y-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+                                  <div className="flex gap-2 items-center">
+                                    <input
+                                      type="color"
+                                      value={color}
+                                      onChange={(e) => {
+                                        const newColors = [...tileGradientColors];
+                                        newColors[index] = e.target.value;
+                                        setTileGradientColors(newColors);
+                                      }}
+                                      className="w-12 h-10 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+                                    />
+                                    <input
+                                      type="text"
+                                      value={color}
+                                      onChange={(e) => {
+                                        const newColors = [...tileGradientColors];
+                                        newColors[index] = e.target.value;
+                                        setTileGradientColors(newColors);
+                                      }}
+                                      placeholder="#000000"
+                                      className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400"
+                                    />
+                                    {tileGradientColors.length > 2 && (
+                                      <button
+                                        onClick={() => {
+                                          const newColors = tileGradientColors.filter((_, i) => i !== index);
+                                          const newPositions = tileGradientColorPositions.filter((_, i) => i !== index);
+                                          setTileGradientColors(newColors);
+                                          setTileGradientColorPositions(newPositions);
+                                        }}
+                                        className="px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                      >
+                                        Remove
+                                      </button>
+                                    )}
+                                  </div>
+                                  {/* Color Position Control */}
+                                  <div className="flex gap-2 items-center">
+                                    <label className="text-xs text-slate-600 dark:text-slate-400 w-16">Position:</label>
+                                    <input
+                                      type="range"
+                                      min="0"
+                                      max="100"
+                                      value={tileGradientColorPositions[index] ?? (index / (tileGradientColors.length - 1)) * 100}
+                                      onChange={(e) => {
+                                        const newPositions = [...tileGradientColorPositions];
+                                        newPositions[index] = parseInt(e.target.value);
+                                        setTileGradientColorPositions(newPositions);
+                                      }}
+                                      className="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-brand-600"
+                                    />
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="100"
+                                      value={tileGradientColorPositions[index] ?? (index / (tileGradientColors.length - 1)) * 100}
+                                      onChange={(e) => {
+                                        const newPositions = [...tileGradientColorPositions];
+                                        newPositions[index] = parseInt(e.target.value) || 0;
+                                        setTileGradientColorPositions(newPositions);
+                                      }}
+                                      className="w-16 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                    />
+                                    <span className="text-xs text-slate-500 dark:text-slate-400 w-6">%</span>
+                                  </div>
+                                </div>
+                              ))}
+                              {tileGradientColors.length < 5 && (
+                                <button
+                                  onClick={() => {
+                                    setTileGradientColors([...tileGradientColors, '#000000']);
+                                    // Add position for new color (evenly spaced)
+                                    const newPosition = (tileGradientColors.length / (tileGradientColors.length + 1)) * 100;
+                                    setTileGradientColorPositions([...tileGradientColorPositions, newPosition]);
+                                  }}
+                                  className="w-full px-3 py-2 text-xs font-medium text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-500/10 hover:bg-brand-100 dark:hover:bg-brand-500/20 rounded-lg transition-colors border border-brand-200 dark:border-brand-500/30"
+                                >
+                                  + Add Color
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Gradient Preview */}
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Preview</label>
+                            <div
+                              className="w-full h-20 rounded-lg border border-slate-200 dark:border-slate-700"
+                              style={{
+                                background: (() => {
+                                  const hasPositions = tileGradientColorPositions && tileGradientColorPositions.length === tileGradientColors.length;
+                                  const gradientStops = tileGradientColors.map((color, i) => {
+                                    if (hasPositions) {
+                                      return `${color} ${tileGradientColorPositions[i]}%`;
+                                    }
+                                    return color;
+                                  }).join(', ');
+                                  
+                                  if (tileGradientType === 'linear' || tileGradientType === 'repeating-linear') {
+                                    const prefix = tileGradientType === 'repeating-linear' ? 'repeating-linear-gradient' : 'linear-gradient';
+                                    return `${prefix}(${tileGradientDirection}deg, ${gradientStops})`;
+                                  } else if (tileGradientType === 'radial' || tileGradientType === 'repeating-radial') {
+                                    const prefix = tileGradientType === 'repeating-radial' ? 'repeating-radial-gradient' : 'radial-gradient';
+                                    return `${prefix}(circle, ${gradientStops})`;
+                                  } else if (tileGradientType === 'conic' || tileGradientType === 'repeating-conic') {
+                                    const prefix = tileGradientType === 'repeating-conic' ? 'repeating-conic-gradient' : 'conic-gradient';
+                                    return `${prefix}(from ${tileGradientDirection}deg, ${gradientStops})`;
+                                  }
+                                  return `linear-gradient(${tileGradientDirection}deg, ${gradientStops})`;
+                                })()
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Style Presets */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Style Presets</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          // Metallic Presets
+                          { name: 'Gold', colors: ['#FFD700', '#FFA500', '#FF8C00'], direction: 135, textColor: '#fff' },
+                          { name: 'Silver', colors: ['#C0C0C0', '#A8A8A8', '#808080'], direction: 135, textColor: '#000' },
+                          { name: 'Bronze', colors: ['#CD7F32', '#A0522D', '#8B4513'], direction: 135, textColor: '#fff' },
+                          { name: 'Chrome', colors: ['#E8E8E8', '#C0C0C0', '#A0A0A0'], direction: 135, textColor: '#000' },
+                          { name: 'Copper', colors: ['#B87333', '#8B4513', '#654321'], direction: 135, textColor: '#fff' },
+                          { name: 'Platinum', colors: ['#E5E4E2', '#D3D3D3', '#C0C0C0'], direction: 135, textColor: '#000' },
+                          { name: 'Rose Gold', colors: ['#E8B4B8', '#D4A5A9', '#C8969A'], direction: 135, textColor: '#fff' },
+                          { name: 'Titanium', colors: ['#878681', '#6B6B6B', '#4F4F4F'], direction: 135, textColor: '#fff' },
+                          // Colorful Presets
+                          { name: 'Ocean Blue', colors: ['#0077BE', '#00A8E8', '#005F8C'], direction: 135, textColor: '#fff' },
+                          { name: 'Sunset', colors: ['#FF6B6B', '#FF8E53', '#FFA07A'], direction: 90, textColor: '#fff' },
+                          { name: 'Forest', colors: ['#2D5016', '#3D6B2A', '#4A7C3A'], direction: 180, textColor: '#fff' },
+                          { name: 'Purple Dream', colors: ['#6C5CE7', '#A29BFE', '#FD79A8'], direction: 135, textColor: '#fff' },
+                          { name: 'Orange Fire', colors: ['#FF5722', '#FF6D00', '#FF8F00'], direction: 90, textColor: '#fff' },
+                          { name: 'Mint Fresh', colors: ['#00E676', '#1DE9B6', '#00BFA5'], direction: 135, textColor: '#000' },
+                          { name: 'Cherry Blossom', colors: ['#FFB3BA', '#FFDFBA', '#FFFFBA'], direction: 90, textColor: '#333' },
+                          { name: 'Midnight', colors: ['#2C3E50', '#34495E', '#1A252F'], direction: 135, textColor: '#fff' },
+                          { name: 'Lavender', colors: ['#E1BEE7', '#CE93D8', '#BA68C8'], direction: 180, textColor: '#fff' },
+                          { name: 'Emerald', colors: ['#00C853', '#00E676', '#00B248'], direction: 135, textColor: '#fff' },
+                          { name: 'Coral Reef', colors: ['#FF6F61', '#FF8E80', '#FFAB91'], direction: 90, textColor: '#fff' },
+                          { name: 'Sky Blue', colors: ['#42A5F5', '#64B5F6', '#90CAF9'], direction: 180, textColor: '#fff' },
+                          { name: 'Raspberry', colors: ['#D81B60', '#E91E63', '#F06292'], direction: 135, textColor: '#fff' },
+                          { name: 'Teal Wave', colors: ['#00897B', '#00ACC1', '#26A69A'], direction: 90, textColor: '#fff' },
+                          { name: 'Amber Glow', colors: ['#FFC107', '#FFD54F', '#FFECB3'], direction: 135, textColor: '#000' },
+                          { name: 'Deep Purple', colors: ['#673AB7', '#7E57C2', '#9575CD'], direction: 135, textColor: '#fff' },
+                          { name: 'Turquoise', colors: ['#009688', '#00BCD4', '#4DD0E1'], direction: 90, textColor: '#fff' },
+                          { name: 'Peachy', colors: ['#FF9800', '#FFB74D', '#FFCC80'], direction: 180, textColor: '#fff' },
+                          { name: 'Navy', colors: ['#1565C0', '#1976D2', '#1E88E5'], direction: 135, textColor: '#fff' },
+                          { name: 'Rose Pink', colors: ['#E91E63', '#F06292', '#F48FB1'], direction: 90, textColor: '#fff' }
+                        ].map((preset) => (
+                          <button
+                            key={preset.name}
+                            onClick={() => {
+                              setTileGradientEnabled(true);
+                              setTileGradientType('linear');
+                              setTileGradientDirection(preset.direction);
+                              setTileGradientColors(preset.colors);
+                              // Set evenly spaced positions for presets
+                              const positions = preset.colors.map((_, i) => preset.colors.length > 1 ? (i / (preset.colors.length - 1)) * 100 : 0);
+                              setTileGradientColorPositions(positions);
+                              setTileTextColor(preset.textColor);
+                            }}
+                            className="px-3 py-2 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-400 transition-all relative overflow-hidden"
+                            style={{
+                              background: `linear-gradient(${preset.direction}deg, ${preset.colors.join(', ')})`,
+                              color: preset.textColor
+                            }}
+                          >
+                            {preset.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Text Color */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Text Color</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="color"
+                          value={tileTextColor || '#000000'}
+                          onChange={(e) => setTileTextColor(e.target.value)}
+                          className="w-16 h-10 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+                        />
+                        <input
+                          type="text"
+                          value={tileTextColor}
+                          onChange={(e) => setTileTextColor(e.target.value)}
+                          placeholder="#000000"
+                          className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                        />
+                        {tileTextColor && (
+                          <button
+                            onClick={() => setTileTextColor('')}
+                            className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty to use default text color</p>
+                    </div>
+
+                    {/* Border Radius */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Border Radius (px)</label>
+                      <div className="flex gap-2 items-center">
+                        <input
+                          type="range"
+                          min="0"
+                          max="50"
+                          value={tileBorderRadius}
+                          onChange={(e) => setTileBorderRadius(parseInt(e.target.value))}
+                          className="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-brand-600"
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          max="50"
+                          value={tileBorderRadius}
+                          onChange={(e) => setTileBorderRadius(parseInt(e.target.value) || 0)}
+                          className="w-20 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Live Tile Preview */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Live Preview</label>
+                      <div className="relative">
+                        <div
+                          className="w-full min-h-[120px] rounded-lg border-2 border-slate-200 dark:border-slate-700 p-4 flex flex-col items-center justify-center transition-all"
+                          style={{
+                            background: tileGradientEnabled && tileGradientColors && tileGradientColors.length > 0
+                              ? (() => {
+                                  const hasPositions = tileGradientColorPositions && tileGradientColorPositions.length === tileGradientColors.length;
+                                  const gradientStops = tileGradientColors.map((color, i) => {
+                                    if (hasPositions) {
+                                      return `${color} ${tileGradientColorPositions[i]}%`;
+                                    }
+                                    return color;
+                                  }).join(', ');
+                                  
+                                  if (tileGradientType === 'linear' || tileGradientType === 'repeating-linear') {
+                                    const prefix = tileGradientType === 'repeating-linear' ? 'repeating-linear-gradient' : 'linear-gradient';
+                                    return `${prefix}(${tileGradientDirection}deg, ${gradientStops})`;
+                                  } else if (tileGradientType === 'radial' || tileGradientType === 'repeating-radial') {
+                                    const prefix = tileGradientType === 'repeating-radial' ? 'repeating-radial-gradient' : 'radial-gradient';
+                                    return `${prefix}(circle, ${gradientStops})`;
+                                  } else if (tileGradientType === 'conic' || tileGradientType === 'repeating-conic') {
+                                    const prefix = tileGradientType === 'repeating-conic' ? 'repeating-conic-gradient' : 'conic-gradient';
+                                    return `${prefix}(from ${tileGradientDirection}deg, ${gradientStops})`;
+                                  }
+                                  return `linear-gradient(${tileGradientDirection}deg, ${gradientStops})`;
+                                })()
+                              : tileBackgroundColor || 'transparent',
+                            borderRadius: `${tileBorderRadius}px`,
+                            color: tileTextColor || undefined
+                          }}
+                        >
+                          <div className="text-4xl mb-2">{editingTile?.emoji || '📁'}</div>
+                          <div className="text-sm font-semibold">{editingTile?.title || 'Tile Preview'}</div>
+                          {editingTile?.description && (
+                            <div className="text-xs mt-1 opacity-75">{editingTile.description}</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </>
                 )}
 
                 {/* Actions */}

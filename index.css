@@ -2,6 +2,87 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Local tile decoration override - must take precedence over global styles with !important */
+.linknest-tile.has-local-decoration,
+div.linknest-tile.has-local-decoration {
+  background: var(--tile-local-background, initial) !important;
+  background-image: var(--tile-local-background-image, none) !important;
+  border-radius: var(--tile-local-border-radius, initial) !important;
+  color: var(--tile-local-text-color, initial) !important;
+}
+
+.linknest-tile.has-local-decoration *,
+div.linknest-tile.has-local-decoration * {
+  color: inherit !important;
+}
+
+.dark .linknest-tile.has-local-decoration,
+.dark div.linknest-tile.has-local-decoration {
+  background: var(--tile-local-background, initial) !important;
+  background-image: var(--tile-local-background-image, none) !important;
+  border-radius: var(--tile-local-border-radius, initial) !important;
+  color: var(--tile-local-text-color, initial) !important;
+}
+
+.dark .linknest-tile.has-local-decoration *,
+.dark div.linknest-tile.has-local-decoration * {
+  color: inherit !important;
+}
+
+/* Override theme-specific tile styles when local decoration is present */
+.theme-glassmorphism .linknest-tile.has-local-decoration,
+.theme-ocean-blue .linknest-tile.has-local-decoration,
+.theme-forest-green .linknest-tile.has-local-decoration,
+.theme-cyan-mist .linknest-tile.has-local-decoration,
+.theme-emerald-glass .linknest-tile.has-local-decoration,
+.theme-azure-sky .linknest-tile.has-local-decoration,
+.theme-teal-waves .linknest-tile.has-local-decoration,
+.theme-mint-frost .linknest-tile.has-local-decoration,
+.theme-sapphire-night .linknest-tile.has-local-decoration,
+.theme-aqua-marine .linknest-tile.has-local-decoration,
+.theme-jade-shimmer .linknest-tile.has-local-decoration,
+.theme-arctic-ice .linknest-tile.has-local-decoration,
+.theme-tropical-lagoon .linknest-tile.has-local-decoration,
+.theme-deep-sea .linknest-tile.has-local-decoration,
+.theme-neon-cyan .linknest-tile.has-local-decoration,
+.theme-pastel-blue .linknest-tile.has-local-decoration,
+.theme-sea-foam .linknest-tile.has-local-decoration,
+.theme-glacier .linknest-tile.has-local-decoration,
+.theme-pacific-blue .linknest-tile.has-local-decoration,
+.theme-mint-glass .linknest-tile.has-local-decoration,
+.theme-turquoise-dream .linknest-tile.has-local-decoration {
+  background: var(--tile-local-background) !important;
+  background-image: var(--tile-local-background-image, none) !important;
+  border-radius: var(--tile-local-border-radius) !important;
+  color: var(--tile-local-text-color) !important;
+  backdrop-filter: none !important; /* Disable backdrop-filter for custom backgrounds */
+  -webkit-backdrop-filter: none !important;
+}
+
+.theme-glassmorphism .linknest-tile.has-local-decoration *,
+.theme-ocean-blue .linknest-tile.has-local-decoration *,
+.theme-forest-green .linknest-tile.has-local-decoration *,
+.theme-cyan-mist .linknest-tile.has-local-decoration *,
+.theme-emerald-glass .linknest-tile.has-local-decoration *,
+.theme-azure-sky .linknest-tile.has-local-decoration *,
+.theme-teal-waves .linknest-tile.has-local-decoration *,
+.theme-mint-frost .linknest-tile.has-local-decoration *,
+.theme-sapphire-night .linknest-tile.has-local-decoration *,
+.theme-aqua-marine .linknest-tile.has-local-decoration *,
+.theme-jade-shimmer .linknest-tile.has-local-decoration *,
+.theme-arctic-ice .linknest-tile.has-local-decoration *,
+.theme-tropical-lagoon .linknest-tile.has-local-decoration *,
+.theme-deep-sea .linknest-tile.has-local-decoration *,
+.theme-neon-cyan .linknest-tile.has-local-decoration *,
+.theme-pastel-blue .linknest-tile.has-local-decoration *,
+.theme-sea-foam .linknest-tile.has-local-decoration *,
+.theme-glacier .linknest-tile.has-local-decoration *,
+.theme-pacific-blue .linknest-tile.has-local-decoration *,
+.theme-mint-glass .linknest-tile.has-local-decoration *,
+.theme-turquoise-dream .linknest-tile.has-local-decoration * {
+  color: inherit !important;
+}
+
 /* Custom scrollbar for webkit */
 ::-webkit-scrollbar {
   width: 8px;
