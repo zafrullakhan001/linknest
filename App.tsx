@@ -30,6 +30,8 @@ import { FloatingThemeWidget } from './components/FloatingThemeWidget';
 import { ThemeWidget } from './components/ThemeWidget';
 import { FloatingFavOrganizerWidget } from './components/FloatingFavOrganizerWidget';
 import { FavOrganizerWidget } from './components/FavOrganizerWidget';
+import { FloatingChatWidget } from './components/FloatingChatWidget';
+import { ChatWidget } from './components/ChatWidget';
 import { themeService } from './services/themeService';
 
 // Lazy load heavy components for better initial load performance
@@ -182,6 +184,16 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('linknest_show_fav_organizer_widget', showFavOrganizer.toString());
   }, [showFavOrganizer]);
+
+  // Chat Widget Visibility State (only for logged in users)
+  const [showChat, setShowChat] = useState(() => {
+    const saved = localStorage.getItem('linknest_show_chat_widget');
+    return saved !== null ? saved === 'true' : false; // Default to hidden
+  });
+
+  useEffect(() => {
+    localStorage.setItem('linknest_show_chat_widget', showChat.toString());
+  }, [showChat]);
 
   // Initialize theme service on mount
   useEffect(() => {
@@ -359,6 +371,10 @@ const AppContent: React.FC = () => {
 
   const toggleFavOrganizer = () => {
     setShowFavOrganizer(!showFavOrganizer);
+  };
+
+  const toggleChat = () => {
+    setShowChat(!showChat);
   };
 
   const handleTabClick = (tab: string) => {
@@ -745,6 +761,8 @@ const AppContent: React.FC = () => {
         toggleThemeWidget={toggleThemeWidget}
         showFavOrganizer={showFavOrganizer}
         toggleFavOrganizer={toggleFavOrganizer}
+        showChat={showChat}
+        toggleChat={toggleChat}
         user={user}
         onLoginClick={() => setAuthModalOpen(true)}
         onHelpClick={() => setHelpAboutOpen(true)}
@@ -982,6 +1000,35 @@ const AppContent: React.FC = () => {
         <FloatingFavOrganizerWidget onClose={toggleFavOrganizer}>
           <FavOrganizerWidget />
         </FloatingFavOrganizerWidget>
+      )}
+      {showChat && isAuthenticated && (
+        <FloatingChatWidget>
+          <ChatWidget
+            tiles={tiles}
+            onTileImported={async () => {
+              // Reload tiles after import with a small delay to ensure database save completes
+              try {
+                // Wait a bit for the database transaction to complete
+                await new Promise(resolve => setTimeout(resolve, 500));
+                const stored = await getTiles();
+                setTiles(stored);
+                
+                // Switch to private tab to show the imported tile
+                // Ensure we're on the main grid page first
+                if (window.location.hash !== '#/' && window.location.hash !== '') {
+                  window.location.hash = '#/';
+                  setTimeout(() => {
+                    window.dispatchEvent(new CustomEvent('switchTab', { detail: 'private' }));
+                  }, 100);
+                } else {
+                  window.dispatchEvent(new CustomEvent('switchTab', { detail: 'private' }));
+                }
+              } catch (error) {
+                console.error('Failed to reload tiles:', error);
+              }
+            }}
+          />
+        </FloatingChatWidget>
       )}
       <AuthModal
         isOpen={authModalOpen}

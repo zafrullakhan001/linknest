@@ -1073,6 +1073,52 @@ function initDatabase() {
             error_log('Broadcast messages scroll_speed migration warning: ' . $e->getMessage());
         }
 
+        // Create chat_messages table for chat widget
+        $db->exec('CREATE TABLE IF NOT EXISTS chat_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            message TEXT,
+            message_type TEXT DEFAULT "text", -- text, json, tile
+            tile_data TEXT, -- JSON string for shared tiles
+            recipient_user_id INTEGER, -- NULL for public messages, user_id for direct messages
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (recipient_user_id) REFERENCES users(id) ON DELETE CASCADE
+        )');
+
+        // Index for chat messages
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created_at DESC)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_user_id ON chat_messages(user_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_recipient ON chat_messages(recipient_user_id)');
+        } catch (PDOException $e) {
+            // ignore if index creation fails
+        }
+
+        // Migrate existing chat_messages table to add recipient_user_id column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(chat_messages)")->fetchAll();
+            $hasRecipient = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'recipient_user_id') {
+                    $hasRecipient = true;
+                    break;
+                }
+            }
+            if (!$hasRecipient) {
+                $db->exec('ALTER TABLE chat_messages ADD COLUMN recipient_user_id INTEGER');
+                // Add index for recipient if it doesn't exist
+                try {
+                    $db->exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_recipient ON chat_messages(recipient_user_id)');
+                } catch (PDOException $e) {
+                    // Index might already exist, ignore
+                }
+            }
+        } catch (PDOException $e) {
+            error_log('Chat messages recipient_user_id migration warning: ' . $e->getMessage());
+        }
+
 
         // Create monitors table
         $db->exec('CREATE TABLE IF NOT EXISTS monitors (

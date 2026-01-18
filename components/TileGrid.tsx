@@ -19,6 +19,7 @@ import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, getTile
 import { MonitoringDashboard } from './MonitoringDashboard';
 import { getDisabledTabsFromSettings } from '../services/tabVisibilityService';
 import { rolesService } from '../services/rolesService';
+import { FaTimes } from 'react-icons/fa';
 
 
 interface TileGridProps {
@@ -815,7 +816,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
   animationClass = ''
 }) => {
   const { user } = useAuth();
-  const [showCategoryMenu, setShowCategoryMenu] = useState(false);
+  const [showCategoryDialog, setShowCategoryDialog] = useState(false);
   const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
 
   // Helper function to strip formatting characters for plain text display (tooltips, etc.)
@@ -1088,12 +1089,12 @@ const SortableTile: React.FC<SortableTileProps> = ({
             <>
               {/* Category Selector */}
               {onMoveToCategory && (
-                <div className="relative">
+                <>
                   <button
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      setShowCategoryMenu(!showCategoryMenu);
+                      setShowCategoryDialog(true);
                     }}
                     className="p-1 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 rounded transition-all"
                     title="Move to category"
@@ -1103,47 +1104,76 @@ const SortableTile: React.FC<SortableTileProps> = ({
                     </svg>
                   </button>
 
-                  {/* Category Dropdown Menu */}
-                  {showCategoryMenu && (
-                    <>
+                  {/* Move to Category Dialog */}
+                  {showCategoryDialog && createPortal(
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowCategoryDialog(false)}>
                       <div
-                        className="fixed inset-0 z-[100]"
-                        onClick={() => setShowCategoryMenu(false)}
-                      ></div>
-                      <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-2xl z-[101] py-1 max-h-64 overflow-y-auto">
-                        <div className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-200 dark:border-slate-700">
-                          Move to Category
-                        </div>
-                        {availableCategories.map((category) => (
-                          <button
-                            key={category}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              if (category !== currentCategory && onMoveToCategory) {
-                                onMoveToCategory(tile.id, category);
-                              }
-                              setShowCategoryMenu(false);
-                            }}
-                            className={`w-full text-left px-3 py-2 text-sm transition-colors ${category === currentCategory
-                              ? 'bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400 font-medium'
-                              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-                              }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span>{category}</span>
-                              {category === currentCategory && (
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-brand-500">
-                                  <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                                </svg>
-                              )}
+                        className="bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl border border-slate-200 dark:border-[#333] w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-slate-200 dark:border-[#333] flex items-center justify-between bg-slate-50 dark:bg-[#252525]">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-brand-500/10 text-brand-500">
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                <path fillRule="evenodd" d="M5.5 17a4.5 4.5 0 01-1.44-8.765 4.5 4.5 0 018.302-3.046 3.5 3.5 0 014.504 4.272A4 4 0 0115 17H5.5zm3.75-2a.75.75 0 00-1.5 0v.5a.75.75 0 001.5 0v-.5zm0-2a.75.75 0 00-1.5 0v.5a.75.75 0 001.5 0v-.5zM9 12a.75.75 0 00-1.5 0v.5a.75.75 0 001.5 0V12z" clipRule="evenodd" />
+                              </svg>
                             </div>
+                            <div>
+                              <h2 className="text-lg font-bold text-slate-900 dark:text-white">Move to Category</h2>
+                              <p className="text-sm text-slate-500 dark:text-slate-400">{tile.title || 'Untitled Tile'}</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => setShowCategoryDialog(false)}
+                            className="p-2 hover:bg-slate-200 dark:hover:bg-[#333] rounded-xl transition-colors text-slate-500"
+                          >
+                            <FaTimes size={18} />
                           </button>
-                        ))}
+                        </div>
+
+                        {/* Content */}
+                        <div className="flex-1 overflow-y-auto p-6">
+                          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-4">
+                            Select Category
+                          </h3>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                            {availableCategories.map((category) => (
+                              <button
+                                key={category}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  if (category !== currentCategory && onMoveToCategory) {
+                                    onMoveToCategory(tile.id, category);
+                                  }
+                                  setShowCategoryDialog(false);
+                                }}
+                                className={`px-4 py-3 rounded-xl font-semibold text-sm transition-all ${category === currentCategory
+                                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20 ring-2 ring-blue-500'
+                                  : 'bg-slate-100 dark:bg-[#252525] text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-[#333] border border-slate-200 dark:border-[#333]'
+                                  }`}
+                              >
+                                {category}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 py-4 border-t border-slate-200 dark:border-[#333] bg-slate-50 dark:bg-[#252525] flex justify-end">
+                          <button
+                            onClick={() => setShowCategoryDialog(false)}
+                            className="px-5 py-2 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors rounded-lg hover:bg-slate-200 dark:hover:bg-[#333] border border-slate-300 dark:border-[#444] font-medium"
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
-                    </>
+                    </div>,
+                    document.body
                   )}
-                </div>
+                </>
               )}
 
               {/* Favorite Button - Hide in recycle bin */}

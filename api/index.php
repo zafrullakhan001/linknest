@@ -88,6 +88,9 @@ if ($path === '/') {
 } elseif (strpos($path, '/styles') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 7); // Remove '/styles'
     require __DIR__ . '/styles.php';
+} elseif (strpos($path, '/chat') === 0) {
+    $_SERVER['PATH_INFO'] = substr($path, 5); // Remove '/chat'
+    require __DIR__ . '/chat.php';
 } elseif (strpos($path, '/access') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 7); // Remove '/access'
     require __DIR__ . '/access.php';

@@ -319,7 +319,33 @@ export const normalizeImportedTiles = (
       openInNewTab: src.openInNewTab !== undefined ? src.openInNewTab : undefined,
       browser: typeof src.browser === 'string' ? src.browser : undefined,
       visibleFrom: typeof src.visibleFrom === 'string' ? src.visibleFrom : undefined,
-      expiresAt: typeof src.expiresAt === 'string' ? src.expiresAt : undefined
+      expiresAt: typeof src.expiresAt === 'string' ? src.expiresAt : undefined,
+      // Preserve tile decoration properties
+      tileBackgroundColor: typeof src.tileBackgroundColor === 'string' ? src.tileBackgroundColor : undefined,
+      tileGradientEnabled: typeof src.tileGradientEnabled === 'boolean' ? src.tileGradientEnabled : undefined,
+      tileGradientColors: Array.isArray(src.tileGradientColors) ? src.tileGradientColors : undefined,
+      tileGradientDirection: (typeof src.tileGradientDirection === 'string' || typeof src.tileGradientDirection === 'number') ? src.tileGradientDirection : undefined,
+      tileGradientType: (typeof src.tileGradientType === 'string' && ['linear', 'radial', 'conic', 'repeating-linear', 'repeating-radial', 'repeating-conic'].includes(src.tileGradientType)) ? src.tileGradientType as any : undefined,
+      tileGradientColorPositions: Array.isArray(src.tileGradientColorPositions) ? src.tileGradientColorPositions : undefined,
+      tileBorderRadius: typeof src.tileBorderRadius === 'number' ? src.tileBorderRadius : undefined,
+      tileTextColor: typeof src.tileTextColor === 'string' ? src.tileTextColor : undefined,
+      // Preserve tile messages (message board messages)
+      messages: Array.isArray(src.messages) && src.messages.length > 0
+        ? src.messages.map((msg: any) => ({
+            id: generateId(), // Generate new ID for imported message
+            content: String(msg.content || ''),
+            type: (typeof msg.type === 'string' && ['info', 'warning', 'celebration', 'alert', 'custom'].includes(msg.type)) ? msg.type as any : 'info',
+            startDate: typeof msg.startDate === 'string' ? msg.startDate : new Date().toISOString(),
+            endDate: typeof msg.endDate === 'string' ? msg.endDate : new Date().toISOString(),
+            isActive: typeof msg.isActive === 'boolean' ? msg.isActive : false,
+            priority: typeof msg.priority === 'number' ? msg.priority : undefined,
+            textColor: typeof msg.textColor === 'string' ? msg.textColor : undefined,
+            fontStyle: typeof msg.fontStyle === 'string' ? msg.fontStyle : undefined,
+            displayLocation: (typeof msg.displayLocation === 'string' && ['tile', 'detail', 'both'].includes(msg.displayLocation)) ? msg.displayLocation as any : 'both',
+            animationType: (typeof msg.animationType === 'string' && ['rollover', 'still', 'flash', 'flip-horizontal', 'flip-vertical', 'bounce', 'pulse', 'shake', 'fade', 'slide'].includes(msg.animationType)) ? msg.animationType as any : 'rollover',
+            delayBefore: typeof msg.delayBefore === 'number' ? msg.delayBefore : undefined
+          }))
+        : undefined
     };
 
     return tile;
