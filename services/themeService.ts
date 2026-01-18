@@ -41,136 +41,10 @@ export const AVAILABLE_THEMES: Theme[] = [
     previewColors: ['#1e293b', '#334155', '#475569']
   },
   {
-    name: 'glassmorphism',
-    displayName: 'Glassmorphism',
-    description: 'Translucent dark teal-blue with blurred backgrounds',
-    previewColors: ['#0f172a', '#1e293b', '#334155']
-  },
-  {
-    name: 'ocean-blue',
-    displayName: 'Ocean Blue',
-    description: 'Deep oceanic blues with transparent layers',
-    previewColors: ['#0c4a6e', '#075985', '#0369a1']
-  },
-  {
-    name: 'forest-green',
-    displayName: 'Forest Green',
-    description: 'Rich forest greens with glass effects',
-    previewColors: ['#14532d', '#166534', '#15803d']
-  },
-  {
-    name: 'cyan-mist',
-    displayName: 'Cyan Mist',
-    description: 'Bright cyan with misty transparency',
-    previewColors: ['#155e75', '#0891b2', '#06b6d4']
-  },
-  {
-    name: 'emerald-glass',
-    displayName: 'Emerald Glass',
-    description: 'Vibrant emerald with glassmorphism',
-    previewColors: ['#064e3b', '#047857', '#059669']
-  },
-  {
-    name: 'azure-sky',
-    displayName: 'Azure Sky',
-    description: 'Bright azure sky with soft transparency',
-    previewColors: ['#1e40af', '#2563eb', '#3b82f6']
-  },
-  {
-    name: 'teal-waves',
-    displayName: 'Teal Waves',
-    description: 'Flowing teal waves with glass effects',
-    previewColors: ['#134e4a', '#0f766e', '#14b8a6']
-  },
-  {
-    name: 'mint-frost',
-    displayName: 'Mint Frost',
-    description: 'Cool mint with frosty glass texture',
-    previewColors: ['#065f46', '#047857', '#10b981']
-  },
-  {
-    name: 'sapphire-night',
-    displayName: 'Sapphire Night',
-    description: 'Deep sapphire with night mode glass',
-    previewColors: ['#1e3a8a', '#1e40af', '#2563eb']
-  },
-  {
-    name: 'aqua-marine',
-    displayName: 'Aqua Marine',
-    description: 'Aquamarine tones with marine depth',
-    previewColors: ['#164e63', '#0e7490', '#06b6d4']
-  },
-  {
-    name: 'jade-shimmer',
-    displayName: 'Jade Shimmer',
-    description: 'Jade green with shimmering effects',
-    previewColors: ['#064e3b', '#047857', '#34d399']
-  },
-  {
-    name: 'arctic-ice',
-    displayName: 'Arctic Ice',
-    description: 'Cool ice blue with crystalline transparency',
-    previewColors: ['#0c4a6e', '#075985', '#0ea5e9']
-  },
-  {
-    name: 'tropical-lagoon',
-    displayName: 'Tropical Lagoon',
-    description: 'Tropical turquoise lagoon vibes',
-    previewColors: ['#155e75', '#0891b2', '#22d3ee']
-  },
-  {
-    name: 'deep-sea',
-    displayName: 'Deep Sea',
-    description: 'Deep sea blues with mysterious depth',
-    previewColors: ['#0c1222', '#1e3a5f', '#3b82f6']
-  },
-  {
-    name: 'neon-cyan',
-    displayName: 'Neon Cyan',
-    description: 'Vibrant neon cyan with modern glow',
-    previewColors: ['#164e63', '#0891b2', '#67e8f9']
-  },
-  {
-    name: 'pastel-blue',
-    displayName: 'Pastel Blue',
-    description: 'Soft pastel blues with gentle transparency',
-    previewColors: ['#3b82f6', '#60a5fa', '#93c5fd']
-  },
-  {
-    name: 'sea-foam',
-    displayName: 'Sea Foam',
-    description: 'Light sea foam green with bubbly effects',
-    previewColors: ['#047857', '#10b981', '#6ee7b7']
-  },
-  {
-    name: 'glacier',
-    displayName: 'Glacier',
-    description: 'Cool glacier blue with icy clarity',
-    previewColors: ['#0e7490', '#06b6d4', '#67e8f9']
-  },
-  {
-    name: 'pacific-blue',
-    displayName: 'Pacific Blue',
-    description: 'Vast Pacific Ocean blue tones',
-    previewColors: ['#1e40af', '#2563eb', '#60a5fa']
-  },
-  {
-    name: 'mint-glass',
-    displayName: 'Mint Glass',
-    description: 'Fresh mint with clear glass effects',
-    previewColors: ['#065f46', '#10b981', '#6ee7b7']
-  },
-  {
-    name: 'turquoise-dream',
-    displayName: 'Turquoise Dream',
-    description: 'Dreamy turquoise with ethereal transparency',
-    previewColors: ['#0f766e', '#14b8a6', '#5eead4']
-  },
-  {
-    name: 'modern',
-    displayName: 'Modern',
-    description: 'Contemporary design with vibrant colors',
-    previewColors: ['#1a1a2e', '#16213e', '#0f3460']
+    name: 'minimal',
+    displayName: 'Minimal',
+    description: 'Clean and simple design',
+    previewColors: ['#ffffff', '#f3f4f6', '#e5e7eb']
   },
   {
     name: 'classic',
@@ -179,10 +53,10 @@ export const AVAILABLE_THEMES: Theme[] = [
     previewColors: ['#1f2937', '#374151', '#4b5563']
   },
   {
-    name: 'minimal',
-    displayName: 'Minimal',
-    description: 'Clean and simple design',
-    previewColors: ['#ffffff', '#f3f4f6', '#e5e7eb']
+    name: 'modern',
+    displayName: 'Modern',
+    description: 'Contemporary design with vibrant colors',
+    previewColors: ['#1a1a2e', '#16213e', '#0f3460']
   }
 ];
 
@@ -284,7 +158,7 @@ export const themeService = {
       };
 
       // Check if this is a glassmorphism theme or default theme
-      const isGlassmorphismTheme = themeName !== 'default' && themeName !== 'classic' && themeName !== 'minimal';
+      const isGlassmorphismTheme = themeName !== 'default' && themeName !== 'classic' && themeName !== 'minimal' && themeName !== 'modern';
       const useBlur = isGlassmorphismTheme && customization.blurIntensity > 0;
 
       const css = `
