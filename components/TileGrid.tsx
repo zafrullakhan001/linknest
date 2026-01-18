@@ -1235,7 +1235,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
         {/* Center Rolling Message */}
         {activeMessages.length > 0 && (
           <div
-            className={`absolute left-1/2 -translate-x-1/2 bottom-3 w-full max-w-[80%] overflow-hidden transition-all cursor-default ${activeMessages[0].type === 'alert' ? 'text-red-600 dark:text-red-400' :
+            className={`absolute bottom-3 overflow-hidden transition-all cursor-default ${!tile.isHyperlink ? 'left-[60px] right-2' : 'left-2 right-2'} ${activeMessages[0].type === 'alert' ? 'text-red-600 dark:text-red-400' :
               activeMessages[0].type === 'warning' ? 'text-amber-600 dark:text-amber-400' :
                 activeMessages[0].type === 'celebration' ? 'text-pink-600 dark:text-pink-400' :
                   'text-brand-600 dark:text-brand-400'
@@ -6029,7 +6029,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         : 'text-slate-500 dark:text-slate-400 border-transparent hover:text-slate-700 dark:hover:text-slate-300'
                         }`}
                     >
-                      Messages
+                      Tile Message Board
                     </button>
                   </>
                 )}
@@ -6037,9 +6037,20 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
               <div className="space-y-4">
                 {editModalActiveTab === 'messages' ? (
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Scheduled Messages</h3>
+                  <div className="space-y-5">
+                    {/* Header Section */}
+                    <div className="flex justify-between items-center pb-3 border-b border-slate-200 dark:border-slate-700">
+                      <div className="flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                          <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+                        </svg>
+                        <h3 className="text-base font-semibold text-slate-700 dark:text-slate-300">Scheduled Messages</h3>
+                        {messages.length > 0 && (
+                          <span className="px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-full">
+                            {messages.length}
+                          </span>
+                        )}
+                      </div>
                       <button
                         onClick={() => {
                           setEditingMessageId('new');
@@ -6049,85 +6060,185 @@ export const TileGrid: React.FC<TileGridProps> = ({
                           setMessageEndDate('');
                           setMessageIsActive(true);
                         }}
-                        className="px-3 py-1.5 text-xs font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors"
+                        className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors shadow-sm hover:shadow"
                       >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                        </svg>
                         Add Message
                       </button>
                     </div>
 
                     {/* Message Editor */}
                     {editingMessageId && (
-                      <div className="p-4 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/50">
-                        <div className="space-y-3">
+                      <div className="p-5 border-2 border-brand-200 dark:border-brand-800 rounded-xl bg-gradient-to-br from-brand-50/50 to-slate-50 dark:from-brand-900/20 dark:to-slate-900/50 shadow-sm">
+                        <div className="space-y-4">
                           <div>
-                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Message Content</label>
+                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                              Message Content
+                            </label>
                             <textarea
                               value={messageContent}
                               onChange={(e) => setMessageContent(e.target.value)}
-                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50"
-                              rows={3}
+                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all resize-none"
+                              rows={4}
                               placeholder="Enter your message..."
                             />
-                            <div className="flex gap-2 mt-2 flex-wrap">
-                              <button onClick={() => setMessageContent("🎉 Happy Birthday!")} className="text-xs px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded hover:bg-slate-50 dark:hover:bg-slate-700">Birthday</button>
-                              <button onClick={() => setMessageContent("⚠️ Maintenance scheduled.")} className="text-xs px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded hover:bg-slate-50 dark:hover:bg-slate-700">Maintenance</button>
-                              <button onClick={() => setMessageContent("ℹ️ Important Update:")} className="text-xs px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded hover:bg-slate-50 dark:hover:bg-slate-700">Update</button>
+                            
+                            {/* Message Presets - Enhanced with Categories */}
+                            <div className="mt-3 space-y-3">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Quick Presets:</span>
+                              </div>
+                              
+                              {/* Celebrations Category */}
+                              <div>
+                                <span className="text-xs text-slate-600 dark:text-slate-400 mb-1.5 block">Celebrations</span>
+                                <div className="flex gap-2 flex-wrap">
+                                  <button 
+                                    onClick={() => { setMessageContent("🎉 Happy Birthday!"); setMessageType('celebration'); }} 
+                                    className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-300 dark:hover:border-purple-700 transition-all text-slate-700 dark:text-slate-300"
+                                  >
+                                    🎉 Birthday
+                                  </button>
+                                  <button 
+                                    onClick={() => { setMessageContent("🎊 Congratulations!"); setMessageType('celebration'); }} 
+                                    className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-300 dark:hover:border-purple-700 transition-all text-slate-700 dark:text-slate-300"
+                                  >
+                                    🎊 Congratulations
+                                  </button>
+                                  <button 
+                                    onClick={() => { setMessageContent("🎈 Happy Anniversary!"); setMessageType('celebration'); }} 
+                                    className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-300 dark:hover:border-purple-700 transition-all text-slate-700 dark:text-slate-300"
+                                  >
+                                    🎈 Anniversary
+                                  </button>
+                                  <button 
+                                    onClick={() => { setMessageContent("🎁 Special Event Today!"); setMessageType('celebration'); }} 
+                                    className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-300 dark:hover:border-purple-700 transition-all text-slate-700 dark:text-slate-300"
+                                  >
+                                    🎁 Special Event
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Alerts & Warnings Category */}
+                              <div>
+                                <span className="text-xs text-slate-600 dark:text-slate-400 mb-1.5 block">Alerts & Warnings</span>
+                                <div className="flex gap-2 flex-wrap">
+                                  <button 
+                                    onClick={() => { setMessageContent("⚠️ Maintenance scheduled. System will be unavailable."); setMessageType('warning'); }} 
+                                    className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:border-amber-300 dark:hover:border-amber-700 transition-all text-slate-700 dark:text-slate-300"
+                                  >
+                                    ⚠️ Maintenance
+                                  </button>
+                                  <button 
+                                    onClick={() => { setMessageContent("🚨 System Alert: Action Required"); setMessageType('alert'); }} 
+                                    className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-300 dark:hover:border-red-700 transition-all text-slate-700 dark:text-slate-300"
+                                  >
+                                    🚨 System Alert
+                                  </button>
+                                  <button 
+                                    onClick={() => { setMessageContent("⏰ Deadline Reminder: Please complete your tasks"); setMessageType('warning'); }} 
+                                    className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:border-amber-300 dark:hover:border-amber-700 transition-all text-slate-700 dark:text-slate-300"
+                                  >
+                                    ⏰ Deadline
+                                  </button>
+                                  <button 
+                                    onClick={() => { setMessageContent("🔒 Security Update Required"); setMessageType('alert'); }} 
+                                    className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-300 dark:hover:border-red-700 transition-all text-slate-700 dark:text-slate-300"
+                                  >
+                                    🔒 Security Alert
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Informational Category */}
+                              <div>
+                                <span className="text-xs text-slate-600 dark:text-slate-400 mb-1.5 block">Information</span>
+                                <div className="flex gap-2 flex-wrap">
+                                  <button 
+                                    onClick={() => { setMessageContent("ℹ️ Important Update: Please review the changes"); setMessageType('info'); }} 
+                                    className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-all text-slate-700 dark:text-slate-300"
+                                  >
+                                    ℹ️ Update
+                                  </button>
+                                  <button 
+                                    onClick={() => { setMessageContent("📢 Announcement: New features available"); setMessageType('info'); }} 
+                                    className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-all text-slate-700 dark:text-slate-300"
+                                  >
+                                    📢 Announcement
+                                  </button>
+                                  <button 
+                                    onClick={() => { setMessageContent("💡 Tip: Did you know? Check out our new shortcuts"); setMessageType('info'); }} 
+                                    className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-all text-slate-700 dark:text-slate-300"
+                                  >
+                                    💡 Tip
+                                  </button>
+                                  <button 
+                                    onClick={() => { setMessageContent("✅ Task Completed Successfully"); setMessageType('info'); }} 
+                                    className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-all text-slate-700 dark:text-slate-300"
+                                  >
+                                    ✅ Completed
+                                  </button>
+                                </div>
+                              </div>
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-3">
+                          <div className="grid grid-cols-2 gap-4">
                             <div>
-                              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Type</label>
+                              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Message Type</label>
                               <select
                                 value={messageType}
                                 onChange={(e) => setMessageType(e.target.value as any)}
-                                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
                               >
-                                <option value="info">Info</option>
-                                <option value="warning">Warning</option>
-                                <option value="celebration">Celebration</option>
-                                <option value="alert">Alert</option>
-                                <option value="custom">Custom</option>
+                                <option value="info">ℹ️ Info</option>
+                                <option value="warning">⚠️ Warning</option>
+                                <option value="celebration">🎉 Celebration</option>
+                                <option value="alert">🚨 Alert</option>
+                                <option value="custom">🎨 Custom</option>
                               </select>
                             </div>
-                            <div className="flex items-center pt-6">
-                              <label className="flex items-center gap-2 cursor-pointer">
+                            <div className="flex items-end">
+                              <label className="flex items-center gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-white/50 dark:hover:bg-slate-800/50 transition-colors">
                                 <input
                                   type="checkbox"
                                   checked={messageIsActive}
                                   onChange={(e) => setMessageIsActive(e.target.checked)}
-                                  className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
+                                  className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded border-slate-300 dark:border-slate-600"
                                 />
-                                <span className="text-sm text-slate-700 dark:text-slate-300">Active</span>
+                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Active</span>
                               </label>
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-3">
+                          <div className="grid grid-cols-2 gap-4">
                             <div>
-                              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Start Date</label>
+                              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Start Date & Time</label>
                               <input
                                 type="datetime-local"
                                 value={messageStartDate}
                                 onChange={(e) => setMessageStartDate(e.target.value)}
-                                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
                               />
                             </div>
                             <div>
-                              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">End Date</label>
+                              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">End Date & Time</label>
                               <input
                                 type="datetime-local"
                                 value={messageEndDate}
                                 onChange={(e) => setMessageEndDate(e.target.value)}
-                                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
                               />
                             </div>
                           </div>
 
-                          <div className="flex justify-end gap-2 pt-2">
+                          <div className="flex justify-end gap-3 pt-2 border-t border-slate-200 dark:border-slate-700">
                             <button
                               onClick={() => setEditingMessageId(null)}
-                              className="px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                              className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
                             >
                               Cancel
                             </button>
@@ -6149,9 +6260,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                 }
                                 setEditingMessageId(null);
                               }}
-                              className="px-3 py-1.5 text-xs font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors"
+                              className="px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors shadow-sm hover:shadow"
                             >
-                              {editingMessageId === 'new' ? 'Add' : 'Update'}
+                              {editingMessageId === 'new' ? 'Add Message' : 'Update Message'}
                             </button>
                           </div>
                         </div>
@@ -6159,30 +6270,58 @@ export const TileGrid: React.FC<TileGridProps> = ({
                     )}
 
                     {/* Message List */}
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       {messages.length === 0 ? (
-                        <p className="text-sm text-slate-500 dark:text-slate-400 italic">No messages scheduled.</p>
+                        <div className="text-center py-12 px-4 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50/50 dark:bg-slate-900/30">
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-12 h-12 mx-auto text-slate-300 dark:text-slate-600 mb-3">
+                            <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+                          </svg>
+                          <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">No messages scheduled</p>
+                          <p className="text-xs text-slate-400 dark:text-slate-500">Click "Add Message" to create your first scheduled message</p>
+                        </div>
                       ) : (
                         messages.map(msg => (
-                          <div key={msg.id} className="p-3 border border-slate-200 dark:border-slate-700 rounded-lg flex justify-between items-start bg-white dark:bg-slate-800">
-                            <div>
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className={`w-2 h-2 rounded-full ${msg.type === 'info' ? 'bg-blue-500' :
+                          <div key={msg.id} className="group p-4 border border-slate-200 dark:border-slate-700 rounded-xl flex justify-between items-start bg-white dark:bg-slate-800 hover:shadow-md transition-all hover:border-brand-300 dark:hover:border-brand-700">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2.5 mb-2">
+                                <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${msg.type === 'info' ? 'bg-blue-500' :
                                   msg.type === 'warning' ? 'bg-amber-500' :
                                     msg.type === 'celebration' ? 'bg-purple-500' :
                                       msg.type === 'alert' ? 'bg-red-500' : 'bg-slate-500'
                                   }`}></span>
-                                <span className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">{msg.type}</span>
-                                {!msg.isActive && <span className="text-xs text-red-500">(Inactive)</span>}
+                                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                  {msg.type === 'info' ? 'ℹ️ Info' :
+                                    msg.type === 'warning' ? '⚠️ Warning' :
+                                      msg.type === 'celebration' ? '🎉 Celebration' :
+                                        msg.type === 'alert' ? '🚨 Alert' : '🎨 Custom'}
+                                </span>
+                                {!msg.isActive && (
+                                  <span className="px-2 py-0.5 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-full">
+                                    Inactive
+                                  </span>
+                                )}
                               </div>
-                              <p className="text-sm text-slate-800 dark:text-slate-200 mb-1">{msg.content}</p>
-                              <div className="text-xs text-slate-500 dark:text-slate-400">
-                                {msg.startDate && <span>From: {new Date(msg.startDate).toLocaleString()}</span>}
-                                {msg.startDate && msg.endDate && <span> - </span>}
-                                {msg.endDate && <span>To: {new Date(msg.endDate).toLocaleString()}</span>}
+                              <p className="text-sm text-slate-800 dark:text-slate-200 mb-2 leading-relaxed break-words">{msg.content}</p>
+                              <div className="flex flex-wrap gap-3 text-xs text-slate-500 dark:text-slate-400">
+                                {msg.startDate && (
+                                  <div className="flex items-center gap-1">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                      <path fillRule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5c0-.69.56-1.25 1.25-1.25h10c.69 0 1.25.56 1.25 1.25v6.5c0 .69-.56 1.25-1.25 1.25H6c-.69 0-1.25-.56-1.25-1.25v-6.5z" clipRule="evenodd" />
+                                    </svg>
+                                    <span>From: {new Date(msg.startDate).toLocaleString()}</span>
+                                  </div>
+                                )}
+                                {msg.endDate && (
+                                  <div className="flex items-center gap-1">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                      <path fillRule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5c0-.69.56-1.25 1.25-1.25h10c.69 0 1.25.56 1.25 1.25v6.5c0 .69-.56 1.25-1.25 1.25H6c-.69 0-1.25-.56-1.25-1.25v-6.5z" clipRule="evenodd" />
+                                    </svg>
+                                    <span>To: {new Date(msg.endDate).toLocaleString()}</span>
+                                  </div>
+                                )}
                               </div>
                             </div>
-                            <div className="flex gap-1">
+                            <div className="flex gap-1.5 ml-4 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button
                                 onClick={() => {
                                   setEditingMessageId(msg.id);
@@ -6192,7 +6331,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                   setMessageEndDate(msg.endDate);
                                   setMessageIsActive(msg.isActive);
                                 }}
-                                className="p-1 text-slate-400 hover:text-brand-500 transition-colors"
+                                className="p-2 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-colors"
+                                title="Edit message"
                               >
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                                   <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
@@ -6201,7 +6341,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                               </button>
                               <button
                                 onClick={() => setMessages(messages.filter(m => m.id !== msg.id))}
-                                className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                title="Delete message"
                               >
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                                   <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4z" clipRule="evenodd" />
