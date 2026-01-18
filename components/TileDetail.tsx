@@ -350,6 +350,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         return plainText;
     };
 
+    // Helper function to strip HTML tags from content for plain text display
+    const stripHtmlTags = (content: string): string => {
+        if (!content) return '';
+        // Remove HTML tags using regex
+        let plainText = content.replace(/<[^>]*>/g, '');
+        // Decode HTML entities
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = plainText;
+        return tempDiv.textContent || tempDiv.innerText || '';
+    };
+
     // Helper function to parse URLs and render clickable links with formatting
     const renderMessageContent = (content: string) => {
         const urlPattern = /(https?:\/\/[^\s]+)/g;
@@ -1471,7 +1482,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             visibility: state.visibility || 'public',
             allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
             notes: state.notes?.trim() || undefined,
-            tooltip: state.tooltip?.trim() || undefined,
+            tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
             browser: state.browser && state.browser !== 'default' ? state.browser : undefined
         };
 
@@ -1743,7 +1754,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         visibility: state.visibility || 'public',
                                         allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
                                         notes: state.notes?.trim() || undefined,
-                                        tooltip: state.tooltip?.trim() || undefined,
+                                        tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
                                         browser: state.browser && state.browser !== 'default' ? state.browser : undefined
                                     }
                                     : l
@@ -1769,7 +1780,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 visibility: state.visibility || 'public',
                                 allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
                                 notes: state.notes?.trim() || undefined,
-                                tooltip: state.tooltip?.trim() || undefined,
+                                tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
                                 browser: state.browser && state.browser !== 'default' ? state.browser : undefined
                             }
                             : l
