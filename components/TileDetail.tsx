@@ -334,9 +334,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     // Helper function to get active messages
     const getActiveMessages = (): TileMessage[] => {
-        return (tile.messages?.filter(m => 
-            m.isActive && 
-            (!m.startDate || new Date(m.startDate) <= new Date()) && 
+        return (tile.messages?.filter(m =>
+            m.isActive &&
+            (!m.startDate || new Date(m.startDate) <= new Date()) &&
             (!m.endDate || new Date(m.endDate) >= new Date())
         ) || []).sort((a, b) => (a.priority || 0) - (b.priority || 0));
     };
@@ -360,7 +360,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         processedContent = processedContent.replace(italicPattern, '<em>$1</em>');
 
         const parts = processedContent.split(urlPattern);
-        
+
         return parts.map((part, index) => {
             if (urlPattern.test(part)) {
                 return (
@@ -2735,15 +2735,27 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                 {/* Rolling Messages Display - Below Search Bar */}
                 {activeMessages.length > 0 && (
-                    <div className="mb-2 overflow-hidden w-full">
+                    <div className="mb-2 w-full group/message relative cursor-help">
+                        {/* Custom Instant Tooltip - Optimized for Large Detail View */}
+                        <div
+                            className="tooltip-force-black absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-yellow-400 text-[10px] rounded-lg shadow-xl opacity-0 translate-y-2 group-hover/message:opacity-100 group-hover/message:translate-y-0 transition-all duration-200 pointer-events-none z-[100] border border-yellow-500 w-max max-w-[400px] text-left"
+                        >
+                            {activeMessages.map((m, idx) => (
+                                <div key={m.id} className="last:mb-0 mb-1 leading-tight">
+                                    {activeMessages.length > 1 && <span className="opacity-50 mr-1">{idx + 1}.</span>}
+                                    {stripFormatting(m.content)}
+                                </div>
+                            ))}
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-yellow-400"></div>
+                        </div>
+
                         <div className={`relative h-6 flex items-center overflow-hidden ${activeMessages[0].type === 'alert' ? 'text-amber-600 dark:text-amber-400' :
                             activeMessages[0].type === 'warning' ? 'text-amber-600 dark:text-amber-400' :
-                            activeMessages[0].type === 'celebration' ? 'text-pink-600 dark:text-pink-400' :
-                            'text-brand-600 dark:text-brand-400'
-                        }`}
-                        title={activeMessages.map((m, idx) => `${idx + 1}. ${stripFormatting(m.content)}`).join('\n')}
+                                activeMessages[0].type === 'celebration' ? 'text-pink-600 dark:text-pink-400' :
+                                    'text-brand-600 dark:text-brand-400'
+                            }`}
                         >
-                            <div className="animate-rolling flex items-center gap-10 text-sm font-semibold">
+                            <div className="animate-rolling-detail flex items-center gap-10 text-sm font-semibold">
                                 {/* Single message loop for seamless scrolling */}
                                 {activeMessages.map((msg, idx) => (
                                     <div key={`${msg.id}-${idx}`} className="flex items-center gap-2 shrink-0">
@@ -2795,7 +2807,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     // Count links, filtering by role access if needed
                                     const tabLinksCount = tabSections.reduce((acc, s) => {
                                         const links = s.links || [];
-                                        const filteredLinks = shouldApplyRoleFiltering 
+                                        const filteredLinks = shouldApplyRoleFiltering
                                             ? links.filter(link => link.hasRoleAccess === true)
                                             : links;
                                         return acc + filteredLinks.length;

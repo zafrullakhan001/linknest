@@ -840,13 +840,13 @@ const SortableTile: React.FC<SortableTileProps> = ({
 
     // Process bold text first
     processedContent = processedContent.replace(boldPattern, '<strong>$2</strong>');
-    
+
     // Process italic text (avoid conflicts with bold)
     processedContent = processedContent.replace(italicPattern, '<em>$1</em>');
 
     // Split by URLs to process them separately
     const parts = processedContent.split(urlPattern);
-    
+
     return parts.map((part, index) => {
       if (urlPattern.test(part)) {
         return (
@@ -1285,26 +1285,40 @@ const SortableTile: React.FC<SortableTileProps> = ({
         {/* Center Rolling Message */}
         {activeMessages.length > 0 && (
           <div
-            className={`absolute bottom-1 left-0 right-0 overflow-hidden transition-all cursor-default ${!tile.isHyperlink ? 'pl-[60px]' : ''} ${activeMessages[0].type === 'alert' ? 'text-amber-600 dark:text-amber-400' :
+            className={`group/message absolute bottom-1 left-0 right-0 transition-all cursor-help ${!tile.isHyperlink ? 'pl-[60px]' : ''} ${activeMessages[0].type === 'alert' ? 'text-amber-600 dark:text-amber-400' :
               activeMessages[0].type === 'warning' ? 'text-amber-600 dark:text-amber-400' :
                 activeMessages[0].type === 'celebration' ? 'text-pink-600 dark:text-pink-400' :
                   'text-brand-600 dark:text-brand-400'
               }`}
-            title={activeMessages.map((m, idx) => `${idx + 1}. ${stripFormatting(m.content)}`).join('\n')}
           >
-            <div className="animate-rolling flex items-center gap-10 text-[10px] sm:text-xs font-semibold">
-              {/* Single message loop for seamless scrolling */}
-              {activeMessages.map((msg, idx) => (
-                <div key={`${msg.id}-${idx}`} className="flex items-center gap-2 shrink-0">
-                  {renderMessageContent(msg.content)}
+            {/* Custom Instant Tooltip - Optimized for Small Tiles */}
+            <div
+              className="tooltip-force-black absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-yellow-400 text-[10px] rounded-lg shadow-xl opacity-0 translate-y-2 group-hover/message:opacity-100 group-hover/message:translate-y-0 transition-all duration-200 pointer-events-none z-[100] border border-yellow-500 w-max max-w-[180px] text-left"
+            >
+              {activeMessages.map((m, idx) => (
+                <div key={m.id} className="last:mb-0 mb-1 leading-tight">
+                  {activeMessages.length > 1 && <span className="opacity-50 mr-1">{idx + 1}.</span>}
+                  {stripFormatting(m.content)}
                 </div>
               ))}
-              {/* Duplicate for seamless loop */}
-              {activeMessages.map((msg, idx) => (
-                <div key={`${msg.id}-dup-${idx}`} className="flex items-center gap-2 shrink-0">
-                  {renderMessageContent(msg.content)}
-                </div>
-              ))}
+              <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-yellow-400"></div>
+            </div>
+
+            <div className="overflow-hidden">
+              <div className="animate-rolling-tile flex items-center gap-10 text-[10px] sm:text-xs font-semibold">
+                {/* Single message loop for seamless scrolling */}
+                {activeMessages.map((msg, idx) => (
+                  <div key={`${msg.id}-${idx}`} className="flex items-center gap-2 shrink-0">
+                    {renderMessageContent(msg.content)}
+                  </div>
+                ))}
+                {/* Duplicate for seamless loop */}
+                {activeMessages.map((msg, idx) => (
+                  <div key={`${msg.id}-dup-${idx}`} className="flex items-center gap-2 shrink-0">
+                    {renderMessageContent(msg.content)}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -1732,13 +1746,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
     // Process bold text
     processedContent = processedContent.replace(boldPattern, '<strong>$2</strong>');
-    
+
     // Process italic text (avoid conflicts with bold)
     processedContent = processedContent.replace(italicPattern, '<em>$1</em>');
 
     // Process URLs
     const parts = processedContent.split(urlPattern);
-    
+
     return parts.map((part, index) => {
       if (urlPattern.test(part)) {
         return (
@@ -6247,37 +6261,37 @@ export const TileGrid: React.FC<TileGridProps> = ({
                             <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
                               💡 Formatting: URLs are automatically clickable. Use <strong>**text**</strong> for <strong>bold</strong> and <em>_text_</em> for <em>italic</em>.
                             </p>
-                            
+
                             {/* Message Presets - Enhanced with Categories */}
                             <div className="mt-3 space-y-3">
                               <div className="flex items-center gap-2">
                                 <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Quick Presets:</span>
                               </div>
-                              
+
                               {/* Celebrations Category */}
                               <div>
                                 <span className="text-xs text-slate-600 dark:text-slate-400 mb-1.5 block">Celebrations</span>
                                 <div className="flex gap-2 flex-wrap">
-                                  <button 
-                                    onClick={() => { setMessageContent("🎉 Happy Birthday!"); setMessageType('celebration'); }} 
+                                  <button
+                                    onClick={() => { setMessageContent("🎉 Happy Birthday!"); setMessageType('celebration'); }}
                                     className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-300 dark:hover:border-purple-700 transition-all text-slate-700 dark:text-slate-300"
                                   >
                                     🎉 Birthday
                                   </button>
-                                  <button 
-                                    onClick={() => { setMessageContent("🎊 Congratulations!"); setMessageType('celebration'); }} 
+                                  <button
+                                    onClick={() => { setMessageContent("🎊 Congratulations!"); setMessageType('celebration'); }}
                                     className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-300 dark:hover:border-purple-700 transition-all text-slate-700 dark:text-slate-300"
                                   >
                                     🎊 Congratulations
                                   </button>
-                                  <button 
-                                    onClick={() => { setMessageContent("🎈 Happy Anniversary!"); setMessageType('celebration'); }} 
+                                  <button
+                                    onClick={() => { setMessageContent("🎈 Happy Anniversary!"); setMessageType('celebration'); }}
                                     className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-300 dark:hover:border-purple-700 transition-all text-slate-700 dark:text-slate-300"
                                   >
                                     🎈 Anniversary
                                   </button>
-                                  <button 
-                                    onClick={() => { setMessageContent("🎁 Special Event Today!"); setMessageType('celebration'); }} 
+                                  <button
+                                    onClick={() => { setMessageContent("🎁 Special Event Today!"); setMessageType('celebration'); }}
                                     className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-300 dark:hover:border-purple-700 transition-all text-slate-700 dark:text-slate-300"
                                   >
                                     🎁 Special Event
@@ -6289,26 +6303,26 @@ export const TileGrid: React.FC<TileGridProps> = ({
                               <div>
                                 <span className="text-xs text-slate-600 dark:text-slate-400 mb-1.5 block">Alerts & Warnings</span>
                                 <div className="flex gap-2 flex-wrap">
-                                  <button 
-                                    onClick={() => { setMessageContent("⚠️ Maintenance scheduled. System will be unavailable."); setMessageType('warning'); }} 
+                                  <button
+                                    onClick={() => { setMessageContent("⚠️ Maintenance scheduled. System will be unavailable."); setMessageType('warning'); }}
                                     className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:border-amber-300 dark:hover:border-amber-700 transition-all text-slate-700 dark:text-slate-300"
                                   >
                                     ⚠️ Maintenance
                                   </button>
-                                  <button 
-                                    onClick={() => { setMessageContent("🚨 System Alert: Action Required"); setMessageType('alert'); }} 
+                                  <button
+                                    onClick={() => { setMessageContent("🚨 System Alert: Action Required"); setMessageType('alert'); }}
                                     className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-300 dark:hover:border-red-700 transition-all text-slate-700 dark:text-slate-300"
                                   >
                                     🚨 System Alert
                                   </button>
-                                  <button 
-                                    onClick={() => { setMessageContent("⏰ Deadline Reminder: Please complete your tasks"); setMessageType('warning'); }} 
+                                  <button
+                                    onClick={() => { setMessageContent("⏰ Deadline Reminder: Please complete your tasks"); setMessageType('warning'); }}
                                     className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:border-amber-300 dark:hover:border-amber-700 transition-all text-slate-700 dark:text-slate-300"
                                   >
                                     ⏰ Deadline
                                   </button>
-                                  <button 
-                                    onClick={() => { setMessageContent("🔒 Security Update Required"); setMessageType('alert'); }} 
+                                  <button
+                                    onClick={() => { setMessageContent("🔒 Security Update Required"); setMessageType('alert'); }}
                                     className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-300 dark:hover:border-red-700 transition-all text-slate-700 dark:text-slate-300"
                                   >
                                     🔒 Security Alert
@@ -6320,26 +6334,26 @@ export const TileGrid: React.FC<TileGridProps> = ({
                               <div>
                                 <span className="text-xs text-slate-600 dark:text-slate-400 mb-1.5 block">Information</span>
                                 <div className="flex gap-2 flex-wrap">
-                                  <button 
-                                    onClick={() => { setMessageContent("ℹ️ Important Update: Please review the changes"); setMessageType('info'); }} 
+                                  <button
+                                    onClick={() => { setMessageContent("ℹ️ Important Update: Please review the changes"); setMessageType('info'); }}
                                     className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-all text-slate-700 dark:text-slate-300"
                                   >
                                     ℹ️ Update
                                   </button>
-                                  <button 
-                                    onClick={() => { setMessageContent("📢 Announcement: New features available"); setMessageType('info'); }} 
+                                  <button
+                                    onClick={() => { setMessageContent("📢 Announcement: New features available"); setMessageType('info'); }}
                                     className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-all text-slate-700 dark:text-slate-300"
                                   >
                                     📢 Announcement
                                   </button>
-                                  <button 
-                                    onClick={() => { setMessageContent("💡 Tip: Did you know? Check out our new shortcuts"); setMessageType('info'); }} 
+                                  <button
+                                    onClick={() => { setMessageContent("💡 Tip: Did you know? Check out our new shortcuts"); setMessageType('info'); }}
                                     className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-all text-slate-700 dark:text-slate-300"
                                   >
                                     💡 Tip
                                   </button>
-                                  <button 
-                                    onClick={() => { setMessageContent("✅ Task Completed Successfully"); setMessageType('info'); }} 
+                                  <button
+                                    onClick={() => { setMessageContent("✅ Task Completed Successfully"); setMessageType('info'); }}
                                     className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-all text-slate-700 dark:text-slate-300"
                                   >
                                     ✅ Completed

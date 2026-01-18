@@ -108,6 +108,10 @@ module.exports = {
     'bg-red-100', 'bg-indigo-100', 'bg-lime-100', 'bg-sky-100',
     'bg-slate-100', 'bg-teal-100', 'bg-pink-100', 'bg-purple-100',
     'bg-yellow-100', 'bg-zinc-100',
+    // Custom tooltip class - use pattern to ensure it's not purged
+    {
+      pattern: /tooltip-force-black/,
+    },
   ],
   theme: {
     extend: {

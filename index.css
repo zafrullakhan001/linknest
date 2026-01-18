@@ -2,6 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Force black text in tooltip - defined outside @layer to prevent purging */
+.tooltip-force-black,
+.tooltip-force-black *,
+.tooltip-force-black div,
+.tooltip-force-black span {
+  color: #000000 !important;
+}
+
+.tooltip-force-black .opacity-50 {
+  color: #000000 !important;
+  opacity: 0.5;
+}
+
+
 /* Local tile decoration override - must take precedence over global styles with !important */
 .linknest-tile.has-local-decoration,
 div.linknest-tile.has-local-decoration {
@@ -191,9 +205,9 @@ div.linknest-tile.has-local-decoration * {
 }
 
 /* Rolling message animation (Marquee) - Starts from viewport right edge */
-@keyframes marquee-roll {
+@keyframes marquee-roll-tile {
   0% {
-    transform: translateX(100vw);
+    transform: translateX(100%);
   }
 
   100% {
@@ -201,16 +215,40 @@ div.linknest-tile.has-local-decoration * {
   }
 }
 
-.animate-rolling {
+@keyframes marquee-roll-detail {
+  0% {
+    transform: translateX(120%);
+  }
+
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-rolling-tile {
   display: flex;
   white-space: nowrap;
-  animation: marquee-roll 40s linear infinite;
+  animation: marquee-roll-tile 20s linear infinite;
   width: max-content;
 }
 
-.animate-rolling:hover {
+.animate-rolling-detail {
+  display: flex;
+  white-space: nowrap;
+  animation: marquee-roll-detail 45s linear infinite;
+  width: max-content;
+}
+
+.animate-rolling-tile:hover,
+.animate-rolling-detail:hover {
   animation-play-state: paused;
 }
+
+
+
+
+
+
 
 /* Subtle page background pattern */
 .linknest-app-container {
