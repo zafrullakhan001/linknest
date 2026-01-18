@@ -98,6 +98,16 @@ export interface Tile {
   tileGradientColorPositions?: number[]; // Array of color stop positions (0-100) for each gradient color
   tileBorderRadius?: number; // Border radius in pixels
   tileTextColor?: string; // Text color (hex code)
+  messages?: TileMessage[]; // Array of scheduled messages
+}
+
+export interface TileMessage {
+  id: string;
+  content: string;
+  type: 'info' | 'warning' | 'celebration' | 'alert' | 'custom';
+  startDate: string; // ISO date string
+  endDate: string; // ISO date string
+  isActive: boolean;
 }
 
 export const THEME_COLORS = [

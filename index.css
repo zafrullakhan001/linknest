@@ -55,7 +55,8 @@ div.linknest-tile.has-local-decoration * {
   background-image: var(--tile-local-background-image, none) !important;
   border-radius: var(--tile-local-border-radius) !important;
   color: var(--tile-local-text-color) !important;
-  backdrop-filter: none !important; /* Disable backdrop-filter for custom backgrounds */
+  backdrop-filter: none !important;
+  /* Disable backdrop-filter for custom backgrounds */
   -webkit-backdrop-filter: none !important;
 }
 
@@ -187,6 +188,29 @@ div.linknest-tile.has-local-decoration * {
 .bg-gradient-animated {
   background-size: 200% 200%;
   animation: gradient-shift 3s ease infinite;
+}
+
+/* Rolling message animation (Marquee) */
+@keyframes marquee-roll {
+  0% {
+    transform: translateX(0);
+  }
+
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-rolling {
+  display: flex;
+  white-space: nowrap;
+  animation: marquee-roll 20s linear infinite;
+  padding-left: 0;
+  width: max-content;
+}
+
+.animate-rolling:hover {
+  animation-play-state: paused;
 }
 
 /* Subtle page background pattern */
@@ -5531,6 +5555,7 @@ body {
     opacity: 0;
     transform: translateY(-50px) rotate(0deg);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) rotate(15deg);
@@ -5547,9 +5572,11 @@ body {
     opacity: 0;
     transform: translateY(-60px) translateX(-10px);
   }
+
   50% {
     transform: translateY(-20px) translateX(10px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) translateX(0);
@@ -5566,9 +5593,11 @@ body {
     opacity: 0;
     transform: translateY(-40px) scale(0.9);
   }
+
   80% {
     opacity: 1;
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -5585,9 +5614,11 @@ body {
     opacity: 0;
     transform: translateY(-50px) rotate(-5deg);
   }
+
   60% {
     transform: translateY(-10px) rotate(3deg);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) rotate(0deg);
@@ -5605,6 +5636,7 @@ body {
     transform: translateY(-30px) scale(0.95);
     filter: blur(3px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -5622,6 +5654,7 @@ body {
     opacity: 0;
     transform: translateY(-40px) scaleY(0.8);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) scaleY(1);
@@ -5638,6 +5671,7 @@ body {
     opacity: 0;
     transform: translateX(-50px);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0);
@@ -5654,9 +5688,11 @@ body {
     opacity: 0;
     transform: translateY(-45px) translateX(-8px);
   }
+
   50% {
     transform: translateY(-15px) translateX(8px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) translateX(0);
@@ -5674,6 +5710,7 @@ body {
     transform: translateY(-35px);
     filter: blur(5px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -5691,6 +5728,7 @@ body {
     opacity: 0;
     transform: scale(0.5);
   }
+
   100% {
     opacity: 1;
     transform: scale(1);
@@ -5707,10 +5745,12 @@ body {
     opacity: 0;
     transform: scale(0.9);
   }
+
   50% {
     opacity: 0.7;
     transform: scale(1.02);
   }
+
   100% {
     opacity: 1;
     transform: scale(1);
@@ -5727,12 +5767,15 @@ body {
     opacity: 0;
     transform: scale(0.95);
   }
+
   40% {
     transform: scale(1.01);
   }
+
   70% {
     transform: scale(0.99);
   }
+
   100% {
     opacity: 1;
     transform: scale(1);
@@ -5749,6 +5792,7 @@ body {
     opacity: 0;
     transform: translateY(10px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -5765,9 +5809,11 @@ body {
     opacity: 0;
     transform: translateY(20px) scaleY(0.95);
   }
+
   60% {
     transform: translateY(-5px) scaleY(1.02);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) scaleY(1);
@@ -5784,6 +5830,7 @@ body {
     opacity: 0;
     transform: translateX(-40px);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0);
@@ -5800,9 +5847,11 @@ body {
     opacity: 0;
     transform: translateY(15px) translateX(-10px);
   }
+
   50% {
     transform: translateY(-3px) translateX(5px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) translateX(0);
@@ -5819,6 +5868,7 @@ body {
     opacity: 0;
     transform: translateX(-30px) translateY(-10px);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0) translateY(0);
@@ -5835,6 +5885,7 @@ body {
     opacity: 0;
     transform: translateY(-60px) scaleY(1.2);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) scaleY(1);
@@ -5851,6 +5902,7 @@ body {
     opacity: 0;
     transform: translateY(-40px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -5867,6 +5919,7 @@ body {
     opacity: 0;
     transform: scale(0.7) scaleY(0.3);
   }
+
   100% {
     opacity: 1;
     transform: scale(1) scaleY(1);
@@ -5883,6 +5936,7 @@ body {
     opacity: 0;
     transform: translateX(-50px);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0);
@@ -5900,6 +5954,7 @@ body {
     transform: translateX(-40px);
     filter: blur(8px);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0);
@@ -5917,6 +5972,7 @@ body {
     opacity: 0;
     filter: blur(6px);
   }
+
   100% {
     opacity: 1;
     filter: blur(0);
@@ -5934,6 +5990,7 @@ body {
     transform: translateY(30px);
     filter: blur(4px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -5952,6 +6009,7 @@ body {
     transform: translateY(25px) rotate(-5deg);
     filter: blur(5px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) rotate(0deg);
@@ -5970,6 +6028,7 @@ body {
     transform: translateY(20px) translateX(-5px);
     filter: blur(4px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) translateX(0);
@@ -5987,9 +6046,11 @@ body {
     opacity: 0;
     transform: translateX(-15px) rotate(-2deg);
   }
+
   50% {
     transform: translateX(5px) rotate(2deg);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0) rotate(0deg);
@@ -6006,6 +6067,7 @@ body {
     opacity: 0;
     transform: translateX(-20px);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0);
@@ -6022,9 +6084,11 @@ body {
     opacity: 0;
     transform: translateY(-35px);
   }
+
   60% {
     transform: translateY(-5px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -6041,6 +6105,7 @@ body {
     opacity: 0;
     transform: translateY(40px) scale(0.9);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -6057,6 +6122,7 @@ body {
     opacity: 0;
     transform: translateY(-30px) scaleY(1.3);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) scaleY(1);
@@ -6073,6 +6139,7 @@ body {
     opacity: 0;
     transform: translateY(-35px) scaleY(1.4);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) scaleY(1);
@@ -6089,6 +6156,7 @@ body {
     opacity: 0;
     transform: scale(0.7);
   }
+
   100% {
     opacity: 1;
     transform: scale(1);
@@ -6106,6 +6174,7 @@ body {
     transform: scale(0.5);
     filter: blur(8px);
   }
+
   100% {
     opacity: 1;
     transform: scale(1);
@@ -6123,6 +6192,7 @@ body {
     opacity: 0;
     filter: blur(6px) saturate(0.5);
   }
+
   100% {
     opacity: 1;
     filter: blur(0) saturate(1);
@@ -6140,6 +6210,7 @@ body {
     transform: scale(0.9);
     filter: blur(5px);
   }
+
   100% {
     opacity: 1;
     transform: scale(1);
@@ -6157,6 +6228,7 @@ body {
     opacity: 0;
     filter: hue-rotate(30deg);
   }
+
   100% {
     opacity: 1;
     filter: hue-rotate(0deg);
@@ -6173,6 +6245,7 @@ body {
     opacity: 0;
     filter: saturate(0);
   }
+
   100% {
     opacity: 1;
     filter: saturate(1);
@@ -6189,6 +6262,7 @@ body {
     opacity: 0;
     filter: brightness(0.5);
   }
+
   100% {
     opacity: 1;
     filter: brightness(1);
@@ -6205,6 +6279,7 @@ body {
     opacity: 0;
     filter: brightness(1.5);
   }
+
   100% {
     opacity: 1;
     filter: brightness(1);
@@ -6221,6 +6296,7 @@ body {
     opacity: 0;
     transform: translateY(-40px) rotate(5deg);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) rotate(0deg);
@@ -6237,6 +6313,7 @@ body {
     opacity: 0;
     transform: translateY(-30px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -6254,6 +6331,7 @@ body {
     transform: translateY(-25px);
     filter: blur(4px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -6271,9 +6349,11 @@ body {
     opacity: 0;
     transform: translateY(-35px) translateX(-8px);
   }
+
   50% {
     transform: translateY(-10px) translateX(5px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) translateX(0);
@@ -6290,6 +6370,7 @@ body {
     opacity: 0;
     filter: brightness(2);
   }
+
   100% {
     opacity: 1;
     filter: brightness(1);
@@ -6306,6 +6387,7 @@ body {
     opacity: 0;
     filter: brightness(2) blur(5px);
   }
+
   100% {
     opacity: 1;
     filter: brightness(1) blur(0);
@@ -6322,6 +6404,7 @@ body {
     opacity: 0;
     filter: brightness(1.8);
   }
+
   100% {
     opacity: 1;
     filter: brightness(1);
@@ -6338,6 +6421,7 @@ body {
     opacity: 0;
     transform: scaleX(0.5);
   }
+
   100% {
     opacity: 1;
     transform: scaleX(1);
@@ -6354,6 +6438,7 @@ body {
     opacity: 0;
     filter: brightness(1.3);
   }
+
   100% {
     opacity: 1;
     filter: brightness(1);
@@ -6370,6 +6455,7 @@ body {
     opacity: 0;
     filter: brightness(0.5);
   }
+
   100% {
     opacity: 1;
     filter: brightness(1);
@@ -6386,6 +6472,7 @@ body {
     opacity: 0;
     transform: scaleX(0) scaleY(0.9);
   }
+
   100% {
     opacity: 1;
     transform: scaleX(1) scaleY(1);
@@ -6402,9 +6489,11 @@ body {
     opacity: 0;
     transform: translateY(-20px) rotate(-10deg);
   }
+
   50% {
     transform: translateY(-5px) rotate(5deg);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) rotate(0deg);
@@ -6421,9 +6510,11 @@ body {
     opacity: 0;
     transform: scale(0.9) translateY(-15px);
   }
+
   50% {
     transform: scale(1.03) translateY(-3px);
   }
+
   100% {
     opacity: 1;
     transform: scale(1) translateY(0);
@@ -6440,9 +6531,11 @@ body {
     opacity: 0;
     transform: translateX(-15px) scaleX(0.95);
   }
+
   50% {
     transform: translateX(5px) scaleX(1.02);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0) scaleX(1);
@@ -6459,12 +6552,15 @@ body {
     opacity: 0;
     transform: translateX(-20px) rotate(-3deg);
   }
+
   40% {
     transform: translateX(3px) rotate(2deg);
   }
+
   70% {
     transform: translateX(-2px) rotate(-1deg);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0) rotate(0deg);
@@ -6481,9 +6577,11 @@ body {
     opacity: 0;
     transform: translateX(-18px) scaleX(0.95);
   }
+
   50% {
     transform: translateX(4px) scaleX(1.03);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0) scaleX(1);
@@ -6500,6 +6598,7 @@ body {
     opacity: 0;
     transform: translateY(-25px) scaleY(1.1);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) scaleY(1);
@@ -6516,6 +6615,7 @@ body {
     opacity: 0;
     transform: translateY(20px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -6532,9 +6632,11 @@ body {
     opacity: 0;
     transform: translateX(-25px) rotate(-8deg);
   }
+
   50% {
     transform: translateX(5px) rotate(4deg);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0) rotate(0deg);
@@ -6551,9 +6653,11 @@ body {
     opacity: 0;
     transform: translateY(-30px) scaleY(1.05);
   }
+
   60% {
     transform: translateY(-5px) scaleY(1.01);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) scaleY(1);
@@ -6570,6 +6674,7 @@ body {
     opacity: 0;
     transform: translateX(-30px) translateY(-15px) rotate(-5deg);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0) translateY(0) rotate(0deg);
@@ -6586,6 +6691,7 @@ body {
     opacity: 0;
     transform: perspective(800px) rotateY(-90deg);
   }
+
   100% {
     opacity: 1;
     transform: perspective(800px) rotateY(0deg);
@@ -6602,6 +6708,7 @@ body {
     opacity: 0;
     transform: perspective(1000px) rotateX(-45deg) scale(0.9);
   }
+
   100% {
     opacity: 1;
     transform: perspective(1000px) rotateX(0deg) scale(1);
@@ -6618,6 +6725,7 @@ body {
     opacity: 0;
     transform: scaleY(0.1) translateY(-20px);
   }
+
   100% {
     opacity: 1;
     transform: scaleY(1) translateY(0);
@@ -6634,6 +6742,7 @@ body {
     opacity: 0;
     transform: perspective(600px) rotateX(-30deg) rotateY(-30deg) scale(0.8);
   }
+
   100% {
     opacity: 1;
     transform: perspective(600px) rotateX(0deg) rotateY(0deg) scale(1);
@@ -6650,6 +6759,7 @@ body {
     opacity: 0;
     transform: perspective(800px) rotateY(180deg);
   }
+
   100% {
     opacity: 1;
     transform: perspective(800px) rotateY(0deg);
@@ -6666,9 +6776,11 @@ body {
     opacity: 0;
     transform: translateY(-40px) rotate(10deg);
   }
+
   70% {
     transform: translateY(5px) rotate(-2deg);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) rotate(0deg);
@@ -6685,9 +6797,11 @@ body {
     opacity: 0;
     transform: translateY(-35px) translateX(-10px) rotate(-8deg);
   }
+
   50% {
     transform: translateY(-10px) translateX(5px) rotate(4deg);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) translateX(0) rotate(0deg);
@@ -6704,6 +6818,7 @@ body {
     opacity: 0;
     transform: translateX(-40px);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0);
@@ -6720,6 +6835,7 @@ body {
     opacity: 0;
     transform: scaleX(0) translateX(-20px);
   }
+
   100% {
     opacity: 1;
     transform: scaleX(1) translateX(0);
@@ -6737,6 +6853,7 @@ body {
     transform: scale(1.1);
     filter: blur(0);
   }
+
   100% {
     opacity: 1;
     transform: scale(1);
@@ -6755,6 +6872,7 @@ body {
     transform: scale(0.9);
     filter: blur(3px);
   }
+
   100% {
     opacity: 1;
     transform: scale(1);
@@ -6772,6 +6890,7 @@ body {
     opacity: 0;
     transform: scale(0.3);
   }
+
   100% {
     opacity: 1;
     transform: scale(1);
@@ -6788,9 +6907,11 @@ body {
     opacity: 0;
     transform: translateY(-50px) rotate(0deg);
   }
+
   50% {
     transform: translateY(-15px) rotate(180deg);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) rotate(360deg);
@@ -6807,6 +6928,7 @@ body {
     opacity: 0;
     transform: translateY(-30px) scaleY(1.2);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) scaleY(1);
@@ -6823,6 +6945,7 @@ body {
     opacity: 0;
     transform: translateX(-50px);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0);
@@ -6840,6 +6963,7 @@ body {
     transform: scale(1.05);
     filter: blur(2px);
   }
+
   100% {
     opacity: 1;
     transform: scale(1);
@@ -6858,6 +6982,7 @@ body {
     transform: scale(0.8);
     filter: blur(4px);
   }
+
   100% {
     opacity: 1;
     transform: scale(1);
@@ -6876,6 +7001,7 @@ body {
     transform: translateX(-25px);
     filter: blur(5px);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0);
@@ -6894,6 +7020,7 @@ body {
     transform: translateX(-40px);
     filter: blur(6px);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0);
@@ -6911,6 +7038,7 @@ body {
     opacity: 0;
     transform: translateY(-20px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -6927,6 +7055,7 @@ body {
     opacity: 0;
     transform: scale(0.95);
   }
+
   100% {
     opacity: 1;
     transform: scale(1);
@@ -6943,6 +7072,7 @@ body {
     opacity: 0;
     transform: translateY(-15px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -6959,6 +7089,7 @@ body {
     opacity: 0;
     transform: translateY(-18px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -6975,9 +7106,11 @@ body {
     opacity: 0;
     transform: translateY(-25px);
   }
+
   60% {
     transform: translateY(-5px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -6994,9 +7127,11 @@ body {
     opacity: 0;
     transform: scale(0.96);
   }
+
   50% {
     transform: scale(1.01);
   }
+
   100% {
     opacity: 1;
     transform: scale(1);
@@ -7013,6 +7148,7 @@ body {
     opacity: 0;
     transform: translateY(-22px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -7029,9 +7165,11 @@ body {
     opacity: 0;
     transform: translateY(-35px);
   }
+
   80% {
     transform: translateY(2px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -7048,6 +7186,7 @@ body {
     opacity: 0;
     transform: translateY(-30px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -7064,6 +7203,7 @@ body {
     opacity: 0;
     transform: translateY(-28px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);

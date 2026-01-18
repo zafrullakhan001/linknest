@@ -394,12 +394,31 @@ function handleGetTiles() {
             }
         }
         
+        // Batch fetch all tile messages
+        $messagesByTile = [];
+        $msgStmt = $db->prepare("SELECT * FROM tile_messages WHERE tile_id IN ($placeholders)");
+        $msgStmt->execute($visibleTileIds);
+        while ($msgRow = $msgStmt->fetch()) {
+            if (!isset($messagesByTile[$msgRow['tile_id']])) {
+                $messagesByTile[$msgRow['tile_id']] = [];
+            }
+            $messagesByTile[$msgRow['tile_id']][] = [
+                'id' => $msgRow['id'],
+                'content' => $msgRow['content'],
+                'type' => $msgRow['type'],
+                'startDate' => $msgRow['start_date'],
+                'endDate' => $msgRow['end_date'],
+                'isActive' => (bool)$msgRow['is_active']
+            ];
+        }
+        
         // Step 5: Build the tile structure in memory
         foreach ($visibleTileIds as $tileId) {
             if (!isset($tilesById[$tileId])) {
                 continue;
             }
             $tile = &$tilesById[$tileId];
+            $tile['messages'] = $messagesByTile[$tileId] ?? [];
             $tabs = [];
             
             // Process tabs for this tile
@@ -795,6 +814,21 @@ function handleGetTile($tileId) {
         'tabs' => []
     ];
     
+    // Get messages for this tile
+    $msgStmt = $db->prepare('SELECT * FROM tile_messages WHERE tile_id = ?');
+    $msgStmt->execute([$tileId]);
+    $tile['messages'] = [];
+    while ($msgRow = $msgStmt->fetch()) {
+        $tile['messages'][] = [
+            'id' => $msgRow['id'],
+            'content' => $msgRow['content'],
+            'type' => $msgRow['type'],
+            'startDate' => $msgRow['start_date'],
+            'endDate' => $msgRow['end_date'],
+            'isActive' => (bool)$msgRow['is_active']
+        ];
+    }
+
     // Get tabs for this tile
     $tabStmt = $db->prepare('SELECT * FROM tabs WHERE tile_id = ? ORDER BY position ASC');
     $tabStmt->execute([$tileId]);
@@ -1277,6 +1311,23 @@ function handleCreateTile() {
         }
     }
     
+    // Handle tile messages
+    if (isset($data['messages']) && is_array($data['messages'])) {
+        $msgStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)');
+        foreach ($data['messages'] as $msg) {
+            $msgId = $msg['id'] ?? uniqid('msg_', true);
+            $msgStmt->execute([
+                $msgId,
+                $tileId,
+                $msg['content'] ?? '',
+                $msg['type'] ?? 'info',
+                $msg['startDate'] ?? null,
+                $msg['endDate'] ?? null,
+                isset($msg['isActive']) && $msg['isActive'] ? 1 : 0
+            ]);
+        }
+    }
+
     sendJSON(['success' => true, 'id' => $tileId], 201);
     } catch (PDOException $e) {
         error_log('Database error in handleCreateTile: ' . $e->getMessage());
@@ -1384,6 +1435,9 @@ function handleUpdateTile($tileId) {
         
         $deleteTabsStmt = $db->prepare('DELETE FROM tabs WHERE tile_id = ?');
         $deleteTabsStmt->execute([$tileId]);
+
+        $deleteMessagesStmt = $db->prepare('DELETE FROM tile_messages WHERE tile_id = ?');
+        $deleteMessagesStmt->execute([$tileId]);
     
         // Insert new tabs, sections, and links
         if (isset($data['tabs']) && is_array($data['tabs'])) {
@@ -1553,6 +1607,23 @@ function handleUpdateTile($tileId) {
             }
         }
         
+        // Handle tile messages
+        if (isset($data['messages']) && is_array($data['messages'])) {
+            $msgStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)');
+            foreach ($data['messages'] as $msg) {
+                $msgId = $msg['id'] ?? uniqid('msg_', true);
+                $msgStmt->execute([
+                    $msgId,
+                    $tileId,
+                    $msg['content'] ?? '',
+                    $msg['type'] ?? 'info',
+                    $msg['startDate'] ?? null,
+                    $msg['endDate'] ?? null,
+                    isset($msg['isActive']) && $msg['isActive'] ? 1 : 0
+                ]);
+            }
+        }
+
         // Commit the transaction
         $db->commit();
         

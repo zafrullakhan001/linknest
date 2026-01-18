@@ -804,6 +804,53 @@ function initDatabase() {
             PRIMARY KEY (user_id, category_name)
         )');
         
+        // Create tile_messages table for storing scheduled messages for tiles
+        $db->exec('CREATE TABLE IF NOT EXISTS tile_messages (
+            id TEXT PRIMARY KEY,
+            tile_id TEXT NOT NULL,
+            content TEXT NOT NULL,
+            type TEXT NOT NULL,
+            start_date TEXT,
+            end_date TEXT,
+            is_active INTEGER DEFAULT 1,
+            FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
+        )');
+
+        // Migration for tile_messages if it exists with old schema
+        try {
+            $columns = $db->query("PRAGMA table_info(tile_messages)")->fetchAll();
+            $hasContent = false;
+            $hasType = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'content') $hasContent = true;
+                if ($column['name'] === 'type') $hasType = true;
+            }
+            if (!$hasContent) {
+                // If content is missing, the table likely uses the old 'message' column or wrong schema entirely
+                // Since this is a new feature, we'll just recreate it to be sure
+                $db->exec('DROP TABLE tile_messages');
+                $db->exec('CREATE TABLE tile_messages (
+                    id TEXT PRIMARY KEY,
+                    tile_id TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    start_date TEXT,
+                    end_date TEXT,
+                    is_active INTEGER DEFAULT 1,
+                    FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
+                )');
+            }
+        } catch (PDOException $e) {
+            error_log('tile_messages migration error: ' . $e->getMessage());
+        }
+        
+        // Index for faster tile lookup
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_tile_messages_tile_id ON tile_messages(tile_id)');
+        } catch (PDOException $e) {
+            // ignore if index creation fails
+        }
+        
         // Create user_tile_favorites table for storing user favorites
         $db->exec('CREATE TABLE IF NOT EXISTS user_tile_favorites (
             user_id INTEGER NOT NULL,

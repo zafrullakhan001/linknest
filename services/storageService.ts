@@ -39,7 +39,8 @@ const transformTile = (apiTile: any): Tile => {
     tileGradientDirection: apiTile.tileGradientDirection !== undefined && apiTile.tileGradientDirection !== null ? (typeof apiTile.tileGradientDirection === 'number' ? apiTile.tileGradientDirection : Number(apiTile.tileGradientDirection) || 90) : undefined,
     tileGradientType: apiTile.tileGradientType !== undefined && apiTile.tileGradientType !== null && apiTile.tileGradientType !== '' ? apiTile.tileGradientType : undefined,
     tileBorderRadius: apiTile.tileBorderRadius !== undefined && apiTile.tileBorderRadius !== null ? Number(apiTile.tileBorderRadius) : undefined,
-    tileTextColor: apiTile.tileTextColor !== undefined && apiTile.tileTextColor !== null && apiTile.tileTextColor !== '' ? apiTile.tileTextColor : undefined
+    tileTextColor: apiTile.tileTextColor !== undefined && apiTile.tileTextColor !== null && apiTile.tileTextColor !== '' ? apiTile.tileTextColor : undefined,
+    messages: apiTile.messages || undefined // Include scheduled messages
   };
 };
 

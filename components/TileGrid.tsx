@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Tile, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS, TileVisibility } from '../types';
+import { Tile, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS, TileVisibility, TileMessage } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles, cloneCategory, toggleCategoryFavorite, getRecycleBin, restoreTile, purgeRecycleBin, permanentDeleteTile, permanentDeleteCategory, deleteTile, getArchive, archiveTile, unarchiveTile, purgeArchive, archiveCategory, unarchiveCategory, getFavoriteLinks, FavoriteLink } from '../services/storageService';
 import {
@@ -121,8 +121,8 @@ const CategoryVisibilityDialog: React.FC<CategoryVisibilityDialogProps> = ({
   };
 
   const handleBulkUserToggle = (userId: number) => {
-    setBulkPrivateSelectedUsers(prev => 
-      prev.includes(userId) 
+    setBulkPrivateSelectedUsers(prev =>
+      prev.includes(userId)
         ? prev.filter(id => id !== userId)
         : [...prev, userId]
     );
@@ -175,11 +175,10 @@ const CategoryVisibilityDialog: React.FC<CategoryVisibilityDialogProps> = ({
               return (
                 <div
                   key={tile.id}
-                  className={`p-3 rounded-lg border transition-all ${
-                    currentVisibility === 'public' ? 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50' :
+                  className={`p-3 rounded-lg border transition-all ${currentVisibility === 'public' ? 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50' :
                     currentVisibility === 'authenticated' ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20' :
-                    'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20'
-                  }`}
+                      'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20'
+                    }`}
                 >
                   <div className="flex items-start gap-2">
                     <span className="text-lg">{tile.emoji}</span>
@@ -188,31 +187,28 @@ const CategoryVisibilityDialog: React.FC<CategoryVisibilityDialogProps> = ({
                       <div className="mt-2 flex gap-1">
                         <button
                           onClick={() => handleVisibilityChange(tile.id, 'public')}
-                          className={`px-2 py-1 text-xs rounded ${
-                            currentVisibility === 'public'
-                              ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                          }`}
+                          className={`px-2 py-1 text-xs rounded ${currentVisibility === 'public'
+                            ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                            }`}
                         >
                           Public
                         </button>
                         <button
                           onClick={() => handleVisibilityChange(tile.id, 'authenticated')}
-                          className={`px-2 py-1 text-xs rounded ${
-                            currentVisibility === 'authenticated'
-                              ? 'bg-blue-200 dark:bg-blue-700 text-blue-900 dark:text-blue-100'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-blue-100 dark:hover:bg-blue-900/30'
-                          }`}
+                          className={`px-2 py-1 text-xs rounded ${currentVisibility === 'authenticated'
+                            ? 'bg-blue-200 dark:bg-blue-700 text-blue-900 dark:text-blue-100'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-blue-100 dark:hover:bg-blue-900/30'
+                            }`}
                         >
                           Protected
                         </button>
                         <button
                           onClick={() => handleVisibilityChange(tile.id, 'private')}
-                          className={`px-2 py-1 text-xs rounded ${
-                            currentVisibility === 'private'
-                              ? 'bg-red-200 dark:bg-red-700 text-red-900 dark:text-red-100'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-red-100 dark:hover:bg-red-900/30'
-                          }`}
+                          className={`px-2 py-1 text-xs rounded ${currentVisibility === 'private'
+                            ? 'bg-red-200 dark:bg-red-700 text-red-900 dark:text-red-100'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-red-100 dark:hover:bg-red-900/30'
+                            }`}
                         >
                           Private
                         </button>
@@ -842,6 +838,10 @@ const SortableTile: React.FC<SortableTileProps> = ({
     }
     return uniqueLinks.size;
   })();
+
+  const activeMessages = tile.messages?.filter(m => m.isActive && (!m.startDate || new Date(m.startDate) <= new Date()) && (!m.endDate || new Date(m.endDate) >= new Date())) || [];
+  const activeMessagesCount = activeMessages.length;
+
   const currentCategory = tile.group || 'General';
 
   const animationDelay = (groupIndex * 80) + (tileIndex * 50);
@@ -871,10 +871,10 @@ const SortableTile: React.FC<SortableTileProps> = ({
         }
         return color;
       }).join(', ');
-      
+
       let gradientValue = '';
       const angle = typeof tile.tileGradientDirection === 'number' ? tile.tileGradientDirection : (typeof tile.tileGradientDirection === 'string' ? parseInt(tile.tileGradientDirection.replace('deg', '')) || 90 : 90);
-      
+
       if (tile.tileGradientType === 'linear' || tile.tileGradientType === 'repeating-linear') {
         const prefix = tile.tileGradientType === 'repeating-linear' ? 'repeating-linear-gradient' : 'linear-gradient';
         gradientValue = `${prefix}(${angle}deg, ${gradientStops})`;
@@ -918,11 +918,11 @@ const SortableTile: React.FC<SortableTileProps> = ({
   let finalAnimationClass = animationClass || '';
   if (hasLocalDecoration && animationClass) {
     // Remove decoration classes from animationClass, keep only animation classes
-    const decorationClasses = ['tile-decor-christmas', 'tile-decor-thanksgiving', 'tile-decor-veterans', 
+    const decorationClasses = ['tile-decor-christmas', 'tile-decor-thanksgiving', 'tile-decor-veterans',
       'tile-decor-halloween', 'tile-decor-new-year', 'tile-decor-valentine', 'tile-decor-st-patrick',
       'tile-decor-easter', 'tile-decor-birthday', 'tile-decor-party', 'tile-decor-snow',
       'tile-decor-autumn', 'tile-decor-spring', 'tile-decor-summer'];
-    
+
     const classParts = animationClass.split(' ').filter(cls => {
       // Keep animation classes, remove decoration classes
       return !decorationClasses.some(decClass => cls.includes(decClass));
@@ -1232,6 +1232,35 @@ const SortableTile: React.FC<SortableTileProps> = ({
         )}
         {tile.isHyperlink && <div></div>}
 
+        {/* Center Rolling Message */}
+        {activeMessages.length > 0 && (
+          <div
+            className={`absolute left-1/2 -translate-x-1/2 bottom-3 w-full max-w-[80%] overflow-hidden transition-all cursor-default ${activeMessages[0].type === 'alert' ? 'text-red-600 dark:text-red-400' :
+              activeMessages[0].type === 'warning' ? 'text-amber-600 dark:text-amber-400' :
+                activeMessages[0].type === 'celebration' ? 'text-pink-600 dark:text-pink-400' :
+                  'text-brand-600 dark:text-brand-400'
+              }`}
+            title={activeMessages.map(m => m.content).join('\n')}
+          >
+            <div className="animate-rolling flex items-center gap-10 text-[10px] sm:text-xs font-semibold">
+              {/* Double the messages for a more continuous flow in the marquee */}
+              {[...activeMessages, ...activeMessages].map((msg, idx) => (
+                <div key={`${msg.id}-${idx}`} className="flex items-center gap-2 shrink-0">
+                  <span className={`${msg.type === 'alert' ? 'text-red-600 dark:text-red-400' :
+                    msg.type === 'warning' ? 'text-amber-600 dark:text-amber-400' :
+                      msg.type === 'celebration' ? 'text-pink-600 dark:text-pink-400' :
+                        'text-brand-600 dark:text-brand-400'
+                    }`}>
+                    {msg.content}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Reorder Buttons */}
+
         {/* Arrow Buttons for Reordering - Centered at bottom, only visible for authenticated users */}
         {isAuthenticated && (onMoveLeft || onMoveRight) ? (
           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 z-10">
@@ -1299,7 +1328,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
 }) => {
   const { settings } = useSettings();
   const { user } = useAuth();
-  
+
   // Store allowed tabs based on user's roles
   const [allowedTabsByRole, setAllowedTabsByRole] = useState<Set<string>>(new Set());
   const [allowedTabsLoading, setAllowedTabsLoading] = useState(false);
@@ -1321,9 +1350,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
       if (tab === 'monitoring') return disabledAppTabs.has('monitoring');
       return false;
     })();
-    
+
     if (disabledGlobally) return true;
-    
+
     // If user has roles, check role permissions
     if (isAuthenticated && user && allowedTabsByRole.size > 0) {
       // Convert TabType to the format stored in role_tab_permissions
@@ -1339,12 +1368,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
         'recycle-bin': 'recycle-bin',
         'monitoring': 'monitoring'
       };
-      
+
       const tabId = tabIdMap[tab];
       // If tab not in allowedTabsByRole, hide it (role-based restriction)
       return !allowedTabsByRole.has(tabId);
     }
-    
+
     // User has no roles or not authenticated - use global settings only
     return false;
   }, [disabledAppTabs, isAuthenticated, user, allowedTabsByRole]);
@@ -1510,7 +1539,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(false);
   const [refreshCountdown, setRefreshCountdown] = useState<number>(30);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   // Import progress state
   const [importProgress, setImportProgress] = useState<{
     current: number;
@@ -1518,7 +1547,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     status: string;
     errors: string[];
   } | null>(null);
-  
+
   // Export progress state
   const [exportProgress, setExportProgress] = useState<{
     current: number;
@@ -1550,7 +1579,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
   // Edit Modal Tab State
-  const [editModalActiveTab, setEditModalActiveTab] = useState<'general' | 'decoration'>('general');
+  const [editModalActiveTab, setEditModalActiveTab] = useState<'general' | 'decoration' | 'messages'>('general');
 
   // Tile Decoration State
   const [tileBackgroundColor, setTileBackgroundColor] = useState<string>('');
@@ -1561,6 +1590,15 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [tileGradientType, setTileGradientType] = useState<'linear' | 'radial' | 'conic' | 'repeating-linear' | 'repeating-radial' | 'repeating-conic'>('linear');
   const [tileBorderRadius, setTileBorderRadius] = useState<number>(12);
   const [tileTextColor, setTileTextColor] = useState<string>('');
+
+  // Messages State
+  const [messages, setMessages] = useState<TileMessage[]>([]);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [messageContent, setMessageContent] = useState('');
+  const [messageType, setMessageType] = useState<'info' | 'warning' | 'celebration' | 'alert' | 'custom'>('info');
+  const [messageStartDate, setMessageStartDate] = useState('');
+  const [messageEndDate, setMessageEndDate] = useState('');
+  const [messageIsActive, setMessageIsActive] = useState(true);
 
   // Tile Animation & Decoration State
   const { animation: initialAnimation, decoration: initialDecoration } = useTileAnimation();
@@ -2209,16 +2247,16 @@ export const TileGrid: React.FC<TileGridProps> = ({
         // First, find all tiles that have links with role access
         filteredTiles = tiles.filter(t => {
           // Check if any link within the tile has role access
-          const hasLinkWithRoleAccess = t.tabs?.some(tab => 
-            tab.sections?.some(section => 
+          const hasLinkWithRoleAccess = t.tabs?.some(tab =>
+            tab.sections?.some(section =>
               section.links?.some(link => link.hasRoleAccess)
             )
-          ) || t.tabs?.some(tab => 
+          ) || t.tabs?.some(tab =>
             tab.links?.some(link => link.hasRoleAccess)
           );
           return hasLinkWithRoleAccess;
         });
-        
+
         // Filter links within tiles to ONLY show those with role access (even if tile has role access)
         filteredTiles = filteredTiles.map(tile => {
           // Always filter to only show links with role access, regardless of tile access
@@ -2233,17 +2271,17 @@ export const TileGrid: React.FC<TileGridProps> = ({
               sections: filteredSections && filteredSections.length > 0 ? filteredSections : undefined,
               links: filteredTabLinks.length > 0 ? filteredTabLinks : undefined
             };
-          }).filter(tab => 
-            (tab.sections && tab.sections.length > 0) || 
+          }).filter(tab =>
+            (tab.sections && tab.sections.length > 0) ||
             (tab.links && tab.links.length > 0)
           );
           return {
             ...tile,
             tabs: filteredTabs && filteredTabs.length > 0 ? filteredTabs : []
           };
-        }).filter(tile => 
-          tile.tabs && tile.tabs.length > 0 && tile.tabs.some(tab => 
-            (tab.sections && tab.sections.length > 0) || 
+        }).filter(tile =>
+          tile.tabs && tile.tabs.length > 0 && tile.tabs.some(tab =>
+            (tab.sections && tab.sections.length > 0) ||
             (tab.links && tab.links.length > 0)
           )
         );
@@ -2730,7 +2768,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
       hyperlinkUrl: tileType === 'hyperlink' ? hyperlinkUrl.trim() : undefined,
       openInNewTab: tileType === 'hyperlink' ? openInNewTab : undefined,
       visibleFrom: visibleFrom.trim() ? new Date(visibleFrom).toISOString() : undefined,
-      expiresAt: expiresAt.trim() ? new Date(expiresAt).toISOString() : undefined
+      expiresAt: expiresAt.trim() ? new Date(expiresAt).toISOString() : undefined,
+      messages: messages
     };
 
     if (onCreateTile) {
@@ -2775,6 +2814,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
     setTileGradientType('linear');
     setTileBorderRadius(12);
     setTileTextColor('');
+    // Reset messages
+    setMessages([]);
+    setEditingMessageId(null);
+    setMessageContent('');
+    setMessageType('info');
+    setMessageStartDate('');
+    setMessageEndDate('');
+    setMessageIsActive(true);
   };
 
   // Fetch users when modal opens and visibility is private
@@ -3123,6 +3170,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     setTileGradientType((tile.tileGradientType ?? 'linear') as 'linear' | 'radial' | 'conic' | 'repeating-linear' | 'repeating-radial' | 'repeating-conic');
     setTileBorderRadius(tile.tileBorderRadius ?? 12);
     setTileTextColor(tile.tileTextColor ?? '');
+    setMessages(tile.messages || []);
     setEditModalActiveTab('general');
     setIsEditModalOpen(true);
 
@@ -3174,7 +3222,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
       tileGradientDirection: tileGradientEnabled && tileGradientDirection !== undefined ? tileGradientDirection : undefined,
       tileGradientType: tileGradientEnabled && tileGradientType ? tileGradientType : undefined,
       tileBorderRadius: tileBorderRadius !== undefined && tileBorderRadius !== null ? tileBorderRadius : undefined,
-      tileTextColor: tileTextColor.trim() ? tileTextColor.trim() : undefined
+      tileTextColor: tileTextColor.trim() ? tileTextColor.trim() : undefined,
+      messages: messages
     };
 
     try {
@@ -3428,7 +3477,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
           errors: []
         });
         console.error('Export error:', error);
-        
+
         // Clear progress after delay
         setTimeout(() => {
           setExportProgress(null);
@@ -3568,7 +3617,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
             try {
               await createTile(tile);
               successCount++;
-              
+
               // Update progress
               setImportProgress({
                 current: i + 1,
@@ -3581,7 +3630,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               const errorMsg = error instanceof Error ? error.message : 'Unknown error';
               errors.push(`Failed to import "${tile.title}": ${errorMsg}`);
               console.error('Failed to import tile:', tile.title, error);
-              
+
               // Update progress with error
               setImportProgress({
                 current: i + 1,
@@ -3600,7 +3649,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               status: `✅ Successfully imported ${successCount} tiles into category "${categoryName}"!`,
               errors: []
             });
-            
+
             // Clear progress after delay
             setTimeout(() => {
               setImportProgress(null);
@@ -3630,7 +3679,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
             errors: []
           });
           console.error('Import error:', error);
-          
+
           // Clear progress after delay
           setTimeout(() => {
             setImportProgress(null);
@@ -4259,8 +4308,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
           >
             Your Apps
             {(() => {
-              const roleBasedTiles = tiles.filter(t => t.hasRoleAccess || 
-                t.tabs?.some(tab => 
+              const roleBasedTiles = tiles.filter(t => t.hasRoleAccess ||
+                t.tabs?.some(tab =>
                   tab.sections?.some(section => section.links?.some(link => link.hasRoleAccess)) ||
                   tab.links?.some(link => link.hasRoleAccess)
                 )
@@ -5955,302 +6004,488 @@ export const TileGrid: React.FC<TileGridProps> = ({
               <div className="flex gap-2 mb-6 border-b border-slate-200 dark:border-slate-700">
                 <button
                   onClick={() => setEditModalActiveTab('general')}
-                  className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-                    editModalActiveTab === 'general'
-                      ? 'text-brand-600 dark:text-brand-400 border-brand-500'
-                      : 'text-slate-500 dark:text-slate-400 border-transparent hover:text-slate-700 dark:hover:text-slate-300'
-                  }`}
+                  className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${editModalActiveTab === 'general'
+                    ? 'text-brand-600 dark:text-brand-400 border-brand-500'
+                    : 'text-slate-500 dark:text-slate-400 border-transparent hover:text-slate-700 dark:hover:text-slate-300'
+                    }`}
                 >
                   General
                 </button>
                 {tileType === 'space' && (
-                  <button
-                    onClick={() => setEditModalActiveTab('decoration')}
-                    className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-                      editModalActiveTab === 'decoration'
+                  <>
+                    <button
+                      onClick={() => setEditModalActiveTab('decoration')}
+                      className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${editModalActiveTab === 'decoration'
                         ? 'text-brand-600 dark:text-brand-400 border-brand-500'
                         : 'text-slate-500 dark:text-slate-400 border-transparent hover:text-slate-700 dark:hover:text-slate-300'
-                    }`}
-                  >
-                    Tile Decoration
-                  </button>
+                        }`}
+                    >
+                      Tile Decoration
+                    </button>
+                    <button
+                      onClick={() => setEditModalActiveTab('messages')}
+                      className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${editModalActiveTab === 'messages'
+                        ? 'text-brand-600 dark:text-brand-400 border-brand-500'
+                        : 'text-slate-500 dark:text-slate-400 border-transparent hover:text-slate-700 dark:hover:text-slate-300'
+                        }`}
+                    >
+                      Messages
+                    </button>
+                  </>
                 )}
               </div>
 
               <div className="space-y-4">
-                {editModalActiveTab === 'general' ? (
-                  <>
-                {/* Title */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Title</label>
-                  <input
-                    type="text"
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    placeholder="e.g., Design Resources"
-                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
-                  />
-                </div>
-
-                {/* URL - Only for hyperlinks */}
-                {tileType === 'hyperlink' && (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">URL</label>
-                    <input
-                      type="url"
-                      value={hyperlinkUrl}
-                      onChange={(e) => setHyperlinkUrl(e.target.value)}
-                      placeholder="https://example.com"
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
-                    />
-                  </div>
-                )}
-
-                {/* Description */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Description</label>
-                  <textarea
-                    value={newDesc}
-                    onChange={(e) => setNewDesc(e.target.value)}
-                    placeholder="Short description..."
-                    rows={2}
-                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-none placeholder-slate-400 transition-all"
-                  />
-                </div>
-
-                {/* Open Link - Only for hyperlinks */}
-                {tileType === 'hyperlink' && (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Open Link</label>
-                    <div className="space-y-2">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="editOpenInNewTab"
-                          value="new"
-                          checked={openInNewTab === true}
-                          onChange={() => setOpenInNewTab(true)}
-                          className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                        />
-                        <span className="text-sm text-slate-700 dark:text-slate-300">Open in new tab</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="editOpenInNewTab"
-                          value="same"
-                          checked={openInNewTab === false}
-                          onChange={() => setOpenInNewTab(false)}
-                          className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                        />
-                        <span className="text-sm text-slate-700 dark:text-slate-300">Open in same tab</span>
-                      </label>
-                    </div>
-                  </div>
-                )}
-
-                {/* Visibility Settings - Only for regular spaces */}
-                {tileType === 'space' && (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Visibility</label>
-                    <div className="space-y-2">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="editVisibility"
-                          value="public"
-                          checked={newVisibility === 'public'}
-                          onChange={(e) => {
-                            setNewVisibility(e.target.value as TileVisibility);
-                            setShowUserSelector(false);
-                          }}
-                          className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                        />
-                        <span className="text-sm text-slate-700 dark:text-slate-300">Public - Available for everyone (guests and logged in users)</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="editVisibility"
-                          value="authenticated"
-                          checked={newVisibility === 'authenticated'}
-                          onChange={(e) => {
-                            setNewVisibility(e.target.value as TileVisibility);
-                            setShowUserSelector(false);
-                          }}
-                          className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                        />
-                        <span className="text-sm text-slate-700 dark:text-slate-300">Authenticated - Available for logged in users only</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="editVisibility"
-                          value="private"
-                          checked={newVisibility === 'private'}
-                          onChange={(e) => {
-                            setNewVisibility(e.target.value as TileVisibility);
-                            setShowUserSelector(true);
-                          }}
-                          className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                        />
-                        <span className="text-sm text-slate-700 dark:text-slate-300">Private - Available for specific users only</span>
-                      </label>
+                {editModalActiveTab === 'messages' ? (
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Scheduled Messages</h3>
+                      <button
+                        onClick={() => {
+                          setEditingMessageId('new');
+                          setMessageContent('');
+                          setMessageType('info');
+                          setMessageStartDate('');
+                          setMessageEndDate('');
+                          setMessageIsActive(true);
+                        }}
+                        className="px-3 py-1.5 text-xs font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors"
+                      >
+                        Add Message
+                      </button>
                     </div>
 
-                    {/* User Selector for Private Visibility */}
-                    {newVisibility === 'private' && isAuthenticated && (
-                      <div className="mt-3">
-                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Select Users</label>
-                        {isLoadingUsers ? (
-                          <div className="text-sm text-slate-500 dark:text-slate-400">Loading users...</div>
-                        ) : (
-                          <div className="max-h-32 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-slate-50 dark:bg-slate-900/50">
-                            {availableUsers.length === 0 ? (
-                              <div className="text-sm text-slate-500 dark:text-slate-400">No users available</div>
-                            ) : (
-                              <div className="space-y-1.5">
-                                {availableUsers.map(user => (
-                                  <label key={user.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 p-1.5 rounded">
-                                    <input
-                                      type="checkbox"
-                                      checked={newAllowedUsers.includes(user.id)}
-                                      onChange={(e) => {
-                                        if (e.target.checked) {
-                                          setNewAllowedUsers([...newAllowedUsers, user.id]);
-                                        } else {
-                                          setNewAllowedUsers(newAllowedUsers.filter(id => id !== user.id));
-                                        }
-                                      }}
-                                      className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
-                                    />
-                                    <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
-                                    {user.auth_source && user.auth_source !== 'local' && (
-                                      <span className="text-xs text-slate-500 dark:text-slate-400">({user.auth_source})</span>
-                                    )}
-                                  </label>
-                                ))}
+                    {/* Message Editor */}
+                    {editingMessageId && (
+                      <div className="p-4 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/50">
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Message Content</label>
+                            <textarea
+                              value={messageContent}
+                              onChange={(e) => setMessageContent(e.target.value)}
+                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                              rows={3}
+                              placeholder="Enter your message..."
+                            />
+                            <div className="flex gap-2 mt-2 flex-wrap">
+                              <button onClick={() => setMessageContent("🎉 Happy Birthday!")} className="text-xs px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded hover:bg-slate-50 dark:hover:bg-slate-700">Birthday</button>
+                              <button onClick={() => setMessageContent("⚠️ Maintenance scheduled.")} className="text-xs px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded hover:bg-slate-50 dark:hover:bg-slate-700">Maintenance</button>
+                              <button onClick={() => setMessageContent("ℹ️ Important Update:")} className="text-xs px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded hover:bg-slate-50 dark:hover:bg-slate-700">Update</button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Type</label>
+                              <select
+                                value={messageType}
+                                onChange={(e) => setMessageType(e.target.value as any)}
+                                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                              >
+                                <option value="info">Info</option>
+                                <option value="warning">Warning</option>
+                                <option value="celebration">Celebration</option>
+                                <option value="alert">Alert</option>
+                                <option value="custom">Custom</option>
+                              </select>
+                            </div>
+                            <div className="flex items-center pt-6">
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={messageIsActive}
+                                  onChange={(e) => setMessageIsActive(e.target.checked)}
+                                  className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
+                                />
+                                <span className="text-sm text-slate-700 dark:text-slate-300">Active</span>
+                              </label>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Start Date</label>
+                              <input
+                                type="datetime-local"
+                                value={messageStartDate}
+                                onChange={(e) => setMessageStartDate(e.target.value)}
+                                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">End Date</label>
+                              <input
+                                type="datetime-local"
+                                value={messageEndDate}
+                                onChange={(e) => setMessageEndDate(e.target.value)}
+                                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex justify-end gap-2 pt-2">
+                            <button
+                              onClick={() => setEditingMessageId(null)}
+                              className="px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => {
+                                const newMessage: TileMessage = {
+                                  id: editingMessageId === 'new' ? Math.random().toString(36).substr(2, 9) : editingMessageId!,
+                                  content: messageContent,
+                                  type: messageType,
+                                  startDate: messageStartDate,
+                                  endDate: messageEndDate,
+                                  isActive: messageIsActive
+                                };
+
+                                if (editingMessageId === 'new') {
+                                  setMessages([...messages, newMessage]);
+                                } else {
+                                  setMessages(messages.map(m => m.id === editingMessageId ? newMessage : m));
+                                }
+                                setEditingMessageId(null);
+                              }}
+                              className="px-3 py-1.5 text-xs font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors"
+                            >
+                              {editingMessageId === 'new' ? 'Add' : 'Update'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Message List */}
+                    <div className="space-y-2">
+                      {messages.length === 0 ? (
+                        <p className="text-sm text-slate-500 dark:text-slate-400 italic">No messages scheduled.</p>
+                      ) : (
+                        messages.map(msg => (
+                          <div key={msg.id} className="p-3 border border-slate-200 dark:border-slate-700 rounded-lg flex justify-between items-start bg-white dark:bg-slate-800">
+                            <div>
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={`w-2 h-2 rounded-full ${msg.type === 'info' ? 'bg-blue-500' :
+                                  msg.type === 'warning' ? 'bg-amber-500' :
+                                    msg.type === 'celebration' ? 'bg-purple-500' :
+                                      msg.type === 'alert' ? 'bg-red-500' : 'bg-slate-500'
+                                  }`}></span>
+                                <span className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">{msg.type}</span>
+                                {!msg.isActive && <span className="text-xs text-red-500">(Inactive)</span>}
                               </div>
+                              <p className="text-sm text-slate-800 dark:text-slate-200 mb-1">{msg.content}</p>
+                              <div className="text-xs text-slate-500 dark:text-slate-400">
+                                {msg.startDate && <span>From: {new Date(msg.startDate).toLocaleString()}</span>}
+                                {msg.startDate && msg.endDate && <span> - </span>}
+                                {msg.endDate && <span>To: {new Date(msg.endDate).toLocaleString()}</span>}
+                              </div>
+                            </div>
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => {
+                                  setEditingMessageId(msg.id);
+                                  setMessageContent(msg.content);
+                                  setMessageType(msg.type);
+                                  setMessageStartDate(msg.startDate);
+                                  setMessageEndDate(msg.endDate);
+                                  setMessageIsActive(msg.isActive);
+                                }}
+                                className="p-1 text-slate-400 hover:text-brand-500 transition-colors"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                  <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
+                                  <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => setMessages(messages.filter(m => m.id !== msg.id))}
+                                className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                  <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4z" clipRule="evenodd" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                ) : editModalActiveTab === 'general' ? (
+                  <>
+                    {/* Title */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Title</label>
+                      <input
+                        type="text"
+                        value={newTitle}
+                        onChange={(e) => setNewTitle(e.target.value)}
+                        placeholder="e.g., Design Resources"
+                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                      />
+                    </div>
+
+                    {/* URL - Only for hyperlinks */}
+                    {tileType === 'hyperlink' && (
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">URL</label>
+                        <input
+                          type="url"
+                          value={hyperlinkUrl}
+                          onChange={(e) => setHyperlinkUrl(e.target.value)}
+                          placeholder="https://example.com"
+                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                        />
+                      </div>
+                    )}
+
+                    {/* Description */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Description</label>
+                      <textarea
+                        value={newDesc}
+                        onChange={(e) => setNewDesc(e.target.value)}
+                        placeholder="Short description..."
+                        rows={2}
+                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 resize-none placeholder-slate-400 transition-all"
+                      />
+                    </div>
+
+                    {/* Open Link - Only for hyperlinks */}
+                    {tileType === 'hyperlink' && (
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Open Link</label>
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="editOpenInNewTab"
+                              value="new"
+                              checked={openInNewTab === true}
+                              onChange={() => setOpenInNewTab(true)}
+                              className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300">Open in new tab</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="editOpenInNewTab"
+                              value="same"
+                              checked={openInNewTab === false}
+                              onChange={() => setOpenInNewTab(false)}
+                              className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300">Open in same tab</span>
+                          </label>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Visibility Settings - Only for regular spaces */}
+                    {tileType === 'space' && (
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Visibility</label>
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="editVisibility"
+                              value="public"
+                              checked={newVisibility === 'public'}
+                              onChange={(e) => {
+                                setNewVisibility(e.target.value as TileVisibility);
+                                setShowUserSelector(false);
+                              }}
+                              className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300">Public - Available for everyone (guests and logged in users)</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="editVisibility"
+                              value="authenticated"
+                              checked={newVisibility === 'authenticated'}
+                              onChange={(e) => {
+                                setNewVisibility(e.target.value as TileVisibility);
+                                setShowUserSelector(false);
+                              }}
+                              className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300">Authenticated - Available for logged in users only</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="editVisibility"
+                              value="private"
+                              checked={newVisibility === 'private'}
+                              onChange={(e) => {
+                                setNewVisibility(e.target.value as TileVisibility);
+                                setShowUserSelector(true);
+                              }}
+                              className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300">Private - Available for specific users only</span>
+                          </label>
+                        </div>
+
+                        {/* User Selector for Private Visibility */}
+                        {newVisibility === 'private' && isAuthenticated && (
+                          <div className="mt-3">
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Select Users</label>
+                            {isLoadingUsers ? (
+                              <div className="text-sm text-slate-500 dark:text-slate-400">Loading users...</div>
+                            ) : (
+                              <div className="max-h-32 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-slate-50 dark:bg-slate-900/50">
+                                {availableUsers.length === 0 ? (
+                                  <div className="text-sm text-slate-500 dark:text-slate-400">No users available</div>
+                                ) : (
+                                  <div className="space-y-1.5">
+                                    {availableUsers.map(user => (
+                                      <label key={user.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 p-1.5 rounded">
+                                        <input
+                                          type="checkbox"
+                                          checked={newAllowedUsers.includes(user.id)}
+                                          onChange={(e) => {
+                                            if (e.target.checked) {
+                                              setNewAllowedUsers([...newAllowedUsers, user.id]);
+                                            } else {
+                                              setNewAllowedUsers(newAllowedUsers.filter(id => id !== user.id));
+                                            }
+                                          }}
+                                          className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
+                                        />
+                                        <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
+                                        {user.auth_source && user.auth_source !== 'local' && (
+                                          <span className="text-xs text-slate-500 dark:text-slate-400">({user.auth_source})</span>
+                                        )}
+                                      </label>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            {newVisibility === 'private' && newAllowedUsers.length === 0 && (
+                              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Please select at least one user for private spaces</p>
                             )}
                           </div>
                         )}
-                        {newVisibility === 'private' && newAllowedUsers.length === 0 && (
-                          <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Please select at least one user for private spaces</p>
-                        )}
                       </div>
                     )}
-                  </div>
-                )}
 
-                {/* Emoji & Theme */}
-                <div className="flex gap-3">
-                  <div className="w-24 relative">
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Icon</label>
-                    <button
-                      type="button"
-                      onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                      className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50"
-                    >
-                      {newEmoji || (tileType === 'hyperlink' ? '🔗' : '📁')}
-                    </button>
-
-                    {/* Emoji Picker Popover */}
-                    {showEmojiPicker && (
-                      <>
-                        <div className="fixed inset-0 z-[10001]" onClick={() => setShowEmojiPicker(false)}></div>
-                        <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[10002] flex flex-col overflow-hidden">
-                          <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
-                            <input
-                              type="text"
-                              value={newEmoji}
-                              onChange={(e) => setNewEmoji(e.target.value)}
-                              placeholder="Type emoji..."
-                              className="w-full text-sm px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/50 text-slate-900 dark:text-white"
-                              autoFocus
-                            />
-                          </div>
-                          <div className="flex-1 overflow-y-auto p-2 grid grid-cols-8 gap-1">
-                            {POPULAR_EMOJIS.map((emoji) => (
-                              <button
-                                key={emoji}
-                                onClick={() => { setNewEmoji(emoji); setShowEmojiPicker(false); }}
-                                className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                              >
-                                {emoji}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  <div className="flex-1">
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Theme</label>
-                    <div className="grid grid-cols-9 gap-1.5">
-                      {THEME_COLORS.map(c => (
+                    {/* Emoji & Theme */}
+                    <div className="flex gap-3">
+                      <div className="w-24 relative">
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Icon</label>
                         <button
-                          key={c}
-                          onClick={() => setNewColor(c)}
-                          className={`
+                          type="button"
+                          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                          className="w-full h-12 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-brand-500/50"
+                        >
+                          {newEmoji || (tileType === 'hyperlink' ? '🔗' : '📁')}
+                        </button>
+
+                        {/* Emoji Picker Popover */}
+                        {showEmojiPicker && (
+                          <>
+                            <div className="fixed inset-0 z-[10001]" onClick={() => setShowEmojiPicker(false)}></div>
+                            <div className="absolute top-full left-0 mt-2 w-64 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[10002] flex flex-col overflow-hidden">
+                              <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                                <input
+                                  type="text"
+                                  value={newEmoji}
+                                  onChange={(e) => setNewEmoji(e.target.value)}
+                                  placeholder="Type emoji..."
+                                  className="w-full text-sm px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/50 text-slate-900 dark:text-white"
+                                  autoFocus
+                                />
+                              </div>
+                              <div className="flex-1 overflow-y-auto p-2 grid grid-cols-8 gap-1">
+                                {POPULAR_EMOJIS.map((emoji) => (
+                                  <button
+                                    key={emoji}
+                                    onClick={() => { setNewEmoji(emoji); setShowEmojiPicker(false); }}
+                                    className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      <div className="flex-1">
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Theme</label>
+                        <div className="grid grid-cols-9 gap-1.5">
+                          {THEME_COLORS.map(c => (
+                            <button
+                              key={c}
+                              onClick={() => setNewColor(c)}
+                              className={`
                           w-8 h-8 rounded-lg border-2 transition-all relative overflow-hidden
                           ${newColor === c ? 'border-brand-500 scale-110 shadow-md shadow-brand-500/30' : 'border-slate-200 dark:border-slate-700 hover:scale-105'} 
                         `}
-                          title={c}
-                        >
-                          <div className={`absolute inset-0 ${COLOR_STYLES[c].base} rounded-md`}></div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Category */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Category</label>
-                  <input
-                    type="text"
-                    value={newGroup}
-                    onChange={(e) => setNewGroup(e.target.value)}
-                    placeholder="Select or create a category (e.g., Work, Personal)"
-                    list="category-suggestions-edit"
-                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
-                  />
-                  <datalist id="category-suggestions-edit">
-                    {allCategories.map(cat => <option key={cat} value={cat} />)}
-                  </datalist>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Select an existing category or type a new name to create one</p>
-                </div>
-
-                {/* Scheduling - Only shown when type is space */}
-                {tileType === 'space' && (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Scheduling</label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Available From (optional)</label>
-                        <input
-                          type="datetime-local"
-                          value={visibleFrom}
-                          onChange={(e) => setVisibleFrom(e.target.value)}
-                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
-                        />
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for immediate availability</p>
-                      </div>
-                      <div>
-                        <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Expires At (optional)</label>
-                        <input
-                          type="datetime-local"
-                          value={expiresAt}
-                          onChange={(e) => setExpiresAt(e.target.value)}
-                          min={visibleFrom || undefined}
-                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
-                        />
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for no expiry</p>
+                              title={c}
+                            >
+                              <div className={`absolute inset-0 ${COLOR_STYLES[c].base} rounded-md`}></div>
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+
+                    {/* Category */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Category</label>
+                      <input
+                        type="text"
+                        value={newGroup}
+                        onChange={(e) => setNewGroup(e.target.value)}
+                        placeholder="Select or create a category (e.g., Work, Personal)"
+                        list="category-suggestions-edit"
+                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
+                      />
+                      <datalist id="category-suggestions-edit">
+                        {allCategories.map(cat => <option key={cat} value={cat} />)}
+                      </datalist>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Select an existing category or type a new name to create one</p>
+                    </div>
+
+                    {/* Scheduling - Only shown when type is space */}
+                    {tileType === 'space' && (
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Scheduling</label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Available From (optional)</label>
+                            <input
+                              type="datetime-local"
+                              value={visibleFrom}
+                              onChange={(e) => setVisibleFrom(e.target.value)}
+                              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                            />
+                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for immediate availability</p>
+                          </div>
+                          <div>
+                            <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Expires At (optional)</label>
+                            <input
+                              type="datetime-local"
+                              value={expiresAt}
+                              onChange={(e) => setExpiresAt(e.target.value)}
+                              min={visibleFrom || undefined}
+                              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                            />
+                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave empty for no expiry</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>
@@ -6265,7 +6500,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                           onClick={async () => {
                             if (confirm('Clear all tile decoration settings? This will reset the tile to use global style manager styles.')) {
                               if (!editingTile) return;
-                              
+
                               // Clear all decoration state
                               setTileBackgroundColor('');
                               setTileGradientEnabled(false);
@@ -6275,7 +6510,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                               setTileGradientType('linear');
                               setTileBorderRadius(12);
                               setTileTextColor('');
-                              
+
                               // Create updated tile with all decoration properties set to undefined
                               const updatedTile: Tile = {
                                 ...editingTile,
@@ -6288,17 +6523,17 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                 tileBorderRadius: undefined,
                                 tileTextColor: undefined
                               };
-                              
+
                               try {
                                 // Update local state
                                 const updatedTiles = tiles.map(t => t.id === updatedTile.id ? updatedTile : t);
                                 onUpdateTiles(updatedTiles);
-                                
+
                                 // Save to backend if authenticated
                                 if (isAuthenticated) {
                                   await saveTile(updatedTile);
                                 }
-                                
+
                                 // Update editing tile to reflect changes
                                 setEditingTile(updatedTile);
                               } catch (error) {
@@ -6365,13 +6600,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                 <button
                                   key={type}
                                   onClick={() => setTileGradientType(type)}
-                                  className={`px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
-                                    tileGradientType === type
-                                      ? 'bg-brand-600 text-white'
-                                      : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'
-                                  }`}
+                                  className={`px-3 py-2 text-xs font-medium rounded-lg transition-colors ${tileGradientType === type
+                                    ? 'bg-brand-600 text-white'
+                                    : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'
+                                    }`}
                                 >
-                                  {type.includes('repeating-') 
+                                  {type.includes('repeating-')
                                     ? type.replace('repeating-', 'R-').charAt(0).toUpperCase() + type.replace('repeating-', 'R-').slice(1)
                                     : type.charAt(0).toUpperCase() + type.slice(1)}
                                 </button>
@@ -6515,7 +6749,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                     }
                                     return color;
                                   }).join(', ');
-                                  
+
                                   if (tileGradientType === 'linear' || tileGradientType === 'repeating-linear') {
                                     const prefix = tileGradientType === 'repeating-linear' ? 'repeating-linear-gradient' : 'linear-gradient';
                                     return `${prefix}(${tileGradientDirection}deg, ${gradientStops})`;
@@ -6656,26 +6890,26 @@ export const TileGrid: React.FC<TileGridProps> = ({
                           style={{
                             background: tileGradientEnabled && tileGradientColors && tileGradientColors.length > 0
                               ? (() => {
-                                  const hasPositions = tileGradientColorPositions && tileGradientColorPositions.length === tileGradientColors.length;
-                                  const gradientStops = tileGradientColors.map((color, i) => {
-                                    if (hasPositions) {
-                                      return `${color} ${tileGradientColorPositions[i]}%`;
-                                    }
-                                    return color;
-                                  }).join(', ');
-                                  
-                                  if (tileGradientType === 'linear' || tileGradientType === 'repeating-linear') {
-                                    const prefix = tileGradientType === 'repeating-linear' ? 'repeating-linear-gradient' : 'linear-gradient';
-                                    return `${prefix}(${tileGradientDirection}deg, ${gradientStops})`;
-                                  } else if (tileGradientType === 'radial' || tileGradientType === 'repeating-radial') {
-                                    const prefix = tileGradientType === 'repeating-radial' ? 'repeating-radial-gradient' : 'radial-gradient';
-                                    return `${prefix}(circle, ${gradientStops})`;
-                                  } else if (tileGradientType === 'conic' || tileGradientType === 'repeating-conic') {
-                                    const prefix = tileGradientType === 'repeating-conic' ? 'repeating-conic-gradient' : 'conic-gradient';
-                                    return `${prefix}(from ${tileGradientDirection}deg, ${gradientStops})`;
+                                const hasPositions = tileGradientColorPositions && tileGradientColorPositions.length === tileGradientColors.length;
+                                const gradientStops = tileGradientColors.map((color, i) => {
+                                  if (hasPositions) {
+                                    return `${color} ${tileGradientColorPositions[i]}%`;
                                   }
-                                  return `linear-gradient(${tileGradientDirection}deg, ${gradientStops})`;
-                                })()
+                                  return color;
+                                }).join(', ');
+
+                                if (tileGradientType === 'linear' || tileGradientType === 'repeating-linear') {
+                                  const prefix = tileGradientType === 'repeating-linear' ? 'repeating-linear-gradient' : 'linear-gradient';
+                                  return `${prefix}(${tileGradientDirection}deg, ${gradientStops})`;
+                                } else if (tileGradientType === 'radial' || tileGradientType === 'repeating-radial') {
+                                  const prefix = tileGradientType === 'repeating-radial' ? 'repeating-radial-gradient' : 'radial-gradient';
+                                  return `${prefix}(circle, ${gradientStops})`;
+                                } else if (tileGradientType === 'conic' || tileGradientType === 'repeating-conic') {
+                                  const prefix = tileGradientType === 'repeating-conic' ? 'repeating-conic-gradient' : 'conic-gradient';
+                                  return `${prefix}(from ${tileGradientDirection}deg, ${gradientStops})`;
+                                }
+                                return `linear-gradient(${tileGradientDirection}deg, ${gradientStops})`;
+                              })()
                               : tileBackgroundColor || 'transparent',
                             borderRadius: `${tileBorderRadius}px`,
                             color: tileTextColor || undefined
@@ -6855,7 +7089,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                     </div>
                   )}
                 </div>
-                
+
                 {importProgress.errors.length > 0 && (
                   <div className="mt-3 max-h-32 overflow-y-auto">
                     <p className="text-xs font-medium text-red-600 dark:text-red-400 mb-1">
@@ -6886,8 +7120,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
             </div>
           </div>
         </div>,
-          document.body
-        )}
+        document.body
+      )}
 
       {/* Export Progress Modal */}
       {exportProgress && createPortal(
@@ -6925,7 +7159,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                     </div>
                   )}
                 </div>
-                
+
                 {exportProgress.errors.length > 0 && (
                   <div className="mt-3 max-h-32 overflow-y-auto">
                     <p className="text-xs font-medium text-red-600 dark:text-red-400 mb-1">
