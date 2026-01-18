@@ -190,10 +190,10 @@ div.linknest-tile.has-local-decoration * {
   animation: gradient-shift 3s ease infinite;
 }
 
-/* Rolling message animation (Marquee) */
+/* Rolling message animation (Marquee) - Starts from viewport right edge */
 @keyframes marquee-roll {
   0% {
-    transform: translateX(0);
+    transform: translateX(100vw);
   }
 
   100% {
@@ -204,8 +204,7 @@ div.linknest-tile.has-local-decoration * {
 .animate-rolling {
   display: flex;
   white-space: nowrap;
-  animation: marquee-roll 20s linear infinite;
-  padding-left: 0;
+  animation: marquee-roll 40s linear infinite;
   width: max-content;
 }
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, POPULAR_EMOJIS, LINK_EMOJIS, ALL_LINK_EMOJIS } from '../types';
+import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, POPULAR_EMOJIS, LINK_EMOJIS, ALL_LINK_EMOJIS, TileMessage } from '../types';
 import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
 import { authService, UserListItem } from '../services/authService';
 import { exportTileToFile } from '../services/spaceTransferService';
@@ -331,6 +331,57 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     }, [linkSearchTerm, editTabs]);
 
     const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
+
+    // Helper function to get active messages
+    const getActiveMessages = (): TileMessage[] => {
+        return (tile.messages?.filter(m => 
+            m.isActive && 
+            (!m.startDate || new Date(m.startDate) <= new Date()) && 
+            (!m.endDate || new Date(m.endDate) >= new Date())
+        ) || []).sort((a, b) => (a.priority || 0) - (b.priority || 0));
+    };
+
+    // Helper function to strip formatting characters for plain text display
+    const stripFormatting = (content: string): string => {
+        let plainText = content.replace(/\*\*(.*?)\*\*/g, '$1');
+        plainText = plainText.replace(/\*([^*]+)\*/g, '$1');
+        plainText = plainText.replace(/_([^_]+)_/g, '$1');
+        return plainText;
+    };
+
+    // Helper function to parse URLs and render clickable links with formatting
+    const renderMessageContent = (content: string) => {
+        const urlPattern = /(https?:\/\/[^\s]+)/g;
+        const boldPattern = /(\*\*)(.*?)\1/g;
+        const italicPattern = /(?<!\*)_([^_]+)_(?!\*)/g;
+
+        let processedContent = content;
+        processedContent = processedContent.replace(boldPattern, '<strong>$2</strong>');
+        processedContent = processedContent.replace(italicPattern, '<em>$1</em>');
+
+        const parts = processedContent.split(urlPattern);
+        
+        return parts.map((part, index) => {
+            if (urlPattern.test(part)) {
+                return (
+                    <a
+                        key={index}
+                        href={part}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline font-semibold hover:opacity-80 transition-opacity inherit"
+                        style={{ color: 'inherit' }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {part}
+                    </a>
+                );
+            }
+            return <span key={index} dangerouslySetInnerHTML={{ __html: part }} />;
+        });
+    };
+
+    const activeMessages = getActiveMessages();
 
     // Sync state when tile changes, but only when not editing to prevent losing unsaved changes.
     // IMPORTANT: We only depend on `tile` and `isEditing` so that local edits
@@ -2681,6 +2732,34 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         </div>
                     </div>
                 </div>
+
+                {/* Rolling Messages Display - Below Search Bar */}
+                {activeMessages.length > 0 && (
+                    <div className="mb-2 overflow-hidden w-full">
+                        <div className={`relative h-6 flex items-center overflow-hidden ${activeMessages[0].type === 'alert' ? 'text-amber-600 dark:text-amber-400' :
+                            activeMessages[0].type === 'warning' ? 'text-amber-600 dark:text-amber-400' :
+                            activeMessages[0].type === 'celebration' ? 'text-pink-600 dark:text-pink-400' :
+                            'text-brand-600 dark:text-brand-400'
+                        }`}
+                        title={activeMessages.map((m, idx) => `${idx + 1}. ${stripFormatting(m.content)}`).join('\n')}
+                        >
+                            <div className="animate-rolling flex items-center gap-10 text-sm font-semibold">
+                                {/* Single message loop for seamless scrolling */}
+                                {activeMessages.map((msg, idx) => (
+                                    <div key={`${msg.id}-${idx}`} className="flex items-center gap-2 shrink-0">
+                                        {renderMessageContent(msg.content)}
+                                    </div>
+                                ))}
+                                {/* Duplicate for seamless loop */}
+                                {activeMessages.map((msg, idx) => (
+                                    <div key={`${msg.id}-dup-${idx}`} className="flex items-center gap-2 shrink-0">
+                                        {renderMessageContent(msg.content)}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Main Content Area - Full Width */}
                 <div className="flex flex-col gap-8">

@@ -855,7 +855,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
             href={part}
             target="_blank"
             rel="noopener noreferrer"
-            className="underline font-semibold hover:opacity-80 transition-opacity"
+            className="underline font-semibold hover:opacity-80 transition-opacity inherit"
+            style={{ color: 'inherit' }}
             onClick={(e) => e.stopPropagation()}
           >
             {part}
@@ -1284,7 +1285,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
         {/* Center Rolling Message */}
         {activeMessages.length > 0 && (
           <div
-            className={`absolute bottom-3 overflow-hidden transition-all cursor-default ${!tile.isHyperlink ? 'left-[60px] right-2' : 'left-2 right-2'} ${activeMessages[0].type === 'alert' ? 'text-red-600 dark:text-red-400' :
+            className={`absolute bottom-1 left-0 right-0 overflow-hidden transition-all cursor-default ${!tile.isHyperlink ? 'pl-[60px]' : ''} ${activeMessages[0].type === 'alert' ? 'text-amber-600 dark:text-amber-400' :
               activeMessages[0].type === 'warning' ? 'text-amber-600 dark:text-amber-400' :
                 activeMessages[0].type === 'celebration' ? 'text-pink-600 dark:text-pink-400' :
                   'text-brand-600 dark:text-brand-400'
@@ -1292,13 +1293,15 @@ const SortableTile: React.FC<SortableTileProps> = ({
             title={activeMessages.map((m, idx) => `${idx + 1}. ${stripFormatting(m.content)}`).join('\n')}
           >
             <div className="animate-rolling flex items-center gap-10 text-[10px] sm:text-xs font-semibold">
-              {/* Double the messages for a more continuous flow in the marquee */}
-              {[...activeMessages, ...activeMessages].map((msg, idx) => (
-                <div key={`${msg.id}-${idx}`} className={`flex items-center gap-2 shrink-0 ${msg.type === 'alert' ? 'text-red-600 dark:text-red-400' :
-                  msg.type === 'warning' ? 'text-amber-600 dark:text-amber-400' :
-                    msg.type === 'celebration' ? 'text-pink-600 dark:text-pink-400' :
-                      'text-brand-600 dark:text-brand-400'
-                  }`}>
+              {/* Single message loop for seamless scrolling */}
+              {activeMessages.map((msg, idx) => (
+                <div key={`${msg.id}-${idx}`} className="flex items-center gap-2 shrink-0">
+                  {renderMessageContent(msg.content)}
+                </div>
+              ))}
+              {/* Duplicate for seamless loop */}
+              {activeMessages.map((msg, idx) => (
+                <div key={`${msg.id}-dup-${idx}`} className="flex items-center gap-2 shrink-0">
                   {renderMessageContent(msg.content)}
                 </div>
               ))}
