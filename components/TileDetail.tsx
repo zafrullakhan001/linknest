@@ -302,6 +302,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     // Link Search State (for edit mode)
     const [linkSearchTerm, setLinkSearchTerm] = useState('');
     const [hoveredLinkId, setHoveredLinkId] = useState<string | null>(null);
+    const [notesDialogState, setNotesDialogState] = useState<{ linkId: string; notes: string; linkLabel: string } | null>(null);
+    const [notesCopied, setNotesCopied] = useState(false);
 
     // Auto-scroll to first matching link when search changes
     useEffect(() => {
@@ -2627,6 +2629,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     // VIEW MODE
     if (!isEditing) {
         return (
+            <>
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 min-h-[80vh] flex flex-col w-full pb-10">
 
                 {/* Compact Modern Header */}
@@ -3114,20 +3117,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     // Menu will only appear when clicking the browser button
                                                                 }}
                                                             >
-                                                                <h4
-                                                                    className={`linknest-content-link-title text-sm font-semibold break-words ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}
-                                                                    style={{
-                                                                        wordBreak: 'break-word',
-                                                                        overflowWrap: 'anywhere',
-                                                                        ...(link.textColor ? {
-                                                                            color: link.textColor,
-                                                                            // Add text shadow for better visibility
-                                                                            textShadow: '0 1px 2px rgba(0,0,0,0.15)',
-                                                                            fontWeight: '700'
-                                                                        } : {})
-                                                                    }}
-                                                                    dangerouslySetInnerHTML={{ __html: link.label || '' }}
-                                                                />
+                                                                <div className="flex items-center gap-2">
+                                                                    <h4
+                                                                        className={`linknest-content-link-title text-sm font-semibold break-words ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}
+                                                                        style={{
+                                                                            wordBreak: 'break-word',
+                                                                            overflowWrap: 'anywhere',
+                                                                            ...(link.textColor ? {
+                                                                                color: link.textColor,
+                                                                                // Add text shadow for better visibility
+                                                                                textShadow: '0 1px 2px rgba(0,0,0,0.15)',
+                                                                                fontWeight: '700'
+                                                                            } : {})
+                                                                        }}
+                                                                        dangerouslySetInnerHTML={{ __html: link.label || '' }}
+                                                                    />
+                                                                </div>
                                                                 <div className="flex flex-col gap-0.5 mt-0.5 overflow-hidden">
                                                                     <div className="linknest-content-link-domain flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors overflow-hidden">
                                                                         <span className="break-words">
@@ -3294,6 +3299,30 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             )}
 
                                                             <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-200 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50 z-20 pointer-events-none group-hover:pointer-events-auto">
+                                                                {/* Notes info button - only show if link has notes */}
+                                                                {link.notes && link.notes.trim() && (
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.preventDefault();
+                                                                            e.stopPropagation();
+                                                                            // Strip HTML from label for dialog display
+                                                                            const tempDiv = document.createElement('div');
+                                                                            tempDiv.innerHTML = link.label || '';
+                                                                            const plainLabel = tempDiv.textContent || tempDiv.innerText || link.label;
+                                                                            setNotesDialogState({
+                                                                                linkId: link.id,
+                                                                                notes: link.notes || '',
+                                                                                linkLabel: plainLabel
+                                                                            });
+                                                                        }}
+                                                                        className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
+                                                                        title="View notes"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
+                                                                        </svg>
+                                                                    </button>
+                                                                )}
                                                                 {/* Favorite button - available for all users */}
                                                                 <button
                                                                     onClick={(e) => {
@@ -3429,6 +3458,96 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     )}
                 </div>
             </div>
+            
+            {/* Notes Dialog */}
+            {notesDialogState && (
+                <>
+                    {typeof document !== 'undefined' && createPortal(
+                        <div 
+                            className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+                            onClick={() => setNotesDialogState(null)}
+                        >
+                            <div 
+                                className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 max-w-2xl w-full max-h-[80vh] flex flex-col"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                {/* Dialog Header */}
+                                <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                                    <div>
+                                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Link Notes</h3>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{notesDialogState.linkLabel}</p>
+                                    </div>
+                                    <button
+                                        onClick={() => setNotesDialogState(null)}
+                                        className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </div>
+                                
+                                {/* Dialog Content */}
+                                <div className="px-6 py-4 flex-1 overflow-y-auto">
+                                    <div className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words">
+                                        {notesDialogState.notes}
+                                    </div>
+                                </div>
+                                
+                                {/* Dialog Footer */}
+                                <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-3">
+                                    <button
+                                        onClick={async (e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            try {
+                                                await navigator.clipboard.writeText(notesDialogState.notes);
+                                                // Show feedback
+                                                setNotesCopied(true);
+                                                setTimeout(() => {
+                                                    setNotesCopied(false);
+                                                }, 2000);
+                                            } catch (err) {
+                                                console.error('Failed to copy:', err);
+                                                alert('Failed to copy to clipboard');
+                                            }
+                                        }}
+                                        className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+                                    >
+                                        {notesCopied ? (
+                                            <>
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                    <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                                                </svg>
+                                                Copied!
+                                            </>
+                                        ) : (
+                                            <>
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                    <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                                                    <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
+                                                </svg>
+                                                Copy Notes
+                                            </>
+                                        )}
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setNotesDialogState(null);
+                                            setNotesCopied(false);
+                                        }}
+                                        className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg font-medium transition-colors"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            </div>
+                        </div>,
+                        document.body
+                    )}
+                </>
+            )}
+            </>
         );
     }
 
