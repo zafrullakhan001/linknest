@@ -889,7 +889,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
     return uniqueLinks.size;
   })();
 
-  const activeMessages = (tile.messages?.filter(m => m.isActive && (!m.startDate || new Date(m.startDate) <= new Date()) && (!m.endDate || new Date(m.endDate) >= new Date())) || []).sort((a, b) => (a.priority || 0) - (b.priority || 0));
+  const activeMessages = (tile.messages?.filter(m => m.isActive && (!m.startDate || new Date(m.startDate) <= new Date()) && (!m.endDate || new Date(m.endDate) >= new Date()) && (m.displayLocation === 'tile' || m.displayLocation === 'both' || !m.displayLocation)) || []).sort((a, b) => (a.priority || 0) - (b.priority || 0));
   const activeMessagesCount = activeMessages.length;
 
   const currentCategory = tile.group || 'General';
@@ -1285,11 +1285,16 @@ const SortableTile: React.FC<SortableTileProps> = ({
         {/* Center Rolling Message */}
         {activeMessages.length > 0 && (
           <div
-            className={`group/message absolute bottom-1 left-0 right-0 transition-all cursor-help ${!tile.isHyperlink ? 'pl-[60px]' : ''} ${activeMessages[0].type === 'alert' ? 'text-amber-600 dark:text-amber-400' :
-              activeMessages[0].type === 'warning' ? 'text-amber-600 dark:text-amber-400' :
-                activeMessages[0].type === 'celebration' ? 'text-pink-600 dark:text-pink-400' :
-                  'text-brand-600 dark:text-brand-400'
-              }`}
+            className={`group/message absolute bottom-1 left-0 right-0 transition-all cursor-help ${!tile.isHyperlink ? 'pl-[60px]' : ''} ${!activeMessages[0].textColor ? (
+              activeMessages[0].type === 'alert' ? 'text-amber-600 dark:text-amber-400' :
+                activeMessages[0].type === 'warning' ? 'text-amber-600 dark:text-amber-400' :
+                  activeMessages[0].type === 'celebration' ? 'text-pink-600 dark:text-pink-400' :
+                    'text-brand-600 dark:text-brand-400'
+            ) : ''}`}
+            style={activeMessages[0].textColor ? {
+              // Only set color on parent if custom color is set, to override tile text color
+              color: activeMessages[0].textColor
+            } : undefined}
           >
             {/* Custom Instant Tooltip - Optimized for Small Tiles */}
             <div
@@ -1308,13 +1313,31 @@ const SortableTile: React.FC<SortableTileProps> = ({
               <div className="animate-rolling-tile flex items-center gap-10 text-[10px] sm:text-xs font-semibold">
                 {/* Single message loop for seamless scrolling */}
                 {activeMessages.map((msg, idx) => (
-                  <div key={`${msg.id}-${idx}`} className="flex items-center gap-2 shrink-0">
+                  <div 
+                    key={`${msg.id}-${idx}`} 
+                    className="flex items-center gap-2 shrink-0"
+                    style={{
+                      ...(msg.textColor ? { '--message-text-color': msg.textColor, color: msg.textColor } : {}),
+                      fontStyle: msg.fontStyle === 'italic' || msg.fontStyle === 'bold italic' ? 'italic' : undefined,
+                      fontWeight: msg.fontStyle === 'bold' || msg.fontStyle === 'bold italic' ? 'bold' : undefined
+                    } as React.CSSProperties}
+                    data-message-color={msg.textColor || ''}
+                  >
                     {renderMessageContent(msg.content)}
                   </div>
                 ))}
                 {/* Duplicate for seamless loop */}
                 {activeMessages.map((msg, idx) => (
-                  <div key={`${msg.id}-dup-${idx}`} className="flex items-center gap-2 shrink-0">
+                  <div 
+                    key={`${msg.id}-dup-${idx}`} 
+                    className="flex items-center gap-2 shrink-0"
+                    style={{
+                      ...(msg.textColor ? { '--message-text-color': msg.textColor, color: msg.textColor } : {}),
+                      fontStyle: msg.fontStyle === 'italic' || msg.fontStyle === 'bold italic' ? 'italic' : undefined,
+                      fontWeight: msg.fontStyle === 'bold' || msg.fontStyle === 'bold italic' ? 'bold' : undefined
+                    } as React.CSSProperties}
+                    data-message-color={msg.textColor || ''}
+                  >
                     {renderMessageContent(msg.content)}
                   </div>
                 ))}
@@ -1664,6 +1687,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [messageEndDate, setMessageEndDate] = useState('');
   const [messageIsActive, setMessageIsActive] = useState(true);
   const [messagePriority, setMessagePriority] = useState<number>(0);
+  const [messageTextColor, setMessageTextColor] = useState<string>('');
+  const [messageFontStyle, setMessageFontStyle] = useState<string>('normal');
+  const [messageDisplayLocation, setMessageDisplayLocation] = useState<'tile' | 'detail' | 'both'>('both');
 
   // Helper function to get message status
   const getMessageStatus = (msg: TileMessage): 'active' | 'upcoming' | 'expired' => {
@@ -6233,6 +6259,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
                           setMessageEndDate('');
                           setMessageIsActive(true);
                           setMessagePriority(0);
+                          setMessageTextColor('');
+                          setMessageFontStyle('normal');
+                          setMessageDisplayLocation('both');
                         }}
                         className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors shadow-sm hover:shadow"
                       >
@@ -6472,6 +6501,61 @@ export const TileGrid: React.FC<TileGridProps> = ({
                             </div>
                           </div>
 
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Text Color</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  value={messageTextColor || '#000000'}
+                                  onChange={(e) => setMessageTextColor(e.target.value)}
+                                  className="w-16 h-10 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer"
+                                />
+                                <input
+                                  type="text"
+                                  value={messageTextColor}
+                                  onChange={(e) => setMessageTextColor(e.target.value)}
+                                  placeholder="#000000"
+                                  className="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setMessageTextColor('')}
+                                  className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                                  title="Reset to default"
+                                >
+                                  Reset
+                                </button>
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Font Style</label>
+                              <select
+                                value={messageFontStyle}
+                                onChange={(e) => setMessageFontStyle(e.target.value)}
+                                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                              >
+                                <option value="normal">Normal</option>
+                                <option value="italic">Italic</option>
+                                <option value="bold">Bold</option>
+                                <option value="bold italic">Bold Italic</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Display Location</label>
+                            <select
+                              value={messageDisplayLocation}
+                              onChange={(e) => setMessageDisplayLocation(e.target.value as 'tile' | 'detail' | 'both')}
+                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                            >
+                              <option value="both">Both (Tile & Detail Page)</option>
+                              <option value="tile">Tile Only</option>
+                              <option value="detail">Detail Page Only</option>
+                            </select>
+                          </div>
+
                           <div>
                             <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
                               Display Priority <span className="text-xs text-slate-500 dark:text-slate-400">(Lower number = higher priority)</span>
@@ -6506,7 +6590,10 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                   startDate: messageStartDate,
                                   endDate: messageEndDate,
                                   isActive: messageIsActive,
-                                  priority: messagePriority
+                                  priority: messagePriority,
+                                  textColor: messageTextColor || undefined,
+                                  fontStyle: messageFontStyle || undefined,
+                                  displayLocation: messageDisplayLocation
                                 };
 
                                 if (editingMessageId === 'new') {
@@ -6635,6 +6722,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                       setMessageEndDate(msg.endDate);
                                       setMessageIsActive(msg.isActive);
                                       setMessagePriority(msg.priority || 0);
+                                      setMessageTextColor(msg.textColor || '');
+                                      setMessageFontStyle(msg.fontStyle || 'normal');
+                                      setMessageDisplayLocation(msg.displayLocation || 'both');
                                     }}
                                     className="p-2 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-colors"
                                     title="Edit message"

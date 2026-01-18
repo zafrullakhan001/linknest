@@ -337,7 +337,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         return (tile.messages?.filter(m =>
             m.isActive &&
             (!m.startDate || new Date(m.startDate) <= new Date()) &&
-            (!m.endDate || new Date(m.endDate) >= new Date())
+            (!m.endDate || new Date(m.endDate) >= new Date()) &&
+            (m.displayLocation === 'detail' || m.displayLocation === 'both' || !m.displayLocation)
         ) || []).sort((a, b) => (a.priority || 0) - (b.priority || 0));
     };
 
@@ -2749,22 +2750,45 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-yellow-400"></div>
                         </div>
 
-                        <div className={`relative h-6 flex items-center overflow-hidden ${activeMessages[0].type === 'alert' ? 'text-amber-600 dark:text-amber-400' :
-                            activeMessages[0].type === 'warning' ? 'text-amber-600 dark:text-amber-400' :
-                                activeMessages[0].type === 'celebration' ? 'text-pink-600 dark:text-pink-400' :
-                                    'text-brand-600 dark:text-brand-400'
-                            }`}
+                        <div className={`relative h-6 flex items-center overflow-hidden ${!activeMessages[0].textColor ? (
+                            activeMessages[0].type === 'alert' ? 'text-amber-600 dark:text-amber-400' :
+                                activeMessages[0].type === 'warning' ? 'text-amber-600 dark:text-amber-400' :
+                                    activeMessages[0].type === 'celebration' ? 'text-pink-600 dark:text-pink-400' :
+                                        'text-brand-600 dark:text-brand-400'
+                        ) : ''}`}
+                            style={activeMessages[0].textColor ? {
+                                // Only set color on parent if custom color is set, to override tile text color
+                                color: activeMessages[0].textColor
+                            } : undefined}
                         >
                             <div className="animate-rolling-detail flex items-center gap-10 text-sm font-semibold">
                                 {/* Single message loop for seamless scrolling */}
                                 {activeMessages.map((msg, idx) => (
-                                    <div key={`${msg.id}-${idx}`} className="flex items-center gap-2 shrink-0">
+                                    <div 
+                                        key={`${msg.id}-${idx}`} 
+                                        className="flex items-center gap-2 shrink-0"
+                                        style={{
+                                            ...(msg.textColor ? { '--message-text-color': msg.textColor, color: msg.textColor } : {}),
+                                            fontStyle: msg.fontStyle === 'italic' || msg.fontStyle === 'bold italic' ? 'italic' : undefined,
+                                            fontWeight: msg.fontStyle === 'bold' || msg.fontStyle === 'bold italic' ? 'bold' : undefined
+                                        } as React.CSSProperties}
+                                        data-message-color={msg.textColor || ''}
+                                    >
                                         {renderMessageContent(msg.content)}
                                     </div>
                                 ))}
                                 {/* Duplicate for seamless loop */}
                                 {activeMessages.map((msg, idx) => (
-                                    <div key={`${msg.id}-dup-${idx}`} className="flex items-center gap-2 shrink-0">
+                                    <div 
+                                        key={`${msg.id}-dup-${idx}`} 
+                                        className="flex items-center gap-2 shrink-0"
+                                        style={{
+                                            ...(msg.textColor ? { '--message-text-color': msg.textColor, color: msg.textColor } : {}),
+                                            fontStyle: msg.fontStyle === 'italic' || msg.fontStyle === 'bold italic' ? 'italic' : undefined,
+                                            fontWeight: msg.fontStyle === 'bold' || msg.fontStyle === 'bold italic' ? 'bold' : undefined
+                                        } as React.CSSProperties}
+                                        data-message-color={msg.textColor || ''}
+                                    >
                                         {renderMessageContent(msg.content)}
                                     </div>
                                 ))}

@@ -408,7 +408,11 @@ function handleGetTiles() {
                 'type' => $msgRow['type'],
                 'startDate' => $msgRow['start_date'],
                 'endDate' => $msgRow['end_date'],
-                'isActive' => (bool)$msgRow['is_active']
+                'isActive' => (bool)$msgRow['is_active'],
+                'priority' => isset($msgRow['priority']) ? (int)$msgRow['priority'] : null,
+                'textColor' => $msgRow['text_color'] ?? null,
+                'fontStyle' => $msgRow['font_style'] ?? null,
+                'displayLocation' => $msgRow['display_location'] ?? 'both'
             ];
         }
         
@@ -825,7 +829,11 @@ function handleGetTile($tileId) {
             'type' => $msgRow['type'],
             'startDate' => $msgRow['start_date'],
             'endDate' => $msgRow['end_date'],
-            'isActive' => (bool)$msgRow['is_active']
+            'isActive' => (bool)$msgRow['is_active'],
+            'priority' => isset($msgRow['priority']) ? (int)$msgRow['priority'] : null,
+            'textColor' => $msgRow['text_color'] ?? null,
+            'fontStyle' => $msgRow['font_style'] ?? null,
+            'displayLocation' => $msgRow['display_location'] ?? 'both'
         ];
     }
 
@@ -1313,7 +1321,7 @@ function handleCreateTile() {
     
     // Handle tile messages
     if (isset($data['messages']) && is_array($data['messages'])) {
-        $msgStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)');
+        $msgStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         foreach ($data['messages'] as $msg) {
             $msgId = $msg['id'] ?? uniqid('msg_', true);
             $msgStmt->execute([
@@ -1323,7 +1331,11 @@ function handleCreateTile() {
                 $msg['type'] ?? 'info',
                 $msg['startDate'] ?? null,
                 $msg['endDate'] ?? null,
-                isset($msg['isActive']) && $msg['isActive'] ? 1 : 0
+                isset($msg['isActive']) && $msg['isActive'] ? 1 : 0,
+                isset($msg['priority']) ? (int)$msg['priority'] : 0,
+                $msg['textColor'] ?? null,
+                $msg['fontStyle'] ?? null,
+                $msg['displayLocation'] ?? 'both'
             ]);
         }
     }
@@ -1609,7 +1621,7 @@ function handleUpdateTile($tileId) {
         
         // Handle tile messages
         if (isset($data['messages']) && is_array($data['messages'])) {
-            $msgStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)');
+            $msgStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             foreach ($data['messages'] as $msg) {
                 $msgId = $msg['id'] ?? uniqid('msg_', true);
                 $msgStmt->execute([
@@ -1619,7 +1631,11 @@ function handleUpdateTile($tileId) {
                     $msg['type'] ?? 'info',
                     $msg['startDate'] ?? null,
                     $msg['endDate'] ?? null,
-                    isset($msg['isActive']) && $msg['isActive'] ? 1 : 0
+                    isset($msg['isActive']) && $msg['isActive'] ? 1 : 0,
+                    isset($msg['priority']) ? (int)$msg['priority'] : 0,
+                    $msg['textColor'] ?? null,
+                    $msg['fontStyle'] ?? null,
+                    $msg['displayLocation'] ?? 'both'
                 ]);
             }
         }

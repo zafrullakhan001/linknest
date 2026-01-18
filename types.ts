@@ -109,6 +109,9 @@ export interface TileMessage {
   endDate: string; // ISO date string
   isActive: boolean;
   priority?: number; // Display order priority (lower number = higher priority)
+  textColor?: string; // Text color (hex code)
+  fontStyle?: string; // Font style (normal, italic, bold, bold italic, etc.)
+  displayLocation?: 'tile' | 'detail' | 'both'; // Where to display the message
 }
 
 export const THEME_COLORS = [

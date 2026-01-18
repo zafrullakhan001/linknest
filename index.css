@@ -2,20 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Force black text in tooltip - defined outside @layer to prevent purging */
-.tooltip-force-black,
-.tooltip-force-black *,
-.tooltip-force-black div,
-.tooltip-force-black span {
-  color: #000000 !important;
-}
-
-.tooltip-force-black .opacity-50 {
-  color: #000000 !important;
-  opacity: 0.5;
-}
-
-
 /* Local tile decoration override - must take precedence over global styles with !important */
 .linknest-tile.has-local-decoration,
 div.linknest-tile.has-local-decoration {
@@ -28,6 +14,39 @@ div.linknest-tile.has-local-decoration {
 .linknest-tile.has-local-decoration *,
 div.linknest-tile.has-local-decoration * {
   color: inherit !important;
+}
+
+/* Allow message colors to override tile text color - must be more specific than the inherit rule */
+.linknest-tile.has-local-decoration [data-message-color]:not([data-message-color=""]),
+div.linknest-tile.has-local-decoration [data-message-color]:not([data-message-color=""]) {
+  color: var(--message-text-color) !important;
+}
+
+/* Also ensure message content elements inherit the message color */
+.linknest-tile.has-local-decoration [data-message-color]:not([data-message-color=""]) *,
+div.linknest-tile.has-local-decoration [data-message-color]:not([data-message-color=""]) * {
+  color: inherit !important;
+}
+
+/* Force black text in tooltip - MUST be at the end to override all other color rules */
+.tooltip-force-black,
+.tooltip-force-black *,
+.tooltip-force-black div,
+.tooltip-force-black span,
+.tooltip-force-black a,
+.linknest-tile .tooltip-force-black,
+.linknest-tile.has-local-decoration .tooltip-force-black,
+.linknest-tile.has-local-decoration .tooltip-force-black *,
+div.linknest-tile.has-local-decoration .tooltip-force-black,
+div.linknest-tile.has-local-decoration .tooltip-force-black * {
+  color: #000000 !important;
+}
+
+.tooltip-force-black .opacity-50,
+.linknest-tile .tooltip-force-black .opacity-50,
+.linknest-tile.has-local-decoration .tooltip-force-black .opacity-50 {
+  color: #000000 !important;
+  opacity: 0.5;
 }
 
 .dark .linknest-tile.has-local-decoration,

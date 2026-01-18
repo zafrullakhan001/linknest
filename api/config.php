@@ -837,8 +837,27 @@ function initDatabase() {
                     start_date TEXT,
                     end_date TEXT,
                     is_active INTEGER DEFAULT 1,
+                    priority INTEGER DEFAULT 0,
+                    text_color TEXT,
+                    font_style TEXT,
+                    display_location TEXT DEFAULT "both",
                     FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
                 )');
+            } else {
+                // Add new columns if they don't exist
+                $columnNames = array_column($columns, 'name');
+                if (!in_array('priority', $columnNames)) {
+                    $db->exec('ALTER TABLE tile_messages ADD COLUMN priority INTEGER DEFAULT 0');
+                }
+                if (!in_array('text_color', $columnNames)) {
+                    $db->exec('ALTER TABLE tile_messages ADD COLUMN text_color TEXT');
+                }
+                if (!in_array('font_style', $columnNames)) {
+                    $db->exec('ALTER TABLE tile_messages ADD COLUMN font_style TEXT');
+                }
+                if (!in_array('display_location', $columnNames)) {
+                    $db->exec('ALTER TABLE tile_messages ADD COLUMN display_location TEXT DEFAULT "both"');
+                }
             }
         } catch (PDOException $e) {
             error_log('tile_messages migration error: ' . $e->getMessage());
