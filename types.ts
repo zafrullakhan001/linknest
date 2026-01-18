@@ -108,6 +108,7 @@ export interface TileMessage {
   startDate: string; // ISO date string
   endDate: string; // ISO date string
   isActive: boolean;
+  priority?: number; // Display order priority (lower number = higher priority)
 }
 
 export const THEME_COLORS = [

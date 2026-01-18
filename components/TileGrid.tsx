@@ -817,6 +817,55 @@ const SortableTile: React.FC<SortableTileProps> = ({
   const { user } = useAuth();
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
 
+  // Helper function to strip formatting characters for plain text display (tooltips, etc.)
+  const stripFormatting = (content: string): string => {
+    // Remove bold markers: **text** or *text*
+    let plainText = content.replace(/\*\*(.*?)\*\*/g, '$1');
+    plainText = plainText.replace(/\*([^*]+)\*/g, '$1');
+    // Remove italic markers: _text_
+    plainText = plainText.replace(/_([^_]+)_/g, '$1');
+    return plainText;
+  };
+
+  // Helper function to parse URLs and render clickable links with formatting
+  const renderMessageContent = (content: string) => {
+    // URL regex pattern
+    const urlPattern = /(https?:\/\/[^\s]+)/g;
+    // Bold pattern: **text**
+    const boldPattern = /(\*\*)(.*?)\1/g;
+    // Italic pattern: _text_ (not already part of bold)
+    const italicPattern = /(?<!\*)_([^_]+)_(?!\*)/g;
+
+    let processedContent = content;
+
+    // Process bold text first
+    processedContent = processedContent.replace(boldPattern, '<strong>$2</strong>');
+    
+    // Process italic text (avoid conflicts with bold)
+    processedContent = processedContent.replace(italicPattern, '<em>$1</em>');
+
+    // Split by URLs to process them separately
+    const parts = processedContent.split(urlPattern);
+    
+    return parts.map((part, index) => {
+      if (urlPattern.test(part)) {
+        return (
+          <a
+            key={index}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline font-semibold hover:opacity-80 transition-opacity"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {part}
+          </a>
+        );
+      }
+      return <span key={index} dangerouslySetInnerHTML={{ __html: part }} />;
+    });
+  };
+
   const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
   const linkCount = tile.isHyperlink ? 0 : (() => {
     const uniqueLinks = new Set<string>();
@@ -839,7 +888,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
     return uniqueLinks.size;
   })();
 
-  const activeMessages = tile.messages?.filter(m => m.isActive && (!m.startDate || new Date(m.startDate) <= new Date()) && (!m.endDate || new Date(m.endDate) >= new Date())) || [];
+  const activeMessages = (tile.messages?.filter(m => m.isActive && (!m.startDate || new Date(m.startDate) <= new Date()) && (!m.endDate || new Date(m.endDate) >= new Date())) || []).sort((a, b) => (a.priority || 0) - (b.priority || 0));
   const activeMessagesCount = activeMessages.length;
 
   const currentCategory = tile.group || 'General';
@@ -1240,19 +1289,17 @@ const SortableTile: React.FC<SortableTileProps> = ({
                 activeMessages[0].type === 'celebration' ? 'text-pink-600 dark:text-pink-400' :
                   'text-brand-600 dark:text-brand-400'
               }`}
-            title={activeMessages.map(m => m.content).join('\n')}
+            title={activeMessages.map((m, idx) => `${idx + 1}. ${stripFormatting(m.content)}`).join('\n')}
           >
             <div className="animate-rolling flex items-center gap-10 text-[10px] sm:text-xs font-semibold">
               {/* Double the messages for a more continuous flow in the marquee */}
               {[...activeMessages, ...activeMessages].map((msg, idx) => (
-                <div key={`${msg.id}-${idx}`} className="flex items-center gap-2 shrink-0">
-                  <span className={`${msg.type === 'alert' ? 'text-red-600 dark:text-red-400' :
-                    msg.type === 'warning' ? 'text-amber-600 dark:text-amber-400' :
-                      msg.type === 'celebration' ? 'text-pink-600 dark:text-pink-400' :
-                        'text-brand-600 dark:text-brand-400'
-                    }`}>
-                    {msg.content}
-                  </span>
+                <div key={`${msg.id}-${idx}`} className={`flex items-center gap-2 shrink-0 ${msg.type === 'alert' ? 'text-red-600 dark:text-red-400' :
+                  msg.type === 'warning' ? 'text-amber-600 dark:text-amber-400' :
+                    msg.type === 'celebration' ? 'text-pink-600 dark:text-pink-400' :
+                      'text-brand-600 dark:text-brand-400'
+                  }`}>
+                  {renderMessageContent(msg.content)}
                 </div>
               ))}
             </div>
@@ -1599,6 +1646,114 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [messageStartDate, setMessageStartDate] = useState('');
   const [messageEndDate, setMessageEndDate] = useState('');
   const [messageIsActive, setMessageIsActive] = useState(true);
+  const [messagePriority, setMessagePriority] = useState<number>(0);
+
+  // Helper function to get message status
+  const getMessageStatus = (msg: TileMessage): 'active' | 'upcoming' | 'expired' => {
+    const now = new Date();
+    const startDate = msg.startDate ? new Date(msg.startDate) : null;
+    const endDate = msg.endDate ? new Date(msg.endDate) : null;
+
+    if (!msg.isActive) return 'expired';
+    if (endDate && now > endDate) return 'expired';
+    if (startDate && now < startDate) return 'upcoming';
+    return 'active';
+  };
+
+  // Helper function to format date for datetime-local input
+  const formatDateForInput = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
+  // Quick date preset handlers
+  const setDatePreset = (preset: 'today' | 'tomorrow' | 'thisWeek' | 'nextWeek' | 'thisMonth' | 'nextMonth', type: 'start' | 'end') => {
+    const now = new Date();
+    let targetDate = new Date();
+
+    switch (preset) {
+      case 'today':
+        targetDate = new Date(now);
+        targetDate.setHours(9, 0, 0, 0);
+        break;
+      case 'tomorrow':
+        targetDate = new Date(now);
+        targetDate.setDate(targetDate.getDate() + 1);
+        targetDate.setHours(9, 0, 0, 0);
+        break;
+      case 'thisWeek':
+        targetDate = new Date(now);
+        const dayOfWeek = targetDate.getDay();
+        const daysUntilMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        targetDate.setDate(targetDate.getDate() - daysUntilMonday);
+        targetDate.setHours(9, 0, 0, 0);
+        break;
+      case 'nextWeek':
+        targetDate = new Date(now);
+        const currentDayOfWeek = targetDate.getDay();
+        const daysUntilNextMonday = currentDayOfWeek === 0 ? 1 : 8 - currentDayOfWeek;
+        targetDate.setDate(targetDate.getDate() + daysUntilNextMonday);
+        targetDate.setHours(9, 0, 0, 0);
+        break;
+      case 'thisMonth':
+        targetDate = new Date(now.getFullYear(), now.getMonth(), 1, 9, 0, 0);
+        break;
+      case 'nextMonth':
+        targetDate = new Date(now.getFullYear(), now.getMonth() + 1, 1, 9, 0, 0);
+        break;
+    }
+
+    if (type === 'start') {
+      setMessageStartDate(formatDateForInput(targetDate));
+    } else {
+      // For end dates, set to end of day
+      targetDate.setHours(23, 59, 0, 0);
+      setMessageEndDate(formatDateForInput(targetDate));
+    }
+  };
+
+  // Helper function to parse URLs and render clickable links
+  const renderMessageContent = (content: string) => {
+    // URL regex pattern
+    const urlPattern = /(https?:\/\/[^\s]+)/g;
+    // Bold pattern: **text** or *text*
+    const boldPattern = /(\*\*)(.*?)\1/g;
+    // Italic pattern: _text_ or *text* (not already bold)
+    const italicPattern = /(?<!\*)_([^_]+)_(?!\*)/g;
+
+    let processedContent = content;
+
+    // Process bold text
+    processedContent = processedContent.replace(boldPattern, '<strong>$2</strong>');
+    
+    // Process italic text (avoid conflicts with bold)
+    processedContent = processedContent.replace(italicPattern, '<em>$1</em>');
+
+    // Process URLs
+    const parts = processedContent.split(urlPattern);
+    
+    return parts.map((part, index) => {
+      if (urlPattern.test(part)) {
+        return (
+          <a
+            key={index}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-brand-600 dark:text-brand-400 hover:underline font-medium"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {part}
+          </a>
+        );
+      }
+      return <span key={index} dangerouslySetInnerHTML={{ __html: part }} />;
+    });
+  };
 
   // Tile Animation & Decoration State
   const { animation: initialAnimation, decoration: initialDecoration } = useTileAnimation();
@@ -2822,6 +2977,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     setMessageStartDate('');
     setMessageEndDate('');
     setMessageIsActive(true);
+    setMessagePriority(0);
   };
 
   // Fetch users when modal opens and visibility is private
@@ -6059,6 +6215,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                           setMessageStartDate('');
                           setMessageEndDate('');
                           setMessageIsActive(true);
+                          setMessagePriority(0);
                         }}
                         className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors shadow-sm hover:shadow"
                       >
@@ -6082,8 +6239,11 @@ export const TileGrid: React.FC<TileGridProps> = ({
                               onChange={(e) => setMessageContent(e.target.value)}
                               className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all resize-none"
                               rows={4}
-                              placeholder="Enter your message..."
+                              placeholder="Enter your message... URLs will be clickable. Use **bold** for bold text and _italic_ for italic text."
                             />
+                            <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+                              💡 Formatting: URLs are automatically clickable. Use <strong>**text**</strong> for <strong>bold</strong> and <em>_text_</em> for <em>italic</em>.
+                            </p>
                             
                             {/* Message Presets - Enhanced with Categories */}
                             <div className="mt-3 space-y-3">
@@ -6223,6 +6383,36 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                 onChange={(e) => setMessageStartDate(e.target.value)}
                                 className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
                               />
+                              <div className="mt-2 flex gap-1.5 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => setDatePreset('today', 'start')}
+                                  className="text-xs px-2 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                                >
+                                  Today
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDatePreset('tomorrow', 'start')}
+                                  className="text-xs px-2 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                                >
+                                  Tomorrow
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDatePreset('thisWeek', 'start')}
+                                  className="text-xs px-2 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                                >
+                                  This Week
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDatePreset('nextWeek', 'start')}
+                                  className="text-xs px-2 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                                >
+                                  Next Week
+                                </button>
+                              </div>
                             </div>
                             <div>
                               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">End Date & Time</label>
@@ -6232,6 +6422,54 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                 onChange={(e) => setMessageEndDate(e.target.value)}
                                 className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
                               />
+                              <div className="mt-2 flex gap-1.5 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => setDatePreset('today', 'end')}
+                                  className="text-xs px-2 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                                >
+                                  Today
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDatePreset('tomorrow', 'end')}
+                                  className="text-xs px-2 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                                >
+                                  Tomorrow
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDatePreset('thisWeek', 'end')}
+                                  className="text-xs px-2 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                                >
+                                  This Week
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDatePreset('nextWeek', 'end')}
+                                  className="text-xs px-2 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                                >
+                                  Next Week
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                              Display Priority <span className="text-xs text-slate-500 dark:text-slate-400">(Lower number = higher priority)</span>
+                            </label>
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="number"
+                                value={messagePriority}
+                                onChange={(e) => setMessagePriority(parseInt(e.target.value) || 0)}
+                                min="0"
+                                className="w-24 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                              />
+                              <span className="text-xs text-slate-500 dark:text-slate-400">
+                                Messages with lower priority numbers display first when multiple are active
+                              </span>
                             </div>
                           </div>
 
@@ -6250,7 +6488,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                   type: messageType,
                                   startDate: messageStartDate,
                                   endDate: messageEndDate,
-                                  isActive: messageIsActive
+                                  isActive: messageIsActive,
+                                  priority: messagePriority
                                 };
 
                                 if (editingMessageId === 'new') {
@@ -6280,77 +6519,145 @@ export const TileGrid: React.FC<TileGridProps> = ({
                           <p className="text-xs text-slate-400 dark:text-slate-500">Click "Add Message" to create your first scheduled message</p>
                         </div>
                       ) : (
-                        messages.map(msg => (
-                          <div key={msg.id} className="group p-4 border border-slate-200 dark:border-slate-700 rounded-xl flex justify-between items-start bg-white dark:bg-slate-800 hover:shadow-md transition-all hover:border-brand-300 dark:hover:border-brand-700">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2.5 mb-2">
-                                <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${msg.type === 'info' ? 'bg-blue-500' :
-                                  msg.type === 'warning' ? 'bg-amber-500' :
-                                    msg.type === 'celebration' ? 'bg-purple-500' :
-                                      msg.type === 'alert' ? 'bg-red-500' : 'bg-slate-500'
-                                  }`}></span>
-                                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                  {msg.type === 'info' ? 'ℹ️ Info' :
-                                    msg.type === 'warning' ? '⚠️ Warning' :
-                                      msg.type === 'celebration' ? '🎉 Celebration' :
-                                        msg.type === 'alert' ? '🚨 Alert' : '🎨 Custom'}
-                                </span>
-                                {!msg.isActive && (
-                                  <span className="px-2 py-0.5 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-full">
-                                    Inactive
+                        [...messages].sort((a, b) => (a.priority || 0) - (b.priority || 0)).map(msg => {
+                          const status = getMessageStatus(msg);
+                          return (
+                            <div key={msg.id} className="group p-4 border border-slate-200 dark:border-slate-700 rounded-xl flex justify-between items-start bg-white dark:bg-slate-800 hover:shadow-md transition-all hover:border-brand-300 dark:hover:border-brand-700">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2.5 mb-2 flex-wrap">
+                                  <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${msg.type === 'info' ? 'bg-blue-500' :
+                                    msg.type === 'warning' ? 'bg-amber-500' :
+                                      msg.type === 'celebration' ? 'bg-purple-500' :
+                                        msg.type === 'alert' ? 'bg-red-500' : 'bg-slate-500'
+                                    }`}></span>
+                                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                    {msg.type === 'info' ? 'ℹ️ Info' :
+                                      msg.type === 'warning' ? '⚠️ Warning' :
+                                        msg.type === 'celebration' ? '🎉 Celebration' :
+                                          msg.type === 'alert' ? '🚨 Alert' : '🎨 Custom'}
                                   </span>
-                                )}
+                                  {/* Status Indicator */}
+                                  {status === 'active' && (
+                                    <span className="px-2 py-0.5 text-xs font-medium text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 rounded-full">
+                                      Active Now
+                                    </span>
+                                  )}
+                                  {status === 'upcoming' && (
+                                    <span className="px-2 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-full">
+                                      Upcoming
+                                    </span>
+                                  )}
+                                  {status === 'expired' && (
+                                    <span className="px-2 py-0.5 text-xs font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 rounded-full">
+                                      Expired
+                                    </span>
+                                  )}
+                                  {/* Priority Badge */}
+                                  <span className="px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 rounded-full">
+                                    Priority: {msg.priority || 0}
+                                  </span>
+                                </div>
+                                <div className="text-sm text-slate-800 dark:text-slate-200 mb-2 leading-relaxed break-words">
+                                  {renderMessageContent(msg.content)}
+                                </div>
+                                <div className="flex flex-wrap gap-3 text-xs text-slate-500 dark:text-slate-400">
+                                  {msg.startDate && (
+                                    <div className="flex items-center gap-1">
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                        <path fillRule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5c0-.69.56-1.25 1.25-1.25h10c.69 0 1.25.56 1.25 1.25v6.5c0 .69-.56 1.25-1.25 1.25H6c-.69 0-1.25-.56-1.25-1.25v-6.5z" clipRule="evenodd" />
+                                      </svg>
+                                      <span>From: {new Date(msg.startDate).toLocaleString()}</span>
+                                    </div>
+                                  )}
+                                  {msg.endDate && (
+                                    <div className="flex items-center gap-1">
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                        <path fillRule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5c0-.69.56-1.25 1.25-1.25h10c.69 0 1.25.56 1.25 1.25v6.5c0 .69-.56 1.25-1.25 1.25H6c-.69 0-1.25-.56-1.25-1.25v-6.5z" clipRule="evenodd" />
+                                      </svg>
+                                      <span>To: {new Date(msg.endDate).toLocaleString()}</span>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                              <p className="text-sm text-slate-800 dark:text-slate-200 mb-2 leading-relaxed break-words">{msg.content}</p>
-                              <div className="flex flex-wrap gap-3 text-xs text-slate-500 dark:text-slate-400">
-                                {msg.startDate && (
-                                  <div className="flex items-center gap-1">
+                              <div className="flex flex-col gap-1.5 ml-4">
+                                {/* Priority Controls */}
+                                <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    onClick={() => {
+                                      const newPriority = Math.max(0, (msg.priority || 0) - 1);
+                                      setMessages(messages.map(m => m.id === msg.id ? { ...m, priority: newPriority } : m));
+                                    }}
+                                    className="p-1.5 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded transition-colors"
+                                    title="Increase priority (decrease number)"
+                                  >
                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                      <path fillRule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5c0-.69.56-1.25 1.25-1.25h10c.69 0 1.25.56 1.25 1.25v6.5c0 .69-.56 1.25-1.25 1.25H6c-.69 0-1.25-.56-1.25-1.25v-6.5z" clipRule="evenodd" />
+                                      <path fillRule="evenodd" d="M14.77 12.79a.75.75 0 01-1.06-.02L10 8.832 6.29 12.77a.75.75 0 11-1.08-1.04l4.25-4.5a.75.75 0 011.08 0l4.25 4.5a.75.75 0 01-.02 1.06z" clipRule="evenodd" />
                                     </svg>
-                                    <span>From: {new Date(msg.startDate).toLocaleString()}</span>
-                                  </div>
-                                )}
-                                {msg.endDate && (
-                                  <div className="flex items-center gap-1">
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      const newPriority = (msg.priority || 0) + 1;
+                                      setMessages(messages.map(m => m.id === msg.id ? { ...m, priority: newPriority } : m));
+                                    }}
+                                    className="p-1.5 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded transition-colors"
+                                    title="Decrease priority (increase number)"
+                                  >
                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                      <path fillRule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5c0-.69.56-1.25 1.25-1.25h10c.69 0 1.25.56 1.25 1.25v6.5c0 .69-.56 1.25-1.25 1.25H6c-.69 0-1.25-.56-1.25-1.25v-6.5z" clipRule="evenodd" />
+                                      <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
                                     </svg>
-                                    <span>To: {new Date(msg.endDate).toLocaleString()}</span>
-                                  </div>
-                                )}
+                                  </button>
+                                </div>
+                                {/* Action Buttons */}
+                                <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    onClick={() => {
+                                      setEditingMessageId(msg.id);
+                                      setMessageContent(msg.content);
+                                      setMessageType(msg.type);
+                                      setMessageStartDate(msg.startDate);
+                                      setMessageEndDate(msg.endDate);
+                                      setMessageIsActive(msg.isActive);
+                                      setMessagePriority(msg.priority || 0);
+                                    }}
+                                    className="p-2 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-colors"
+                                    title="Edit message"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                      <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
+                                      <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      const duplicatedMessage: TileMessage = {
+                                        ...msg,
+                                        id: Math.random().toString(36).substr(2, 9),
+                                        content: msg.content + ' (Copy)'
+                                      };
+                                      setMessages([...messages, duplicatedMessage]);
+                                    }}
+                                    className="p-2 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
+                                    title="Duplicate message"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                      <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                                      <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.439A1.5 1.5 0 008.378 6H4.5z" />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    onClick={() => setMessages(messages.filter(m => m.id !== msg.id))}
+                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                    title="Delete message"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                      <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4z" clipRule="evenodd" />
+                                    </svg>
+                                  </button>
+                                </div>
                               </div>
                             </div>
-                            <div className="flex gap-1.5 ml-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button
-                                onClick={() => {
-                                  setEditingMessageId(msg.id);
-                                  setMessageContent(msg.content);
-                                  setMessageType(msg.type);
-                                  setMessageStartDate(msg.startDate);
-                                  setMessageEndDate(msg.endDate);
-                                  setMessageIsActive(msg.isActive);
-                                }}
-                                className="p-2 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-colors"
-                                title="Edit message"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                  <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
-                                  <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
-                                </svg>
-                              </button>
-                              <button
-                                onClick={() => setMessages(messages.filter(m => m.id !== msg.id))}
-                                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                                title="Delete message"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                  <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4z" clipRule="evenodd" />
-                                </svg>
-                              </button>
-                            </div>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                   </div>
