@@ -33,6 +33,341 @@ interface TileGridProps {
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
+// Category Visibility Management Dialog
+interface CategoryVisibilityDialogProps {
+  categoryName: string;
+  tiles: Tile[];
+  users: Array<{ id: number; username: string }>;
+  onClose: () => void;
+  onSave: (changes: Record<string, { visibility: TileVisibility; allowedUsers: number[] }>) => Promise<void>;
+}
+
+const CategoryVisibilityDialog: React.FC<CategoryVisibilityDialogProps> = ({
+  categoryName,
+  tiles,
+  users,
+  onClose,
+  onSave
+}) => {
+  const [tileVisibility, setTileVisibility] = useState<Record<string, { visibility: TileVisibility; allowedUsers: number[] }>>(() => {
+    const initial: Record<string, { visibility: TileVisibility; allowedUsers: number[] }> = {};
+    tiles.forEach(tile => {
+      initial[tile.id] = {
+        visibility: tile.visibility || 'public',
+        allowedUsers: tile.allowedUsers || []
+      };
+    });
+    return initial;
+  });
+  const [isSaving, setIsSaving] = useState(false);
+  const [bulkPrivateSelectedUsers, setBulkPrivateSelectedUsers] = useState<number[]>(users.map(u => u.id));
+  const [showBulkUserSelection, setShowBulkUserSelection] = useState(false);
+
+  const publicTiles = tiles.filter(t => (tileVisibility[t.id]?.visibility || 'public') === 'public');
+  const authenticatedTiles = tiles.filter(t => tileVisibility[t.id]?.visibility === 'authenticated');
+  const privateTiles = tiles.filter(t => tileVisibility[t.id]?.visibility === 'private');
+
+  const handleVisibilityChange = (tileId: string, visibility: TileVisibility) => {
+    setTileVisibility(prev => ({
+      ...prev,
+      [tileId]: {
+        visibility,
+        allowedUsers: visibility === 'private' ? (prev[tileId]?.allowedUsers || []) : []
+      }
+    }));
+  };
+
+  const handleUserToggle = (tileId: string, userId: number) => {
+    setTileVisibility(prev => {
+      const currentUsers = prev[tileId]?.allowedUsers || [];
+      const newUsers = currentUsers.includes(userId)
+        ? currentUsers.filter(id => id !== userId)
+        : [...currentUsers, userId];
+      return {
+        ...prev,
+        [tileId]: {
+          ...prev[tileId],
+          visibility: prev[tileId]?.visibility || 'public',
+          allowedUsers: newUsers
+        }
+      };
+    });
+  };
+
+  const handleMakeAllPublic = () => {
+    const updates: Record<string, { visibility: TileVisibility; allowedUsers: number[] }> = {};
+    tiles.forEach(tile => {
+      updates[tile.id] = { visibility: 'public', allowedUsers: [] };
+    });
+    setTileVisibility(updates);
+  };
+
+  const handleMakeAllProtected = () => {
+    const updates: Record<string, { visibility: TileVisibility; allowedUsers: number[] }> = {};
+    tiles.forEach(tile => {
+      updates[tile.id] = { visibility: 'authenticated', allowedUsers: [] };
+    });
+    setTileVisibility(updates);
+  };
+
+  const handleMakeAllPrivate = () => {
+    const updates: Record<string, { visibility: TileVisibility; allowedUsers: number[] }> = {};
+    tiles.forEach(tile => {
+      // Use selected users from bulk selection
+      updates[tile.id] = { visibility: 'private', allowedUsers: bulkPrivateSelectedUsers };
+    });
+    setTileVisibility(updates);
+    setShowBulkUserSelection(false);
+  };
+
+  const handleBulkUserToggle = (userId: number) => {
+    setBulkPrivateSelectedUsers(prev => 
+      prev.includes(userId) 
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    );
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await onSave(tileVisibility);
+      onClose();
+    } catch (error) {
+      console.error('Failed to save visibility changes:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">Manage Tile Visibility</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400">{categoryName}</p>
+        </div>
+        <button
+          onClick={onClose}
+          className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-hidden flex">
+        {/* Left Side - All Tiles */}
+        <div className="w-1/3 border-r border-slate-200 dark:border-slate-700 p-4 overflow-y-auto">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">All Tiles ({tiles.length})</h3>
+            <button
+              onClick={handleMakeAllPublic}
+              className="px-2 py-1 text-xs font-medium text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
+            >
+              Make All Public
+            </button>
+          </div>
+          <div className="space-y-2">
+            {tiles.map(tile => {
+              const currentVisibility = tileVisibility[tile.id]?.visibility || 'public';
+              return (
+                <div
+                  key={tile.id}
+                  className={`p-3 rounded-lg border transition-all ${
+                    currentVisibility === 'public' ? 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50' :
+                    currentVisibility === 'authenticated' ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20' :
+                    'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20'
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <span className="text-lg">{tile.emoji}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{tile.title}</p>
+                      <div className="mt-2 flex gap-1">
+                        <button
+                          onClick={() => handleVisibilityChange(tile.id, 'public')}
+                          className={`px-2 py-1 text-xs rounded ${
+                            currentVisibility === 'public'
+                              ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                          }`}
+                        >
+                          Public
+                        </button>
+                        <button
+                          onClick={() => handleVisibilityChange(tile.id, 'authenticated')}
+                          className={`px-2 py-1 text-xs rounded ${
+                            currentVisibility === 'authenticated'
+                              ? 'bg-blue-200 dark:bg-blue-700 text-blue-900 dark:text-blue-100'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-blue-100 dark:hover:bg-blue-900/30'
+                          }`}
+                        >
+                          Protected
+                        </button>
+                        <button
+                          onClick={() => handleVisibilityChange(tile.id, 'private')}
+                          className={`px-2 py-1 text-xs rounded ${
+                            currentVisibility === 'private'
+                              ? 'bg-red-200 dark:bg-red-700 text-red-900 dark:text-red-100'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-red-100 dark:hover:bg-red-900/30'
+                          }`}
+                        >
+                          Private
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Right Side - Private and Protected Sections */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Protected (Authenticated) Section */}
+          <div className="flex-1 border-b border-slate-200 dark:border-slate-700 p-4 overflow-y-auto">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-blue-700 dark:text-blue-400">
+                Protected (Authenticated) - {authenticatedTiles.length} tile(s)
+              </h3>
+              <button
+                onClick={handleMakeAllProtected}
+                className="px-2 py-1 text-xs font-medium text-blue-700 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-200 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+              >
+                Make All Protected
+              </button>
+            </div>
+            <div className="space-y-3">
+              {authenticatedTiles.length === 0 ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400 italic">No protected tiles</p>
+              ) : (
+                authenticatedTiles.map(tile => (
+                  <div key={tile.id} className="p-3 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20">
+                    <div className="flex items-start gap-2 mb-2">
+                      <span className="text-lg">{tile.emoji}</span>
+                      <p className="text-sm font-medium text-slate-900 dark:text-white">{tile.title}</p>
+                    </div>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 mb-2">
+                      Visible to all authenticated users
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Private Section */}
+          <div className="flex-1 p-4 overflow-y-auto">
+            <div className="mb-3">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-red-700 dark:text-red-400">
+                  Private - {privateTiles.length} tile(s)
+                </h3>
+                <div className="relative">
+                  <button
+                    onClick={() => setShowBulkUserSelection(!showBulkUserSelection)}
+                    className="px-2 py-1 text-xs font-medium text-red-700 dark:text-red-400 hover:text-red-900 dark:hover:text-red-200 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                  >
+                    Make All Private
+                  </button>
+                  {showBulkUserSelection && (
+                    <div className="absolute right-0 top-full mt-1 z-10 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-3 min-w-[200px] max-h-64 overflow-y-auto">
+                      <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">Select Users:</p>
+                      <div className="space-y-1 mb-3">
+                        {users.map(user => (
+                          <label key={user.id} className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 p-1 rounded">
+                            <input
+                              type="checkbox"
+                              checked={bulkPrivateSelectedUsers.includes(user.id)}
+                              onChange={() => handleBulkUserToggle(user.id)}
+                              className="rounded border-slate-300 dark:border-slate-600 text-red-600 focus:ring-red-500"
+                            />
+                            <span>{user.username}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <div className="flex gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                        <button
+                          onClick={handleMakeAllPrivate}
+                          disabled={bulkPrivateSelectedUsers.length === 0}
+                          className="flex-1 px-2 py-1 text-xs font-medium bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded transition-colors"
+                        >
+                          Apply
+                        </button>
+                        <button
+                          onClick={() => setShowBulkUserSelection(false)}
+                          className="px-2 py-1 text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="space-y-4">
+              {privateTiles.length === 0 ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400 italic">No private tiles</p>
+              ) : (
+                privateTiles.map(tile => {
+                  const allowedUsers = tileVisibility[tile.id]?.allowedUsers || [];
+                  return (
+                    <div key={tile.id} className="p-3 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20">
+                      <div className="flex items-start gap-2 mb-2">
+                        <span className="text-lg">{tile.emoji}</span>
+                        <p className="text-sm font-medium text-slate-900 dark:text-white">{tile.title}</p>
+                      </div>
+                      <p className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">Allowed Users:</p>
+                      <div className="space-y-1 max-h-32 overflow-y-auto">
+                        {users.map(user => (
+                          <label key={user.id} className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer hover:bg-white dark:hover:bg-slate-800 p-1 rounded">
+                            <input
+                              type="checkbox"
+                              checked={allowedUsers.includes(user.id)}
+                              onChange={() => handleUserToggle(tile.id, user.id)}
+                              className="rounded border-slate-300 dark:border-slate-600 text-red-600 focus:ring-red-500"
+                            />
+                            <span>{user.username}</span>
+                          </label>
+                        ))}
+                      </div>
+                      {allowedUsers.length === 0 && (
+                        <p className="text-xs text-red-600 dark:text-red-400 mt-2 italic">
+                          ⚠️ No users selected - tile will not be visible to anyone
+                        </p>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-6 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
+        <button
+          onClick={onClose}
+          className="px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-medium rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={isSaving}
+          className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-brand-500/20 hover:shadow-lg hover:shadow-brand-500/30"
+        >
+          {isSaving ? 'Saving...' : 'Save Changes'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // Category Component (no longer sortable via drag)
 interface CategoryProps {
   categoryName: string;
@@ -58,6 +393,7 @@ interface CategoryProps {
   isArchive?: boolean;
   onScheduleCategory?: (categoryName: string) => void;
   onUnarchiveCategory?: (categoryName: string) => void;
+  onManageVisibility?: (categoryName: string) => void;
   animationClass?: string;
 }
 
@@ -85,6 +421,7 @@ const Category: React.FC<CategoryProps> = ({
   isArchive = false,
   onScheduleCategory,
   onUnarchiveCategory,
+  onManageVisibility,
   animationClass
 }) => {
   const { user } = useAuth();
@@ -383,6 +720,21 @@ const Category: React.FC<CategoryProps> = ({
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                   <path fillRule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75z" clipRule="evenodd" />
+                </svg>
+              </button>
+            )}
+            {onManageVisibility && user?.is_admin && !isRecycleBin && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onManageVisibility(categoryName);
+                }}
+                className="opacity-0 group-hover/category:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-md transition-all ml-1"
+                title="Manage tile visibility (private/authenticated)"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
                 </svg>
               </button>
             )}
@@ -1084,6 +1436,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
     status: string;
     errors: string[];
   } | null>(null);
+  
+  // Export progress state
+  const [exportProgress, setExportProgress] = useState<{
+    current: number;
+    total: number;
+    status: string;
+    errors: string[];
+  } | null>(null);
 
   // New Tile Form State
   const [newTitle, setNewTitle] = useState('');
@@ -1285,6 +1645,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [editingCategorySchedule, setEditingCategorySchedule] = useState<string | null>(null);
   const [categoryVisibleFrom, setCategoryVisibleFrom] = useState<string>('');
   const [categoryExpiresAt, setCategoryExpiresAt] = useState<string>('');
+  const [editingCategoryVisibility, setEditingCategoryVisibility] = useState<string | null>(null);
+  const [visibilityUsers, setVisibilityUsers] = useState<Array<{ id: number; username: string }>>([]);
 
   // Load global category arrangement on mount (works for all users)
   useEffect(() => {
@@ -2828,12 +3190,101 @@ export const TileGrid: React.FC<TileGridProps> = ({
   }, [tiles, isAuthenticated, categoryOrder, categoryMetadata]);
 
   const handleExportCategory = useCallback(
-    (categoryName: string) => {
+    async (categoryName: string) => {
       if (!user?.is_admin) {
         alert('Only administrators can export categories.');
         return;
       }
-      exportCategoryToFile(categoryName, tiles);
+
+      try {
+        // Initialize progress
+        setExportProgress({
+          current: 0,
+          total: 0,
+          status: 'Preparing export...',
+          errors: []
+        });
+
+        // Get category tiles
+        const categoryTiles = tiles.filter(
+          (t) => (t.group || 'General') === categoryName
+        );
+
+        if (categoryTiles.length === 0) {
+          setExportProgress(null);
+          alert(`No spaces found in category "${categoryName}".`);
+          return;
+        }
+
+        // Update progress with total count
+        setExportProgress({
+          current: 0,
+          total: categoryTiles.length,
+          status: `Exporting ${categoryTiles.length} tiles from "${categoryName}"...`,
+          errors: []
+        });
+
+        // Small delay to show progress animation
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Prepare export payload
+        const payload = {
+          version: '1.1' as const,
+          type: 'category' as const,
+          exportedAt: Date.now(),
+          categoryName,
+          tiles: categoryTiles
+        };
+
+        // Update progress - processing
+        setExportProgress({
+          current: categoryTiles.length / 2,
+          total: categoryTiles.length,
+          status: `Processing ${categoryTiles.length} tiles...`,
+          errors: []
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Trigger download
+        const json = JSON.stringify(payload, null, 2);
+        const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `linknest-category-${categoryName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'space'}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+
+        // Final status
+        setExportProgress({
+          current: categoryTiles.length,
+          total: categoryTiles.length,
+          status: `✅ Successfully exported ${categoryTiles.length} tiles from category "${categoryName}"!`,
+          errors: []
+        });
+
+        // Clear progress after delay
+        setTimeout(() => {
+          setExportProgress(null);
+        }, 3000);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        setExportProgress({
+          current: 0,
+          total: 0,
+          status: `❌ Failed to export: ${errorMsg}`,
+          errors: []
+        });
+        console.error('Export error:', error);
+        
+        // Clear progress after delay
+        setTimeout(() => {
+          setExportProgress(null);
+        }, 5000);
+      }
     },
     [tiles, user]
   );
@@ -3284,6 +3735,49 @@ export const TileGrid: React.FC<TileGridProps> = ({
     setCategoryExpiresAt(metadata?.expiresAt ? new Date(metadata.expiresAt).toISOString().slice(0, 16) : '');
     setEditingCategorySchedule(categoryName);
   }, [categoryMetadata]);
+
+  const handleOpenManageVisibility = useCallback(async (categoryName: string) => {
+    try {
+      // Load users list
+      const users = await authService.getUsers();
+      setVisibilityUsers(users.map(u => ({ id: u.id, username: u.username })));
+      setEditingCategoryVisibility(categoryName);
+    } catch (error) {
+      console.error('Failed to load users:', error);
+      alert('Failed to load users. Please try again.');
+    }
+  }, []);
+
+  const handleSaveVisibilityChanges = useCallback(async (visibilityChanges: Record<string, { visibility: TileVisibility; allowedUsers: number[] }>) => {
+    if (!editingCategoryVisibility || !isAuthenticated) return;
+
+    try {
+      // Update each tile's visibility
+      const updatePromises = Object.entries(visibilityChanges).map(async ([tileId, settings]) => {
+        const tile = tiles.find(t => t.id === tileId);
+        if (!tile) return;
+
+        const updatedTile: Tile = {
+          ...tile,
+          visibility: settings.visibility,
+          allowedUsers: settings.visibility === 'private' ? settings.allowedUsers : undefined
+        };
+
+        return saveTile(updatedTile);
+      });
+
+      await Promise.all(updatePromises.filter(p => p !== undefined));
+
+      // Reload tiles
+      const updatedTiles = await getTiles();
+      onUpdateTiles(updatedTiles);
+
+      setEditingCategoryVisibility(null);
+    } catch (error) {
+      console.error('Failed to save visibility changes:', error);
+      alert('Failed to save visibility changes. Please try again.');
+    }
+  }, [editingCategoryVisibility, tiles, isAuthenticated, onUpdateTiles]);
 
   const handleSaveCategorySchedule = useCallback(async () => {
     if (!editingCategorySchedule || !isAuthenticated) return;
@@ -4236,6 +4730,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
               onToggleCategoryFavorite={handleToggleCategoryFavorite}
               isCategoryFavorited={isCategoryFavorited(groupName)}
               onScheduleCategory={handleOpenCategorySchedule}
+              onManageVisibility={handleOpenManageVisibility}
               animationClass={`${getTileAnimationClass(currentAnimation)} ${getTileDecorationClass(currentDecoration)}`.trim()}
             >
               {/* Grid with wider tiles */}
@@ -5693,6 +6188,20 @@ export const TileGrid: React.FC<TileGridProps> = ({
         )
       }
 
+      {/* Category Visibility Management Modal */}
+      {editingCategoryVisibility && createPortal(
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <CategoryVisibilityDialog
+            categoryName={editingCategoryVisibility}
+            tiles={tiles.filter(t => (t.group || 'General') === editingCategoryVisibility)}
+            users={visibilityUsers}
+            onClose={() => setEditingCategoryVisibility(null)}
+            onSave={handleSaveVisibilityChanges}
+          />
+        </div>,
+        document.body
+      )}
+
       {/* Import Progress Modal */}
       {importProgress && createPortal(
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -5751,6 +6260,76 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 <div className="flex gap-3">
                   <button
                     onClick={() => setImportProgress(null)}
+                    className="flex-1 px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+          document.body
+        )}
+
+      {/* Export Progress Modal */}
+      {exportProgress && createPortal(
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                  Exporting Tiles
+                </h3>
+                <button
+                  onClick={() => setExportProgress(null)}
+                  className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={exportProgress.total > 0 && exportProgress.current < exportProgress.total}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Progress Display */}
+              <div className="mb-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
+                <div className="mb-2">
+                  <div className="flex items-center justify-between text-sm text-slate-700 dark:text-slate-300 mb-1">
+                    <span>{exportProgress.status}</span>
+                    {exportProgress.total > 0 && (
+                      <span>{exportProgress.current} / {exportProgress.total}</span>
+                    )}
+                  </div>
+                  {exportProgress.total > 0 && (
+                    <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-2">
+                      <div
+                        className="bg-brand-500 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${(exportProgress.current / exportProgress.total) * 100}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+                
+                {exportProgress.errors.length > 0 && (
+                  <div className="mt-3 max-h-32 overflow-y-auto">
+                    <p className="text-xs font-medium text-red-600 dark:text-red-400 mb-1">
+                      Errors ({exportProgress.errors.length}):
+                    </p>
+                    <ul className="text-xs text-red-600 dark:text-red-400 space-y-1">
+                      {exportProgress.errors.slice(0, 5).map((error, idx) => (
+                        <li key={idx}>• {error}</li>
+                      ))}
+                      {exportProgress.errors.length > 5 && (
+                        <li>... and {exportProgress.errors.length - 5} more</li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              {exportProgress.current >= exportProgress.total && exportProgress.total > 0 && (
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setExportProgress(null)}
                     className="flex-1 px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
                   >
                     Close
