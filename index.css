@@ -223,10 +223,10 @@ div.linknest-tile.has-local-decoration .tooltip-force-black * {
   animation: gradient-shift 3s ease infinite;
 }
 
-/* Rolling message animation (Marquee) - Starts from viewport right edge */
+/* Rolling message animation (Marquee) - Seamless infinite scroll */
 @keyframes marquee-roll-tile {
   0% {
-    transform: translateX(100%);
+    transform: translateX(0);
   }
 
   100% {
@@ -236,7 +236,7 @@ div.linknest-tile.has-local-decoration .tooltip-force-black * {
 
 @keyframes marquee-roll-detail {
   0% {
-    transform: translateX(120%);
+    transform: translateX(0);
   }
 
   100% {
@@ -249,6 +249,7 @@ div.linknest-tile.has-local-decoration .tooltip-force-black * {
   white-space: nowrap;
   animation: marquee-roll-tile 20s linear infinite;
   width: max-content;
+  will-change: transform;
 }
 
 .animate-rolling-detail {
@@ -256,11 +257,92 @@ div.linknest-tile.has-local-decoration .tooltip-force-black * {
   white-space: nowrap;
   animation: marquee-roll-detail 45s linear infinite;
   width: max-content;
+  will-change: transform;
 }
 
 .animate-rolling-tile:hover,
 .animate-rolling-detail:hover {
   animation-play-state: paused;
+}
+
+/* Message Animation Types */
+@keyframes message-flash {
+  0%, 50%, 100% { opacity: 1; }
+  25%, 75% { opacity: 0.3; }
+}
+
+@keyframes message-flip-horizontal {
+  0% { transform: perspective(400px) rotateY(0); }
+  50% { transform: perspective(400px) rotateY(180deg); }
+  100% { transform: perspective(400px) rotateY(360deg); }
+}
+
+@keyframes message-flip-vertical {
+  0% { transform: perspective(400px) rotateX(0); }
+  50% { transform: perspective(400px) rotateX(180deg); }
+  100% { transform: perspective(400px) rotateX(360deg); }
+}
+
+@keyframes message-bounce {
+  0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-10px); }
+  60% { transform: translateY(-5px); }
+}
+
+@keyframes message-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.05); opacity: 0.8; }
+}
+
+@keyframes message-shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+  20%, 40%, 60%, 80% { transform: translateX(5px); }
+}
+
+@keyframes message-fade {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes message-slide {
+  0% { transform: translateX(-20px); opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translateX(20px); opacity: 0; }
+}
+
+/* Message animation classes */
+.message-animate-flash {
+  animation: message-flash 1.5s ease-in-out infinite;
+}
+
+.message-animate-flip-horizontal {
+  animation: message-flip-horizontal 2s ease-in-out infinite;
+}
+
+.message-animate-flip-vertical {
+  animation: message-flip-vertical 2s ease-in-out infinite;
+}
+
+.message-animate-bounce {
+  animation: message-bounce 2s ease-in-out infinite;
+}
+
+.message-animate-pulse {
+  animation: message-pulse 2s ease-in-out infinite;
+}
+
+.message-animate-shake {
+  animation: message-shake 1s ease-in-out infinite;
+}
+
+.message-animate-fade {
+  animation: message-fade 2s ease-in-out infinite;
+}
+
+.message-animate-slide {
+  animation: message-slide 3s ease-in-out infinite;
 }
 
 

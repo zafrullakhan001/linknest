@@ -112,6 +112,8 @@ export interface TileMessage {
   textColor?: string; // Text color (hex code)
   fontStyle?: string; // Font style (normal, italic, bold, bold italic, etc.)
   displayLocation?: 'tile' | 'detail' | 'both'; // Where to display the message
+  animationType?: 'rollover' | 'still' | 'flash' | 'flip-horizontal' | 'flip-vertical' | 'bounce' | 'pulse' | 'shake' | 'fade' | 'slide'; // Animation type
+  delayBefore?: number; // Delay in seconds before showing this message (for sequential display when multiple messages are active)
 }
 
 export const THEME_COLORS = [

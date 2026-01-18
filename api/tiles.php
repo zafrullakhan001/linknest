@@ -412,7 +412,9 @@ function handleGetTiles() {
                 'priority' => isset($msgRow['priority']) ? (int)$msgRow['priority'] : null,
                 'textColor' => $msgRow['text_color'] ?? null,
                 'fontStyle' => $msgRow['font_style'] ?? null,
-                'displayLocation' => $msgRow['display_location'] ?? 'both'
+                'displayLocation' => $msgRow['display_location'] ?? 'both',
+                'animationType' => $msgRow['animation_type'] ?? 'rollover',
+                'delayBefore' => isset($msgRow['delay_before']) ? (float)$msgRow['delay_before'] : 0
             ];
         }
         
@@ -833,7 +835,8 @@ function handleGetTile($tileId) {
             'priority' => isset($msgRow['priority']) ? (int)$msgRow['priority'] : null,
             'textColor' => $msgRow['text_color'] ?? null,
             'fontStyle' => $msgRow['font_style'] ?? null,
-            'displayLocation' => $msgRow['display_location'] ?? 'both'
+            'displayLocation' => $msgRow['display_location'] ?? 'both',
+            'animationType' => $msgRow['animation_type'] ?? 'rollover'
         ];
     }
 
@@ -1321,7 +1324,7 @@ function handleCreateTile() {
     
     // Handle tile messages
     if (isset($data['messages']) && is_array($data['messages'])) {
-        $msgStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $msgStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location, animation_type, delay_before) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         foreach ($data['messages'] as $msg) {
             $msgId = $msg['id'] ?? uniqid('msg_', true);
             $msgStmt->execute([
@@ -1335,7 +1338,9 @@ function handleCreateTile() {
                 isset($msg['priority']) ? (int)$msg['priority'] : 0,
                 $msg['textColor'] ?? null,
                 $msg['fontStyle'] ?? null,
-                $msg['displayLocation'] ?? 'both'
+                $msg['displayLocation'] ?? 'both',
+                $msg['animationType'] ?? 'rollover',
+                isset($msg['delayBefore']) ? (float)$msg['delayBefore'] : 0
             ]);
         }
     }
@@ -1621,7 +1626,7 @@ function handleUpdateTile($tileId) {
         
         // Handle tile messages
         if (isset($data['messages']) && is_array($data['messages'])) {
-            $msgStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $msgStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location, animation_type, delay_before) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             foreach ($data['messages'] as $msg) {
                 $msgId = $msg['id'] ?? uniqid('msg_', true);
                 $msgStmt->execute([
@@ -1635,7 +1640,9 @@ function handleUpdateTile($tileId) {
                     isset($msg['priority']) ? (int)$msg['priority'] : 0,
                     $msg['textColor'] ?? null,
                     $msg['fontStyle'] ?? null,
-                    $msg['displayLocation'] ?? 'both'
+                    $msg['displayLocation'] ?? 'both',
+                    $msg['animationType'] ?? 'rollover',
+                    isset($msg['delayBefore']) ? (float)$msg['delayBefore'] : 0
                 ]);
             }
         }

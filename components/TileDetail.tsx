@@ -383,6 +383,77 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     const activeMessages = getActiveMessages();
+    const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
+    
+    // Helper function to get animation class based on animation type
+    const getMessageAnimationClass = (animationType?: string) => {
+        if (!animationType || animationType === 'rollover' || animationType === 'still') return '';
+        return `message-animate-${animationType}`;
+    };
+
+    // Get animation duration in seconds based on animation type
+    const getAnimationDuration = (animationType?: string): number => {
+        if (animationType === 'still') return 0; // No animation duration for still
+        const durations: Record<string, number> = {
+            'flash': 1.5,
+            'flip-horizontal': 2,
+            'flip-vertical': 2,
+            'bounce': 2,
+            'pulse': 2,
+            'shake': 1,
+            'fade': 2,
+            'slide': 3
+        };
+        return durations[animationType || ''] || 2;
+    };
+
+    // Cycle through messages sequentially for non-rollover animations
+    useEffect(() => {
+        if (activeMessages.length <= 1) {
+            setCurrentMessageIndex(0);
+            return;
+        }
+
+        // Check if any message uses non-rollover animation
+        const hasNonRollover = activeMessages.some(msg => msg.animationType && msg.animationType !== 'rollover');
+        if (!hasNonRollover) {
+            // All messages are rollover - don't cycle
+            setCurrentMessageIndex(0);
+            return;
+        }
+
+        // Get current message
+        const currentMsg = activeMessages[currentMessageIndex];
+        if (!currentMsg || currentMessageIndex >= activeMessages.length) {
+            setCurrentMessageIndex(0);
+            return;
+        }
+
+        const animationType = currentMsg.animationType || 'rollover';
+        
+        // Calculate duration: animation duration + delay before next message
+        const animationDuration = animationType === 'rollover' ? 0 : getAnimationDuration(animationType);
+        const delayBefore = currentMsg.delayBefore || 0;
+        // For 'still' messages with no delay, use a default display duration (3 seconds)
+        const displayDuration = animationType === 'still' && delayBefore === 0 ? 3 : (animationDuration + delayBefore);
+        const totalDuration = displayDuration * 1000; // Convert to milliseconds
+
+        // Only set timer if we have a duration (non-rollover)
+        if (animationType === 'rollover' && totalDuration <= 0) {
+            // Skip rollover messages immediately
+            setCurrentMessageIndex((prevIndex) => {
+                const nextIndex = (prevIndex + 1) % activeMessages.length;
+                return nextIndex;
+            });
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            setCurrentMessageIndex((prevIndex) => (prevIndex + 1) % activeMessages.length);
+        }, totalDuration);
+
+        return () => clearTimeout(timer);
+    }, [currentMessageIndex, activeMessages]);
 
     // Sync state when tile changes, but only when not editing to prevent losing unsaved changes.
     // IMPORTANT: We only depend on `tile` and `isEditing` so that local edits
@@ -2761,38 +2832,75 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 color: activeMessages[0].textColor
                             } : undefined}
                         >
-                            <div className="animate-rolling-detail flex items-center gap-10 text-sm font-semibold">
-                                {/* Single message loop for seamless scrolling */}
-                                {activeMessages.map((msg, idx) => (
-                                    <div 
-                                        key={`${msg.id}-${idx}`} 
-                                        className="flex items-center gap-2 shrink-0"
-                                        style={{
-                                            ...(msg.textColor ? { '--message-text-color': msg.textColor, color: msg.textColor } : {}),
-                                            fontStyle: msg.fontStyle === 'italic' || msg.fontStyle === 'bold italic' ? 'italic' : undefined,
-                                            fontWeight: msg.fontStyle === 'bold' || msg.fontStyle === 'bold italic' ? 'bold' : undefined
-                                        } as React.CSSProperties}
-                                        data-message-color={msg.textColor || ''}
-                                    >
-                                        {renderMessageContent(msg.content)}
-                                    </div>
-                                ))}
-                                {/* Duplicate for seamless loop */}
-                                {activeMessages.map((msg, idx) => (
-                                    <div 
-                                        key={`${msg.id}-dup-${idx}`} 
-                                        className="flex items-center gap-2 shrink-0"
-                                        style={{
-                                            ...(msg.textColor ? { '--message-text-color': msg.textColor, color: msg.textColor } : {}),
-                                            fontStyle: msg.fontStyle === 'italic' || msg.fontStyle === 'bold italic' ? 'italic' : undefined,
-                                            fontWeight: msg.fontStyle === 'bold' || msg.fontStyle === 'bold italic' ? 'bold' : undefined
-                                        } as React.CSSProperties}
-                                        data-message-color={msg.textColor || ''}
-                                    >
-                                        {renderMessageContent(msg.content)}
-                                    </div>
-                                ))}
-                            </div>
+                            {(() => {
+                                // Check if all messages use rollover animation
+                                const allRollover = activeMessages.length > 0 && activeMessages.every(msg => !msg.animationType || msg.animationType === 'rollover');
+                                
+                                if (allRollover) {
+                                    // Rollover animation - use marquee with seamless duplication
+                                    // Note: Delays are not applied in rollover mode to maintain seamless loop
+                                    return (
+                                        <div className="animate-rolling-detail flex items-center gap-10 text-sm font-semibold">
+                                            {/* First set of messages */}
+                                            {activeMessages.map((msg, idx) => (
+                                                <div 
+                                                    key={`${msg.id}-${idx}`} 
+                                                    className="flex items-center gap-2 shrink-0"
+                                                    style={{
+                                                        ...(msg.textColor ? { '--message-text-color': msg.textColor, color: msg.textColor } : {}),
+                                                        fontStyle: msg.fontStyle === 'italic' || msg.fontStyle === 'bold italic' ? 'italic' : undefined,
+                                                        fontWeight: msg.fontStyle === 'bold' || msg.fontStyle === 'bold italic' ? 'bold' : undefined
+                                                    } as React.CSSProperties}
+                                                    data-message-color={msg.textColor || ''}
+                                                >
+                                                    {renderMessageContent(msg.content)}
+                                                </div>
+                                            ))}
+                                            {/* Duplicate set for seamless loop - no delays, exact copy */}
+                                            {activeMessages.map((msg, idx) => (
+                                                <div 
+                                                    key={`${msg.id}-dup-${idx}`} 
+                                                    className="flex items-center gap-2 shrink-0"
+                                                    style={{
+                                                        ...(msg.textColor ? { '--message-text-color': msg.textColor, color: msg.textColor } : {}),
+                                                        fontStyle: msg.fontStyle === 'italic' || msg.fontStyle === 'bold italic' ? 'italic' : undefined,
+                                                        fontWeight: msg.fontStyle === 'bold' || msg.fontStyle === 'bold italic' ? 'bold' : undefined
+                                                    } as React.CSSProperties}
+                                                    data-message-color={msg.textColor || ''}
+                                                >
+                                                    {renderMessageContent(msg.content)}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    );
+                                } else {
+                                    // Other animations - show one message at a time, cycle through them
+                                    const currentMsg = activeMessages[currentMessageIndex] || activeMessages[0];
+                                    
+                                    if (!currentMsg) {
+                                        return null;
+                                    }
+
+                                    const currentAnimationType = currentMsg.animationType || 'rollover';
+                                    const animationClass = getMessageAnimationClass(currentAnimationType);
+
+                                    return (
+                                        <div className={`flex items-center gap-2 text-sm font-semibold ${animationClass}`}>
+                                            <div 
+                                                key={`${currentMsg.id}-current`}
+                                                style={{
+                                                    ...(currentMsg.textColor ? { '--message-text-color': currentMsg.textColor, color: currentMsg.textColor } : {}),
+                                                    fontStyle: currentMsg.fontStyle === 'italic' || currentMsg.fontStyle === 'bold italic' ? 'italic' : undefined,
+                                                    fontWeight: currentMsg.fontStyle === 'bold' || currentMsg.fontStyle === 'bold italic' ? 'bold' : undefined
+                                                } as React.CSSProperties}
+                                                data-message-color={currentMsg.textColor || ''}
+                                            >
+                                                {renderMessageContent(currentMsg.content)}
+                                            </div>
+                                        </div>
+                                    );
+                                }
+                            })()}
                         </div>
                     </div>
                 )}

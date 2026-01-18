@@ -841,6 +841,8 @@ function initDatabase() {
                     text_color TEXT,
                     font_style TEXT,
                     display_location TEXT DEFAULT "both",
+                    animation_type TEXT DEFAULT "rollover",
+                    delay_before REAL DEFAULT 0,
                     FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
                 )');
             } else {
@@ -857,6 +859,12 @@ function initDatabase() {
                 }
                 if (!in_array('display_location', $columnNames)) {
                     $db->exec('ALTER TABLE tile_messages ADD COLUMN display_location TEXT DEFAULT "both"');
+                }
+                if (!in_array('animation_type', $columnNames)) {
+                    $db->exec('ALTER TABLE tile_messages ADD COLUMN animation_type TEXT DEFAULT "rollover"');
+                }
+                if (!in_array('delay_before', $columnNames)) {
+                    $db->exec('ALTER TABLE tile_messages ADD COLUMN delay_before REAL DEFAULT 0');
                 }
             }
         } catch (PDOException $e) {

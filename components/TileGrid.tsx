@@ -816,6 +816,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
 }) => {
   const { user } = useAuth();
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
+  const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
 
   // Helper function to strip formatting characters for plain text display (tooltips, etc.)
   const stripFormatting = (content: string): string => {
@@ -890,6 +891,76 @@ const SortableTile: React.FC<SortableTileProps> = ({
   })();
 
   const activeMessages = (tile.messages?.filter(m => m.isActive && (!m.startDate || new Date(m.startDate) <= new Date()) && (!m.endDate || new Date(m.endDate) >= new Date()) && (m.displayLocation === 'tile' || m.displayLocation === 'both' || !m.displayLocation)) || []).sort((a, b) => (a.priority || 0) - (b.priority || 0));
+  
+  // Helper function to get animation class based on animation type
+  const getMessageAnimationClass = (animationType?: string) => {
+    if (!animationType || animationType === 'rollover' || animationType === 'still') return '';
+    return `message-animate-${animationType}`;
+  };
+
+  // Get animation duration in seconds based on animation type
+  const getAnimationDuration = (animationType?: string): number => {
+    if (animationType === 'still') return 0; // No animation duration for still
+    const durations: Record<string, number> = {
+      'flash': 1.5,
+      'flip-horizontal': 2,
+      'flip-vertical': 2,
+      'bounce': 2,
+      'pulse': 2,
+      'shake': 1,
+      'fade': 2,
+      'slide': 3
+    };
+    return durations[animationType || ''] || 2;
+  };
+
+  // Cycle through messages sequentially for non-rollover animations
+  useEffect(() => {
+    if (activeMessages.length <= 1) {
+      setCurrentMessageIndex(0);
+      return;
+    }
+
+    // Check if any message uses non-rollover animation (including 'still')
+    const hasNonRollover = activeMessages.some(msg => msg.animationType && msg.animationType !== 'rollover');
+    if (!hasNonRollover) {
+      // All messages are rollover - don't cycle
+      setCurrentMessageIndex(0);
+      return;
+    }
+
+    // Get current message
+    const currentMsg = activeMessages[currentMessageIndex];
+    if (!currentMsg || currentMessageIndex >= activeMessages.length) {
+      setCurrentMessageIndex(0);
+      return;
+    }
+
+    const animationType = currentMsg.animationType || 'rollover';
+    
+    // Calculate duration: animation duration + delay before next message
+    const animationDuration = animationType === 'rollover' ? 0 : getAnimationDuration(animationType);
+    const delayBefore = currentMsg.delayBefore || 0;
+    // For 'still' messages with no delay, use a default display duration (3 seconds)
+    const displayDuration = animationType === 'still' && delayBefore === 0 ? 3 : (animationDuration + delayBefore);
+    const totalDuration = displayDuration * 1000; // Convert to milliseconds
+
+    // Only set timer if we have a duration (non-rollover)
+    if (animationType === 'rollover' && totalDuration <= 0) {
+      // Skip rollover messages immediately
+      setCurrentMessageIndex((prevIndex) => {
+        const nextIndex = (prevIndex + 1) % activeMessages.length;
+        return nextIndex;
+      });
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setCurrentMessageIndex((prevIndex) => (prevIndex + 1) % activeMessages.length);
+    }, totalDuration);
+
+    return () => clearTimeout(timer);
+  }, [currentMessageIndex, activeMessages]);
   const activeMessagesCount = activeMessages.length;
 
   const currentCategory = tile.group || 'General';
@@ -1309,40 +1380,77 @@ const SortableTile: React.FC<SortableTileProps> = ({
               <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-yellow-400"></div>
             </div>
 
-            <div className="overflow-hidden">
-              <div className="animate-rolling-tile flex items-center gap-10 text-[10px] sm:text-xs font-semibold">
-                {/* Single message loop for seamless scrolling */}
-                {activeMessages.map((msg, idx) => (
-                  <div 
-                    key={`${msg.id}-${idx}`} 
-                    className="flex items-center gap-2 shrink-0"
-                    style={{
-                      ...(msg.textColor ? { '--message-text-color': msg.textColor, color: msg.textColor } : {}),
-                      fontStyle: msg.fontStyle === 'italic' || msg.fontStyle === 'bold italic' ? 'italic' : undefined,
-                      fontWeight: msg.fontStyle === 'bold' || msg.fontStyle === 'bold italic' ? 'bold' : undefined
-                    } as React.CSSProperties}
-                    data-message-color={msg.textColor || ''}
-                  >
-                    {renderMessageContent(msg.content)}
+            {(() => {
+              // Check if all messages use rollover animation
+              const allRollover = activeMessages.length > 0 && activeMessages.every(msg => !msg.animationType || msg.animationType === 'rollover');
+              
+              if (allRollover) {
+                // Rollover animation - use marquee with seamless duplication
+                // Note: Delays are not applied in rollover mode to maintain seamless loop
+                return (
+                  <div className="overflow-hidden">
+                    <div className="animate-rolling-tile flex items-center gap-10 text-[10px] sm:text-xs font-semibold">
+                      {/* First set of messages */}
+                      {activeMessages.map((msg, idx) => (
+                        <div 
+                          key={`${msg.id}-${idx}`} 
+                          className="flex items-center gap-2 shrink-0"
+                          style={{
+                            ...(msg.textColor ? { '--message-text-color': msg.textColor, color: msg.textColor } : {}),
+                            fontStyle: msg.fontStyle === 'italic' || msg.fontStyle === 'bold italic' ? 'italic' : undefined,
+                            fontWeight: msg.fontStyle === 'bold' || msg.fontStyle === 'bold italic' ? 'bold' : undefined
+                          } as React.CSSProperties}
+                          data-message-color={msg.textColor || ''}
+                        >
+                          {renderMessageContent(msg.content)}
+                        </div>
+                      ))}
+                      {/* Duplicate set for seamless loop - no delays, exact copy */}
+                      {activeMessages.map((msg, idx) => (
+                        <div 
+                          key={`${msg.id}-dup-${idx}`} 
+                          className="flex items-center gap-2 shrink-0"
+                          style={{
+                            ...(msg.textColor ? { '--message-text-color': msg.textColor, color: msg.textColor } : {}),
+                            fontStyle: msg.fontStyle === 'italic' || msg.fontStyle === 'bold italic' ? 'italic' : undefined,
+                            fontWeight: msg.fontStyle === 'bold' || msg.fontStyle === 'bold italic' ? 'bold' : undefined
+                          } as React.CSSProperties}
+                          data-message-color={msg.textColor || ''}
+                        >
+                          {renderMessageContent(msg.content)}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ))}
-                {/* Duplicate for seamless loop */}
-                {activeMessages.map((msg, idx) => (
-                  <div 
-                    key={`${msg.id}-dup-${idx}`} 
-                    className="flex items-center gap-2 shrink-0"
-                    style={{
-                      ...(msg.textColor ? { '--message-text-color': msg.textColor, color: msg.textColor } : {}),
-                      fontStyle: msg.fontStyle === 'italic' || msg.fontStyle === 'bold italic' ? 'italic' : undefined,
-                      fontWeight: msg.fontStyle === 'bold' || msg.fontStyle === 'bold italic' ? 'bold' : undefined
-                    } as React.CSSProperties}
-                    data-message-color={msg.textColor || ''}
-                  >
-                    {renderMessageContent(msg.content)}
+                );
+              } else {
+                // Other animations - show one message at a time, cycle through them
+                const currentMsg = activeMessages[currentMessageIndex] || activeMessages[0];
+                
+                if (!currentMsg) {
+                  return null;
+                }
+
+                const currentAnimationType = currentMsg.animationType || 'rollover';
+                const animationClass = getMessageAnimationClass(currentAnimationType);
+
+                return (
+                  <div className={`flex items-center gap-2 text-[10px] sm:text-xs font-semibold ${animationClass}`}>
+                    <div 
+                      key={`${currentMsg.id}-current`}
+                      style={{
+                        ...(currentMsg.textColor ? { '--message-text-color': currentMsg.textColor, color: currentMsg.textColor } : {}),
+                        fontStyle: currentMsg.fontStyle === 'italic' || currentMsg.fontStyle === 'bold italic' ? 'italic' : undefined,
+                        fontWeight: currentMsg.fontStyle === 'bold' || currentMsg.fontStyle === 'bold italic' ? 'bold' : undefined
+                      } as React.CSSProperties}
+                      data-message-color={currentMsg.textColor || ''}
+                    >
+                      {renderMessageContent(currentMsg.content)}
+                    </div>
                   </div>
-                ))}
-              </div>
-            </div>
+                );
+              }
+            })()}
           </div>
         )}
 
@@ -1690,6 +1798,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [messageTextColor, setMessageTextColor] = useState<string>('');
   const [messageFontStyle, setMessageFontStyle] = useState<string>('normal');
   const [messageDisplayLocation, setMessageDisplayLocation] = useState<'tile' | 'detail' | 'both'>('both');
+  const [messageAnimationType, setMessageAnimationType] = useState<'rollover' | 'still' | 'flash' | 'flip-horizontal' | 'flip-vertical' | 'bounce' | 'pulse' | 'shake' | 'fade' | 'slide'>('rollover');
+  const [messageDelayBefore, setMessageDelayBefore] = useState<number>(0);
 
   // Helper function to get message status
   const getMessageStatus = (msg: TileMessage): 'active' | 'upcoming' | 'expired' => {
@@ -6262,6 +6372,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                           setMessageTextColor('');
                           setMessageFontStyle('normal');
                           setMessageDisplayLocation('both');
+                          setMessageAnimationType('rollover');
+                          setMessageDelayBefore(0);
                         }}
                         className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors shadow-sm hover:shadow"
                       >
@@ -6557,6 +6669,45 @@ export const TileGrid: React.FC<TileGridProps> = ({
                           </div>
 
                           <div>
+                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Animation Type</label>
+                            <select
+                              value={messageAnimationType}
+                              onChange={(e) => setMessageAnimationType(e.target.value as any)}
+                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                            >
+                              <option value="rollover">Rollover (Marquee)</option>
+                              <option value="still">Still (No Animation)</option>
+                              <option value="flash">Flash</option>
+                              <option value="flip-horizontal">Flip Horizontal</option>
+                              <option value="flip-vertical">Flip Vertical</option>
+                              <option value="bounce">Bounce</option>
+                              <option value="pulse">Pulse</option>
+                              <option value="shake">Shake</option>
+                              <option value="fade">Fade</option>
+                              <option value="slide">Slide</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                              Delay Before Display <span className="text-xs text-slate-500 dark:text-slate-400">(seconds, for sequential messages)</span>
+                            </label>
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="number"
+                                value={messageDelayBefore}
+                                onChange={(e) => setMessageDelayBefore(parseFloat(e.target.value) || 0)}
+                                min="0"
+                                step="0.5"
+                                className="w-24 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                              />
+                              <span className="text-xs text-slate-500 dark:text-slate-400">
+                                Delay before this message appears (useful when multiple messages are active)
+                              </span>
+                            </div>
+                          </div>
+
+                          <div>
                             <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
                               Display Priority <span className="text-xs text-slate-500 dark:text-slate-400">(Lower number = higher priority)</span>
                             </label>
@@ -6593,7 +6744,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                   priority: messagePriority,
                                   textColor: messageTextColor || undefined,
                                   fontStyle: messageFontStyle || undefined,
-                                  displayLocation: messageDisplayLocation
+                                  displayLocation: messageDisplayLocation,
+                                  animationType: messageAnimationType,
+                                  delayBefore: messageDelayBefore || 0
                                 };
 
                                 if (editingMessageId === 'new') {
@@ -6725,6 +6878,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                       setMessageTextColor(msg.textColor || '');
                                       setMessageFontStyle(msg.fontStyle || 'normal');
                                       setMessageDisplayLocation(msg.displayLocation || 'both');
+                                      setMessageAnimationType(msg.animationType || 'rollover');
+                                      setMessageDelayBefore(msg.delayBefore || 0);
                                     }}
                                     className="p-2 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-colors"
                                     title="Edit message"
