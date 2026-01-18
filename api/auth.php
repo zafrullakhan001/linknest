@@ -37,6 +37,12 @@ switch ($method) {
             handleAddLdapUser();
         } elseif ($path === '/bulk-approve') {
             handleBulkApproveUsers();
+        } elseif ($path === '/bulk-disable') {
+            handleBulkDisableUsers();
+        } elseif ($path === '/bulk-promote') {
+            handleBulkPromoteUsers();
+        } elseif ($path === '/bulk-toggle-approval') {
+            handleBulkToggleApproval();
         } elseif ($path === '/bulk-import-local') {
             handleBulkImportLocalUsers();
         } elseif ($path === '/bulk-import-ldap') {
@@ -79,6 +85,8 @@ switch ($method) {
             handleToggleAuthSource((int)$matches[1]);
         } elseif (preg_match('#^/toggle-admin/(\d+)$#', $path, $matches)) {
             handleToggleAdmin((int)$matches[1]);
+        } elseif (preg_match('#^/toggle-disable/(\d+)$#', $path, $matches)) {
+            handleToggleDisable((int)$matches[1]);
         } elseif ($path === '/change-admin-password') {
             handleChangeAdminPassword();
         } else {
@@ -627,7 +635,7 @@ function handleLogin() {
     // Handle LDAP Success
     if ($ldapSuccess && $ldapUser) {
         // Check if user exists in DB (case-insensitive)
-        $stmt = $db->prepare('SELECT id, username, email, password_hash, is_admin, is_approved, auth_source FROM users WHERE LOWER(username) = LOWER(?)');
+        $stmt = $db->prepare('SELECT id, username, email, password_hash, is_admin, is_approved, COALESCE(is_disabled, 0) as is_disabled, auth_source FROM users WHERE LOWER(username) = LOWER(?)');
         $stmt->execute([$username]);
         $user = $stmt->fetch();
         
@@ -681,6 +689,14 @@ function handleLogin() {
             } else {
                 sendJSON(['error' => 'Failed to create local user record for LDAP user'], 500);
             }
+        }
+        
+        // Normalize is_disabled for LDAP users
+        $user['is_disabled'] = isset($user['is_disabled']) && $user['is_disabled'] ? 1 : 0;
+        
+        // Check if user is disabled
+        if ($user['is_disabled'] && !$user['is_admin']) {
+            sendJSON(['error' => 'Your account has been disabled. Please contact an administrator.'], 403);
         }
         
         // Check approval
@@ -750,7 +766,7 @@ function handleLogin() {
         sendJSON(['error' => $errorMessage], 401);
     }
     
-    $stmt = $db->prepare('SELECT id, username, email, password_hash, is_admin, is_approved, auth_source FROM users WHERE LOWER(username) = LOWER(?) OR email = ?');
+    $stmt = $db->prepare('SELECT id, username, email, password_hash, is_admin, is_approved, is_disabled, auth_source FROM users WHERE LOWER(username) = LOWER(?) OR email = ?');
     $stmt->execute([$username, $username]);
     $user = $stmt->fetch();
     
@@ -764,6 +780,11 @@ function handleLogin() {
         $stmt = $db->prepare('UPDATE users SET auth_source = ? WHERE id = ?');
         $stmt->execute(['local', $user['id']]);
         $user['auth_source'] = 'local';
+    }
+    
+    // Check if user is disabled
+    if ($user['is_disabled'] && !$user['is_admin']) {
+        sendJSON(['error' => 'Your account has been disabled. Please contact an administrator.'], 403);
     }
     
     // Check if user is approved
@@ -1013,7 +1034,7 @@ function handleGetAllUsers() {
     requireAdmin(); // Only admins can see all users
     
     $db = getDB();
-    $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, auth_source, created_at FROM users ORDER BY created_at DESC');
+    $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, is_disabled, auth_source, created_at FROM users ORDER BY created_at DESC');
     $stmt->execute();
     $users = $stmt->fetchAll();
     
@@ -1022,6 +1043,7 @@ function handleGetAllUsers() {
         $user['created_at'] = (int)$user['created_at'];
         $user['is_admin'] = (bool)$user['is_admin'];
         $user['is_approved'] = (bool)$user['is_approved'];
+        $user['is_disabled'] = isset($user['is_disabled']) ? (bool)$user['is_disabled'] : false;
         // Default to 'local' if auth_source is not set (for existing users)
         $user['auth_source'] = $user['auth_source'] ?? 'local';
     }
@@ -1275,6 +1297,206 @@ function handleChangeAdminPassword() {
         sendJSON(['success' => true, 'message' => 'Admin password changed successfully']);
     } else {
         sendJSON(['error' => 'Failed to change password'], 500);
+    }
+}
+
+function handleToggleDisable($userId) {
+    requireAdmin(); // Only admins can disable/enable users
+    
+    $db = getDB();
+    
+    // Check if user exists
+    $stmt = $db->prepare('SELECT id, is_disabled, is_admin FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $user = $stmt->fetch();
+    
+    if (!$user) {
+        sendJSON(['error' => 'User not found'], 404);
+    }
+    
+    // Prevent disabling admin accounts
+    if ($user['is_admin']) {
+        sendJSON(['error' => 'Cannot disable admin accounts'], 403);
+    }
+    
+    // Toggle disabled status
+    $newDisabledStatus = $user['is_disabled'] ? 0 : 1;
+    
+    $stmt = $db->prepare('UPDATE users SET is_disabled = ? WHERE id = ? AND is_admin = 0');
+    $stmt->execute([$newDisabledStatus, $userId]);
+    
+    if ($stmt->rowCount() > 0) {
+        $action = $newDisabledStatus ? 'disabled' : 'enabled';
+        sendJSON(['success' => true, 'message' => "User {$action} successfully", 'is_disabled' => (bool)$newDisabledStatus]);
+    } else {
+        sendJSON(['error' => 'Failed to update disabled status'], 500);
+    }
+}
+
+function handleBulkDisableUsers() {
+    requireAdmin(); // Only admins can disable users
+    
+    $input = json_decode(file_get_contents('php://input'), true);
+    
+    if (!isset($input['user_ids']) || !is_array($input['user_ids']) || empty($input['user_ids'])) {
+        sendJSON(['error' => 'Invalid request: user_ids array is required'], 400);
+    }
+    
+    $userIds = $input['user_ids'];
+    
+    // Validate all IDs are integers
+    $validIds = [];
+    foreach ($userIds as $id) {
+        $id = (int)$id;
+        if ($id > 0) {
+            $validIds[] = $id;
+        }
+    }
+    
+    if (empty($validIds)) {
+        sendJSON(['error' => 'No valid user IDs provided'], 400);
+    }
+    
+    $db = getDB();
+    
+    // Create placeholders for IN clause
+    $placeholders = str_repeat('?,', count($validIds) - 1) . '?';
+    
+    // Update all users in a single query (exclude admins)
+    $stmt = $db->prepare("UPDATE users SET is_disabled = 1 WHERE id IN ($placeholders) AND is_admin = 0");
+    $stmt->execute($validIds);
+    
+    $disabledCount = $stmt->rowCount();
+    
+    if ($disabledCount > 0) {
+        sendJSON([
+            'success' => true, 
+            'message' => "Successfully disabled $disabledCount user(s)",
+            'disabled_count' => $disabledCount
+        ]);
+    } else {
+        sendJSON(['error' => 'No users were disabled. They may be admin accounts or do not exist.'], 404);
+    }
+}
+
+function handleBulkPromoteUsers() {
+    requireAdmin(); // Only admins can promote users
+    
+    $input = json_decode(file_get_contents('php://input'), true);
+    
+    if (!isset($input['user_ids']) || !is_array($input['user_ids']) || empty($input['user_ids'])) {
+        sendJSON(['error' => 'Invalid request: user_ids array is required'], 400);
+    }
+    
+    $userIds = $input['user_ids'];
+    
+    // Validate all IDs are integers
+    $validIds = [];
+    foreach ($userIds as $id) {
+        $id = (int)$id;
+        if ($id > 0) {
+            $validIds[] = $id;
+        }
+    }
+    
+    if (empty($validIds)) {
+        sendJSON(['error' => 'No valid user IDs provided'], 400);
+    }
+    
+    $db = getDB();
+    
+    // Create placeholders for IN clause
+    $placeholders = str_repeat('?,', count($validIds) - 1) . '?';
+    
+    // Promote users to admin and approve them
+    $stmt = $db->prepare("UPDATE users SET is_admin = 1, is_approved = 1 WHERE id IN ($placeholders)");
+    $stmt->execute($validIds);
+    
+    $promotedCount = $stmt->rowCount();
+    
+    if ($promotedCount > 0) {
+        sendJSON([
+            'success' => true, 
+            'message' => "Successfully promoted $promotedCount user(s) to admin",
+            'promoted_count' => $promotedCount
+        ]);
+    } else {
+        sendJSON(['error' => 'No users were promoted'], 404);
+    }
+}
+
+function handleBulkToggleApproval() {
+    requireAdmin(); // Only admins can toggle approval
+    
+    $input = json_decode(file_get_contents('php://input'), true);
+    
+    if (!isset($input['user_ids']) || !is_array($input['user_ids']) || empty($input['user_ids'])) {
+        sendJSON(['error' => 'Invalid request: user_ids array is required'], 400);
+    }
+    
+    $userIds = $input['user_ids'];
+    
+    // Validate all IDs are integers
+    $validIds = [];
+    foreach ($userIds as $id) {
+        $id = (int)$id;
+        if ($id > 0) {
+            $validIds[] = $id;
+        }
+    }
+    
+    if (empty($validIds)) {
+        sendJSON(['error' => 'No valid user IDs provided'], 400);
+    }
+    
+    $db = getDB();
+    
+    // Create placeholders for IN clause
+    $placeholders = str_repeat('?,', count($validIds) - 1) . '?';
+    
+    // Toggle approval status for non-admin users
+    // First get current approval status to toggle
+    $stmt = $db->prepare("SELECT id, is_approved FROM users WHERE id IN ($placeholders) AND is_admin = 0");
+    $stmt->execute($validIds);
+    $users = $stmt->fetchAll();
+    
+    if (empty($users)) {
+        sendJSON(['error' => 'No valid non-admin users found'], 404);
+    }
+    
+    // Toggle approval for each user
+    $approvedCount = 0;
+    $unapprovedCount = 0;
+    foreach ($users as $user) {
+        $newStatus = $user['is_approved'] ? 0 : 1;
+        $updateStmt = $db->prepare('UPDATE users SET is_approved = ? WHERE id = ?');
+        $updateStmt->execute([$newStatus, $user['id']]);
+        
+        if ($newStatus) {
+            $approvedCount++;
+        } else {
+            $unapprovedCount++;
+        }
+    }
+    
+    if ($approvedCount > 0 || $unapprovedCount > 0) {
+        $message = '';
+        if ($approvedCount > 0 && $unapprovedCount > 0) {
+            $message = "Toggled approval: $approvedCount approved, $unapprovedCount unapproved";
+        } elseif ($approvedCount > 0) {
+            $message = "Successfully approved $approvedCount user(s)";
+        } else {
+            $message = "Successfully unapproved $unapprovedCount user(s)";
+        }
+        
+        sendJSON([
+            'success' => true, 
+            'message' => $message,
+            'approved_count' => $approvedCount,
+            'unapproved_count' => $unapprovedCount
+        ]);
+    } else {
+        sendJSON(['error' => 'Failed to toggle approval'], 500);
     }
 }
 

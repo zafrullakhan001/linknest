@@ -22,6 +22,7 @@ export interface AllUser {
   email: string;
   is_admin: boolean;
   is_approved: boolean;
+  is_disabled?: boolean;
   auth_source?: string;
   created_at: number;
 }
@@ -304,6 +305,72 @@ export const authService = {
     }
     
     return { is_admin: data.is_admin };
+  },
+
+  async toggleDisable(userId: number): Promise<{ is_disabled: boolean }> {
+    const response = await fetch(`${API_BASE}/auth/toggle-disable/${userId}`, {
+      method: 'PUT',
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to toggle disabled status');
+    }
+    
+    return { is_disabled: data.is_disabled };
+  },
+
+  async bulkDisableUsers(userIds: number[]): Promise<{ disabled_count: number }> {
+    const response = await fetch(`${API_BASE}/auth/bulk-disable`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ user_ids: userIds })
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to disable users');
+    }
+    
+    return { disabled_count: data.disabled_count || 0 };
+  },
+
+  async bulkPromoteUsers(userIds: number[]): Promise<{ promoted_count: number }> {
+    const response = await fetch(`${API_BASE}/auth/bulk-promote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ user_ids: userIds })
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to promote users');
+    }
+    
+    return { promoted_count: data.promoted_count || 0 };
+  },
+
+  async bulkToggleApproval(userIds: number[]): Promise<{ approved_count: number; unapproved_count: number }> {
+    const response = await fetch(`${API_BASE}/auth/bulk-toggle-approval`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ user_ids: userIds })
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to toggle approval');
+    }
+    
+    return { approved_count: data.approved_count || 0, unapproved_count: data.unapproved_count || 0 };
   },
 
   async bulkImportLocalUsers(csvFile: File): Promise<{ results: any; summary: any; message: string }> {

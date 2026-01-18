@@ -236,6 +236,11 @@ function initDatabase() {
         } catch (PDOException $e) {
             // Column already exists, ignore
         }
+        try {
+            $db->exec('ALTER TABLE users ADD COLUMN is_disabled INTEGER DEFAULT 0');
+        } catch (PDOException $e) {
+            // Column already exists, ignore
+        }
         
         // Note: New users require admin approval. Existing users in old databases
         // will need to be manually approved by admin through the admin panel.

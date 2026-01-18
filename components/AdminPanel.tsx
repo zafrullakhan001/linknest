@@ -1417,6 +1417,93 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   };
 
+  const handleBulkDisable = async () => {
+    if (selectedUserIds.size === 0) {
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to disable ${selectedUserIds.size} user(s)? Disabled users will not be able to log in.`)) {
+      return;
+    }
+
+    try {
+      setBulkProcessing(true);
+      setError('');
+      const userIdsArray = Array.from(selectedUserIds) as number[];
+      await authService.bulkDisableUsers(userIdsArray);
+      await loadData();
+      setSelectedUserIds(new Set()); // Clear selection after disable
+    } catch (err: any) {
+      setError(err.message || 'Failed to disable users');
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
+  const handleBulkPromote = async () => {
+    if (selectedUserIds.size === 0) {
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to promote ${selectedUserIds.size} user(s) to admin?`)) {
+      return;
+    }
+
+    try {
+      setBulkProcessing(true);
+      setError('');
+      const userIdsArray = Array.from(selectedUserIds) as number[];
+      await authService.bulkPromoteUsers(userIdsArray);
+      await loadData();
+      setSelectedUserIds(new Set()); // Clear selection after promote
+    } catch (err: any) {
+      setError(err.message || 'Failed to promote users');
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
+  const handleBulkToggleApproval = async () => {
+    if (selectedUserIds.size === 0) {
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to toggle approval status for ${selectedUserIds.size} user(s)?`)) {
+      return;
+    }
+
+    try {
+      setBulkProcessing(true);
+      setError('');
+      const userIdsArray = Array.from(selectedUserIds) as number[];
+      await authService.bulkToggleApproval(userIdsArray);
+      await loadData();
+      setSelectedUserIds(new Set()); // Clear selection after toggle
+    } catch (err: any) {
+      setError(err.message || 'Failed to toggle approval');
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
+  const handleToggleDisable = async (userId: number) => {
+    try {
+      setProcessing(userId);
+      setError('');
+      const result = await authService.toggleDisable(userId);
+      // Update the user in the local state
+      setAllUsers(prevUsers =>
+        prevUsers.map(u =>
+          u.id === userId ? { ...u, is_disabled: result.is_disabled } : u
+        )
+      );
+    } catch (err: any) {
+      setError(err.message || 'Failed to toggle disabled status');
+    } finally {
+      setProcessing(null);
+    }
+  };
+
   const handleToggleUserSelection = (userId: number) => {
     const newSelection = new Set(selectedUserIds);
     if (newSelection.has(userId)) {
@@ -2130,73 +2217,141 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       {selectedUserIds.size > 0 && (
-                        <button
-                          onClick={async () => {
-                            const selectedCount = selectedUserIds.size;
-                            const userNames = allUsers
-                              .filter(u => selectedUserIds.has(u.id))
-                              .map(u => u.username)
-                              .join(', ');
-                            
-                            if (!confirm(`Are you sure you want to delete ${selectedCount} user(s)?\n\nUsers: ${userNames}\n\nThis will permanently delete their accounts and all their data. This action cannot be undone.`)) {
-                              return;
-                            }
+                        <>
+                          <button
+                            onClick={handleBulkDisable}
+                            disabled={bulkProcessing}
+                            className="px-4 py-2 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                          >
+                            {bulkProcessing ? (
+                              <>
+                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Processing...
+                              </>
+                            ) : (
+                              <>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                                </svg>
+                                Disable Selected ({selectedUserIds.size})
+                              </>
+                            )}
+                          </button>
+                          <button
+                            onClick={handleBulkPromote}
+                            disabled={bulkProcessing}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                          >
+                            {bulkProcessing ? (
+                              <>
+                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Processing...
+                              </>
+                            ) : (
+                              <>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                                </svg>
+                                Promote Selected ({selectedUserIds.size})
+                              </>
+                            )}
+                          </button>
+                          <button
+                            onClick={handleBulkToggleApproval}
+                            disabled={bulkProcessing}
+                            className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                          >
+                            {bulkProcessing ? (
+                              <>
+                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Processing...
+                              </>
+                            ) : (
+                              <>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                  <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                                </svg>
+                                Toggle Approval ({selectedUserIds.size})
+                              </>
+                            )}
+                          </button>
+                          <button
+                            onClick={async () => {
+                              const selectedCount = selectedUserIds.size;
+                              const userNames = allUsers
+                                .filter(u => selectedUserIds.has(u.id))
+                                .map(u => u.username)
+                                .join(', ');
+                              
+                              if (!confirm(`Are you sure you want to delete ${selectedCount} user(s)?\n\nUsers: ${userNames}\n\nThis will permanently delete their accounts and all their data. This action cannot be undone.`)) {
+                                return;
+                              }
 
-                            try {
-                              setBulkProcessing(true);
-                              setError('');
-                              const userIdsArray = Array.from(selectedUserIds);
-                              
-                              // Delete users one by one (since there's no bulk delete endpoint)
-                              let successCount = 0;
-                              let failCount = 0;
-                              for (const userId of userIdsArray) {
-                                try {
-                                  await authService.deleteUser(userId);
-                                  successCount++;
-                                } catch (err) {
-                                  failCount++;
-                                  console.error(`Failed to delete user ${userId}:`, err);
+                              try {
+                                setBulkProcessing(true);
+                                setError('');
+                                const userIdsArray = Array.from(selectedUserIds);
+                                
+                                // Delete users one by one (since there's no bulk delete endpoint)
+                                let successCount = 0;
+                                let failCount = 0;
+                                for (const userId of userIdsArray) {
+                                  try {
+                                    await authService.deleteUser(userId);
+                                    successCount++;
+                                  } catch (err) {
+                                    failCount++;
+                                    console.error(`Failed to delete user ${userId}:`, err);
+                                  }
                                 }
+                                
+                                if (failCount > 0) {
+                                  setError(`${successCount} user(s) deleted successfully, but ${failCount} user(s) failed to delete.`);
+                                }
+                                
+                                await loadData();
+                                setSelectedUserIds(new Set());
+                                if (onUserApproved) {
+                                  onUserApproved();
+                                }
+                              } catch (err: any) {
+                                setError(err.message || 'Failed to delete users');
+                              } finally {
+                                setBulkProcessing(false);
                               }
-                              
-                              if (failCount > 0) {
-                                setError(`${successCount} user(s) deleted successfully, but ${failCount} user(s) failed to delete.`);
-                              }
-                              
-                              await loadData();
-                              setSelectedUserIds(new Set());
-                              if (onUserApproved) {
-                                onUserApproved();
-                              }
-                            } catch (err: any) {
-                              setError(err.message || 'Failed to delete users');
-                            } finally {
-                              setBulkProcessing(false);
-                            }
-                          }}
-                          disabled={bulkProcessing}
-                          className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                        >
-                          {bulkProcessing ? (
-                            <>
-                              <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                              Deleting...
-                            </>
-                          ) : (
-                            <>
-                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-                              </svg>
-                              Delete Selected ({selectedUserIds.size})
-                            </>
-                          )}
-                        </button>
+                            }}
+                            disabled={bulkProcessing}
+                            className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                          >
+                            {bulkProcessing ? (
+                              <>
+                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Deleting...
+                              </>
+                            ) : (
+                              <>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                  <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                                </svg>
+                                Delete Selected ({selectedUserIds.size})
+                              </>
+                            )}
+                          </button>
+                        </>
                       )}
                       <button
                         onClick={openAddUserModal}
@@ -2370,15 +2525,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 </div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
-                                {user.is_approved ? (
-                                  <span className="px-2 py-1 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-semibold">
-                                    Approved
-                                  </span>
-                                ) : (
-                                  <span className="px-2 py-1 rounded-full bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 text-xs font-semibold">
-                                    Pending
-                                  </span>
-                                )}
+                                <div className="flex flex-col gap-1">
+                                  {user.is_disabled ? (
+                                    <span className="px-2 py-1 rounded-full bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 text-xs font-semibold">
+                                      Disabled
+                                    </span>
+                                  ) : user.is_approved ? (
+                                    <span className="px-2 py-1 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-semibold">
+                                      Approved
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-1 rounded-full bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 text-xs font-semibold">
+                                      Pending
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-500">
                                 {formatDate(user.created_at)}
@@ -2428,6 +2589,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   </button>
                                   {!user.is_admin && (
                                     <>
+                                      <button
+                                        onClick={() => handleToggleDisable(user.id)}
+                                        disabled={processing === user.id}
+                                        className={`px-3 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${user.is_disabled
+                                          ? 'bg-emerald-600 hover:bg-emerald-500'
+                                          : 'bg-orange-600 hover:bg-orange-500'
+                                          }`}
+                                        title={user.is_disabled ? 'Enable User' : 'Disable User'}
+                                      >
+                                        {processing === user.id ? (
+                                          <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                          </svg>
+                                        ) : user.is_disabled ? (
+                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                                          </svg>
+                                        ) : (
+                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                                          </svg>
+                                        )}
+                                        {user.is_disabled ? 'Enable' : 'Disable'}
+                                      </button>
                                       <button
                                         onClick={async () => {
                                           try {
