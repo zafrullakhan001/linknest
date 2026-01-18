@@ -1076,6 +1076,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(false);
   const [refreshCountdown, setRefreshCountdown] = useState<number>(30);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Import progress state
+  const [importProgress, setImportProgress] = useState<{
+    current: number;
+    total: number;
+    status: string;
+    errors: string[];
+  } | null>(null);
 
   // New Tile Form State
   const [newTitle, setNewTitle] = useState('');
@@ -2913,6 +2921,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
         if (!file) return;
 
         try {
+          // Initialize progress
+          setImportProgress({
+            current: 0,
+            total: 0,
+            status: 'Parsing file...',
+            errors: []
+          });
+
           const text = await file.text();
           const data = JSON.parse(text);
 
@@ -2929,25 +2945,73 @@ export const TileGrid: React.FC<TileGridProps> = ({
           }));
 
           if (tilesToImport.length === 0) {
+            setImportProgress(null);
             alert('No tiles/spaces found to import.');
             return;
           }
+
+          // Update progress with total count
+          setImportProgress({
+            current: 0,
+            total: tilesToImport.length,
+            status: `Importing ${tilesToImport.length} tiles to "${categoryName}"...`,
+            errors: []
+          });
 
           // Import tiles one by one using createTile API
           let successCount = 0;
           let errorCount = 0;
           const errors: string[] = [];
 
-          for (const tile of tilesToImport) {
+          for (let i = 0; i < tilesToImport.length; i++) {
+            const tile = tilesToImport[i];
             try {
               await createTile(tile);
               successCount++;
+              
+              // Update progress
+              setImportProgress({
+                current: i + 1,
+                total: tilesToImport.length,
+                status: `Imported ${i + 1} of ${tilesToImport.length} tiles...`,
+                errors: [...errors]
+              });
             } catch (error) {
               errorCount++;
               const errorMsg = error instanceof Error ? error.message : 'Unknown error';
               errors.push(`Failed to import "${tile.title}": ${errorMsg}`);
               console.error('Failed to import tile:', tile.title, error);
+              
+              // Update progress with error
+              setImportProgress({
+                current: i + 1,
+                total: tilesToImport.length,
+                status: `Imported ${i + 1} of ${tilesToImport.length} tiles... (${errorCount} errors)`,
+                errors: [...errors]
+              });
             }
+          }
+
+          // Final status
+          if (errorCount === 0) {
+            setImportProgress({
+              current: tilesToImport.length,
+              total: tilesToImport.length,
+              status: `✅ Successfully imported ${successCount} tiles into category "${categoryName}"!`,
+              errors: []
+            });
+            
+            // Clear progress after delay
+            setTimeout(() => {
+              setImportProgress(null);
+            }, 3000);
+          } else {
+            setImportProgress({
+              current: tilesToImport.length,
+              total: tilesToImport.length,
+              status: `⚠️ Imported ${successCount} tiles, ${errorCount} failed.`,
+              errors: errors
+            });
           }
 
           // Refresh tiles from server
@@ -2957,21 +3021,20 @@ export const TileGrid: React.FC<TileGridProps> = ({
           } catch (error) {
             console.error('Failed to refresh tiles:', error);
           }
-
-          // Show results
-          if (errorCount === 0) {
-            alert(`Successfully imported ${successCount} tile(s) to category "${categoryName}".`);
-          } else {
-            alert(
-              `Imported ${successCount} tile(s) successfully.\n` +
-              `Failed to import ${errorCount} tile(s).\n\n` +
-              `Errors:\n${errors.join('\n')}`
-            );
-          }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-          alert(`Failed to import tiles: ${errorMsg}`);
+          setImportProgress({
+            current: 0,
+            total: 0,
+            status: `❌ Failed to import tiles: ${errorMsg}`,
+            errors: []
+          });
           console.error('Import error:', error);
+          
+          // Clear progress after delay
+          setTimeout(() => {
+            setImportProgress(null);
+          }, 5000);
         }
       };
       input.click();
@@ -5629,6 +5692,76 @@ export const TileGrid: React.FC<TileGridProps> = ({
           document.body
         )
       }
+
+      {/* Import Progress Modal */}
+      {importProgress && createPortal(
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                  Importing Tiles
+                </h3>
+                <button
+                  onClick={() => setImportProgress(null)}
+                  className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={importProgress.total > 0 && importProgress.current < importProgress.total}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Progress Display */}
+              <div className="mb-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
+                <div className="mb-2">
+                  <div className="flex items-center justify-between text-sm text-slate-700 dark:text-slate-300 mb-1">
+                    <span>{importProgress.status}</span>
+                    {importProgress.total > 0 && (
+                      <span>{importProgress.current} / {importProgress.total}</span>
+                    )}
+                  </div>
+                  {importProgress.total > 0 && (
+                    <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-2">
+                      <div
+                        className="bg-brand-500 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+                
+                {importProgress.errors.length > 0 && (
+                  <div className="mt-3 max-h-32 overflow-y-auto">
+                    <p className="text-xs font-medium text-red-600 dark:text-red-400 mb-1">
+                      Errors ({importProgress.errors.length}):
+                    </p>
+                    <ul className="text-xs text-red-600 dark:text-red-400 space-y-1">
+                      {importProgress.errors.slice(0, 5).map((error, idx) => (
+                        <li key={idx}>• {error}</li>
+                      ))}
+                      {importProgress.errors.length > 5 && (
+                        <li>... and {importProgress.errors.length - 5} more</li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              {importProgress.current >= importProgress.total && importProgress.total > 0 && (
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setImportProgress(null)}
+                    className="flex-1 px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div >
   );
 };
