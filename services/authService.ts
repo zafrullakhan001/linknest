@@ -30,6 +30,7 @@ export interface UserListItem {
   id: number;
   username: string;
   auth_source?: string;
+  is_admin?: boolean;
 }
 
 // API_BASE uses relative URLs (starting with /) which are protocol-agnostic

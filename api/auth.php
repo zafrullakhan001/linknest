@@ -1033,14 +1033,15 @@ function handleGetUsers() {
     requireAuth(); // Any authenticated user can see the user list for selecting private link recipients
     
     $db = getDB();
-    // Return only approved users (id, username, and auth_source) for privacy
-    $stmt = $db->prepare('SELECT id, username, auth_source FROM users WHERE is_approved = 1 ORDER BY username ASC');
+    // Return only approved users (id, username, auth_source, and is_admin) for privacy
+    $stmt = $db->prepare('SELECT id, username, auth_source, is_admin FROM users WHERE is_approved = 1 ORDER BY username ASC');
     $stmt->execute();
     $users = $stmt->fetchAll();
     
-    // Default auth_source to 'local' if not set
+    // Default auth_source to 'local' if not set, and convert is_admin to boolean
     foreach ($users as &$user) {
         $user['auth_source'] = $user['auth_source'] ?? 'local';
+        $user['is_admin'] = (bool)$user['is_admin'];
     }
     
     sendJSON(['users' => $users]);

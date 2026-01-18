@@ -1820,7 +1820,17 @@ function handleCloneTile($tileId) {
         $newVisibility = 'public'; // Cloned tiles default to public
         $newAllowedUsers = null;
         
-        $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        // Prepare tile decoration properties
+        $tileBackgroundColor = !empty($originalTile['tile_background_color']) ? $originalTile['tile_background_color'] : null;
+        $tileGradientEnabled = isset($originalTile['tile_gradient_enabled']) && $originalTile['tile_gradient_enabled'] !== null ? (int)$originalTile['tile_gradient_enabled'] : null;
+        $tileGradientColors = !empty($originalTile['tile_gradient_colors']) ? $originalTile['tile_gradient_colors'] : null;
+        $tileGradientColorPositions = !empty($originalTile['tile_gradient_color_positions']) ? $originalTile['tile_gradient_color_positions'] : null;
+        $tileGradientDirection = !empty($originalTile['tile_gradient_direction']) ? $originalTile['tile_gradient_direction'] : null;
+        $tileGradientType = !empty($originalTile['tile_gradient_type']) ? $originalTile['tile_gradient_type'] : null;
+        $tileBorderRadius = isset($originalTile['tile_border_radius']) && $originalTile['tile_border_radius'] !== null ? (int)$originalTile['tile_border_radius'] : null;
+        $tileTextColor = !empty($originalTile['tile_text_color']) ? $originalTile['tile_text_color'] : null;
+        
+        $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         if (!$insertStmt->execute([
             $newTileId,
@@ -1839,6 +1849,14 @@ function handleCloneTile($tileId) {
             $originalTile['visible_from'] ?? null,
             $originalTile['expires_at'] ?? null,
             $originalTile['browser'] ?? null,
+            $tileBackgroundColor,
+            $tileGradientEnabled,
+            $tileGradientColors,
+            $tileGradientColorPositions,
+            $tileGradientDirection,
+            $tileGradientType,
+            $tileBorderRadius,
+            $tileTextColor,
             $newPosition,
             time()
         ])) {
@@ -2009,6 +2027,33 @@ function handleCloneTile($tileId) {
             }
         }
     }
+    
+    // Clone tile messages
+    $msgStmt = $db->prepare('SELECT * FROM tile_messages WHERE tile_id = ?');
+    $msgStmt->execute([$tileId]);
+    $messages = $msgStmt->fetchAll();
+    
+    if (!empty($messages)) {
+        $msgInsertStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location, animation_type, delay_before) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        foreach ($messages as $msg) {
+            $newMsgId = uniqid('msg_', true);
+            $msgInsertStmt->execute([
+                $newMsgId,
+                $newTileId,
+                $msg['content'] ?? '',
+                $msg['type'] ?? 'info',
+                $msg['start_date'] ?? null,
+                $msg['end_date'] ?? null,
+                isset($msg['is_active']) && $msg['is_active'] ? 1 : 0,
+                isset($msg['priority']) ? (int)$msg['priority'] : 0,
+                $msg['text_color'] ?? null,
+                $msg['font_style'] ?? null,
+                $msg['display_location'] ?? 'both',
+                $msg['animation_type'] ?? 'rollover',
+                isset($msg['delay_before']) ? (float)$msg['delay_before'] : 0
+            ]);
+        }
+    }
         
     // Commit transaction
     $db->commit();
@@ -2079,8 +2124,18 @@ function handleCloneCategory($categoryName) {
         error_log('Clone category: Admin user ' . $user['id'] . ' (' . $user['username'] . ') cloning category "' . $categoryName . '" with ' . count($tiles) . ' tiles');
     }
     
-    // Generate new category name
-    $newCategoryName = 'Copy of ' . $categoryName;
+    // Generate new category name: convert to title case, replace spaces with dashes, add "-Copy"
+    // Example: "MAIN COPY" -> "Main-Copy", "My Category" -> "My-Category-Copy"
+    $categoryNameTitleCase = ucwords(strtolower($categoryName));
+    $categoryNameWithDashes = str_replace(' ', '-', $categoryNameTitleCase);
+    
+    // Check if the name already contains "Copy" (case-insensitive) - if so, just use the converted format
+    // Otherwise, add "-Copy" suffix
+    if (stripos($categoryName, 'copy') !== false) {
+        $newCategoryName = $categoryNameWithDashes;
+    } else {
+        $newCategoryName = $categoryNameWithDashes . '-Copy';
+    }
     
     // Check if the new category name already exists, if so, append a number
     $counter = 1;
@@ -2094,7 +2149,7 @@ function handleCloneCategory($categoryName) {
             break; // Category name is available
         }
         
-        $finalCategoryName = $newCategoryName . ' (' . $counter . ')';
+        $finalCategoryName = $categoryNameWithDashes . '-Copy-' . $counter;
         $counter++;
     }
     
@@ -2125,7 +2180,17 @@ function handleCloneCategory($categoryName) {
             $newVisibility = 'public'; // Cloned tiles default to public
             $newAllowedUsers = null;
             
-            $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            // Prepare tile decoration properties
+            $tileBackgroundColor = !empty($originalTile['tile_background_color']) ? $originalTile['tile_background_color'] : null;
+            $tileGradientEnabled = isset($originalTile['tile_gradient_enabled']) && $originalTile['tile_gradient_enabled'] !== null ? (int)$originalTile['tile_gradient_enabled'] : null;
+            $tileGradientColors = !empty($originalTile['tile_gradient_colors']) ? $originalTile['tile_gradient_colors'] : null;
+            $tileGradientColorPositions = !empty($originalTile['tile_gradient_color_positions']) ? $originalTile['tile_gradient_color_positions'] : null;
+            $tileGradientDirection = !empty($originalTile['tile_gradient_direction']) ? $originalTile['tile_gradient_direction'] : null;
+            $tileGradientType = !empty($originalTile['tile_gradient_type']) ? $originalTile['tile_gradient_type'] : null;
+            $tileBorderRadius = isset($originalTile['tile_border_radius']) && $originalTile['tile_border_radius'] !== null ? (int)$originalTile['tile_border_radius'] : null;
+            $tileTextColor = !empty($originalTile['tile_text_color']) ? $originalTile['tile_text_color'] : null;
+            
+            $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             
             if (!$insertStmt->execute([
                 $newTileId,
@@ -2144,6 +2209,14 @@ function handleCloneCategory($categoryName) {
                 $originalTile['visible_from'] ?? null,
                 $originalTile['expires_at'] ?? null,
                 $originalTile['browser'] ?? null,
+                $tileBackgroundColor,
+                $tileGradientEnabled,
+                $tileGradientColors,
+                $tileGradientColorPositions,
+                $tileGradientDirection,
+                $tileGradientType,
+                $tileBorderRadius,
+                $tileTextColor,
                 $nextPosition++,
                 time()
             ])) {
@@ -2220,12 +2293,13 @@ function handleCloneCategory($categoryName) {
                 // Clone tabs and their sections/links
                 foreach ($tabs as $tab) {
                     $newTabId = uniqid('tab_', true);
-                    $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?)');
+                    $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, visible_from, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
                     $tabInsertStmt->execute([
                         $newTabId,
                         $newTileId,
                         $tab['title'],
                         $tab['position'] ?? 0,
+                        (!empty($tab['text_color']) && trim($tab['text_color']) !== '') ? trim($tab['text_color']) : null,
                         $tab['visible_from'] ?? null,
                         $tab['expires_at'] ?? null
                     ]);
@@ -2277,6 +2351,33 @@ function handleCloneCategory($categoryName) {
                             ]);
                         }
                     }
+                }
+            }
+            
+            // Clone tile messages
+            $msgStmt = $db->prepare('SELECT * FROM tile_messages WHERE tile_id = ?');
+            $msgStmt->execute([$originalTile['id']]);
+            $messages = $msgStmt->fetchAll();
+            
+            if (!empty($messages)) {
+                $msgInsertStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location, animation_type, delay_before) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                foreach ($messages as $msg) {
+                    $newMsgId = uniqid('msg_', true);
+                    $msgInsertStmt->execute([
+                        $newMsgId,
+                        $newTileId,
+                        $msg['content'] ?? '',
+                        $msg['type'] ?? 'info',
+                        $msg['start_date'] ?? null,
+                        $msg['end_date'] ?? null,
+                        isset($msg['is_active']) && $msg['is_active'] ? 1 : 0,
+                        isset($msg['priority']) ? (int)$msg['priority'] : 0,
+                        $msg['text_color'] ?? null,
+                        $msg['font_style'] ?? null,
+                        $msg['display_location'] ?? 'both',
+                        $msg['animation_type'] ?? 'rollover',
+                        isset($msg['delay_before']) ? (float)$msg['delay_before'] : 0
+                    ]);
                 }
             }
              

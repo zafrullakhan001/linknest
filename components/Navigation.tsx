@@ -170,17 +170,6 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
                 </svg>
               </button>
             )}
-            {user && (
-              <button
-                onClick={toggleChat}
-                className={`p-2 rounded-full transition-all ${showChat ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-                title={showChat ? "Hide Chat Widget" : "Show Chat Widget"}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 sm:w-5 sm:h-5">
-                  <path fillRule="evenodd" d="M10 2c-2.236 0-4.43.18-6.57.524A.75.75 0 003 3.5v14.28c0 .405.336.727.75.757 2.238.094 4.455.232 6.6.41a.75.75 0 00.65-.75V10.5a.75.75 0 00-.75-.75h-2.5a.75.75 0 010-1.5H10a.75.75 0 00.75-.75V3.5a.75.75 0 00-.75-.75zm-5 8a1 1 0 100-2 1 1 0 000 2zm4 0a1 1 0 100-2 1 1 0 000 2zm3 1a1 1 0 11-2 0 1 1 0 012 0z" clipRule="evenodd" />
-                </svg>
-              </button>
-            )}
             <button
               onClick={togglePasswordGenerator}
               className={`p-2 rounded-full transition-all ${showPasswordGenerator ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
@@ -239,6 +228,18 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
                 <path d="M8 14h6"></path>
               </svg>
             </button>
+            {user && (
+              <button
+                onClick={toggleChat}
+                className={`p-2 rounded-full transition-all ${showChat ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                title={showChat ? "Hide Chat Widget" : "Show Chat Widget"}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+              </button>
+            )}
           </div>
 
           {/* System Section */}

@@ -1005,6 +1005,7 @@ const AppContent: React.FC = () => {
         <FloatingChatWidget>
           <ChatWidget
             tiles={tiles}
+            onClose={toggleChat}
             onTileImported={async () => {
               // Reload tiles after import with a small delay to ensure database save completes
               try {

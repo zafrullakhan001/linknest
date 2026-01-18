@@ -1,18 +1,19 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { ChatMessage, getMessages, sendMessage, sendTile, deleteMessage } from '../services/chatService';
 import { Tile } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { authService, UserListItem } from '../services/authService';
-import { createTile } from '../services/storageService';
+import { createTile, saveTile } from '../services/storageService';
 import { parseSpaceExportObject, normalizeImportedTiles } from '../services/spaceTransferService';
 
 interface ChatWidgetProps {
   tiles: Tile[];
   onTileShared?: (tile: Tile) => void;
   onTileImported?: () => void;
+  onClose?: () => void;
 }
 
-export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onTileImported }) => {
+export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onTileImported, onClose }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [selectedRecipient, setSelectedRecipient] = useState<number | null>(null); // null for public chat
@@ -23,22 +24,87 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
   const [showJsonInput, setShowJsonInput] = useState(false);
   const [showUserPanel, setShowUserPanel] = useState(true);
   const [jsonInput, setJsonInput] = useState('');
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+  const [messageSearchTerm, setMessageSearchTerm] = useState('');
+  const [duplicateDialog, setDuplicateDialog] = useState<{ 
+    existingTile: Tile; 
+    newTile: Tile; 
+  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const { user } = useAuth();
 
-  // Load users list
-  useEffect(() => {
-    const loadUsers = async () => {
-      try {
-        const fetchedUsers = await authService.getUsers();
-        // Filter out current user from the list
-        const otherUsers = fetchedUsers.filter(u => u.id !== user?.id);
-        setUsers(otherUsers);
-      } catch (error) {
-        console.error('Failed to load users:', error);
+  // Filter users based on search term
+  const filteredUsers = useMemo(() => {
+    if (!userSearchTerm.trim()) {
+      return users;
+    }
+    const searchLower = userSearchTerm.toLowerCase();
+    return users.filter(u => 
+      u.username.toLowerCase().includes(searchLower)
+    );
+  }, [users, userSearchTerm]);
+
+  // Filter messages based on search term
+  const filteredMessages = useMemo(() => {
+    if (!messageSearchTerm.trim()) {
+      return messages;
+    }
+    const searchLower = messageSearchTerm.toLowerCase();
+    return messages.filter(m => 
+      m.username.toLowerCase().includes(searchLower) ||
+      m.message?.toLowerCase().includes(searchLower) ||
+      m.tile_data?.title?.toLowerCase().includes(searchLower) ||
+      m.tile_data?.description?.toLowerCase().includes(searchLower)
+    );
+  }, [messages, messageSearchTerm]);
+
+  // Filter tiles based on sharing permissions:
+  // - Regular users: can only share tiles from their private tab (visibility === 'private' && user has access)
+  // - Admins: can share tiles from any tab (all tiles)
+  const shareableTiles = useMemo(() => {
+    if (!user) return [];
+
+    // Admins can share all tiles
+    if (user.is_admin === true) {
+      return tiles;
+    }
+
+    // Regular users can only share private tiles they have access to
+    return tiles.filter(tile => {
+      // Only private tiles
+      if (tile.visibility !== 'private') {
+        return false;
       }
-    };
+
+      // Check if user has access to this private tile
+      // Either canView is true OR user ID is in allowedUsers array
+      if (tile.canView === true) {
+        return true;
+      }
+
+      if (Array.isArray(tile.allowedUsers) && tile.allowedUsers.includes(user.id)) {
+        return true;
+      }
+
+      return false;
+    });
+  }, [tiles, user]);
+
+  // Load users list function
+  const loadUsers = async () => {
+    try {
+      const fetchedUsers = await authService.getUsers();
+      // Filter out current user from the list
+      const otherUsers = fetchedUsers.filter(u => u.id !== user?.id);
+      setUsers(otherUsers);
+    } catch (error) {
+      console.error('Failed to load users:', error);
+    }
+  };
+
+  // Load users list on mount
+  useEffect(() => {
     if (user) {
       loadUsers();
     }
@@ -128,8 +194,9 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
     }
   };
 
-  const handleImportTile = async (tileData: any) => {
-    if (!confirm('Import this tile into your workspace?')) return;
+  const handleImportTile = async (tileData: any, action?: 'duplicate' | 'overwrite' | 'merge') => {
+    // If action is provided, it means we're handling a duplicate
+    if (!action && !confirm('Import this tile into your workspace?')) return;
 
     try {
       // Ensure tileData has required structure
@@ -162,9 +229,237 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
 
       const tileToImport = normalizedTiles[0];
       
+      // Check for existing tile with same title in user's private "Imported" category
+      if (!action && user?.id) {
+        const existingTile = tiles.find(t => 
+          t.title === tileToImport.title && 
+          t.group === 'Imported' && 
+          t.visibility === 'private' &&
+          t.canView === true &&
+          Array.isArray(t.allowedUsers) && 
+          t.allowedUsers.includes(user.id)
+        );
+
+        if (existingTile) {
+          // Show duplicate dialog
+          setDuplicateDialog({
+            existingTile,
+            newTile: tileToImport
+          });
+          return;
+        }
+      }
+
+      // Handle duplicate actions
+      if (action && duplicateDialog) {
+        // Use the already normalized tile from duplicateDialog when available
+        const tileForAction = duplicateDialog.newTile || tileToImport;
+        
+        if (action === 'overwrite') {
+          // Update existing tile with new tile data
+          const updatedTile = {
+            ...duplicateDialog.existingTile,
+            ...tileForAction,
+            id: duplicateDialog.existingTile.id, // Keep existing ID
+            createdAt: duplicateDialog.existingTile.createdAt // Keep original creation date
+          };
+          
+          // Ensure arrays are properly set
+          if (!Array.isArray(updatedTile.tabs)) {
+            updatedTile.tabs = [];
+          }
+          if (!Array.isArray(updatedTile.sections)) {
+            updatedTile.sections = [];
+          }
+          
+          await saveTile(updatedTile);
+          setDuplicateDialog(null);
+          
+          if (onTileImported) {
+            onTileImported();
+          }
+          alert('Tile overwritten successfully!');
+          return;
+        } else if (action === 'merge') {
+          // Merge links from new tile into existing tile
+          const existingTile = duplicateDialog.existingTile;
+          const newTile = tileForAction;
+          
+          // Merge tabs
+          const mergedTabs = [...(existingTile.tabs || [])];
+          
+          // Process new tile tabs
+          if (newTile.tabs && newTile.tabs.length > 0) {
+            for (const newTab of newTile.tabs) {
+              // Find or create matching tab
+              let existingTab = mergedTabs.find(t => t.title === newTab.title);
+              if (!existingTab) {
+                // Create new tab
+                existingTab = {
+                  ...newTab,
+                  id: Math.random().toString(36).substring(2, 9),
+                  position: mergedTabs.length
+                };
+                mergedTabs.push(existingTab);
+              } else {
+                // Merge sections into existing tab
+                const mergedSections = [...(existingTab.sections || [])];
+                
+                if (newTab.sections && newTab.sections.length > 0) {
+                  for (const newSection of newTab.sections) {
+                    // Find or create matching section
+                    let existingSection = mergedSections.find(s => s.title === newSection.title);
+                    if (!existingSection) {
+                      // Create new section
+                      existingSection = {
+                        ...newSection,
+                        id: Math.random().toString(36).substring(2, 9),
+                        links: newSection.links ? [...newSection.links] : [],
+                        richTextContent: newSection.richTextContent ? [...newSection.richTextContent] : undefined
+                      };
+                      mergedSections.push(existingSection);
+                    } else {
+                      // Merge links into existing section (avoid duplicates by URL)
+                      const existingLinks = existingSection.links || [];
+                      const existingUrls = new Set(existingLinks.map(l => l.url));
+                      
+                      const newLinks = (newSection.links || []).filter(l => !existingUrls.has(l.url));
+                      
+                      existingSection.links = [...existingLinks, ...newLinks.map(l => ({
+                        ...l,
+                        id: Math.random().toString(36).substring(2, 9)
+                      }))];
+                      
+                      // Merge rich text content
+                      if (newSection.richTextContent && newSection.richTextContent.length > 0) {
+                        const existingRichText = existingSection.richTextContent || [];
+                        existingSection.richTextContent = [
+                          ...existingRichText,
+                          ...newSection.richTextContent.map(rt => ({
+                            ...rt,
+                            id: Math.random().toString(36).substring(2, 9)
+                          }))
+                        ];
+                      }
+                    }
+                  }
+                }
+                
+                existingTab.sections = mergedSections;
+              }
+            }
+          }
+          
+          // Also handle legacy sections (backward compatibility)
+          const mergedSections = [...(existingTile.sections || [])];
+          if (newTile.sections && newTile.sections.length > 0) {
+            for (const newSection of newTile.sections) {
+              let existingSection = mergedSections.find(s => s.title === newSection.title);
+              if (!existingSection) {
+                existingSection = {
+                  ...newSection,
+                  id: Math.random().toString(36).substring(2, 9),
+                  links: newSection.links ? [...newSection.links] : [],
+                  richTextContent: newSection.richTextContent ? [...newSection.richTextContent] : undefined
+                };
+                mergedSections.push(existingSection);
+              } else {
+                const existingLinks = existingSection.links || [];
+                const existingUrls = new Set(existingLinks.map(l => l.url));
+                const newLinks = (newSection.links || []).filter(l => !existingUrls.has(l.url));
+                
+                existingSection.links = [...existingLinks, ...newLinks.map(l => ({
+                  ...l,
+                  id: Math.random().toString(36).substring(2, 9)
+                }))];
+                
+                if (newSection.richTextContent && newSection.richTextContent.length > 0) {
+                  const existingRichText = existingSection.richTextContent || [];
+                  existingSection.richTextContent = [
+                    ...existingRichText,
+                    ...newSection.richTextContent.map(rt => ({
+                      ...rt,
+                      id: Math.random().toString(36).substring(2, 9)
+                    }))
+                  ];
+                }
+              }
+            }
+          }
+          
+          // Update existing tile with merged data
+          const mergedTile: Tile = {
+            ...existingTile,
+            tabs: mergedTabs.length > 0 ? mergedTabs : undefined,
+            sections: mergedSections,
+            // Preserve existing tile properties but update with new decoration if provided
+            tileBackgroundColor: newTile.tileBackgroundColor ?? existingTile.tileBackgroundColor,
+            tileGradientEnabled: newTile.tileGradientEnabled ?? existingTile.tileGradientEnabled,
+            tileGradientColors: newTile.tileGradientColors ?? existingTile.tileGradientColors,
+            tileGradientDirection: newTile.tileGradientDirection ?? existingTile.tileGradientDirection,
+            tileGradientType: newTile.tileGradientType ?? existingTile.tileGradientType,
+            tileGradientColorPositions: newTile.tileGradientColorPositions ?? existingTile.tileGradientColorPositions,
+            tileBorderRadius: newTile.tileBorderRadius ?? existingTile.tileBorderRadius,
+            tileTextColor: newTile.tileTextColor ?? existingTile.tileTextColor
+          };
+          
+          await saveTile(mergedTile);
+          setDuplicateDialog(null);
+          
+          if (onTileImported) {
+            onTileImported();
+          }
+          alert('Tile merged successfully! New links have been added to the existing tile.');
+          return;
+        }
+      }
+
+      // Default: create new tile (or duplicate if action === 'duplicate')
       // Generate new ID and timestamp
       tileToImport.id = Math.random().toString(36).substring(2, 9);
       tileToImport.createdAt = Date.now();
+      
+      // If duplicate action, add "- Copy-N" suffix to the title
+      if (action === 'duplicate' && user?.id) {
+        const baseTitle = tileToImport.title;
+        // Check for existing tiles with the same base title or "Copy" pattern in Imported category
+        const existingTilesInCategory = tiles.filter(t => 
+          t.group === 'Imported' && 
+          t.visibility === 'private' &&
+          t.canView === true &&
+          Array.isArray(t.allowedUsers) && 
+          t.allowedUsers.includes(user.id) &&
+          (t.title === baseTitle || t.title.startsWith(baseTitle + ' - Copy'))
+        );
+        
+        // Extract copy numbers from existing titles
+        const copyNumbers: number[] = [];
+        existingTilesInCategory.forEach(t => {
+          if (t.title === baseTitle) {
+            // Original tile exists (no copy suffix)
+            copyNumbers.push(0);
+          } else if (t.title.startsWith(baseTitle + ' - Copy')) {
+            // Extract number from " - Copy-N" pattern
+            const match = t.title.match(/ - Copy-(\d+)$/);
+            if (match) {
+              copyNumbers.push(parseInt(match[1], 10));
+            } else {
+              // Just "- Copy" without number (treat as Copy-1)
+              copyNumbers.push(1);
+            }
+          }
+        });
+        
+        // Find the next available copy number
+        let nextCopyNumber = 1;
+        if (copyNumbers.length > 0) {
+          const maxCopyNumber = Math.max(...copyNumbers);
+          nextCopyNumber = maxCopyNumber + 1;
+        }
+        
+        // Add suffix to title
+        tileToImport.title = `${baseTitle} - Copy-${nextCopyNumber}`;
+      }
       
       // Set imported tile to private visibility and "Imported" category
       tileToImport.visibility = 'private';
@@ -189,6 +484,10 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
       // Create the tile
       await createTile(tileToImport);
       
+      if (duplicateDialog) {
+        setDuplicateDialog(null);
+      }
+      
       if (onTileImported) {
         onTileImported();
       }
@@ -197,6 +496,9 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
     } catch (error) {
       console.error('Failed to import tile:', error);
       alert('Failed to import tile. Please try again.');
+      if (duplicateDialog) {
+        setDuplicateDialog(null);
+      }
     }
   };
 
@@ -312,7 +614,18 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
       {showUserPanel && (
         <div className="w-64 border-r border-slate-200 dark:border-slate-700 flex flex-col bg-slate-50 dark:bg-slate-900">
           <div className="p-4 border-b border-slate-200 dark:border-slate-700">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Users</h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Users</h3>
+              <button
+                onClick={loadUsers}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
+                title="Refresh user list"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
             <button
               onClick={() => setSelectedRecipient(null)}
               className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
@@ -328,14 +641,23 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
                 <span className="font-medium">Public Chat</span>
               </div>
             </button>
+            <div className="mt-2">
+              <input
+                type="text"
+                value={userSearchTerm}
+                onChange={(e) => setUserSearchTerm(e.target.value)}
+                placeholder="Search users..."
+                className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto p-2">
-            {users.length === 0 ? (
+            {filteredUsers.length === 0 ? (
               <div className="text-center text-slate-500 dark:text-slate-400 text-sm py-4">
-                No other users available
+                {userSearchTerm ? 'No users found' : 'No other users available'}
               </div>
             ) : (
-              users.map((userItem) => (
+              filteredUsers.map((userItem) => (
                 <button
                   key={userItem.id}
                   onClick={() => setSelectedRecipient(userItem.id)}
@@ -349,7 +671,20 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
                     <div className="w-8 h-8 rounded-full bg-brand-500 text-white flex items-center justify-center text-xs font-semibold">
                       {userItem.username.charAt(0).toUpperCase()}
                     </div>
-                    <span className="font-medium truncate">{userItem.username}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium truncate">{userItem.username}</span>
+                        {userItem.is_admin ? (
+                          <span className="px-1.5 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded">
+                            Admin
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 rounded">
+                            Normal
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </button>
               ))
@@ -361,41 +696,72 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
       {/* Chat Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowUserPanel(!showUserPanel)}
-              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
-              title={showUserPanel ? "Hide user panel" : "Show user panel"}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
-              </svg>
-            </button>
-            <div>
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{getRecipientName()}</h3>
-              {selectedRecipient !== null && (
-                <p className="text-xs text-slate-500 dark:text-slate-400">Direct message</p>
-              )}
+        <div className="p-4 border-b border-slate-200 dark:border-slate-700">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowUserPanel(!showUserPanel)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
+                title={showUserPanel ? "Hide user panel" : "Show user panel"}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                  <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
+                </svg>
+              </button>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{getRecipientName()}</h3>
+                {selectedRecipient !== null && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Direct message</p>
+                )}
+              </div>
             </div>
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
+                title="Close Chat Widget"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                  <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                </svg>
+              </button>
+            )}
+          </div>
+          <div>
+            <input
+              type="text"
+              value={messageSearchTerm}
+              onChange={(e) => setMessageSearchTerm(e.target.value)}
+              placeholder="Search messages..."
+              className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
           </div>
         </div>
 
       {/* Messages */}
       <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 ? (
+        {filteredMessages.length === 0 ? (
           <div className="text-center text-slate-500 dark:text-slate-400 py-8">
-            <p>No messages yet. Start the conversation!</p>
+            <p>{messageSearchTerm ? 'No messages found' : 'No messages yet. Start the conversation!'}</p>
           </div>
         ) : (
-          messages.map((message) => (
+          filteredMessages.map((message) => (
             <div
               key={message.id}
               className={`flex ${message.user_id === user?.id ? 'justify-end' : 'justify-start'}`}
             >
               <div className={`max-w-[80%] ${message.user_id === user?.id ? 'items-end' : 'items-start'} flex flex-col`}>
-                <div className="text-xs text-slate-500 dark:text-slate-400 mb-1 px-2">
-                  {message.username} • {formatTime(message.created_at)}
+                <div className="text-xs text-slate-500 dark:text-slate-400 mb-1 px-2 flex items-center gap-2">
+                  <span>{message.username}</span>
+                  {(() => {
+                    const messageUser = users.find(u => u.id === message.user_id);
+                    if (messageUser?.is_admin) {
+                      return <span className="px-1.5 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded">Admin</span>;
+                    } else {
+                      return <span className="px-1.5 py-0.5 text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 rounded">Normal</span>;
+                    }
+                  })()}
+                  <span>• {formatTime(message.created_at)}</span>
                 </div>
                 <div
                   className={`rounded-2xl px-4 py-2 ${
@@ -455,10 +821,16 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
           <div className="mb-2">
             <textarea
               value={jsonInput}
-              onChange={(e) => setJsonInput(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value.length <= 10000) {
+                  setJsonInput(value);
+                }
+              }}
               placeholder="Paste JSON code here..."
               className="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white font-mono"
               rows={4}
+              maxLength={10000}
               onKeyDown={(e) => {
                 if (e.key === 'Escape') {
                   setShowJsonInput(false);
@@ -466,26 +838,31 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
                 }
               }}
             />
-            <button
-              onClick={() => {
-                setShowJsonInput(false);
-                setJsonInput('');
-              }}
-              className="mt-1 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-            >
-              Cancel
-            </button>
+            <div className="flex items-center justify-between mt-1">
+              <div className={`text-xs ${jsonInput.length >= 9500 ? 'text-red-500' : 'text-slate-500 dark:text-slate-400'}`}>
+                {jsonInput.length} / 10,000 characters
+              </div>
+              <button
+                onClick={() => {
+                  setShowJsonInput(false);
+                  setJsonInput('');
+                }}
+                className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         )}
 
         {showTileSelector && (
           <div className="mb-2 max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-700">
-            {tiles.length === 0 ? (
+            {shareableTiles.length === 0 ? (
               <div className="p-4 text-sm text-slate-500 dark:text-slate-400 text-center">
-                No tiles available
+                {user?.is_admin ? 'No tiles available' : 'No private tiles available to share'}
               </div>
             ) : (
-              tiles.map((tile) => (
+              shareableTiles.map((tile) => (
                 <button
                   key={tile.id}
                   onClick={() => {
@@ -537,15 +914,28 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
               <path fillRule="evenodd" d="M4.25 2A2.25 2.25 0 002 4.25v11.5A2.25 2.25 0 004.25 18h11.5A2.25 2.25 0 0018 15.75V4.25A2.25 2.25 0 0015.75 2H4.25zm4.03 6.28a.75.75 0 00-1.06-1.06L4.97 9.47a.75.75 0 000 1.06l2.25 2.25a.75.75 0 001.06-1.06L6.56 10l1.72-1.72zm4.5-1.06a.75.75 0 10-1.06 1.06L13.44 10l-1.72 1.72a.75.75 0 101.06 1.06l2.25-2.25a.75.75 0 000-1.06l-2.25-2.25z" clipRule="evenodd" />
             </svg>
           </button>
-          <input
-            type="text"
-            value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Type a message..."
-            className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
-            disabled={isLoading || selectedTile !== null || showJsonInput}
-          />
+          <div className="flex-1 flex flex-col">
+            <input
+              type="text"
+              value={inputMessage}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value.length <= 10000) {
+                  setInputMessage(value);
+                }
+              }}
+              onKeyPress={handleKeyPress}
+              placeholder="Type a message..."
+              maxLength={10000}
+              className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              disabled={isLoading || selectedTile !== null || showJsonInput}
+            />
+            {inputMessage.length > 0 && (
+              <div className={`text-xs mt-1 px-1 ${inputMessage.length >= 9500 ? 'text-red-500' : 'text-slate-500 dark:text-slate-400'}`}>
+                {inputMessage.length} / 10,000 characters
+              </div>
+            )}
+          </div>
           <button
             onClick={handleSendMessage}
             disabled={isLoading || (!inputMessage.trim() && !selectedTile && !jsonInput.trim())}
@@ -565,6 +955,46 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
         </div>
       </div>
       </div>
+
+      {/* Duplicate Tile Dialog */}
+      {duplicateDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setDuplicateDialog(null)}>
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4 border border-slate-200 dark:border-slate-700" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
+              Tile Already Exists
+            </h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+              A tile named <strong className="text-slate-900 dark:text-white">"{duplicateDialog.existingTile.title}"</strong> already exists in your Private area under the Imported category. What would you like to do?
+            </p>
+            <div className="space-y-2">
+              <button
+                onClick={() => handleImportTile(duplicateDialog.newTile, 'duplicate')}
+                className="w-full px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-900 dark:text-white rounded-lg transition-colors text-sm font-medium"
+              >
+                Create Duplicate Copy
+              </button>
+              <button
+                onClick={() => handleImportTile(duplicateDialog.newTile, 'merge')}
+                className="w-full px-4 py-2 bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-900 dark:text-blue-200 rounded-lg transition-colors text-sm font-medium"
+              >
+                Merge Links (Add new links to existing tile)
+              </button>
+              <button
+                onClick={() => handleImportTile(duplicateDialog.newTile, 'overwrite')}
+                className="w-full px-4 py-2 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-900 dark:text-red-200 rounded-lg transition-colors text-sm font-medium"
+              >
+                Overwrite Existing Tile
+              </button>
+              <button
+                onClick={() => setDuplicateDialog(null)}
+                className="w-full px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-colors text-sm font-medium"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
