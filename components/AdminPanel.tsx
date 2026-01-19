@@ -80,6 +80,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [editUsername, setEditUsername] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editUserLoading, setEditUserLoading] = useState(false);
+  const [openDropdownUserId, setOpenDropdownUserId] = useState<number | null>(null);
 
   // Settings state
   const [settings, setSettings] = useState<AppSettings>({
@@ -394,6 +395,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       loadSettings();
     }
   }, [activeTab]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (openDropdownUserId !== null && !target.closest('.user-actions-dropdown')) {
+        setOpenDropdownUserId(null);
+      }
+    };
+
+    if (openDropdownUserId !== null) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [openDropdownUserId]);
 
   // Load user roles when All Users tab is active and users are loaded
   useEffect(() => {
@@ -2585,204 +2603,222 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 {formatDate(user.created_at)}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-right">
-                                <div className="flex items-center justify-end gap-2">
-                                  <button
-                                    onClick={async () => {
-                                      try {
-                                        setProcessing(user.id);
-                                        setError('');
-                                        const result = await authService.toggleAdmin(user.id);
-                                        // Update the user in the local state
-                                        setAllUsers(prevUsers =>
-                                          prevUsers.map(u =>
-                                            u.id === user.id ? { ...u, is_admin: result.is_admin } : u
-                                          )
-                                        );
-                                      } catch (err: any) {
-                                        setError(err.message || 'Failed to toggle admin status');
-                                      } finally {
-                                        setProcessing(null);
-                                      }
-                                    }}
-                                    disabled={processing === user.id}
-                                    className={`px-3 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${user.is_admin
-                                      ? 'bg-amber-600 hover:bg-amber-500'
-                                      : 'bg-emerald-600 hover:bg-emerald-500'
-                                      }`}
-                                    title={user.is_admin ? 'Demote from Admin' : 'Promote to Admin'}
-                                  >
-                                    {processing === user.id ? (
-                                      <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                      </svg>
-                                    ) : user.is_admin ? (
-                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
-                                      </svg>
-                                    ) : (
-                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                                      </svg>
-                                    )}
-                                    {user.is_admin ? 'Demote' : 'Promote'}
-                                  </button>
+                                <div className="flex items-center justify-end gap-2 user-actions-dropdown relative">
+                                  {/* Primary action buttons - always visible */}
                                   {!user.is_admin && (
-                                    <>
-                                      <button
-                                        onClick={() => handleToggleDisable(user.id)}
-                                        disabled={processing === user.id}
-                                        className={`px-3 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${user.is_disabled
-                                          ? 'bg-emerald-600 hover:bg-emerald-500'
-                                          : 'bg-orange-600 hover:bg-orange-500'
-                                          }`}
-                                        title={user.is_disabled ? 'Enable User' : 'Disable User'}
-                                      >
-                                        {processing === user.id ? (
-                                          <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                          </svg>
-                                        ) : user.is_disabled ? (
-                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                                          </svg>
-                                        ) : (
-                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
-                                          </svg>
-                                        )}
-                                        {user.is_disabled ? 'Enable' : 'Disable'}
-                                      </button>
-                                      <button
-                                        onClick={async () => {
-                                          try {
-                                            setProcessing(user.id);
-                                            setError('');
-                                            const result = await authService.toggleAuthSource(user.id);
-                                            // Update the user in the local state
-                                            setAllUsers(prevUsers =>
-                                              prevUsers.map(u =>
-                                                u.id === user.id ? { ...u, auth_source: result.auth_source } : u
-                                              )
-                                            );
-                                          } catch (err: any) {
-                                            setError(err.message || 'Failed to toggle auth source');
-                                          } finally {
-                                            setProcessing(null);
-                                          }
-                                        }}
-                                        disabled={processing === user.id}
-                                        className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
-                                        title={`Toggle Auth Source (Current: ${user.auth_source === 'ldap' ? 'LDAP' : 'Local'})`}
-                                      >
-                                        {processing === user.id ? (
-                                          <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                          </svg>
-                                        ) : (
-                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                            <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                                          </svg>
-                                        )}
-                                        Toggle
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          setEditUserModal({ open: true, userId: user.id, username: user.username, email: user.email });
-                                          setEditUsername(user.username);
-                                          setEditEmail(user.email);
-                                        }}
-                                        disabled={processing === user.id}
-                                        className="px-3 py-1.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
-                                        title="Edit User"
-                                      >
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                          <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.919 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
-                                          <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
-                                        </svg>
-                                        Edit
-                                      </button>
-                                      {user.auth_source !== 'ldap' && (
-                                        <button
-                                          onClick={() => setResetPasswordModal({ open: true, userId: user.id, username: user.username })}
-                                          disabled={processing === user.id}
-                                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
-                                          title="Reset Password"
-                                        >
-                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                            <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
-                                          </svg>
-                                          Reset
-                                        </button>
-                                      )}
-                                      <button
-                                        onClick={async () => {
-                                          try {
-                                            setProcessing(user.id);
-                                            setError('');
-                                            await authService.startImpersonation(user.id);
-                                            // Reload the page to apply impersonation session
-                                            window.location.reload();
-                                          } catch (err: any) {
-                                            setError(err.message || 'Failed to start impersonation');
-                                            setProcessing(null);
-                                          }
-                                        }}
-                                        disabled={processing === user.id}
-                                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
-                                        title="Impersonate User - See the app as this user"
-                                      >
-                                        {processing === user.id ? (
-                                          <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                          </svg>
-                                        ) : (
-                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                            <path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM16 8a2 2 0 11-4 0 2 2 0 014 0zm-1.615 8.428a1.224 1.224 0 00.569-1.175 5.966 5.966 0 00-2.081-.416 5.967 5.967 0 00-1.788.27A9.953 9.953 0 0013 18a9.953 9.953 0 003.385-.572z" />
-                                          </svg>
-                                        )}
-                                        Impersonate
-                                      </button>
-                                      <button
-                                        onClick={async () => {
-                                          try {
-                                            await handleManageUserRoles(user.id);
-                                          } catch (err: any) {
-                                            setError(err.message || 'Failed to load user roles');
-                                          }
-                                        }}
-                                        disabled={processing === user.id}
-                                        className="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
-                                        title="Assign Roles to User"
-                                      >
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                          <path d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
-                                        </svg>
-                                        Roles
-                                      </button>
-                                      <button
-                                        onClick={() => handleDeleteUser(user.id, user.username)}
-                                        disabled={processing === user.id}
-                                        className="px-3 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
-                                        title="Delete User"
-                                      >
-                                        {processing === user.id ? (
-                                          <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                          </svg>
-                                        ) : (
-                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                            <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-                                          </svg>
-                                        )}
-                                        Delete
-                                      </button>
-                                    </>
+                                    <button
+                                      onClick={() => {
+                                        setEditUserModal({ open: true, userId: user.id, username: user.username, email: user.email });
+                                        setEditUsername(user.username);
+                                        setEditEmail(user.email);
+                                      }}
+                                      disabled={processing === user.id}
+                                      className="px-2.5 py-1.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
+                                      title="Edit User"
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                        <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.919 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
+                                        <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
+                                      </svg>
+                                    </button>
                                   )}
+                                  {!user.is_admin && (
+                                    <button
+                                      onClick={() => handleDeleteUser(user.id, user.username)}
+                                      disabled={processing === user.id}
+                                      className="px-2.5 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
+                                      title="Delete User"
+                                    >
+                                      {processing === user.id ? (
+                                        <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                      ) : (
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                          <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                                        </svg>
+                                      )}
+                                    </button>
+                                  )}
+                                  
+                                  {/* Dropdown menu button */}
+                                  <div className="relative">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setOpenDropdownUserId(openDropdownUserId === user.id ? null : user.id);
+                                      }}
+                                      className="px-2.5 py-1.5 bg-slate-600 hover:bg-slate-500 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
+                                      title="More actions"
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                        <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
+                                      </svg>
+                                    </button>
+                                    
+                                    {/* Dropdown menu */}
+                                    {openDropdownUserId === user.id && (
+                                      <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 z-50 py-1">
+                                        {/* Promote/Demote */}
+                                        <button
+                                          onClick={async () => {
+                                            setOpenDropdownUserId(null);
+                                            try {
+                                              setProcessing(user.id);
+                                              setError('');
+                                              const result = await authService.toggleAdmin(user.id);
+                                              setAllUsers(prevUsers =>
+                                                prevUsers.map(u =>
+                                                  u.id === user.id ? { ...u, is_admin: result.is_admin } : u
+                                                )
+                                              );
+                                            } catch (err: any) {
+                                              setError(err.message || 'Failed to toggle admin status');
+                                            } finally {
+                                              setProcessing(null);
+                                            }
+                                          }}
+                                          disabled={processing === user.id}
+                                          className={`w-full px-4 py-2 text-left text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700 ${user.is_admin
+                                            ? 'text-amber-700 dark:text-amber-400'
+                                            : 'text-emerald-700 dark:text-emerald-400'
+                                            }`}
+                                        >
+                                          {processing === user.id ? (
+                                            <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                          ) : user.is_admin ? (
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                                            </svg>
+                                          ) : (
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                                            </svg>
+                                          )}
+                                          {user.is_admin ? 'Demote from Admin' : 'Promote to Admin'}
+                                        </button>
+                                        
+                                        {!user.is_admin && (
+                                          <>
+                                            {/* Disable/Enable */}
+                                            <button
+                                              onClick={() => {
+                                                setOpenDropdownUserId(null);
+                                                handleToggleDisable(user.id);
+                                              }}
+                                              disabled={processing === user.id}
+                                              className={`w-full px-4 py-2 text-left text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700 ${user.is_disabled
+                                                ? 'text-emerald-700 dark:text-emerald-400'
+                                                : 'text-orange-700 dark:text-orange-400'
+                                                }`}
+                                            >
+                                              {user.is_disabled ? (
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                                                </svg>
+                                              ) : (
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                                                </svg>
+                                              )}
+                                              {user.is_disabled ? 'Enable User' : 'Disable User'}
+                                            </button>
+                                            
+                                            {/* Toggle Auth Source */}
+                                            <button
+                                              onClick={async () => {
+                                                setOpenDropdownUserId(null);
+                                                try {
+                                                  setProcessing(user.id);
+                                                  setError('');
+                                                  const result = await authService.toggleAuthSource(user.id);
+                                                  setAllUsers(prevUsers =>
+                                                    prevUsers.map(u =>
+                                                      u.id === user.id ? { ...u, auth_source: result.auth_source } : u
+                                                    )
+                                                  );
+                                                } catch (err: any) {
+                                                  setError(err.message || 'Failed to toggle auth source');
+                                                } finally {
+                                                  setProcessing(null);
+                                                }
+                                              }}
+                                              disabled={processing === user.id}
+                                              className="w-full px-4 py-2 text-left text-xs font-medium text-purple-700 dark:text-purple-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700"
+                                            >
+                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                                              </svg>
+                                              Toggle Auth Source
+                                            </button>
+                                            
+                                            {/* Reset Password */}
+                                            {user.auth_source !== 'ldap' && (
+                                              <button
+                                                onClick={() => {
+                                                  setOpenDropdownUserId(null);
+                                                  setResetPasswordModal({ open: true, userId: user.id, username: user.username });
+                                                }}
+                                                disabled={processing === user.id}
+                                                className="w-full px-4 py-2 text-left text-xs font-medium text-blue-700 dark:text-blue-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700"
+                                              >
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                  <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
+                                                </svg>
+                                                Reset Password
+                                              </button>
+                                            )}
+                                            
+                                            {/* Impersonate */}
+                                            <button
+                                              onClick={async () => {
+                                                setOpenDropdownUserId(null);
+                                                try {
+                                                  setProcessing(user.id);
+                                                  setError('');
+                                                  await authService.startImpersonation(user.id);
+                                                  window.location.reload();
+                                                } catch (err: any) {
+                                                  setError(err.message || 'Failed to start impersonation');
+                                                  setProcessing(null);
+                                                }
+                                              }}
+                                              disabled={processing === user.id}
+                                              className="w-full px-4 py-2 text-left text-xs font-medium text-indigo-700 dark:text-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700"
+                                            >
+                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                <path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM16 8a2 2 0 11-4 0 2 2 0 014 0zm-1.615 8.428a1.224 1.224 0 00.569-1.175 5.966 5.966 0 00-2.081-.416 5.967 5.967 0 00-1.788.27A9.953 9.953 0 0013 18a9.953 9.953 0 003.385-.572z" />
+                                              </svg>
+                                              Impersonate
+                                            </button>
+                                            
+                                            {/* Roles */}
+                                            <button
+                                              onClick={async () => {
+                                                setOpenDropdownUserId(null);
+                                                try {
+                                                  await handleManageUserRoles(user.id);
+                                                } catch (err: any) {
+                                                  setError(err.message || 'Failed to load user roles');
+                                                }
+                                              }}
+                                              disabled={processing === user.id}
+                                              className="w-full px-4 py-2 text-left text-xs font-medium text-violet-700 dark:text-violet-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700"
+                                            >
+                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                <path d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                                              </svg>
+                                              Assign Roles
+                                            </button>
+                                          </>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               </td>
                             </tr>
@@ -7713,6 +7749,73 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className="flex-1 px-4 py-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
                 >
                   {editUserLoading ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Password Modal */}
+      {resetPasswordModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Reset Password</h2>
+                <button
+                  onClick={() => {
+                    setResetPasswordModal({ open: false, userId: null, username: '' });
+                    setNewPassword('');
+                    setError('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  New Password for {resetPasswordModal.username}
+                </label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                  placeholder="Enter new password (min 6 characters)"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => {
+                    setResetPasswordModal({ open: false, userId: null, username: '' });
+                    setNewPassword('');
+                    setError('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleResetPassword}
+                  disabled={resetPasswordLoading || !newPassword.trim() || newPassword.length < 6}
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  {resetPasswordLoading ? 'Resetting...' : 'Reset Password'}
                 </button>
               </div>
             </div>
