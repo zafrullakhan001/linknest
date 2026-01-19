@@ -11,9 +11,10 @@ interface ChatWidgetProps {
   onTileShared?: (tile: Tile) => void;
   onTileImported?: () => void;
   onClose?: () => void;
+  onUnreadChange?: (hasUnread: boolean) => void;
 }
 
-export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onTileImported, onClose }) => {
+export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onTileImported, onClose, onUnreadChange }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [selectedRecipient, setSelectedRecipient] = useState<number | null>(null); // null for public chat
@@ -33,6 +34,20 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const { user } = useAuth();
+  
+  // Get last seen message ID from localStorage, or initialize to 0
+  const getLastSeenMessageId = (): number => {
+    if (!user) return 0;
+    const stored = localStorage.getItem(`linknest_last_seen_message_${user.id}`);
+    return stored ? parseInt(stored, 10) : 0;
+  };
+  
+  const setLastSeenMessageId = (id: number) => {
+    if (!user) return;
+    localStorage.setItem(`linknest_last_seen_message_${user.id}`, id.toString());
+  };
+  
+  const lastSeenMessageIdRef = useRef<number>(getLastSeenMessageId());
 
   // Filter users based on search term
   const filteredUsers = useMemo(() => {
@@ -118,10 +133,58 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
     return () => clearInterval(interval);
   }, [selectedRecipient]);
 
+  // Mark existing messages as read when widget first opens or recipient changes
+  useEffect(() => {
+    if (messages.length > 0 && user && onUnreadChange) {
+      const maxId = Math.max(...messages.map(m => m.id));
+      if (maxId > lastSeenMessageIdRef.current) {
+        lastSeenMessageIdRef.current = maxId;
+        setLastSeenMessageId(maxId);
+        onUnreadChange(false);
+      }
+    }
+  }, [selectedRecipient, messages, user, onUnreadChange]); // Run when recipient changes or messages load
+
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Track unread messages and notify parent
+  useEffect(() => {
+    if (!user || !onUnreadChange) return;
+    
+    // Check for unread messages (messages from other users that are newer than last seen)
+    const unreadMessages = messages.filter(msg => 
+      msg.user_id !== user.id && 
+      msg.id > lastSeenMessageIdRef.current
+    );
+    
+    const hasUnread = unreadMessages.length > 0;
+    onUnreadChange(hasUnread);
+  }, [messages, user, onUnreadChange]);
+
+  // Mark new messages as read when they arrive while widget is open
+  useEffect(() => {
+    if (messages.length > 0 && user) {
+      const maxId = Math.max(...messages.map(m => m.id));
+      if (maxId > lastSeenMessageIdRef.current) {
+        lastSeenMessageIdRef.current = maxId;
+        setLastSeenMessageId(maxId);
+        // Clear unread status since we're viewing the messages
+        if (onUnreadChange) {
+          onUnreadChange(false);
+        }
+      }
+    }
+  }, [messages, user, onUnreadChange]);
+  
+  // Initialize last seen message ID from localStorage on mount
+  useEffect(() => {
+    if (user) {
+      lastSeenMessageIdRef.current = getLastSeenMessageId();
+    }
+  }, [user]);
 
   const loadMessages = async () => {
     try {
@@ -752,7 +815,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
             >
               <div className={`max-w-[80%] ${message.user_id === user?.id ? 'items-end' : 'items-start'} flex flex-col`}>
                 <div className="text-xs text-slate-500 dark:text-slate-400 mb-1 px-2 flex items-center gap-2">
-                  <span>{message.username}</span>
+                  <span className={message.user_id !== user?.id ? 'text-red-500 dark:text-red-400 font-semibold' : ''}>{message.username}</span>
                   {(() => {
                     const messageUser = users.find(u => u.id === message.user_id);
                     if (messageUser?.is_admin) {

@@ -33,6 +33,7 @@ import { FavOrganizerWidget } from './components/FavOrganizerWidget';
 import { FloatingChatWidget } from './components/FloatingChatWidget';
 import { ChatWidget } from './components/ChatWidget';
 import { themeService } from './services/themeService';
+import { getMessages, ChatMessage } from './services/chatService';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -194,6 +195,37 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('linknest_show_chat_widget', showChat.toString());
   }, [showChat]);
+
+  // Chat unread messages state
+  const [hasUnreadChatMessages, setHasUnreadChatMessages] = useState(false);
+  
+  // Poll for unread messages when widget is closed
+  useEffect(() => {
+    if (!isAuthenticated || showChat || !user) return;
+    
+    const checkUnreadMessages = async () => {
+      try {
+        const messages = await getMessages(1, 0, null); // Get latest message
+        if (messages.length > 0) {
+          const lastSeenId = parseInt(localStorage.getItem(`linknest_last_seen_message_${user.id}`) || '0', 10);
+          const hasUnread = messages.some(msg => 
+            msg.user_id !== user.id && 
+            msg.id > lastSeenId
+          );
+          setHasUnreadChatMessages(hasUnread);
+        }
+      } catch (error) {
+        // Silently fail - don't spam console
+      }
+    };
+    
+    // Check immediately
+    checkUnreadMessages();
+    
+    // Then poll every 5 seconds
+    const interval = setInterval(checkUnreadMessages, 5000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, showChat, user]);
 
   // Initialize theme service on mount
   useEffect(() => {
@@ -763,6 +795,7 @@ const AppContent: React.FC = () => {
         toggleFavOrganizer={toggleFavOrganizer}
         showChat={showChat}
         toggleChat={toggleChat}
+        hasUnreadChatMessages={hasUnreadChatMessages}
         user={user}
         onLoginClick={() => setAuthModalOpen(true)}
         onHelpClick={() => setHelpAboutOpen(true)}
@@ -1006,6 +1039,7 @@ const AppContent: React.FC = () => {
           <ChatWidget
             tiles={tiles}
             onClose={toggleChat}
+            onUnreadChange={setHasUnreadChatMessages}
             onTileImported={async () => {
               // Reload tiles after import with a small delay to ensure database save completes
               try {

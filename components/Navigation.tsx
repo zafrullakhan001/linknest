@@ -26,12 +26,13 @@ interface NavigationProps {
   toggleFavOrganizer: () => void;
   showChat: boolean;
   toggleChat: () => void;
+  hasUnreadChatMessages?: boolean;
   user: { id: number; username: string; email: string; is_admin?: boolean } | null;
   onLoginClick: () => void;
   onHelpClick: () => void;
 }
 
-export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: toggleDarkMode, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, showWeather, toggleWeather, showCalculator, toggleCalculator, showPasswordGenerator, togglePasswordGenerator, showZoomControl, toggleZoomControl, showTheme, toggleThemeWidget, showFavOrganizer, toggleFavOrganizer, showChat, toggleChat, user, onLoginClick, onHelpClick }) => {
+export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: toggleDarkMode, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, showWeather, toggleWeather, showCalculator, toggleCalculator, showPasswordGenerator, togglePasswordGenerator, showZoomControl, toggleZoomControl, showTheme, toggleThemeWidget, showFavOrganizer, toggleFavOrganizer, showChat, toggleChat, hasUnreadChatMessages = false, user, onLoginClick, onHelpClick }) => {
   const { logout } = useAuth();
   const { settings } = useSettings();
   const disabledTabs = getDisabledTabsFromSettings(settings);
@@ -231,13 +232,16 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
             {user && (
               <button
                 onClick={toggleChat}
-                className={`p-2 rounded-full transition-all ${showChat ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-                title={showChat ? "Hide Chat Widget" : "Show Chat Widget"}
+                className={`p-2 rounded-full transition-all relative ${showChat ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : hasUnreadChatMessages ? 'hover:bg-slate-200 dark:hover:bg-slate-700 text-red-500 dark:text-red-400' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                title={showChat ? "Hide Chat Widget" : hasUnreadChatMessages ? "Show Chat Widget (New messages)" : "Show Chat Widget"}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                   <circle cx="12" cy="7" r="4"></circle>
                 </svg>
+                {hasUnreadChatMessages && !showChat && (
+                  <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
+                )}
               </button>
             )}
           </div>
