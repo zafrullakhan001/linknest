@@ -1,4 +1,4 @@
 username,email,password
-john.doe,john.doe@example.com,SecurePassword123
-jane.smith,jane.smith@example.com,SecurePassword456
-admin.user,admin.user@example.com,SecurePassword789
+john.doe,john.doe@localhost,SecurePassword123
+jane.smith,jane.smith@localhost,SecurePassword456
+admin.user,admin.user@localhost,SecurePassword789

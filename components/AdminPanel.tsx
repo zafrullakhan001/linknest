@@ -77,11 +77,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [resetPasswordModal, setResetPasswordModal] = useState<{ open: boolean; userId: number | null; username: string }>({ open: false, userId: null, username: '' });
   const [newPassword, setNewPassword] = useState('');
   const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
-  const [editUserModal, setEditUserModal] = useState<{ open: boolean; userId: number | null; username: string; email: string }>({ open: false, userId: null, username: '', email: '' });
+  const [editUserModal, setEditUserModal] = useState<{ open: boolean; userId: number | null; username: string; email: string; auth_source: string }>({ open: false, userId: null, username: '', email: '', auth_source: 'local' });
   const [editUsername, setEditUsername] = useState('');
   const [editEmail, setEditEmail] = useState('');
+  const [editAuthSource, setEditAuthSource] = useState<'local' | 'ldap' | 'saml'>('local');
   const [editUserLoading, setEditUserLoading] = useState(false);
   const [openDropdownUserId, setOpenDropdownUserId] = useState<number | null>(null);
+  const [autoDetecting, setAutoDetecting] = useState(false);
 
   // Settings state
   const [settings, setSettings] = useState<AppSettings>({
@@ -303,6 +305,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       await Promise.all([loadPendingUsers(), loadAllUsers()]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAutoDetectAuthSources = async () => {
+    if (!confirm('This will auto-detect authentication sources for all users in the system.\n\nPriority: SAML (if saml_nameid exists) > LDAP (if exists in directory) > Local\n\nContinue?')) {
+      return;
+    }
+
+    setAutoDetecting(true);
+    setError('');
+    try {
+      const result = await authService.autoDetectAuthSources();
+      alert(result.message);
+      await loadAllUsers(); // Refresh the user list
+    } catch (err: any) {
+      setError(err.message || 'Failed to auto-detect auth sources');
+    } finally {
+      setAutoDetecting(false);
     }
   };
 
@@ -1609,15 +1629,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     try {
       setEditUserLoading(true);
       setError('');
-      const updatedUser = await authService.updateUser(editUserModal.userId, editUsername, editEmail);
+      const updatedUser = await authService.updateUser(editUserModal.userId, editUsername, editEmail, editAuthSource);
       setAllUsers(prevUsers =>
         prevUsers.map(u =>
-          u.id === editUserModal.userId ? { ...u, username: updatedUser.username, email: updatedUser.email } : u
+          u.id === editUserModal.userId ? { ...u, username: updatedUser.username, email: updatedUser.email, auth_source: updatedUser.auth_source } : u
         )
       );
-      setEditUserModal({ open: false, userId: null, username: '', email: '' });
+      setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local' });
       setEditUsername('');
       setEditEmail('');
+      setEditAuthSource('local');
       alert('User updated successfully!');
     } catch (err: any) {
       setError(err.message || 'Failed to update user');
@@ -2429,6 +2450,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </>
                       )}
                       <button
+                        onClick={handleAutoDetectAuthSources}
+                        disabled={autoDetecting}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                        title="Auto-detect authentication sources for all users (SAML > LDAP > Local)"
+                      >
+                        {autoDetecting ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Detecting...
+                          </>
+                        ) : (
+                          <>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                              <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
+                            </svg>
+                            Auto-Detect Auth Sources
+                          </>
+                        )}
+                      </button>
+                      <button
                         onClick={openAddUserModal}
                         className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
                       >
@@ -2545,7 +2589,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                               Admin
                                             </span>
                                           )}
-                                          {user.auth_source === 'ldap' ? (
+                                          {user.auth_source === 'saml' ? (
+                                            <span className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-xs font-semibold whitespace-nowrap">
+                                              SAML
+                                            </span>
+                                          ) : user.auth_source === 'ldap' ? (
                                             <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs font-semibold whitespace-nowrap">
                                               LDAP
                                             </span>
@@ -2625,9 +2673,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   {!user.is_admin && (
                                     <button
                                       onClick={() => {
-                                        setEditUserModal({ open: true, userId: user.id, username: user.username, email: user.email });
+                                        setEditUserModal({ open: true, userId: user.id, username: user.username, email: user.email, auth_source: user.auth_source || 'local' });
                                         setEditUsername(user.username);
                                         setEditEmail(user.email);
+                                        setEditAuthSource((user.auth_source || 'local') as 'local' | 'ldap' | 'saml');
                                       }}
                                       disabled={processing === user.id}
                                       className="px-2.5 py-1.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
@@ -2774,7 +2823,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                             </button>
                                             
                                             {/* Reset Password */}
-                                            {user.auth_source !== 'ldap' && (
+                                            {user.auth_source !== 'ldap' && user.auth_source !== 'saml' && (
                                               <button
                                                 onClick={() => {
                                                   setOpenDropdownUserId(null);
@@ -7816,9 +7865,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">Edit User</h2>
                 <button
                   onClick={() => {
-                    setEditUserModal({ open: false, userId: null, username: '', email: '' });
+                    setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local' });
                     setEditUsername('');
                     setEditEmail('');
+                    setEditAuthSource('local');
                     setError('');
                   }}
                   className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
@@ -7863,12 +7913,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 />
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Authentication Source
+                </label>
+                <select
+                  value={editAuthSource}
+                  onChange={(e) => setEditAuthSource(e.target.value as 'local' | 'ldap' | 'saml')}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                >
+                  <option value="local">Local</option>
+                  <option value="ldap">LDAP</option>
+                  <option value="saml">SAML</option>
+                </select>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Select the authentication method for this user
+                </p>
+              </div>
+
               <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
                 <button
                   onClick={() => {
-                    setEditUserModal({ open: false, userId: null, username: '', email: '' });
+                    setEditUserModal({ open: false, userId: null, username: '', email: '', auth_source: 'local' });
                     setEditUsername('');
                     setEditEmail('');
+                    setEditAuthSource('local');
                     setError('');
                   }}
                   className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"

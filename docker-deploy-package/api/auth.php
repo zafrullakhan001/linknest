@@ -41,6 +41,8 @@ switch ($method) {
             handleBulkImportLocalUsers();
         } elseif ($path === '/bulk-import-ldap') {
             handleBulkImportLdapUsers();
+        } elseif ($path === '/auto-detect-auth-sources') {
+            handleAutoDetectAuthSources();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -134,7 +136,10 @@ function handleRegister() {
         sendJSON(['error' => 'Username must be at least 3 characters'], 400);
     }
     
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    // Allow @localhost for local users, otherwise validate normally
+    $emailLower = strtolower($email);
+    $isLocalhostEmail = strpos($emailLower, '@localhost') !== false;
+    if (!$isLocalhostEmail && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         sendJSON(['error' => 'Invalid email address'], 400);
     }
     
@@ -1029,14 +1034,15 @@ function handleGetUsers() {
     requireAuth(); // Any authenticated user can see the user list for selecting private link recipients
     
     $db = getDB();
-    // Return only approved users (id, username, and auth_source) for privacy
-    $stmt = $db->prepare('SELECT id, username, auth_source FROM users WHERE is_approved = 1 ORDER BY username ASC');
+    // Return only approved users (id, username, email, auth_source, and is_admin) for privacy
+    $stmt = $db->prepare('SELECT id, username, email, auth_source, is_admin FROM users WHERE is_approved = 1 ORDER BY username ASC');
     $stmt->execute();
     $users = $stmt->fetchAll();
     
-    // Default auth_source to 'local' if not set
+    // Default auth_source to 'local' if not set, and convert is_admin to boolean
     foreach ($users as &$user) {
         $user['auth_source'] = $user['auth_source'] ?? 'local';
+        $user['is_admin'] = (bool)$user['is_admin'];
     }
     
     sendJSON(['users' => $users]);
@@ -1173,8 +1179,14 @@ function handleToggleAuthSource($userId) {
     $currentAuthSource = $user['auth_source'] ?? null;
     $currentAuthSource = ($currentAuthSource === null || $currentAuthSource === '' || $currentAuthSource === 'local') ? 'local' : $currentAuthSource;
     
-    // Toggle between 'ldap' and 'local'
-    $newAuthSource = ($currentAuthSource === 'ldap') ? 'local' : 'ldap';
+    // Toggle through all three sources: local -> ldap -> saml -> local
+    if ($currentAuthSource === 'local') {
+        $newAuthSource = 'ldap';
+    } elseif ($currentAuthSource === 'ldap') {
+        $newAuthSource = 'saml';
+    } else {
+        $newAuthSource = 'local';
+    }
     
     // Update the auth_source
     $stmt = $db->prepare('UPDATE users SET auth_source = ? WHERE id = ?');
@@ -1555,7 +1567,10 @@ function handleAddLocalUser() {
         sendJSON(['error' => 'Email is required'], 400);
     }
     
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    // Allow @localhost for local users, otherwise validate normally
+    $emailLower = strtolower($email);
+    $isLocalhostEmail = strpos($emailLower, '@localhost') !== false;
+    if (!$isLocalhostEmail && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         sendJSON(['error' => 'Invalid email address'], 400);
     }
     
@@ -1623,7 +1638,10 @@ function handleAddLdapUser() {
         sendJSON(['error' => 'Username is required'], 400);
     }
     
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    // Allow @localhost for local users, otherwise validate normally
+    $emailLower = strtolower($email);
+    $isLocalhostEmail = strpos($emailLower, '@localhost') !== false;
+    if (!$isLocalhostEmail && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         sendJSON(['error' => 'Invalid email address'], 400);
     }
     
@@ -2151,5 +2169,313 @@ function handleBulkImportLdapUsers() {
             'errors' => count($results['errors'])
         ]
     ]);
+}
+
+/**
+ * Check if a user exists in LDAP directory
+ * @param string $username The username to check
+ * @return bool True if user exists in LDAP, false otherwise
+ */
+function checkUserExistsInLdap($username) {
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'ldap_%'");
+        $stmt->execute();
+        $settings = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $settings[$row['key']] = $row['value'];
+        }
+        
+        // Check if LDAP is enabled
+        if (empty($settings['ldap_enabled']) || $settings['ldap_enabled'] !== '1') {
+            return false;
+        }
+        
+        $ldapHost = trim($settings['ldap_host'] ?? '');
+        $ldapPort = (int)($settings['ldap_port'] ?? 389);
+        
+        if (empty($ldapHost)) {
+            return false;
+        }
+        
+        // Connect to LDAP
+        $ldap = @ldap_connect($ldapHost, $ldapPort);
+        if (!$ldap) {
+            return false;
+        }
+        
+        // Set LDAP options
+        ldap_set_option($ldap, LDAP_OPT_PROTOCOL_VERSION, 3);
+        ldap_set_option($ldap, LDAP_OPT_REFERRALS, 0);
+        ldap_set_option($ldap, LDAP_OPT_NETWORK_TIMEOUT, 5);
+        
+        // Bind with service account
+        $bindDn = trim($settings['ldap_bind_dn'] ?? '');
+        $bindPass = $settings['ldap_bind_password'] ?? '';
+        
+        if (!empty($bindPass)) {
+            $isEncrypted = (strpos($bindPass, '.') !== false && substr_count($bindPass, '.') === 2);
+            if ($isEncrypted) {
+                try {
+                    $bindPass = decryptPassword($bindPass);
+                } catch (Exception $e) {
+                    @ldap_close($ldap);
+                    return false;
+                }
+            }
+        }
+        
+        $bound = false;
+        if (!empty($bindDn) && !empty($bindPass)) {
+            $bound = @ldap_bind($ldap, $bindDn, $bindPass);
+        } else {
+            $bound = @ldap_bind($ldap);
+        }
+        
+        if (!$bound) {
+            @ldap_close($ldap);
+            return false;
+        }
+        
+        // Search for user
+        $searchBase = trim($settings['ldap_user_search_base'] ?? '');
+        $filterTemplate = trim($settings['ldap_user_filter'] ?? '(sAMAccountName={username})');
+        
+        if (empty($searchBase)) {
+            @ldap_close($ldap);
+            return false;
+        }
+        
+        $caseSensitive = !empty($settings['ldap_case_sensitive']) && $settings['ldap_case_sensitive'] == '1';
+        $searchUsername = $caseSensitive ? $username : strtolower($username);
+        $safeUsername = ldap_escape_filter($searchUsername);
+        $filter = str_replace('{username}', $safeUsername, $filterTemplate);
+        
+        $attributes = ['dn'];
+        $searchScope = strtolower($settings['ldap_search_scope'] ?? 'sub');
+        
+        if ($searchScope === 'base') {
+            $result = @ldap_read($ldap, $searchBase, $filter, $attributes, 0, 1);
+        } elseif ($searchScope === 'one') {
+            $result = @ldap_list($ldap, $searchBase, $filter, $attributes, 0, 1);
+        } else {
+            $result = @ldap_search($ldap, $searchBase, $filter, $attributes, 0, 1);
+        }
+        
+        if ($result === false) {
+            @ldap_close($ldap);
+            return false;
+        }
+        
+        $entries = @ldap_get_entries($ldap, $result);
+        @ldap_close($ldap);
+        
+        return ($entries && $entries['count'] > 0);
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
+/**
+ * Extract domain from email address
+ * @param string $email Email address
+ * @return string|null Domain part of email or null if invalid
+ */
+function extractEmailDomain($email) {
+    if (empty($email)) {
+        return null;
+    }
+    $parts = explode('@', $email);
+    if (count($parts) === 2) {
+        return strtolower(trim($parts[1]));
+    }
+    return null;
+}
+
+/**
+ * Get LDAP domain from settings
+ * @param array $settings LDAP settings array
+ * @return string|null LDAP domain or null if not found
+ */
+function getLdapDomainFromSettings($settings) {
+    // Try to extract domain from base DN first
+    $baseDn = $settings['ldap_base_dn'] ?? '';
+    if (empty($baseDn)) {
+        $baseDn = $settings['ldap_user_search_base'] ?? '';
+    }
+    
+    if (!empty($baseDn)) {
+        // Extract domain from base DN (e.g., "DC=oneflorida,DC=org" -> "oneflorida.org")
+        if (preg_match_all('/DC=([^,]+)/i', $baseDn, $matches)) {
+            if (!empty($matches[1])) {
+                return strtolower(implode('.', $matches[1]));
+            }
+        }
+    }
+    
+    // If domain still not found, try to extract from server hostname
+    $server = trim($settings['ldap_server'] ?? $settings['ldap_host'] ?? '');
+    if (!empty($server)) {
+        // Try to extract domain from FQDN (e.g., "server.example.com" -> "example.com")
+        $parts = explode('.', $server);
+        if (count($parts) >= 2) {
+            // Skip first part (hostname), use rest as domain
+            return strtolower(implode('.', array_slice($parts, 1)));
+        }
+    }
+    
+    return null;
+}
+
+/**
+ * Auto-detect authentication source for a single user
+ * Priority: Email domain patterns (@localhost = local, @ldap_domain = LDAP) > SAML (if saml_nameid exists) > LDAP (if exists in directory) > Local
+ * @param array $user User record from database
+ * @param array $ldapSettings LDAP settings (optional, will be fetched if not provided)
+ * @return string Detected auth source: 'saml', 'ldap', or 'local'
+ */
+function detectUserAuthSource($user, $ldapSettings = null) {
+    $email = $user['email'] ?? '';
+    $emailDomain = extractEmailDomain($email);
+    
+    // Priority 1: Check email domain patterns
+    if (!empty($emailDomain)) {
+        // @localhost = local user
+        if ($emailDomain === 'localhost') {
+            return 'local';
+        }
+        
+        // Check if email domain matches LDAP domain
+        if ($ldapSettings === null) {
+            $db = getDB();
+            $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'ldap_%'");
+            $stmt->execute();
+            $ldapSettings = [];
+            foreach ($stmt->fetchAll() as $row) {
+                $ldapSettings[$row['key']] = $row['value'];
+            }
+        }
+        
+        $ldapDomain = getLdapDomainFromSettings($ldapSettings);
+        if (!empty($ldapDomain) && $emailDomain === $ldapDomain) {
+            return 'ldap';
+        }
+    }
+    
+    // Priority 2: Check for SAML (if saml_nameid exists)
+    if (!empty($user['saml_nameid'])) {
+        return 'saml';
+    }
+    
+    // Priority 3: Check if user exists in LDAP directory
+    if (!empty($ldapSettings) && isset($ldapSettings['ldap_enabled']) && $ldapSettings['ldap_enabled'] === '1') {
+        if (checkUserExistsInLdap($user['username'])) {
+            return 'ldap';
+        }
+    }
+    
+    // Default to local
+    return 'local';
+}
+
+/**
+ * Auto-detect authentication sources for all users in the system
+ */
+function handleAutoDetectAuthSources() {
+    try {
+        // Clean any output before starting
+        if (ob_get_level() > 0) {
+            ob_clean();
+        }
+        
+        requireAdmin(); // Only admins can run auto-detection
+        
+        $db = getDB();
+        
+        // Get all users with their current auth_source and saml_nameid
+        // Note: saml_nameid column might not exist in older databases, so we'll handle that gracefully
+        try {
+            $stmt = $db->prepare('SELECT id, username, email, auth_source, saml_nameid FROM users');
+            $stmt->execute();
+            $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            // If saml_nameid column doesn't exist, select without it
+            $stmt = $db->prepare('SELECT id, username, email, auth_source FROM users');
+            $stmt->execute();
+            $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            // Add empty saml_nameid to each user
+            foreach ($users as &$user) {
+                $user['saml_nameid'] = null;
+            }
+        }
+        
+        // Check if LDAP is enabled to avoid unnecessary checks
+        $stmt = $db->prepare("SELECT key, value FROM settings WHERE key IN ('ldap_enabled') OR key LIKE 'ldap_%'");
+        $stmt->execute();
+        $settings = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $settings[$row['key']] = $row['value'];
+        }
+        $ldapEnabled = isset($settings['ldap_enabled']) && $settings['ldap_enabled'] === '1';
+        
+        $results = [
+            'total' => count($users),
+            'updated' => 0,
+            'unchanged' => 0,
+            'errors' => 0,
+            'details' => []
+        ];
+        
+        foreach ($users as $user) {
+            try {
+                // Use the improved detection function that checks email domains
+                $detectedSource = detectUserAuthSource($user, $settings);
+                
+                $currentSource = $user['auth_source'] ?? null;
+                
+                // Normalize current source
+                $currentSource = ($currentSource === null || $currentSource === '' || $currentSource === 'local') ? 'local' : $currentSource;
+                
+                if ($detectedSource !== $currentSource) {
+                    // Update the auth_source
+                    $updateStmt = $db->prepare('UPDATE users SET auth_source = ? WHERE id = ?');
+                    $updateStmt->execute([$detectedSource, $user['id']]);
+                    
+                    $results['updated']++;
+                    $results['details'][] = [
+                        'user_id' => $user['id'],
+                        'username' => $user['username'],
+                        'old_source' => $currentSource,
+                        'new_source' => $detectedSource
+                    ];
+                } else {
+                    $results['unchanged']++;
+                }
+            } catch (Exception $e) {
+                $results['errors']++;
+                $results['details'][] = [
+                    'user_id' => $user['id'],
+                    'username' => $user['username'],
+                    'error' => $e->getMessage()
+                ];
+                error_log("Auto-detect error for user {$user['id']} ({$user['username']}): " . $e->getMessage());
+            }
+        }
+        
+        sendJSON([
+            'success' => true,
+            'message' => "Auto-detection complete. {$results['updated']} users updated, {$results['unchanged']} unchanged, {$results['errors']} errors.",
+            'results' => $results
+        ]);
+    } catch (Exception $e) {
+        error_log('Auto-detect auth sources error: ' . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString());
+        sendJSON(['error' => 'Auto-detection failed: ' . $e->getMessage()], 500);
+    } catch (Error $e) {
+        error_log('Auto-detect auth sources fatal error: ' . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString());
+        sendJSON(['error' => 'Auto-detection failed: ' . $e->getMessage()], 500);
+    } catch (Throwable $e) {
+        error_log('Auto-detect auth sources throwable error: ' . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString());
+        sendJSON(['error' => 'Auto-detection failed: An unexpected error occurred'], 500);
+    }
 }
 

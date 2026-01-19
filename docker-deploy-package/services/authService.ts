@@ -26,7 +26,9 @@ export interface AllUser {
 export interface UserListItem {
   id: number;
   username: string;
+  email?: string;
   auth_source?: string;
+  is_admin?: boolean;
 }
 
 // API_BASE uses relative URLs (starting with /) which are protocol-agnostic
@@ -191,6 +193,23 @@ export const authService = {
     }
   },
 
+  async updateUser(userId: number, username: string, email: string, auth_source: 'local' | 'ldap' | 'saml' = 'local'): Promise<AllUser> {
+    const response = await fetch(`${API_BASE}/auth/update/${userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ username, email, auth_source })
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to update user');
+    }
+    
+    return data.user;
+  },
+
   async changeAdminPassword(currentPassword: string, newPassword: string): Promise<void> {
     const response = await fetch(`${API_BASE}/auth/change-admin-password`, {
       method: 'PUT',
@@ -234,6 +253,21 @@ export const authService = {
     }
     
     return { auth_source: data.auth_source };
+  },
+
+  async autoDetectAuthSources(): Promise<{ message: string; results: any }> {
+    const response = await fetch(`${API_BASE}/auth/auto-detect-auth-sources`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to auto-detect auth sources');
+    }
+    
+    return { message: data.message, results: data.results };
   },
 
   async searchLdapUsers(searchTerm: string): Promise<Array<{ username: string; email: string; displayName: string; dn: string }>> {

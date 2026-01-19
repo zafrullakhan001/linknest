@@ -4948,11 +4948,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                                     className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 w-3.5 h-3.5"
                                                                                                                 />
                                                                                                                 <span className="text-xs font-medium text-slate-700 dark:text-slate-300 flex-1">{user.username}</span>
-                                                                                                                {user.auth_source === 'ldap' && (
+                                                                                                                {user.auth_source === 'saml' ? (
+                                                                                                                    <span className="px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-[9px] font-semibold">
+                                                                                                                        SAML
+                                                                                                                    </span>
+                                                                                                                ) : user.auth_source === 'ldap' ? (
                                                                                                                     <span className="px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[9px] font-semibold">
                                                                                                                         LDAP
                                                                                                                     </span>
-                                                                                                                )}
+                                                                                                                ) : user.auth_source && user.auth_source !== 'local' ? (
+                                                                                                                    <span className="px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-[9px] font-semibold">
+                                                                                                                        {user.auth_source.toUpperCase()}
+                                                                                                                    </span>
+                                                                                                                ) : null}
                                                                                                             </label>
                                                                                                         ))
                                                                                                     )}
@@ -5413,11 +5421,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                         className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 w-3.5 h-3.5"
                                                                                                     />
                                                                                                     <span className="text-xs font-medium text-slate-700 dark:text-slate-300 flex-1">{user.username}</span>
-                                                                                                    {user.auth_source === 'ldap' && (
+                                                                                                    {user.auth_source === 'saml' ? (
+                                                                                                        <span className="px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-[9px] font-semibold">
+                                                                                                            SAML
+                                                                                                        </span>
+                                                                                                    ) : user.auth_source === 'ldap' ? (
                                                                                                         <span className="px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[9px] font-semibold">
                                                                                                             LDAP
                                                                                                         </span>
-                                                                                                    )}
+                                                                                                    ) : user.auth_source && user.auth_source !== 'local' ? (
+                                                                                                        <span className="px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-[9px] font-semibold">
+                                                                                                            {user.auth_source.toUpperCase()}
+                                                                                                        </span>
+                                                                                                    ) : null}
                                                                                                 </label>
                                                                                             ))
                                                                                         )}

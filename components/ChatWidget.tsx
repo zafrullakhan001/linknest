@@ -741,11 +741,23 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
                           <span className="px-1.5 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded">
                             Admin
                           </span>
-                        ) : (
-                          <span className="px-1.5 py-0.5 text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 rounded">
-                            Normal
-                          </span>
-                        )}
+                        ) : (() => {
+                          // Determine account type: SAML, LDAP, or Local
+                          let accountType = 'Local';
+                          if (userItem.auth_source === 'saml') {
+                            accountType = 'SAML';
+                          } else if (userItem.auth_source === 'ldap') {
+                            accountType = 'LDAP';
+                          } else if (userItem.email && userItem.email.includes('@localhost')) {
+                            accountType = 'Local';
+                          }
+                          
+                          return (
+                            <span className="px-1.5 py-0.5 text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 rounded">
+                              {accountType}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -821,7 +833,21 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
                     if (messageUser?.is_admin) {
                       return <span className="px-1.5 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded">Admin</span>;
                     } else {
-                      return <span className="px-1.5 py-0.5 text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 rounded">Normal</span>;
+                      // Determine account type: SAML, LDAP, or Local
+                      let accountType = 'Local';
+                      if (messageUser?.auth_source === 'saml') {
+                        accountType = 'SAML';
+                      } else if (messageUser?.auth_source === 'ldap') {
+                        accountType = 'LDAP';
+                      } else if (messageUser?.email && messageUser.email.includes('@localhost')) {
+                        accountType = 'Local';
+                      }
+                      
+                      return (
+                        <span className="px-1.5 py-0.5 text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 rounded">
+                          {accountType}
+                        </span>
+                      );
                     }
                   })()}
                   <span>• {formatTime(message.created_at)}</span>
