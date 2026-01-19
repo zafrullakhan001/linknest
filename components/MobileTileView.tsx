@@ -3,6 +3,7 @@ import { Tile } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../contexts/AuthContext';
 import { COLOR_STYLES } from '../types';
+import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, getTileDecorationClass, TileAnimation, TileDecoration } from './TileAnimationSelector';
 
 interface MobileTileViewProps {
   tiles: Tile[];
@@ -42,6 +43,17 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const { user: authUser, logout } = useAuth();
   const user = userProp || authUser;
+  
+  // Animation state - get initial values from hook and maintain local state
+  const { animation: initialAnimation, decoration: initialDecoration } = useTileAnimation();
+  const [currentAnimation, setCurrentAnimation] = useState<TileAnimation>(initialAnimation);
+  const [currentDecoration, setCurrentDecoration] = useState<TileDecoration>(initialDecoration);
+  
+  // Sync with initial values when they load
+  useEffect(() => {
+    setCurrentAnimation(initialAnimation);
+    setCurrentDecoration(initialDecoration);
+  }, [initialAnimation, initialDecoration]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -165,8 +177,13 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
             </div>
           </div>
 
-          {/* Dark Mode and Help Icons */}
+          {/* Animation Selector, Dark Mode and Help Icons */}
           <div className="flex items-center gap-2">
+            {/* Tile Animation Selector - Available for all users */}
+            <TileAnimationSelector
+              onAnimationChange={(animation) => setCurrentAnimation(animation)}
+              onDecorationChange={(decoration) => setCurrentDecoration(decoration)}
+            />
             <button
               onClick={toggleTheme}
               className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all"
@@ -200,14 +217,17 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
       {/* Hamburger Menu Sidebar */}
       {isMenuOpen && (
         <>
-          {/* Overlay */}
+          {/* Overlay - Fade animation */}
           <div 
-            className="fixed inset-0 bg-black/50 z-30 transition-opacity"
+            className="fixed inset-0 bg-black/50 z-30 transition-opacity duration-300 opacity-100"
             onClick={() => setIsMenuOpen(false)}
           />
-          {/* Menu */}
+          {/* Menu - Smooth slide animation */}
           <div 
-            className="fixed left-0 top-0 bottom-0 w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 z-40 shadow-xl transform transition-transform"
+            className="fixed left-0 top-0 bottom-0 w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 z-40 shadow-2xl transform transition-transform duration-300 ease-out translate-x-0"
+            style={{ 
+              boxShadow: '4px 0 24px rgba(0, 0, 0, 0.15)'
+            }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex flex-col h-full">
@@ -336,8 +356,8 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
         </>
       )}
 
-      {/* Search Bar */}
-      <div className="sticky top-[73px] z-10 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 px-4 py-3">
+      {/* Search Bar - Modern styling with glassmorphism */}
+      <div className="sticky top-[73px] z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg border-b border-slate-200/50 dark:border-slate-700/50 px-4 py-3 shadow-sm">
         <div className="relative">
           <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-slate-400">
@@ -349,12 +369,12 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
             placeholder="Search spaces..."
             value={searchTerm}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-10 py-3 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+            className="w-full bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm border border-slate-200 dark:border-slate-700 rounded-2xl pl-10 pr-10 py-3.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all shadow-sm hover:shadow-md"
           />
           {searchTerm && (
             <button
               onClick={() => onSearchChange('')}
-              className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+              className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors active:scale-90"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
                 <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
@@ -368,27 +388,39 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
       <div className="px-4 py-6">
         {filteredTiles.length > 0 ? (
           <div className="grid grid-cols-3 gap-6">
-            {filteredTiles.map((tile) => {
+            {filteredTiles.map((tile, index) => {
               const tileStyles = getTileStyles(tile);
+              const animationClass = getTileAnimationClass(currentAnimation);
+              const decorationClass = getTileDecorationClass(currentDecoration);
+              const fullAnimationClass = `${animationClass} ${decorationClass}`.trim();
+              const tileAnimatedClass = animationClass ? 'linknest-tile-animated' : '';
               
               return (
                 <div
                   key={tile.id}
                   onClick={() => onTileClick(tile.id)}
-                  className="flex flex-col items-center cursor-pointer group active:scale-95 transition-transform"
+                  className={`flex flex-col items-center cursor-pointer group mobile-tile ${fullAnimationClass} ${tileAnimatedClass}`}
+                  style={{
+                    animationDelay: fullAnimationClass ? `${index * 0.05}s` : undefined
+                  }}
                 >
-                  {/* Tile Icon - Square like mobile app icon */}
+                  {/* Tile Icon - Square like mobile app icon with modern styling */}
                   <div
-                    className="w-20 h-20 rounded-2xl shadow-lg flex items-center justify-center text-3xl mb-2 transition-all group-active:shadow-xl"
+                    className="relative w-20 h-20 rounded-2xl shadow-lg hover:shadow-xl flex items-center justify-center text-3xl mb-2 transition-all duration-200 active:scale-90 group-hover:scale-105 overflow-hidden"
                     style={tileStyles}
                   >
-                    {tile.emoji || '📄'}
+                    {/* Ripple effect background */}
+                    <div className="absolute inset-0 opacity-0 group-active:opacity-20 bg-white transition-opacity duration-200 rounded-2xl" />
+                    {/* Tile icon */}
+                    <span className="relative z-10">{tile.emoji || '📄'}</span>
+                    {/* Subtle shine effect on hover */}
+                    <div className="absolute inset-0 opacity-0 group-hover:opacity-10 bg-gradient-to-br from-white/30 to-transparent transition-opacity duration-200 rounded-2xl" />
                   </div>
                   
                   {/* Tile Name - Force readable text color for mobile */}
                   <div className="text-center w-full">
                     <p 
-                      className="text-xs font-medium line-clamp-2 px-1"
+                      className="text-xs font-medium line-clamp-2 px-1 transition-colors duration-200 group-hover:text-brand-600 dark:group-hover:text-brand-400"
                       style={{ 
                         color: darkMode ? '#f1f5f9' : '#1e293b' // Force readable text: light in dark mode, dark in light mode
                       }}
@@ -401,17 +433,17 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
             })}
           </div>
         ) : (
-          <div className="text-center py-12">
-            <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-slate-400">
+          <div className="text-center py-16 animate-fadeIn">
+            <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700 flex items-center justify-center shadow-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-10 h-10 text-slate-400">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
               </svg>
             </div>
-            <p className="text-base font-semibold text-slate-700 dark:text-slate-300 mb-1">No spaces found</p>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">Try adjusting your search terms</p>
+            <p className="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-2">No spaces found</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Try adjusting your search terms</p>
             <button
               onClick={() => onSearchChange('')}
-              className="text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 text-sm font-medium underline"
+              className="px-6 py-2.5 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-900/50 rounded-xl text-sm font-medium transition-all active:scale-95"
             >
               Clear search
             </button>
