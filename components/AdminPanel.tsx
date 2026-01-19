@@ -76,6 +76,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [resetPasswordModal, setResetPasswordModal] = useState<{ open: boolean; userId: number | null; username: string }>({ open: false, userId: null, username: '' });
   const [newPassword, setNewPassword] = useState('');
   const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
+  const [editUserModal, setEditUserModal] = useState<{ open: boolean; userId: number | null; username: string; email: string }>({ open: false, userId: null, username: '', email: '' });
+  const [editUsername, setEditUsername] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editUserLoading, setEditUserLoading] = useState(false);
 
   // Settings state
   const [settings, setSettings] = useState<AppSettings>({
@@ -1566,6 +1570,42 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   };
 
+  const handleEditUser = async () => {
+    if (!editUserModal.userId || !editUsername.trim() || !editEmail.trim()) {
+      setError('Please fill in all fields');
+      return;
+    }
+
+    if (editUsername.length < 3) {
+      setError('Username must be at least 3 characters');
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editEmail)) {
+      setError('Please enter a valid email address');
+      return;
+    }
+
+    try {
+      setEditUserLoading(true);
+      setError('');
+      const updatedUser = await authService.updateUser(editUserModal.userId, editUsername, editEmail);
+      setAllUsers(prevUsers =>
+        prevUsers.map(u =>
+          u.id === editUserModal.userId ? { ...u, username: updatedUser.username, email: updatedUser.email } : u
+        )
+      );
+      setEditUserModal({ open: false, userId: null, username: '', email: '' });
+      setEditUsername('');
+      setEditEmail('');
+      alert('User updated successfully!');
+    } catch (err: any) {
+      setError(err.message || 'Failed to update user');
+    } finally {
+      setEditUserLoading(false);
+    }
+  };
+
   const handleChangeAdminPassword = async () => {
     if (!currentPassword.trim() || !adminNewPassword.trim()) {
       setError('Please fill in all fields');
@@ -2647,6 +2687,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                           </svg>
                                         )}
                                         Toggle
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          setEditUserModal({ open: true, userId: user.id, username: user.username, email: user.email });
+                                          setEditUsername(user.username);
+                                          setEditEmail(user.email);
+                                        }}
+                                        disabled={processing === user.id}
+                                        className="px-3 py-1.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
+                                        title="Edit User"
+                                      >
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                          <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.919 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
+                                          <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
+                                        </svg>
+                                        Edit
                                       </button>
                                       {user.auth_source !== 'ldap' && (
                                         <button
@@ -7157,6 +7213,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 <button
                   onClick={() => {
                     setAddUserType('local');
+                    setBulkImportMode(false);
                     setError('');
                   }}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -7170,6 +7227,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 <button
                   onClick={() => {
                     setAddUserType('ldap');
+                    setBulkImportMode(false);
                     setError('');
                   }}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -7180,9 +7238,189 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 >
                   LDAP User
                 </button>
+                <button
+                  onClick={() => {
+                    setBulkImportMode(!bulkImportMode);
+                    setError('');
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    bulkImportMode
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                  }`}
+                >
+                  Bulk Import
+                </button>
               </div>
 
-              {addUserType === 'local' ? (
+              {bulkImportMode ? (
+                addUserType === 'local' ? (
+                  <div className="space-y-4">
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                      <p className="text-sm text-blue-800 dark:text-blue-300">
+                        <strong>Bulk Import Local Users</strong>
+                      </p>
+                      <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
+                        Upload a CSV file with columns: username, email, password. The header row is optional and will be automatically skipped.
+                      </p>
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Upload CSV File
+                        </label>
+                        <button
+                          onClick={() => {
+                            // Download CSV template
+                            const csvContent = 'username,email,password\njohn.doe,john.doe@example.com,SecurePassword123\njane.smith,jane.smith@example.com,SecurePassword456';
+                            const blob = new Blob([csvContent], { type: 'text/csv' });
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = 'bulk-import-local-users-template.csv';
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            window.URL.revokeObjectURL(url);
+                          }}
+                          className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                            <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
+                            <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+                          </svg>
+                          Download Template
+                        </button>
+                      </div>
+                      <input
+                        type="file"
+                        accept=".csv,text/csv"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setCsvFile(file);
+                            setError('');
+                          }
+                        }}
+                        className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer"
+                      />
+                      {csvFile && (
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                          Selected: {csvFile.name}
+                        </p>
+                      )}
+                    </div>
+                    {bulkImportResults && (
+                      <div className={`p-4 rounded-lg ${
+                        bulkImportResults.summary?.errors > 0
+                          ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
+                          : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                      }`}>
+                        <p className="text-sm font-medium mb-2">
+                          {bulkImportResults.message}
+                        </p>
+                        {bulkImportResults.summary && (
+                          <div className="text-xs space-y-1">
+                            <p>Created: {bulkImportResults.summary.created}</p>
+                            {bulkImportResults.summary.skipped > 0 && (
+                              <p>Skipped: {bulkImportResults.summary.skipped}</p>
+                            )}
+                            {bulkImportResults.summary.errors > 0 && (
+                              <p className="text-red-600 dark:text-red-400">Errors: {bulkImportResults.summary.errors}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                      <p className="text-sm text-blue-800 dark:text-blue-300">
+                        <strong>Bulk Import LDAP Users</strong>
+                      </p>
+                      <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
+                        Enter users in CSV format (one per line): username,email,dn,displayName. Or upload a CSV file.
+                      </p>
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Upload CSV File (or paste below)
+                        </label>
+                        <button
+                          onClick={() => {
+                            // Download CSV template
+                            const csvContent = 'username,email,dn,displayName\njohn.doe,john.doe@example.com,"CN=John Doe,OU=Users,DC=example,DC=com",John Doe\njane.smith,jane.smith@example.com,"CN=Jane Smith,OU=Users,DC=example,DC=com",Jane Smith\nadmin.user,admin.user@example.com,"CN=Admin User,OU=Users,DC=example,DC=com",Admin User';
+                            const blob = new Blob([csvContent], { type: 'text/csv' });
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = 'bulk-import-ldap-users-template.csv';
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            window.URL.revokeObjectURL(url);
+                          }}
+                          className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                            <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
+                            <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+                          </svg>
+                          Download Template
+                        </button>
+                      </div>
+                      <input
+                        type="file"
+                        accept=".csv,text/csv"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            try {
+                              const text = await file.text();
+                              setLdapUsersText(text);
+                              setError('');
+                            } catch (err: any) {
+                              setError('Failed to read CSV file');
+                            }
+                          }
+                        }}
+                        className="w-full mb-3 text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer"
+                      />
+                      <textarea
+                        value={ldapUsersText}
+                        onChange={(e) => setLdapUsersText(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                        placeholder="username,email,dn,displayName&#10;Or paste CSV content here..."
+                        rows={6}
+                      />
+                    </div>
+                    {bulkImportResults && (
+                      <div className={`p-4 rounded-lg ${
+                        bulkImportResults.summary?.errors > 0
+                          ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
+                          : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                      }`}>
+                        <p className="text-sm font-medium mb-2">
+                          {bulkImportResults.message}
+                        </p>
+                        {bulkImportResults.summary && (
+                          <div className="text-xs space-y-1">
+                            <p>Created: {bulkImportResults.summary.created}</p>
+                            {bulkImportResults.summary.skipped > 0 && (
+                              <p>Skipped: {bulkImportResults.summary.skipped}</p>
+                            )}
+                            {bulkImportResults.summary.errors > 0 && (
+                              <p className="text-red-600 dark:text-red-400">Errors: {bulkImportResults.summary.errors}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              ) : addUserType === 'local' ? (
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
@@ -7289,19 +7527,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 <button
                   onClick={() => {
                     setAddUserModal(false);
+                    setBulkImportMode(false);
+                    setCsvFile(null);
+                    setLdapUsersText('');
+                    setBulkImportResults(null);
                     setError('');
                   }}
                   className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
                 >
                   Cancel
                 </button>
-                <button
-                  onClick={addUserType === 'local' ? handleAddLocalUser : handleAddLdapUser}
-                  disabled={addUserLoading || (addUserType === 'local' ? (!localUsername.trim() || !localEmail.trim() || !localPassword.trim()) : !selectedLdapUser)}
-                  className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  {addUserLoading ? 'Adding...' : 'Add User'}
-                </button>
+                {bulkImportMode ? (
+                  <button
+                    onClick={addUserType === 'local' ? handleBulkImportLocal : handleBulkImportLdap}
+                    disabled={bulkImportLoading || (addUserType === 'local' ? !csvFile : !ldapUsersText.trim())}
+                    className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    {bulkImportLoading ? 'Importing...' : 'Import Users'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={addUserType === 'local' ? handleAddLocalUser : handleAddLdapUser}
+                    disabled={addUserLoading || (addUserType === 'local' ? (!localUsername.trim() || !localEmail.trim() || !localPassword.trim()) : !selectedLdapUser)}
+                    className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    {addUserLoading ? 'Adding...' : 'Add User'}
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -7380,6 +7632,87 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   className="flex-1 px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
                 >
                   {adminPasswordLoading ? 'Changing...' : 'Change Password'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit User Modal */}
+      {editUserModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Edit User</h2>
+                <button
+                  onClick={() => {
+                    setEditUserModal({ open: false, userId: null, username: '', email: '' });
+                    setEditUsername('');
+                    setEditEmail('');
+                    setError('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Username
+                </label>
+                <input
+                  type="text"
+                  value={editUsername}
+                  onChange={(e) => setEditUsername(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                  placeholder="Enter username"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                  placeholder="Enter email"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => {
+                    setEditUserModal({ open: false, userId: null, username: '', email: '' });
+                    setEditUsername('');
+                    setEditEmail('');
+                    setError('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleEditUser}
+                  disabled={editUserLoading || !editUsername.trim() || !editEmail.trim() || editUsername.length < 3}
+                  className="flex-1 px-4 py-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  {editUserLoading ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </div>

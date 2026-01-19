@@ -196,6 +196,23 @@ export const authService = {
     }
   },
 
+  async updateUser(userId: number, username: string, email: string): Promise<AllUser> {
+    const response = await fetch(`${API_BASE}/auth/update/${userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ username, email })
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to update user');
+    }
+    
+    return data.user;
+  },
+
   async changeAdminPassword(currentPassword: string, newPassword: string): Promise<void> {
     const response = await fetch(`${API_BASE}/auth/change-admin-password`, {
       method: 'PUT',

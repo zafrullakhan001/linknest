@@ -87,6 +87,8 @@ switch ($method) {
             handleToggleAdmin((int)$matches[1]);
         } elseif (preg_match('#^/toggle-disable/(\d+)$#', $path, $matches)) {
             handleToggleDisable((int)$matches[1]);
+        } elseif (preg_match('#^/update/(\d+)$#', $path, $matches)) {
+            handleUpdateUser((int)$matches[1]);
         } elseif ($path === '/change-admin-password') {
             handleChangeAdminPassword();
         } else {
@@ -1330,6 +1332,70 @@ function handleToggleDisable($userId) {
         sendJSON(['success' => true, 'message' => "User {$action} successfully", 'is_disabled' => (bool)$newDisabledStatus]);
     } else {
         sendJSON(['error' => 'Failed to update disabled status'], 500);
+    }
+}
+
+function handleUpdateUser($userId) {
+    requireAdmin(); // Only admins can update user details
+    
+    $data = getJSONInput();
+    
+    if (!isset($data['username']) || !isset($data['email'])) {
+        sendJSON(['error' => 'Username and email are required'], 400);
+    }
+    
+    $username = trim($data['username']);
+    $email = trim($data['email']);
+    
+    if (strlen($username) < 3) {
+        sendJSON(['error' => 'Username must be at least 3 characters'], 400);
+    }
+    
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        sendJSON(['error' => 'Invalid email address'], 400);
+    }
+    
+    $db = getDB();
+    
+    // Check if user exists
+    $stmt = $db->prepare('SELECT id, username, email FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $user = $stmt->fetch();
+    
+    if (!$user) {
+        sendJSON(['error' => 'User not found'], 404);
+    }
+    
+    // Check if username already exists (excluding current user)
+    $stmt = $db->prepare('SELECT id FROM users WHERE LOWER(username) = LOWER(?) AND id != ?');
+    $stmt->execute([$username, $userId]);
+    if ($stmt->fetch()) {
+        sendJSON(['error' => 'Username already exists'], 409);
+    }
+    
+    // Check if email already exists (excluding current user)
+    $stmt = $db->prepare('SELECT id FROM users WHERE email = ? AND id != ?');
+    $stmt->execute([$email, $userId]);
+    if ($stmt->fetch()) {
+        sendJSON(['error' => 'Email already exists'], 409);
+    }
+    
+    // Update username and email
+    $stmt = $db->prepare('UPDATE users SET username = ?, email = ? WHERE id = ?');
+    $stmt->execute([$username, $email, $userId]);
+    
+    if ($stmt->rowCount() > 0) {
+        sendJSON([
+            'success' => true,
+            'message' => 'User updated successfully',
+            'user' => [
+                'id' => $userId,
+                'username' => $username,
+                'email' => $email
+            ]
+        ]);
+    } else {
+        sendJSON(['error' => 'Failed to update user'], 500);
     }
 }
 
