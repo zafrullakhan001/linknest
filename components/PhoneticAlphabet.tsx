@@ -164,6 +164,28 @@ export const PhoneticAlphabet: React.FC<PhoneticAlphabetProps> = ({ onClose }) =
   const [activeTab, setActiveTab] = useState<string>('usa');
   const [viewMode, setViewMode] = useState<'chart' | 'converter' | 'readaloud'>('chart');
   const [inputText, setInputText] = useState<string>('');
+
+  // Escape key handler to close widget
+  useEffect(() => {
+    if (!onClose) return;
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey) {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape, true);
+    return () => {
+      window.removeEventListener('keydown', handleEscape, true);
+    };
+  }, [onClose]);
   const [copied, setCopied] = useState<boolean>(false);
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);

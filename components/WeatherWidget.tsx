@@ -276,6 +276,28 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ onClose }) => {
   const [todayMoonPhase, setTodayMoonPhase] = useState<number | null>(null);
   const [animationKey, setAnimationKey] = useState<number>(0);
 
+  // Escape key handler to close widget
+  useEffect(() => {
+    if (!onClose) return;
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey) {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape, true);
+    return () => {
+      window.removeEventListener('keydown', handleEscape, true);
+    };
+  }, [onClose]);
+
   // Load location and preferences from preferences or localStorage
   useEffect(() => {
     const loadPreferences = async () => {

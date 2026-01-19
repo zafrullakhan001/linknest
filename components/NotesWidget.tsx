@@ -62,6 +62,32 @@ export const NotesWidget: React.FC<NotesWidgetProps> = ({ onClose }) => {
   const [showNewTabInput, setShowNewTabInput] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Escape key handler to close widget
+  useEffect(() => {
+    if (!onClose) return;
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey) {
+        const target = e.target as HTMLElement;
+        // Don't close if user is editing a note
+        if (editingNoteId !== null) {
+          return;
+        }
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape, true);
+    return () => {
+      window.removeEventListener('keydown', handleEscape, true);
+    };
+  }, [onClose, editingNoteId]);
+
   useEffect(() => {
     if (isAuthenticated) {
       loadNotes();

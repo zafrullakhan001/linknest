@@ -156,6 +156,32 @@ export const CalculatorWidget: React.FC<CalculatorWidgetProps> = ({ onClose }) =
     }
   }, [percentageValue, numberValue, activeTab, percentageMode]);
 
+  // Escape key handler to close widget
+  useEffect(() => {
+    if (!onClose) return;
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey) {
+        const target = e.target as HTMLElement;
+        // Don't close if user is typing in an input field
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+          return;
+        }
+        // Only close if calculator widget is visible
+        if (widgetRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          onClose();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape, true);
+    return () => {
+      window.removeEventListener('keydown', handleEscape, true);
+    };
+  }, [onClose]);
+
   // Keyboard event handler (only for standard calculator)
   useEffect(() => {
     if (activeTab !== 'standard') return;
@@ -167,6 +193,11 @@ export const CalculatorWidget: React.FC<CalculatorWidgetProps> = ({ onClose }) =
       // Check if user is typing in an input field (don't interfere)
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+
+      // Escape closes the widget (handled separately above), skip it here
+      if (e.key === 'Escape') {
         return;
       }
 
@@ -210,8 +241,7 @@ export const CalculatorWidget: React.FC<CalculatorWidgetProps> = ({ onClose }) =
         '=': '=',
         'Enter': '=',
         'NumpadEnter': '=',
-        // Clear
-        'Escape': 'C',
+        // Clear (Delete and Backspace still work for clear)
         'Delete': 'C',
         'Backspace': 'C',
       };

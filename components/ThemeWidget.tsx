@@ -8,6 +8,28 @@ interface ThemeWidgetProps {
 export const ThemeWidget: React.FC<ThemeWidgetProps> = ({ onClose }) => {
   const [currentTheme, setCurrentTheme] = useState<ThemeName>(themeService.getCurrentTheme());
 
+  // Escape key handler to close widget
+  useEffect(() => {
+    if (!onClose) return;
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey) {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape, true);
+    return () => {
+      window.removeEventListener('keydown', handleEscape, true);
+    };
+  }, [onClose]);
+
   useEffect(() => {
     // Update theme when it changes externally
     const handleStorageChange = (e: StorageEvent) => {

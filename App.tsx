@@ -35,6 +35,7 @@ import { ChatWidget } from './components/ChatWidget';
 import { themeService } from './services/themeService';
 import { getMessages, ChatMessage } from './services/chatService';
 import { WidgetQuickAccess } from './components/WidgetQuickAccess';
+import { FloatingWidgetQuickAccess } from './components/FloatingWidgetQuickAccess';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -1112,11 +1113,12 @@ const AppContent: React.FC = () => {
         isOpen={helpAboutOpen}
         onClose={() => setHelpAboutOpen(false)}
       />
-      <WidgetQuickAccess
-        isOpen={showWidgetQuickAccess}
-        onClose={() => setShowWidgetQuickAccess(false)}
-        user={user}
-        widgets={[
+      {showWidgetQuickAccess && (
+        <FloatingWidgetQuickAccess>
+          <WidgetQuickAccess
+            onClose={() => setShowWidgetQuickAccess(false)}
+            user={user}
+            widgets={[
           {
             id: 'clock',
             name: 'Clock',
@@ -1254,7 +1256,9 @@ const AppContent: React.FC = () => {
             requiresAuth: true,
           },
         ]}
-      />
+          />
+        </FloatingWidgetQuickAccess>
+      )}
     </div>
   );
 };

@@ -34,6 +34,32 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const { user } = useAuth();
+
+  // Escape key handler to close widget
+  useEffect(() => {
+    if (!onClose) return;
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey) {
+        const target = e.target as HTMLElement;
+        // Don't close if modals/dialogs are open
+        if (showTileSelector || showJsonInput || duplicateDialog) {
+          return;
+        }
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape, true);
+    return () => {
+      window.removeEventListener('keydown', handleEscape, true);
+    };
+  }, [onClose, showTileSelector, showJsonInput, duplicateDialog]);
   
   // Get last seen message ID from localStorage, or initialize to 0
   const getLastSeenMessageId = (): number => {

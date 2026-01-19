@@ -323,6 +323,28 @@ export const TimezoneDisplay: React.FC<TimezoneDisplayProps> = ({ onClose }) => 
   const { isAuthenticated } = useAuth();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [timezone, setTimezone] = useState<string>('');
+
+  // Escape key handler to close widget
+  useEffect(() => {
+    if (!onClose) return;
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey) {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape, true);
+    return () => {
+      window.removeEventListener('keydown', handleEscape, true);
+    };
+  }, [onClose]);
   const [timezoneOffset, setTimezoneOffset] = useState<string>('');
   const [isAnalog, setIsAnalog] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
