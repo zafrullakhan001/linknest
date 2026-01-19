@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { themeService, ThemeName, AVAILABLE_THEMES } from '../services/themeService';
-import { ThemeEditor } from './ThemeEditor';
 
 interface ThemeWidgetProps {
   onClose?: () => void;
@@ -8,7 +7,6 @@ interface ThemeWidgetProps {
 
 export const ThemeWidget: React.FC<ThemeWidgetProps> = ({ onClose }) => {
   const [currentTheme, setCurrentTheme] = useState<ThemeName>(themeService.getCurrentTheme());
-  const [editingTheme, setEditingTheme] = useState<ThemeName | null>(null);
 
   useEffect(() => {
     // Update theme when it changes externally
@@ -26,20 +24,6 @@ export const ThemeWidget: React.FC<ThemeWidgetProps> = ({ onClose }) => {
   const handleThemeSelect = (themeName: ThemeName) => {
     themeService.setTheme(themeName);
     setCurrentTheme(themeName);
-  };
-
-  const handleEditTheme = (themeName: ThemeName, e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent theme selection when clicking edit
-    setEditingTheme(themeName);
-  };
-
-  const handleEditorClose = () => {
-    setEditingTheme(null);
-  };
-
-  const handleEditorSave = () => {
-    setEditingTheme(null);
-    // Theme customization is already saved in localStorage by ThemeEditor
   };
 
   return (
@@ -126,18 +110,8 @@ export const ThemeWidget: React.FC<ThemeWidgetProps> = ({ onClose }) => {
                 </p>
               </div>
 
-              {/* Edit and Radio Indicator */}
+              {/* Radio Indicator */}
               <div className="flex items-center gap-2">
-                <button
-                  onClick={(e) => handleEditTheme(theme.name, e)}
-                  className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 hover:text-brand-500 dark:hover:text-brand-400 transition-colors"
-                  title="Edit this theme"
-                  aria-label="Edit theme"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                    <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
-                  </svg>
-                </button>
                 <div
                   className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                     isSelected
@@ -158,18 +132,9 @@ export const ThemeWidget: React.FC<ThemeWidgetProps> = ({ onClose }) => {
       {/* Info Note */}
       <div className="mt-6 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg flex-shrink-0">
         <p className="text-xs text-blue-800 dark:text-blue-300">
-          💡 <strong>Tip:</strong> Your theme preference is saved automatically and will persist across sessions. Click the edit icon to customize themes.
+          💡 <strong>Tip:</strong> Your theme preference is saved automatically and will persist across sessions.
         </p>
       </div>
-
-      {/* Theme Editor Modal */}
-      {editingTheme && (
-        <ThemeEditor
-          themeName={editingTheme}
-          onClose={handleEditorClose}
-          onSave={handleEditorSave}
-        />
-      )}
     </div>
   );
 };

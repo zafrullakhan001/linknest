@@ -34,6 +34,7 @@ import { FloatingChatWidget } from './components/FloatingChatWidget';
 import { ChatWidget } from './components/ChatWidget';
 import { themeService } from './services/themeService';
 import { getMessages, ChatMessage } from './services/chatService';
+import { WidgetQuickAccess } from './components/WidgetQuickAccess';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -199,6 +200,9 @@ const AppContent: React.FC = () => {
   // Chat unread messages state
   const [hasUnreadChatMessages, setHasUnreadChatMessages] = useState(false);
   
+  // Widget Quick Access Menu State
+  const [showWidgetQuickAccess, setShowWidgetQuickAccess] = useState(false);
+  
   // Poll for unread messages when widget is closed
   useEffect(() => {
     if (!isAuthenticated || showChat || !user) return;
@@ -361,6 +365,31 @@ const AppContent: React.FC = () => {
       window.removeEventListener('openStyleManager', handleOpenStyleManager);
     };
   }, [user]);
+
+  // Keyboard shortcut for widget quick access (Ctrl+Shift+W or Cmd+Shift+W)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check if user is typing in an input field (don't interfere)
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable ||
+        (target as HTMLInputElement).type === 'search'
+      ) {
+        return;
+      }
+
+      // Ctrl+Shift+W (Windows/Linux) or Cmd+Shift+W (Mac)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'w') {
+        e.preventDefault();
+        setShowWidgetQuickAccess((prev) => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const toggleTheme = () => {
     // When user manually toggles, disable auto-switch
@@ -1081,6 +1110,149 @@ const AppContent: React.FC = () => {
       <HelpAboutDialog
         isOpen={helpAboutOpen}
         onClose={() => setHelpAboutOpen(false)}
+      />
+      <WidgetQuickAccess
+        isOpen={showWidgetQuickAccess}
+        onClose={() => setShowWidgetQuickAccess(false)}
+        user={user}
+        widgets={[
+          {
+            id: 'clock',
+            name: 'Clock',
+            icon: (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+            ),
+            isVisible: showClock,
+            onToggle: toggleClock,
+          },
+          {
+            id: 'weather',
+            name: 'Weather',
+            icon: (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
+                <path d="M22 10a3 3 0 0 0-3-3h-2.5a2.5 2.5 0 0 0-5 0H12a3 3 0 0 0 0 6h3a2.5 2.5 0 0 0 5 0H22Z"></path>
+              </svg>
+            ),
+            isVisible: showWeather,
+            onToggle: toggleWeather,
+          },
+          {
+            id: 'calculator',
+            name: 'Calculator',
+            icon: (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                <rect x="4" y="2" width="16" height="20" rx="2"></rect>
+                <line x1="8" y1="6" x2="16" y2="6"></line>
+                <line x1="8" y1="10" x2="16" y2="10"></line>
+                <line x1="8" y1="14" x2="16" y2="14"></line>
+                <line x1="8" y1="18" x2="16" y2="18"></line>
+              </svg>
+            ),
+            isVisible: showCalculator,
+            onToggle: toggleCalculator,
+          },
+          {
+            id: 'notes',
+            name: 'Notes',
+            icon: (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+              </svg>
+            ),
+            isVisible: showNotes,
+            onToggle: toggleNotes,
+            requiresAuth: true,
+          },
+          {
+            id: 'password-generator',
+            name: 'Password Generator',
+            icon: (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                <rect x="5" y="11" width="14" height="10" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+            ),
+            isVisible: showPasswordGenerator,
+            onToggle: togglePasswordGenerator,
+          },
+          {
+            id: 'phonetic-alphabet',
+            name: 'Phonetic Alphabet',
+            icon: (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
+                <path d="M8 8h4M8 12h4M8 16h4"></path>
+              </svg>
+            ),
+            isVisible: showPhoneticAlphabet,
+            onToggle: togglePhoneticAlphabet,
+          },
+          {
+            id: 'zoom-control',
+            name: 'Zoom Control',
+            icon: (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.35-4.35"></path>
+                <line x1="11" y1="8" x2="11" y2="14"></line>
+                <line x1="8" y1="11" x2="14" y2="11"></line>
+              </svg>
+            ),
+            isVisible: showZoomControl,
+            onToggle: toggleZoomControl,
+          },
+          {
+            id: 'theme',
+            name: 'Theme',
+            icon: (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                <circle cx="13.5" cy="6.5" r=".5"></circle>
+                <circle cx="17.5" cy="10.5" r=".5"></circle>
+                <circle cx="8.5" cy="7.5" r=".5"></circle>
+                <circle cx="6.5" cy="12.5" r=".5"></circle>
+                <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path>
+              </svg>
+            ),
+            isVisible: showTheme,
+            onToggle: toggleThemeWidget,
+          },
+          {
+            id: 'fav-organizer',
+            name: 'Favorite Organizer',
+            icon: (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+                <path d="M12 2v14"></path>
+                <path d="M8 6h8"></path>
+                <path d="M8 10h8"></path>
+                <path d="M8 14h6"></path>
+              </svg>
+            ),
+            isVisible: showFavOrganizer,
+            onToggle: toggleFavOrganizer,
+          },
+          {
+            id: 'chat',
+            name: 'Chat',
+            icon: (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </svg>
+            ),
+            isVisible: showChat,
+            onToggle: toggleChat,
+            requiresAuth: true,
+          },
+        ]}
       />
     </div>
   );

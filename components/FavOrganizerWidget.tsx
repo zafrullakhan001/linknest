@@ -2176,33 +2176,6 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
         </p>
       </div>
 
-      {/* Tabs */}
-      <div className="mb-4">
-        <div className="flex gap-2 border-b border-slate-200 dark:border-slate-700">
-          {/* AI Organization tab hidden */}
-          {/* <button
-            onClick={() => setActiveTab('ai')}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-              activeTab === 'ai'
-                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-            }`}
-          >
-            🤖 AI Organization
-          </button> */}
-          <button
-            onClick={() => setActiveTab('manual')}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-              activeTab === 'manual'
-                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-            }`}
-          >
-            ✋ Manual Organization
-          </button>
-        </div>
-      </div>
-
       {/* AI Organization tab content - hidden */}
       {false ? (
         <>
@@ -2570,9 +2543,8 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
         </>
       ) : (
         <>
-          {/* Manual Organization Tab */}
+          {/* Organization Tab */}
           <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded text-sm text-blue-800 dark:text-blue-300">
-            <p className="font-medium mb-1">Manual Organization</p>
             <p className="text-xs">
               Organize your bookmarks manually without AI. Import bookmarks first, then create categories and assign links.
               Use "Enhance Titles with AI" to get AI-generated titles/descriptions for your categories (very low cost - only sends domain names).

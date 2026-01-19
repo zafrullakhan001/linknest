@@ -254,6 +254,13 @@ function handleLogin() {
         @file_put_contents($logFile, date('[Y-m-d H:i:s] ') . $message . "\n", FILE_APPEND);
     }
     
+    // Check if username/email contains @localhost - if so, skip LDAP and go straight to local
+    $usernameLower = strtolower($username);
+    if ($authMethod === null && strpos($usernameLower, '@localhost') !== false) {
+        $ldapEnabled = false; // Skip LDAP for @localhost users
+        debug_log("LDAP: Skipped - username contains @localhost, using local authentication");
+    }
+    
     // Note: ldap_escape_filter and ldap_escape_dn are now defined globally above
     
     if ($ldapEnabled && extension_loaded('ldap')) {

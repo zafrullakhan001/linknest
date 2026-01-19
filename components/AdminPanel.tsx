@@ -130,6 +130,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [ldapExporting, setLdapExporting] = useState(false);
   const [ldapImporting, setLdapImporting] = useState(false);
   const [ldapImportFile, setLdapImportFile] = useState<File | null>(null);
+  const [samlImportFile, setSamlImportFile] = useState<File | null>(null);
+  const [samlImporting, setSamlImporting] = useState(false);
 
   // LDAP Test state
   const [ldapTestLoading, setLdapTestLoading] = useState(false);
@@ -1821,6 +1823,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setError(err.message || 'Failed to import LDAP users');
     } finally {
       setBulkImportLoading(false);
+    }
+  };
+
+  const handleBulkImportSaml = async () => {
+    if (!samlImportFile) {
+      setError('Please select a CSV file');
+      return;
+    }
+
+    try {
+      setSamlImporting(true);
+      setError('');
+      const result = await authService.bulkImportSamlUsers(samlImportFile);
+      setBulkImportResults(result);
+      setSamlImportFile(null);
+      await loadData();
+    } catch (err: any) {
+      setError(err.message || 'Failed to import SAML users');
+    } finally {
+      setSamlImporting(false);
     }
   };
 
@@ -4538,6 +4560,96 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           </a>
                         </div>
                       </div>
+                    </div>
+
+                    {/* SAML Bulk Import Section */}
+                    <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+                      <h4 className="text-md font-semibold text-slate-900 dark:text-white mb-4">Bulk Import SAML Users</h4>
+                      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
+                        <p className="text-sm text-blue-800 dark:text-blue-300">
+                          <strong>Bulk Import SAML Users</strong>
+                        </p>
+                        <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
+                          Upload a CSV file with columns: username, email, saml_nameid, displayName. The header row is optional and will be automatically skipped.
+                        </p>
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                            Upload CSV File
+                          </label>
+                          <button
+                            onClick={() => {
+                              // Download CSV template
+                              const csvContent = 'username,email,saml_nameid,displayName\njohn.doe,john.doe@example.com,john.doe@idp.example.com,John Doe\njane.smith,jane.smith@example.com,jane.smith@idp.example.com,Jane Smith\nadmin.user,admin.user@example.com,admin.user@idp.example.com,Admin User';
+                              const blob = new Blob([csvContent], { type: 'text/csv' });
+                              const url = window.URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = 'bulk-import-saml-users-template.csv';
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                              window.URL.revokeObjectURL(url);
+                            }}
+                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                              <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
+                              <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+                            </svg>
+                            Download Template
+                          </button>
+                        </div>
+                        <input
+                          type="file"
+                          accept=".csv,text/csv"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              setSamlImportFile(file);
+                              setError('');
+                            }
+                          }}
+                          className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer"
+                        />
+                        {samlImportFile && (
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                            Selected: {samlImportFile.name}
+                          </p>
+                        )}
+                      </div>
+                      <div className="mt-4">
+                        <button
+                          onClick={handleBulkImportSaml}
+                          disabled={samlImporting || !samlImportFile}
+                          className="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                        >
+                          {samlImporting ? 'Importing...' : 'Import SAML Users'}
+                        </button>
+                      </div>
+                      {bulkImportResults && (
+                        <div className={`mt-4 p-4 rounded-lg ${
+                          bulkImportResults.summary?.errors > 0
+                            ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
+                            : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                        }`}>
+                          <p className="text-sm font-medium mb-2">
+                            {bulkImportResults.message}
+                          </p>
+                          {bulkImportResults.summary && (
+                            <div className="text-xs space-y-1">
+                              <p>Created: {bulkImportResults.summary.created}</p>
+                              {bulkImportResults.summary.skipped > 0 && (
+                                <p>Skipped: {bulkImportResults.summary.skipped}</p>
+                              )}
+                              {bulkImportResults.summary.errors > 0 && (
+                                <p className="text-red-600 dark:text-red-400">Errors: {bulkImportResults.summary.errors}</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -7489,7 +7601,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <button
                           onClick={() => {
                             // Download CSV template
-                            const csvContent = 'username,email,password\njohn.doe,john.doe@example.com,SecurePassword123\njane.smith,jane.smith@example.com,SecurePassword456';
+                            const csvContent = 'username,email,password\njohn.doe,john.doe@localhost,SecurePassword123\njane.smith,jane.smith@localhost,SecurePassword456\nadmin.user,admin.user@localhost,SecurePassword789';
                             const blob = new Blob([csvContent], { type: 'text/csv' });
                             const url = window.URL.createObjectURL(blob);
                             const a = document.createElement('a');

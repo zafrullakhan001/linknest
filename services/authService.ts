@@ -450,6 +450,29 @@ export const authService = {
     };
   },
 
+  async bulkImportSamlUsers(csvFile: File): Promise<{ results: any; summary: any; message: string }> {
+    const formData = new FormData();
+    formData.append('csv_file', csvFile);
+
+    const response = await fetch(`${API_BASE}/auth/bulk-import-saml`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to import SAML users');
+    }
+    
+    return {
+      results: data.results,
+      summary: data.summary,
+      message: data.message
+    };
+  },
+
   async startImpersonation(targetUserId: number): Promise<User> {
     const response = await fetch(`${API_BASE}/auth/impersonate/${targetUserId}`, {
       method: 'POST',
