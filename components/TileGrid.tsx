@@ -21,6 +21,8 @@ import { getDisabledTabsFromSettings } from '../services/tabVisibilityService';
 import { rolesService } from '../services/rolesService';
 import { FaTimes } from 'react-icons/fa';
 import { LinkInfoDialog } from './LinkInfoDialog';
+import { useMobile } from '../hooks/useMobile';
+import { MobileTileView } from './MobileTileView';
 
 
 interface TileGridProps {
@@ -31,6 +33,9 @@ interface TileGridProps {
   onCloneTile?: (tileId: string) => Promise<void>;
   isAuthenticated?: boolean;
   onAuthRequired?: () => void;
+  darkMode?: boolean;
+  toggleTheme?: () => void;
+  onHelpClick?: () => void;
 }
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
@@ -1550,10 +1555,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
   onDeleteTile,
   onCloneTile,
   isAuthenticated = false,
-  onAuthRequired
+  onAuthRequired,
+  darkMode = false,
+  toggleTheme = () => {},
+  onHelpClick = () => {}
 }) => {
   const { settings } = useSettings();
   const { user } = useAuth();
+  const isMobile = useMobile(768); // Use mobile view below 768px width
 
   // Store allowed tabs based on user's roles
   const [allowedTabsByRole, setAllowedTabsByRole] = useState<Set<string>>(new Set());
@@ -4558,6 +4567,29 @@ export const TileGrid: React.FC<TileGridProps> = ({
       alert(`Failed to update category favorites: ${errorMsg}`);
     }
   }, [tiles, isAuthenticated, onUpdateTiles, onAuthRequired]);
+
+  // Render mobile view if on mobile device
+  if (isMobile && activeTab !== 'monitoring') {
+    return (
+      <MobileTileView
+        tiles={tiles}
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        onTileClick={handleTileClick}
+        activeTab={activeTab}
+        groupedTiles={groupedTiles}
+        settings={settings}
+        darkMode={darkMode}
+        toggleTheme={toggleTheme}
+        onHelpClick={onHelpClick}
+        onTabChange={requestTab}
+        isAuthenticated={isAuthenticated}
+        disabledTabs={disabledAppTabs}
+        onLoginClick={onAuthRequired}
+        user={user}
+      />
+    );
+  }
 
   return (
     <div className="w-full space-y-6">

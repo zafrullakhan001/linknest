@@ -36,6 +36,7 @@ import { themeService } from './services/themeService';
 import { getMessages, ChatMessage } from './services/chatService';
 import { WidgetQuickAccess } from './components/WidgetQuickAccess';
 import { FloatingWidgetQuickAccess } from './components/FloatingWidgetQuickAccess';
+import { useMobile } from './hooks/useMobile';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -87,6 +88,7 @@ const AppContent: React.FC = () => {
   const { updateStyles, styles, isLoading: stylesLoading } = useStyles();
   const { settings, loading: settingsLoading } = useSettings();
   const disabledTabs = useMemo(() => getDisabledTabsFromSettings(settings), [settings?.disabled_tabs]);
+  const isMobile = useMobile(768); // Hide widgets on mobile devices (below 768px width)
 
   // Footer Details Toggle State
   const [showFooterDetails, setShowFooterDetails] = useState(() => {
@@ -711,6 +713,9 @@ const AppContent: React.FC = () => {
           onCloneTile={handleCloneTile}
           isAuthenticated={isAuthenticated}
           onAuthRequired={() => setAuthModalOpen(true)}
+          darkMode={darkMode}
+          toggleTheme={toggleTheme}
+          onHelpClick={() => setHelpAboutOpen(true)}
         />
       </Suspense>
     );
@@ -796,6 +801,9 @@ const AppContent: React.FC = () => {
           onCloneTile={handleCloneTile}
           isAuthenticated={isAuthenticated}
           onAuthRequired={() => setAuthModalOpen(true)}
+          darkMode={darkMode}
+          toggleTheme={toggleTheme}
+          onHelpClick={() => setHelpAboutOpen(true)}
         />
       </Suspense>
     );
@@ -803,34 +811,37 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="linknest-app-container min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-brand-500 selection:text-white transition-colors duration-300">
-      <Navigation
-        darkMode={darkMode}
-        toggleTheme={toggleTheme}
-        showClock={showClock}
-        toggleClock={toggleClock}
-        showPhoneticAlphabet={showPhoneticAlphabet}
-        togglePhoneticAlphabet={togglePhoneticAlphabet}
-        showNotes={showNotes}
-        toggleNotes={toggleNotes}
-        showWeather={showWeather}
-        toggleWeather={toggleWeather}
-        showCalculator={showCalculator}
-        toggleCalculator={toggleCalculator}
-        showPasswordGenerator={showPasswordGenerator}
-        togglePasswordGenerator={togglePasswordGenerator}
-        showZoomControl={showZoomControl}
-        toggleZoomControl={toggleZoomControl}
-        showTheme={showTheme}
-        toggleThemeWidget={toggleThemeWidget}
-        showFavOrganizer={showFavOrganizer}
-        toggleFavOrganizer={toggleFavOrganizer}
-        showChat={showChat}
-        toggleChat={toggleChat}
-        hasUnreadChatMessages={hasUnreadChatMessages}
-        user={user}
-        onLoginClick={() => setAuthModalOpen(true)}
-        onHelpClick={() => setHelpAboutOpen(true)}
-      />
+      {/* Hide Navigation (widget bar) on mobile view */}
+      {!isMobile && (
+        <Navigation
+          darkMode={darkMode}
+          toggleTheme={toggleTheme}
+          showClock={showClock}
+          toggleClock={toggleClock}
+          showPhoneticAlphabet={showPhoneticAlphabet}
+          togglePhoneticAlphabet={togglePhoneticAlphabet}
+          showNotes={showNotes}
+          toggleNotes={toggleNotes}
+          showWeather={showWeather}
+          toggleWeather={toggleWeather}
+          showCalculator={showCalculator}
+          toggleCalculator={toggleCalculator}
+          showPasswordGenerator={showPasswordGenerator}
+          togglePasswordGenerator={togglePasswordGenerator}
+          showZoomControl={showZoomControl}
+          toggleZoomControl={toggleZoomControl}
+          showTheme={showTheme}
+          toggleThemeWidget={toggleThemeWidget}
+          showFavOrganizer={showFavOrganizer}
+          toggleFavOrganizer={toggleFavOrganizer}
+          showChat={showChat}
+          toggleChat={toggleChat}
+          hasUnreadChatMessages={hasUnreadChatMessages}
+          user={user}
+          onLoginClick={() => setAuthModalOpen(true)}
+          onHelpClick={() => setHelpAboutOpen(true)}
+        />
+      )}
       {user?.impersonating && (
         <div className="bg-amber-500 dark:bg-amber-600 text-white px-4 py-3 flex items-center justify-between border-b border-amber-600 dark:border-amber-700">
           <div className="flex items-center gap-3">
@@ -879,7 +890,9 @@ const AppContent: React.FC = () => {
           </div>
         </div>
       )}
-      <footer className={`linknest-footer ${showFooterDetails ? 'py-8' : 'py-4'} text-sm relative border-t border-slate-200 dark:border-slate-800 transition-all duration-300`} style={{ zIndex: 0 }}>
+      {/* Hide footer on mobile view */}
+      {!isMobile && (
+        <footer className={`linknest-footer ${showFooterDetails ? 'py-8' : 'py-4'} text-sm relative border-t border-slate-200 dark:border-slate-800 transition-all duration-300`} style={{ zIndex: 0 }}>
         <div className="container mx-auto max-w-6xl-plus px-4">
           <div className="flex flex-col items-center gap-6">
             {/* Quick Navigation Links */}
@@ -1020,81 +1033,87 @@ const AppContent: React.FC = () => {
           </div>
         </div>
       </footer>
-      {showClock && (
-        <FloatingClock>
-          <TimezoneDisplay onClose={toggleClock} />
-        </FloatingClock>
       )}
-      {showPhoneticAlphabet && (
-        <FloatingPhoneticAlphabet>
-          <PhoneticAlphabet onClose={togglePhoneticAlphabet} />
-        </FloatingPhoneticAlphabet>
-      )}
-      {isAuthenticated && showNotes && (
-        <FloatingNotesWidget>
-          <NotesWidget onClose={toggleNotes} />
-        </FloatingNotesWidget>
-      )}
-      {showWeather && (
-        <FloatingWeatherWidget>
-          <WeatherWidget onClose={toggleWeather} />
-        </FloatingWeatherWidget>
-      )}
-      {showCalculator && (
-        <FloatingCalculatorWidget>
-          <CalculatorWidget onClose={toggleCalculator} />
-        </FloatingCalculatorWidget>
-      )}
-      {showPasswordGenerator && (
-        <FloatingPasswordGeneratorWidget>
-          <PasswordGeneratorWidget onClose={togglePasswordGenerator} />
-        </FloatingPasswordGeneratorWidget>
-      )}
-      {showZoomControl && (
-        <FloatingPageZoomControl onClose={toggleZoomControl}>
-          <PageZoomWidget />
-        </FloatingPageZoomControl>
-      )}
-      {showTheme && (
-        <FloatingThemeWidget onClose={toggleThemeWidget}>
-          <ThemeWidget onClose={toggleThemeWidget} />
-        </FloatingThemeWidget>
-      )}
-      {showFavOrganizer && (
-        <FloatingFavOrganizerWidget onClose={toggleFavOrganizer}>
-          <FavOrganizerWidget />
-        </FloatingFavOrganizerWidget>
-      )}
-      {showChat && isAuthenticated && (
-        <FloatingChatWidget>
-          <ChatWidget
-            tiles={tiles}
-            onClose={toggleChat}
-            onUnreadChange={setHasUnreadChatMessages}
-            onTileImported={async () => {
-              // Reload tiles after import with a small delay to ensure database save completes
-              try {
-                // Wait a bit for the database transaction to complete
-                await new Promise(resolve => setTimeout(resolve, 500));
-                const stored = await getTiles();
-                setTiles(stored);
-                
-                // Switch to private tab to show the imported tile
-                // Ensure we're on the main grid page first
-                if (window.location.hash !== '#/' && window.location.hash !== '') {
-                  window.location.hash = '#/';
-                  setTimeout(() => {
-                    window.dispatchEvent(new CustomEvent('switchTab', { detail: 'private' }));
-                  }, 100);
-                } else {
-                  window.dispatchEvent(new CustomEvent('switchTab', { detail: 'private' }));
-                }
-              } catch (error) {
-                console.error('Failed to reload tiles:', error);
-              }
-            }}
-          />
-        </FloatingChatWidget>
+      {/* Hide all widgets on mobile view */}
+      {!isMobile && (
+        <>
+          {showClock && (
+            <FloatingClock>
+              <TimezoneDisplay onClose={toggleClock} />
+            </FloatingClock>
+          )}
+          {showPhoneticAlphabet && (
+            <FloatingPhoneticAlphabet>
+              <PhoneticAlphabet onClose={togglePhoneticAlphabet} />
+            </FloatingPhoneticAlphabet>
+          )}
+          {isAuthenticated && showNotes && (
+            <FloatingNotesWidget>
+              <NotesWidget onClose={toggleNotes} />
+            </FloatingNotesWidget>
+          )}
+          {showWeather && (
+            <FloatingWeatherWidget>
+              <WeatherWidget onClose={toggleWeather} />
+            </FloatingWeatherWidget>
+          )}
+          {showCalculator && (
+            <FloatingCalculatorWidget>
+              <CalculatorWidget onClose={toggleCalculator} />
+            </FloatingCalculatorWidget>
+          )}
+          {showPasswordGenerator && (
+            <FloatingPasswordGeneratorWidget>
+              <PasswordGeneratorWidget onClose={togglePasswordGenerator} />
+            </FloatingPasswordGeneratorWidget>
+          )}
+          {showZoomControl && (
+            <FloatingPageZoomControl onClose={toggleZoomControl}>
+              <PageZoomWidget />
+            </FloatingPageZoomControl>
+          )}
+          {showTheme && (
+            <FloatingThemeWidget onClose={toggleThemeWidget}>
+              <ThemeWidget onClose={toggleThemeWidget} />
+            </FloatingThemeWidget>
+          )}
+          {showFavOrganizer && (
+            <FloatingFavOrganizerWidget onClose={toggleFavOrganizer}>
+              <FavOrganizerWidget />
+            </FloatingFavOrganizerWidget>
+          )}
+          {showChat && isAuthenticated && (
+            <FloatingChatWidget>
+              <ChatWidget
+                tiles={tiles}
+                onClose={toggleChat}
+                onUnreadChange={setHasUnreadChatMessages}
+                onTileImported={async () => {
+                  // Reload tiles after import with a small delay to ensure database save completes
+                  try {
+                    // Wait a bit for the database transaction to complete
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    const stored = await getTiles();
+                    setTiles(stored);
+                    
+                    // Switch to private tab to show the imported tile
+                    // Ensure we're on the main grid page first
+                    if (window.location.hash !== '#/' && window.location.hash !== '') {
+                      window.location.hash = '#/';
+                      setTimeout(() => {
+                        window.dispatchEvent(new CustomEvent('switchTab', { detail: 'private' }));
+                      }, 100);
+                    } else {
+                      window.dispatchEvent(new CustomEvent('switchTab', { detail: 'private' }));
+                    }
+                  } catch (error) {
+                    console.error('Failed to reload tiles:', error);
+                  }
+                }}
+              />
+            </FloatingChatWidget>
+          )}
+        </>
       )}
       <AuthModal
         isOpen={authModalOpen}
@@ -1113,7 +1132,8 @@ const AppContent: React.FC = () => {
         isOpen={helpAboutOpen}
         onClose={() => setHelpAboutOpen(false)}
       />
-      {showWidgetQuickAccess && (
+      {/* Hide widget quick access on mobile view */}
+      {!isMobile && showWidgetQuickAccess && (
         <FloatingWidgetQuickAccess>
           <WidgetQuickAccess
             onClose={() => setShowWidgetQuickAccess(false)}
