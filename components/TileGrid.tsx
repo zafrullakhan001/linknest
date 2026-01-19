@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Tile, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS, TileVisibility, TileMessage } from '../types';
+import { Tile, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS, TileVisibility, TileMessage, Link } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles, cloneCategory, toggleCategoryFavorite, getRecycleBin, restoreTile, purgeRecycleBin, permanentDeleteTile, permanentDeleteCategory, deleteTile, getArchive, archiveTile, unarchiveTile, purgeArchive, archiveCategory, unarchiveCategory, getFavoriteLinks, FavoriteLink } from '../services/storageService';
 import {
@@ -20,6 +20,7 @@ import { MonitoringDashboard } from './MonitoringDashboard';
 import { getDisabledTabsFromSettings } from '../services/tabVisibilityService';
 import { rolesService } from '../services/rolesService';
 import { FaTimes } from 'react-icons/fa';
+import { LinkInfoDialog } from './LinkInfoDialog';
 
 
 interface TileGridProps {
@@ -1632,6 +1633,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingTile, setEditingTile] = useState<Tile | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [linkInfoDialog, setLinkInfoDialog] = useState<{ link: Link } | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     try {
       const saved = localStorage.getItem('linknest_active_tab');
@@ -5361,6 +5363,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
             icon?: string;
             browser?: string | null;
             health?: any;
+            richTextContent?: string;
             tile: {
               id: string;
               title: string;
@@ -5394,6 +5397,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         icon: link.icon,
                         browser: link.browser,
                         health: link.health,
+                        richTextContent: link.richTextContent,
                         tile: {
                           id: tile.id,
                           title: tile.title,
@@ -5460,8 +5464,21 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         if (e.ctrlKey || e.metaKey) {
                           e.preventDefault();
                           e.stopPropagation();
+                          // If rich text content exists, still show dialog on Ctrl/Cmd
+                          if (link.richTextContent) {
+                            setLinkInfoDialog({ link: link as Link });
+                            return;
+                          }
                           const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
                           if (newWindow) newWindow.focus();
+                          return;
+                        }
+
+                        // If link has rich text content, show dialog instead of opening URL
+                        if (link.richTextContent) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setLinkInfoDialog({ link: link as Link });
                           return;
                         }
 
@@ -7931,6 +7948,18 @@ export const TileGrid: React.FC<TileGridProps> = ({
           </div>
         </div>,
         document.body
+      )}
+
+      {/* Link Info Dialog */}
+      {linkInfoDialog && (
+        <LinkInfoDialog
+          isOpen={!!linkInfoDialog}
+          onClose={() => setLinkInfoDialog(null)}
+          linkLabel={linkInfoDialog.link.label}
+          linkIcon={linkInfoDialog.link.icon}
+          richTextContent={linkInfoDialog.link.richTextContent || ''}
+          linkUrl={linkInfoDialog.link.url}
+        />
       )}
     </div >
   );

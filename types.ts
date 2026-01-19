@@ -19,6 +19,7 @@ export interface Link {
   allowedUsers?: number[]; // Array of user IDs for private links
   notes?: string; // Optional notes/description for the link
   tooltip?: string; // Optional custom hover tooltip text
+  richTextContent?: string; // Optional rich text HTML content - if present, shows dialog instead of opening URL
   visibleFrom?: string; // ISO date string - link becomes visible from this date/time
   expiresAt?: string; // ISO date string - link expires at this date/time
   browser?: string; // Browser to open link in (e.g., 'chrome-stable', 'edge-stable', 'default')

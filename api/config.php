@@ -711,6 +711,23 @@ function initDatabase() {
             error_log('Links browser migration warning: ' . $e->getMessage());
         }
         
+        // Migrate existing links table to add rich_text_content column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(links)")->fetchAll();
+            $hasRichTextContent = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'rich_text_content') {
+                    $hasRichTextContent = true;
+                    break;
+                }
+            }
+            if (!$hasRichTextContent) {
+                $db->exec('ALTER TABLE links ADD COLUMN rich_text_content TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Links rich_text_content migration warning: ' . $e->getMessage());
+        }
+        
         // Create rich_text_content table
         $db->exec('CREATE TABLE IF NOT EXISTS rich_text_content (
             id TEXT PRIMARY KEY,

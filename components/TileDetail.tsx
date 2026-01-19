@@ -10,6 +10,7 @@ import { RichTextEditor } from './RichTextEditor';
 import { RichTextContentItem } from './RichTextContentItem';
 import { RichTextContent } from '../types';
 import { isPublicLinkFavorite, togglePublicLinkFavorite } from '../services/publicFavoritesService';
+import { LinkInfoDialog } from './LinkInfoDialog';
 
 interface TileDetailProps {
     tile: Tile;
@@ -200,14 +201,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editSections, setEditSections] = useState<LinkSection[]>(tile.sections || []);
 
     // Temporary State for Adding Links (keyed by section ID)
-    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], notes: string, tooltip: string, browser: string }>>({});
+    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], notes: string, tooltip: string, browser: string, richTextContent: string }>>({});
 
     // Selection State for Bulk Actions
     const [selectedLinkIds, setSelectedLinkIds] = useState<string[]>([]);
 
     // State for Editing Links (keyed by link ID)
     const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
-    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], notes: string, tooltip: string, browser: string }>>({});
+    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], notes: string, tooltip: string, browser: string, richTextContent: string }>>({});
 
     // Available browsers from BrowserLauncher API
     const [availableBrowsers, setAvailableBrowsers] = useState<string[]>([]);
@@ -304,6 +305,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [hoveredLinkId, setHoveredLinkId] = useState<string | null>(null);
     const [notesDialogState, setNotesDialogState] = useState<{ linkId: string; notes: string; linkLabel: string } | null>(null);
     const [notesCopied, setNotesCopied] = useState(false);
+    const [linkInfoDialog, setLinkInfoDialog] = useState<{ link: Link } | null>(null);
 
     // Handle ESC key to close notes dialog
     useEffect(() => {
@@ -1488,11 +1490,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     // Link Management
-    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'notes' | 'tooltip' | 'browser', value: string | LinkVisibility | number[]) => {
+    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'notes' | 'tooltip' | 'browser' | 'richTextContent', value: string | LinkVisibility | number[]) => {
         setNewLinkState(prev => ({
             ...prev,
             [sectionId]: {
-                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '', browser: 'default' }),
+                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '', browser: 'default', richTextContent: '' }),
                 [field]: value
             }
         }));
@@ -1520,7 +1522,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
             notes: state.notes?.trim() || undefined,
             tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
-            browser: state.browser && state.browser !== 'default' ? state.browser : undefined
+            browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
+            richTextContent: state.richTextContent?.trim() || undefined
         };
 
         if (editTabs.length > 0) {
@@ -1558,7 +1561,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
 
         // Clear form and hide it
-        setNewLinkState(prev => ({ ...prev, [sectionId]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '', browser: 'default' } }));
+        setNewLinkState(prev => ({ ...prev, [sectionId]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '', browser: 'default', richTextContent: '' } }));
         setShowUserPicker(prev => ({ ...prev, [sectionId]: false }));
         setShowLinkEmojiPicker(prev => ({ ...prev, [sectionId]: false }));
         setShowAddLinkForm(prev => ({ ...prev, [sectionId]: false }));
@@ -1750,7 +1753,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 allowedUsers: link.allowedUsers || [],
                 notes: link.notes || '',
                 tooltip: link.tooltip || '',
-                browser: link.browser || 'default'
+                browser: link.browser || 'default',
+                richTextContent: link.richTextContent || ''
             }
         });
         setShowUserPicker(prev => ({ ...prev, [link.id]: false }));
@@ -1792,7 +1796,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
                                         notes: state.notes?.trim() || undefined,
                                         tooltip: state.tooltip?.trim() || stripHtmlTags(state.label).trim() || undefined,
-                                        browser: state.browser && state.browser !== 'default' ? state.browser : undefined
+                                        browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
+                                        richTextContent: state.richTextContent?.trim() || undefined
                                     }
                                     : l
                             ),
@@ -3125,11 +3130,24 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         // Explicitly open in new tab and focus it using window.open
                                                                         e.preventDefault();
                                                                         e.stopPropagation();
+                                                                        // If rich text content exists, still show dialog on Ctrl/Cmd
+                                                                        if (link.richTextContent) {
+                                                                            setLinkInfoDialog({ link });
+                                                                            return;
+                                                                        }
                                                                         const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
                                                                         // Focus the new window/tab if it was successfully opened
                                                                         if (newWindow) {
                                                                             newWindow.focus();
                                                                         }
+                                                                        return;
+                                                                    }
+
+                                                                    // If link has rich text content, show dialog instead of opening URL
+                                                                    if (link.richTextContent) {
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        setLinkInfoDialog({ link });
                                                                         return;
                                                                     }
 
@@ -3581,6 +3599,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         document.body
                     )}
                 </>
+            )}
+
+            {/* Link Info Dialog */}
+            {linkInfoDialog && (
+                <LinkInfoDialog
+                    isOpen={!!linkInfoDialog}
+                    onClose={() => setLinkInfoDialog(null)}
+                    linkLabel={linkInfoDialog.link.label}
+                    linkIcon={linkInfoDialog.link.icon}
+                    richTextContent={linkInfoDialog.link.richTextContent || ''}
+                    linkUrl={linkInfoDialog.link.url}
+                />
             )}
             </>
         );
@@ -4777,6 +4807,42 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         </div>
                                                                                     </div>
 
+                                                                                    {/* Rich Text Content */}
+                                                                                    <div>
+                                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                                                                                            Information Content (Rich Text)
+                                                                                        </label>
+                                                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                                                                                            If provided, clicking this link will open a rich text dialog instead of navigating to the URL. Leave empty to open the URL normally.
+                                                                                        </p>
+                                                                                        <RichTextEditor
+                                                                                            value={editLinkState[link.id]?.richTextContent || ''}
+                                                                                            onChange={(html) => {
+                                                                                                const currentState = editLinkState[link.id] || {
+                                                                                                    label: link.label,
+                                                                                                    url: link.url,
+                                                                                                    icon: link.icon || '',
+                                                                                                    textColor: link.textColor || '',
+                                                                                                    visibility: link.visibility || 'public',
+                                                                                                    allowedUsers: link.allowedUsers || [],
+                                                                                                    notes: link.notes || '',
+                                                                                                    tooltip: link.tooltip || '',
+                                                                                                    browser: link.browser || 'default',
+                                                                                                    richTextContent: ''
+                                                                                                };
+                                                                                                setEditLinkState({
+                                                                                                    ...editLinkState,
+                                                                                                    [link.id]: {
+                                                                                                        ...currentState,
+                                                                                                        richTextContent: html
+                                                                                                    }
+                                                                                                });
+                                                                                            }}
+                                                                                            placeholder="Enter rich text content that will be displayed in a dialog when the link is clicked..."
+                                                                                            className="min-h-[200px]"
+                                                                                        />
+                                                                                    </div>
+
                                                                                     {/* Browser Selection - Only show if feature is enabled */}
                                                                                     {settings.browser_specific_links_enabled === '1' && (
                                                                                         <div>
@@ -5093,7 +5159,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 onClick={() => {
                                                                                     setShowAddLinkForm(prev => ({ ...prev, [section.id]: false }));
                                                                                     // Clear form when closing
-                                                                                    setNewLinkState(prev => ({ ...prev, [section.id]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '', browser: 'default' } }));
+                                                                                    setNewLinkState(prev => ({ ...prev, [section.id]: { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, allowedUsers: [], notes: '', tooltip: '', browser: 'default', richTextContent: '' } }));
                                                                                 }}
                                                                                 className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded transition-colors"
                                                                                 title="Close form"
@@ -5224,6 +5290,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
                                                                                 />
                                                                             </div>
+                                                                        </div>
+
+                                                                        {/* Rich Text Content */}
+                                                                        <div>
+                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                                                                                Information Content (Rich Text)
+                                                                            </label>
+                                                                            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                                                                                If provided, clicking this link will open a rich text dialog instead of navigating to the URL. Leave empty to open the URL normally.
+                                                                            </p>
+                                                                            <RichTextEditor
+                                                                                value={newLinkState[section.id]?.richTextContent || ''}
+                                                                                onChange={(html) => updateNewLinkState(section.id, 'richTextContent', html)}
+                                                                                placeholder="Enter rich text content that will be displayed in a dialog when the link is clicked..."
+                                                                                className="min-h-[200px]"
+                                                                            />
                                                                         </div>
 
                                                                         {/* Browser Selection - Only show if feature is enabled */}

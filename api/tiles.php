@@ -493,6 +493,7 @@ function handleGetTiles() {
                                         'allowedUsers' => $allowedUsers,
                                         'notes' => isset($linkRow['notes']) ? $linkRow['notes'] : null,
                                         'tooltip' => isset($linkRow['tooltip']) ? $linkRow['tooltip'] : null,
+                                        'richTextContent' => isset($linkRow['rich_text_content']) ? $linkRow['rich_text_content'] : null,
                                         'visibleFrom' => isset($linkRow['visible_from']) ? $linkRow['visible_from'] : null,
                                         'expiresAt' => isset($linkRow['expires_at']) ? $linkRow['expires_at'] : null,
                                         'browser' => isset($linkRow['browser']) ? $linkRow['browser'] : null,
@@ -586,6 +587,7 @@ function handleGetTiles() {
                                 'allowedUsers' => $allowedUsers,
                                 'notes' => $linkRow['notes'] ?? null,
                                 'tooltip' => $linkRow['tooltip'] ?? null,
+                                'richTextContent' => $linkRow['rich_text_content'] ?? null,
                                 'browser' => $linkRow['browser'] ?? null,
                                 'isFavorite' => (bool)($linkRow['is_favorite'] ?? false),
                                 'hasRoleAccess' => $linkHasRoleAccess,
@@ -924,6 +926,7 @@ function handleGetTile($tileId) {
                     'allowedUsers' => $allowedUsers,
                     'notes' => isset($linkRow['notes']) ? $linkRow['notes'] : null,
                     'tooltip' => isset($linkRow['tooltip']) ? $linkRow['tooltip'] : null,
+                    'richTextContent' => isset($linkRow['rich_text_content']) ? $linkRow['rich_text_content'] : null,
                     'visibleFrom' => isset($linkRow['visible_from']) ? $linkRow['visible_from'] : null,
                     'expiresAt' => isset($linkRow['expires_at']) ? $linkRow['expires_at'] : null,
                     'browser' => isset($linkRow['browser']) ? $linkRow['browser'] : null,
@@ -1033,6 +1036,7 @@ function handleGetTile($tileId) {
                         'allowedUsers' => $allowedUsers,
                         'notes' => $linkRow['notes'] ?? null,
                         'tooltip' => $linkRow['tooltip'] ?? null,
+                        'richTextContent' => $linkRow['rich_text_content'] ?? null,
                         'browser' => $linkRow['browser'] ?? null,
                         'hasRoleAccess' => $linkHasRoleAccess,
                         'position' => (int)($linkRow['position'] ?? 0)
@@ -1185,7 +1189,7 @@ function handleCreateTile() {
                                 ? json_encode($link['allowedUsers']) 
                                 : null;
                             try {
-                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                                 $linkStmt->execute([
                                     $linkId,
                                     $sectionId,
@@ -1200,7 +1204,8 @@ function handleCreateTile() {
                                     $link['visibleFrom'] ?? null,
                                     $link['expiresAt'] ?? null,
                                     $link['browser'] ?? null,
-                                    isset($link['position']) ? (int)$link['position'] : 0
+                                    isset($link['position']) ? (int)$link['position'] : 0,
+                                    $link['richTextContent'] ?? null
                                 ]);
                             } catch (PDOException $e) {
                                 error_log('Error inserting link: ' . $e->getMessage());
@@ -1505,7 +1510,7 @@ function handleUpdateTile($tileId) {
                                 $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) 
                                     ? json_encode($link['allowedUsers']) 
                                     : null;
-                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                                 $linkStmt->execute([
                                     $linkId,
                                     $sectionId,
@@ -1520,7 +1525,8 @@ function handleUpdateTile($tileId) {
                                     $link['visibleFrom'] ?? null,
                                     $link['expiresAt'] ?? null,
                                     $link['browser'] ?? null,
-                                    isset($link['position']) ? (int)$link['position'] : 0
+                                    isset($link['position']) ? (int)$link['position'] : 0,
+                                    $link['richTextContent'] ?? null
                                 ]);
                             }
                         }
@@ -1911,7 +1917,7 @@ function handleCloneTile($tileId) {
                 
                 foreach ($links as $link) {
                     $newLinkId = uniqid('link_', true);
-                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                     $linkInsertStmt->execute([
                         $newLinkId,
                         $newSectionId,
@@ -1926,7 +1932,8 @@ function handleCloneTile($tileId) {
                         $link['visible_from'] ?? null,
                         $link['expires_at'] ?? null,
                         $link['browser'] ?? null,
-                        isset($link['position']) ? (int)$link['position'] : 0
+                        isset($link['position']) ? (int)$link['position'] : 0,
+                        $link['rich_text_content'] ?? null
                     ]);
                 }
                 
@@ -1990,7 +1997,7 @@ function handleCloneTile($tileId) {
                 
                 foreach ($links as $link) {
                     $newLinkId = uniqid('link_', true);
-                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                     $linkInsertStmt->execute([
                         $newLinkId,
                         $newSectionId,
@@ -2005,7 +2012,8 @@ function handleCloneTile($tileId) {
                         $link['visible_from'] ?? null,
                         $link['expires_at'] ?? null,
                         $link['browser'] ?? null,
-                        isset($link['position']) ? (int)$link['position'] : 0
+                        isset($link['position']) ? (int)$link['position'] : 0,
+                        $link['rich_text_content'] ?? null
                     ]);
                 }
                 
@@ -2269,7 +2277,7 @@ function handleCloneCategory($categoryName) {
                         
                         foreach ($links as $link) {
                             $newLinkId = uniqid('link_', true);
-                            $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                            $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                             $linkInsertStmt->execute([
                                 $newLinkId,
                                 $newSectionId,
@@ -2332,7 +2340,7 @@ function handleCloneCategory($categoryName) {
                         
                         foreach ($links as $link) {
                             $newLinkId = uniqid('link_', true);
-                            $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                            $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                             $linkInsertStmt->execute([
                                 $newLinkId,
                                 $newSectionId,
@@ -3180,6 +3188,7 @@ function handleGetRecycleBin() {
                         'allowedUsers' => $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [],
                         'notes' => $linkRow['notes'] ?? null,
                         'tooltip' => $linkRow['tooltip'] ?? null,
+                        'richTextContent' => $linkRow['rich_text_content'] ?? null,
                         'visibleFrom' => $linkRow['visible_from'] ?? null,
                         'expiresAt' => $linkRow['expires_at'] ?? null,
                         'browser' => $linkRow['browser'] ?? null
