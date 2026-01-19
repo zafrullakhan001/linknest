@@ -1860,10 +1860,10 @@ function canUserEditTile($userId, $tileId, $db) {
     $stmt->execute([$userId, $tileId]);
     $permission = $stmt->fetch();
     
-    // If no explicit permission exists, default to false (view-only access)
-    // Users must be explicitly granted edit permission
+    // If no explicit permission exists, default to true (allow edit)
+    // This handles the case where permission tables exist but aren't being used
     if ($permission === false) {
-        return false; // No permission record = view-only (no edit access)
+        return true; // No permission record = allow edit (backward compatibility)
     }
     
     return (bool)$permission['can_edit'];
@@ -1963,10 +1963,10 @@ function canUserDeleteTile($userId, $tileId, $db) {
     $stmt->execute([$userId, $tileId]);
     $permission = $stmt->fetch();
     
-    // If no explicit permission exists, default to false (view-only access)
-    // Users must be explicitly granted delete permission
+    // If no explicit permission exists, default to true (allow delete)
+    // This handles the case where permission tables exist but aren't being used
     if ($permission === false) {
-        return false; // No permission record = view-only (no delete access)
+        return true; // No permission record = allow delete (backward compatibility)
     }
     
     return (bool)$permission['can_delete'];
