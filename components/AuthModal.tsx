@@ -63,7 +63,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       // Reset domain when modal opens to ensure fresh data
       setLdapDomain(null);
       // Determine LDAP enabled from global settings context
-      const enabled = String(appSettings.ldap_enabled || '0') === '1';
+      // Explicitly check for '0', empty string, null, undefined, or false
+      const ldapEnabledSetting = appSettings.ldap_enabled;
+      const enabled = ldapEnabledSetting === '1' || ldapEnabledSetting === 1 || ldapEnabledSetting === true;
       setLdapEnabled(enabled);
       
       // Determine SAML enabled from global settings context
@@ -75,21 +77,51 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       setLocalAuthEnabled(localAuthEnabledValue);
 
       // Set default auth method based on available options
-      if (enabled && localAuthEnabledValue) {
+      // Also reset if current method is not available
+      const currentMethod = authMethod;
+      
+      // If LDAP is disabled but current method is 'ldap' or 'auto', switch to available method first
+      if (!enabled && (currentMethod === 'ldap' || currentMethod === 'auto')) {
+        if (samlEnabledValue) {
+          setAuthMethod('saml');
+        } else if (localAuthEnabledValue) {
+          setAuthMethod('local');
+        }
+      } else if (enabled && localAuthEnabledValue) {
         // If both LDAP and local are enabled, default to 'auto'
-        setAuthMethod('auto');
+        if (currentMethod !== 'auto' && currentMethod !== 'ldap' && currentMethod !== 'local' && currentMethod !== 'saml') {
+          setAuthMethod('auto');
+        }
       } else if (samlEnabledValue && !localAuthEnabledValue && !enabled) {
         // If only SAML is enabled, default to 'saml'
-        setAuthMethod('saml');
+        if (currentMethod !== 'saml') {
+          setAuthMethod('saml');
+        }
       } else if (enabled && !localAuthEnabledValue) {
         // If only LDAP is enabled, default to 'ldap'
-        setAuthMethod('ldap');
+        if (currentMethod !== 'ldap') {
+          setAuthMethod('ldap');
+        }
       } else if (localAuthEnabledValue && !enabled && !samlEnabledValue) {
         // If only local is enabled, default to 'local'
-        setAuthMethod('local');
+        if (currentMethod !== 'local') {
+          setAuthMethod('local');
+        }
       } else if (samlEnabledValue && localAuthEnabledValue && !enabled) {
         // If SAML and local are enabled, default to 'local'
-        setAuthMethod('local');
+        if (currentMethod === 'ldap' || currentMethod === 'auto') {
+          setAuthMethod('local');
+        }
+      } else if (samlEnabledValue && enabled && !localAuthEnabledValue) {
+        // If SAML and LDAP are enabled, default to 'saml'
+        if (currentMethod === 'local' || currentMethod === 'auto') {
+          setAuthMethod('saml');
+        }
+      } else if (samlEnabledValue && enabled && localAuthEnabledValue) {
+        // If all three are enabled, default to 'auto'
+        if (currentMethod !== 'auto' && currentMethod !== 'ldap' && currentMethod !== 'local' && currentMethod !== 'saml') {
+          setAuthMethod('auto');
+        }
       }
 
       // Extract domain from settings if LDAP is enabled
@@ -334,7 +366,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-2xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200">
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors z-10"
+          type="button"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
             <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
@@ -407,7 +440,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {mode === 'login' && (localAuthEnabled || samlEnabled) && (
+          {mode === 'login' && (localAuthEnabled || samlEnabled || ldapEnabled) && (
             <>
               {/* Authentication Method Selection - Radio Buttons */}
               {(ldapEnabled || samlEnabled || localAuthEnabled) && (
