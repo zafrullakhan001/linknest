@@ -38,13 +38,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [authMethod, setAuthMethod] = useState<'local' | 'ldap' | 'auto'>('auto');
+  const [authMethod, setAuthMethod] = useState<'local' | 'ldap' | 'auto' | 'saml'>('auto');
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const [ldapDomain, setLdapDomain] = useState<string | null>(null);
   const [ldapEnabled, setLdapEnabled] = useState(false);
+  const [samlEnabled, setSamlEnabled] = useState(false);
+  const [localAuthEnabled, setLocalAuthEnabled] = useState(true);
   const [authState, setAuthState] = useState<AuthState>('idle');
   const [progress, setProgress] = useState(0);
   const [countdown, setCountdown] = useState(30);
@@ -63,6 +65,32 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       // Determine LDAP enabled from global settings context
       const enabled = String(appSettings.ldap_enabled || '0') === '1';
       setLdapEnabled(enabled);
+      
+      // Determine SAML enabled from global settings context
+      const samlEnabledValue = String(appSettings.saml_enabled || '0') === '1';
+      setSamlEnabled(samlEnabledValue);
+      
+      // Determine local auth enabled from global settings context
+      const localAuthEnabledValue = String(appSettings.local_auth_enabled || '1') === '1';
+      setLocalAuthEnabled(localAuthEnabledValue);
+
+      // Set default auth method based on available options
+      if (enabled && localAuthEnabledValue) {
+        // If both LDAP and local are enabled, default to 'auto'
+        setAuthMethod('auto');
+      } else if (samlEnabledValue && !localAuthEnabledValue && !enabled) {
+        // If only SAML is enabled, default to 'saml'
+        setAuthMethod('saml');
+      } else if (enabled && !localAuthEnabledValue) {
+        // If only LDAP is enabled, default to 'ldap'
+        setAuthMethod('ldap');
+      } else if (localAuthEnabledValue && !enabled && !samlEnabledValue) {
+        // If only local is enabled, default to 'local'
+        setAuthMethod('local');
+      } else if (samlEnabledValue && localAuthEnabledValue && !enabled) {
+        // If SAML and local are enabled, default to 'local'
+        setAuthMethod('local');
+      }
 
       // Extract domain from settings if LDAP is enabled
       if (enabled) {
@@ -190,6 +218,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     e.preventDefault();
     setError('');
     setSuccess('');
+    
+    // Handle SAML login separately
+    if (mode === 'login' && authMethod === 'saml') {
+      const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+      window.location.href = `${API_BASE}/saml?action=login`;
+      return;
+    }
+    
     setLoading(true);
     setProgress(0);
     setCountdown(30);
@@ -295,7 +331,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 dark:bg-slate-900/80 backdrop-blur-sm" onClick={onClose}></div>
-      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-lg p-8 relative shadow-2xl animate-in fade-in zoom-in duration-200">
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-2xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
@@ -305,88 +341,237 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           </svg>
         </button>
 
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-6">
-          {mode === 'login' ? 'Sign In' : 'Create Account'}
-        </h2>
+        {/* Logo and Application Name */}
+        <div className="flex items-center justify-between mb-6 relative">
+          {/* Left: Logo and App Name */}
+          <div className="flex items-center gap-3">
+            {appSettings.logo_type === 'image' && appSettings.logo_image ? (
+              <img
+                src={appSettings.logo_image}
+                alt={appSettings.app_name || 'LinkNest'}
+                className="w-12 h-12 rounded-lg object-contain"
+              />
+            ) : (
+              <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow-lg text-2xl">
+                {appSettings.logo_icon || '🔗'}
+              </div>
+            )}
+            {appSettings.app_name && (
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
+                {appSettings.app_name}
+              </h2>
+            )}
+          </div>
+          
+          {/* Center: Sign In */}
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white absolute left-1/2 transform -translate-x-1/2">
+            {mode === 'login' ? 'Sign In' : 'Create Account'}
+          </h2>
+        </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
+          <div className="mb-3 p-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
             {error}
           </div>
         )}
 
         {success && (
-          <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg text-emerald-600 dark:text-emerald-400 text-sm">
+          <div className="mb-3 p-2.5 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg text-emerald-600 dark:text-emerald-400 text-sm">
             {success}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {mode === 'login' && (
-            <>
-              {/* Status Indicators */}
-              <div className="flex items-center gap-2 justify-end mb-1">
+        {mode === 'login' && (
+          <>
+            {/* Status Indicators */}
+            <div className="flex items-center gap-2 justify-end mb-2">
+              <span className="px-3 py-1.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-semibold flex items-center gap-1.5">
+                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                DB Online
+              </span>
+              {ldapEnabled && (
                 <span className="px-3 py-1.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-semibold flex items-center gap-1.5">
                   <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                  DB Online
+                  LDAP Active
                 </span>
-                {ldapEnabled && (
-                  <span className="px-3 py-1.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-semibold flex items-center gap-1.5">
-                    <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                    LDAP Active
-                  </span>
-                )}
-              </div>
+              )}
+              {samlEnabled && (
+                <span className="px-3 py-1.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-xs font-semibold flex items-center gap-1.5">
+                  <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></div>
+                  SAML Active
+                </span>
+              )}
+            </div>
 
-              <div>
-                <div className="flex items-center gap-2 mb-2.5">
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+          </>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {mode === 'login' && (localAuthEnabled || samlEnabled) && (
+            <>
+              {/* Authentication Method Selection - Radio Buttons */}
+              {(ldapEnabled || samlEnabled || localAuthEnabled) && (
+                <div className="mb-3">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                     Authentication Method
                   </label>
+                  <div className={`grid gap-2 ${
+                    samlEnabled && ldapEnabled && localAuthEnabled ? 'grid-cols-4' :
+                    (samlEnabled && ldapEnabled) || (samlEnabled && localAuthEnabled) || (ldapEnabled && localAuthEnabled) ? 'grid-cols-3' :
+                    (samlEnabled && localAuthEnabled) ? 'grid-cols-2' :
+                    'grid-cols-1'
+                  }`}>
+                    {/* Auto Option - Only show when LDAP is enabled */}
+                    {ldapEnabled && localAuthEnabled && (
+                      <label className={`relative flex flex-col items-center justify-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                        authMethod === 'auto' 
+                          ? 'border-brand-600 bg-brand-50 dark:bg-brand-900/20 dark:border-brand-500' 
+                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800'
+                      } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                        <input
+                          type="radio"
+                          name="authMethod"
+                          value="auto"
+                          checked={authMethod === 'auto'}
+                          onChange={(e) => setAuthMethod(e.target.value as 'local' | 'ldap' | 'auto' | 'saml')}
+                          disabled={loading}
+                          className="sr-only"
+                        />
+                        <svg className="w-6 h-6 mb-1.5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="text-xs font-medium text-slate-700 dark:text-slate-300 text-center">Auto</span>
+                        <span className="text-xs text-slate-500 dark:text-slate-400 text-center mt-0.5">Try LDAP, then Local</span>
+                      </label>
+                    )}
+                    
+                    {/* LDAP Option */}
+                    {ldapEnabled && (
+                      <label className={`relative flex flex-col items-center justify-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                        authMethod === 'ldap' 
+                          ? 'border-brand-600 bg-brand-50 dark:bg-brand-900/20 dark:border-brand-500' 
+                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800'
+                      } ${loading || !ldapEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                        <input
+                          type="radio"
+                          name="authMethod"
+                          value="ldap"
+                          checked={authMethod === 'ldap'}
+                          onChange={(e) => setAuthMethod(e.target.value as 'local' | 'ldap' | 'auto' | 'saml')}
+                          disabled={loading || !ldapEnabled}
+                          className="sr-only"
+                        />
+                        <svg className="w-6 h-6 mb-1.5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                        </svg>
+                        <span className="text-xs font-medium text-slate-700 dark:text-slate-300 text-center">LDAP</span>
+                        <span className="text-xs text-slate-500 dark:text-slate-400 text-center mt-0.5">{ldapDomain || 'Enterprise'}</span>
+                      </label>
+                    )}
+                    
+                    {/* Local Option */}
+                    {localAuthEnabled && (
+                      <label className={`relative flex flex-col items-center justify-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                        authMethod === 'local' 
+                          ? 'border-brand-600 bg-brand-50 dark:bg-brand-900/20 dark:border-brand-500' 
+                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800'
+                      } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                        <input
+                          type="radio"
+                          name="authMethod"
+                          value="local"
+                          checked={authMethod === 'local'}
+                          onChange={(e) => setAuthMethod(e.target.value as 'local' | 'ldap' | 'auto' | 'saml')}
+                          disabled={loading}
+                          className="sr-only"
+                        />
+                        <svg className="w-6 h-6 mb-1.5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                        <span className="text-xs font-medium text-slate-700 dark:text-slate-300 text-center">Local</span>
+                        <span className="text-xs text-slate-500 dark:text-slate-400 text-center mt-0.5">Account</span>
+                      </label>
+                    )}
+                    
+                    {/* SAML Option */}
+                    {samlEnabled && (
+                      <label className={`relative flex flex-col items-center justify-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                        authMethod === 'saml' 
+                          ? 'border-brand-600 bg-brand-50 dark:bg-brand-900/20 dark:border-brand-500' 
+                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800'
+                      } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                        <input
+                          type="radio"
+                          name="authMethod"
+                          value="saml"
+                          checked={authMethod === 'saml'}
+                          onChange={(e) => setAuthMethod(e.target.value as 'local' | 'ldap' | 'auto' | 'saml')}
+                          disabled={loading}
+                          className="sr-only"
+                        />
+                        <svg className="w-6 h-6 mb-1.5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
+                        <span className="text-xs font-medium text-slate-700 dark:text-slate-300 text-center">SAML</span>
+                        <span className="text-xs text-slate-500 dark:text-slate-400 text-center mt-0.5">SSO</span>
+                      </label>
+                    )}
+                  </div>
                 </div>
-                <select
-                  value={authMethod}
-                  onChange={(e) => setAuthMethod(e.target.value as 'local' | 'ldap' | 'auto')}
-                  disabled={loading}
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <option value="auto">
-                    {ldapEnabled ? 'Auto (Try LDAP, then Local)' : 'Auto (Local Only)'}
-                  </option>
-                  <option value="ldap" disabled={!ldapEnabled}>
-                    {ldapDomain
-                      ? ldapEnabled
-                        ? `LDAP (${ldapDomain})`
-                        : `LDAP (${ldapDomain}) - Disabled`
-                      : ldapEnabled
-                        ? 'LDAP'
-                        : 'LDAP (Disabled)'}
-                  </option>
-                  <option value="local">Local Account</option>
-                </select>
-              </div>
+              )}
+
+              {/* Authentication Method Explanation */}
+              {(samlEnabled || ldapEnabled) && (
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-2.5 mb-3">
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    <strong>How it works:</strong> The system supports multiple authentication methods: {samlEnabled && 'SAML Single Sign-On, '}{ldapEnabled && 'LDAP, '}and local accounts. {samlEnabled && 'Select SAML to be redirected to your organization\'s login page, or '}enter credentials for {ldapEnabled ? 'LDAP/' : ''}local authentication.
+                  </p>
+                </div>
+              )}
+
+              {/* Username/Password fields - only show if not using SAML */}
+              {authMethod !== 'saml' && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Username or Email
+                    </label>
+                  </div>
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    required={authMethod !== 'saml'}
+                    disabled={loading}
+                    autoComplete="username"
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    placeholder={ldapEnabled ? "Enter username (LDAP or local account)" : "Enter username (local account)"}
+                  />
+                </div>
+              )}
+
+              {/* SAML Info Message */}
+              {authMethod === 'saml' && (
+                <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-3 mb-3">
+                  <p className="text-sm text-purple-700 dark:text-purple-300 text-center">
+                    Click "Sign In" to be redirected to your organization's SAML login page.
+                  </p>
+                </div>
+              )}
             </>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2.5">
-              Username
-            </label>
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              required
-              disabled={loading}
-              autoComplete="username"
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              placeholder="Enter your username"
-            />
-          </div>
+          {mode === 'login' && !localAuthEnabled && !samlEnabled && (
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 text-center">
+              <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                No authentication methods are currently enabled. Please contact your administrator.
+              </p>
+            </div>
+          )}
 
           {mode === 'register' && (
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2.5">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                 Email
               </label>
               <input
@@ -396,29 +581,32 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 required
                 disabled={loading}
                 autoComplete="email"
-                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                 placeholder="Enter your email"
               />
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2.5">
-              Password
-            </label>
-            <SecurePasswordInput
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              disabled={loading}
-              minLength={mode === 'register' ? 6 : undefined}
-              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              placeholder="Enter your password"
-            />
-          </div>
+          {/* Password field - only show if not using SAML */}
+          {authMethod !== 'saml' && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Password
+              </label>
+              <SecurePasswordInput
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required={authMethod !== 'saml'}
+                disabled={loading}
+                minLength={mode === 'register' ? 6 : undefined}
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                placeholder="Enter your password"
+              />
+            </div>
+          )}
 
-          {mode === 'login' && (
+          {mode === 'login' && authMethod !== 'saml' && (
             <div className="flex items-center">
               <input
                 id="rememberMe"
@@ -517,7 +705,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           )}
 
           {/* Button Group */}
-          <div className="flex gap-3 pt-2">
+          <div className="flex gap-3 pt-1">
             {loading && mode === 'login' && (authState === 'connecting' || authState === 'ldap_attempting') && (
               <button
                 type="button"
@@ -551,7 +739,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
               className={`${loading && (authState === 'ldap_authenticating' || authState === 'local_authenticating')
                   ? 'flex-1'
                   : 'flex-1'
-                } bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-bold transition-all shadow-lg shadow-brand-500/20`}
+                } bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-lg font-semibold transition-all shadow-lg shadow-brand-500/20 text-sm`}
             >
               {loading
                 ? authState === 'ldap_authenticating' || authState === 'local_authenticating'
@@ -564,7 +752,45 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           </div>
         </form>
 
-        <div className="mt-6 text-center">
+        {mode === 'login' && (
+          <div className="mt-3 space-y-2">
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  // TODO: Implement forgot password functionality
+                  setError('Password reset functionality coming soon. Please contact your administrator.');
+                }}
+                className="text-sm text-brand-600 dark:text-brand-400 hover:underline"
+              >
+                Forgot your password?
+              </button>
+            </div>
+            <div className="text-xs text-slate-500 dark:text-slate-400 space-y-1 px-2">
+              {samlEnabled && (
+                <p>SAML Users: Use your organization's password reset option</p>
+              )}
+              {ldapEnabled && (
+                <p>LDAP Users: Use your enterprise password reset option</p>
+              )}
+              {localAuthEnabled && (
+                <p>Local Accounts: Click above to reset via email</p>
+              )}
+            </div>
+            <div className="border-t border-slate-200 dark:border-slate-700 pt-3 space-y-2">
+              <div className="flex items-start space-x-2 text-xs">
+                <span className="text-slate-400">🔒</span>
+                <span className="text-slate-600 dark:text-slate-400">Login: Save permanently, file management, advanced features</span>
+              </div>
+              <div className="flex items-start space-x-2 text-xs">
+                <span className="text-slate-400">👤</span>
+                <span className="text-slate-600 dark:text-slate-400">Guest: Create locally, no saving, basic features only</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-4 text-center">
           <button
             onClick={() => {
               setMode(mode === 'login' ? 'register' : 'login');

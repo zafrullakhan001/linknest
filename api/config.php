@@ -241,6 +241,16 @@ function initDatabase() {
         } catch (PDOException $e) {
             // Column already exists, ignore
         }
+        try {
+            $db->exec('ALTER TABLE users ADD COLUMN saml_nameid TEXT');
+        } catch (PDOException $e) {
+            // Column already exists, ignore
+        }
+        try {
+            $db->exec('ALTER TABLE users ADD COLUMN last_login INTEGER');
+        } catch (PDOException $e) {
+            // Column already exists, ignore
+        }
         
         // Note: New users require admin approval. Existing users in old databases
         // will need to be manually approved by admin through the admin panel.

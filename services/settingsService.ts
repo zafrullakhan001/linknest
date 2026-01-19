@@ -87,6 +87,25 @@ export interface AppSettings {
   // Maintenance Mode Settings
   maintenance_enabled?: string; // '0' or '1' - controls whether maintenance mode is enabled
   maintenance_message?: string; // Message to display on maintenance page
+
+  // SAML Settings
+  saml_enabled?: string; // '0' or '1'
+  local_auth_enabled?: string; // '0' or '1'
+  sp_entity_id?: string;
+  sp_assertion_consumer_service?: string;
+  sp_single_logout_service?: string;
+  sp_site_url?: string;
+  idp_entity_id?: string;
+  idp_sso_url?: string;
+  idp_slo_url?: string;
+  idp_x509cert?: string;
+  nameid_format?: string;
+  strict?: string; // '0' or '1'
+  debug?: string; // '0' or '1'
+  map_name_to?: string;
+  map_email_to?: string;
+  map_display_name_to?: string;
+  auto_provision?: string; // '0' or '1'
 }
 
 export const settingsService = {
@@ -157,6 +176,25 @@ export const settingsService = {
       // Maintenance mode defaults
       maintenance_enabled: data.settings?.maintenance_enabled || '0',
       maintenance_message: data.settings?.maintenance_message || '',
+
+      // SAML defaults
+      saml_enabled: data.settings?.saml_enabled || '0',
+      local_auth_enabled: data.settings?.local_auth_enabled || '1',
+      sp_entity_id: data.settings?.sp_entity_id || '',
+      sp_assertion_consumer_service: data.settings?.sp_assertion_consumer_service || '',
+      sp_single_logout_service: data.settings?.sp_single_logout_service || '',
+      sp_site_url: data.settings?.sp_site_url || '',
+      idp_entity_id: data.settings?.idp_entity_id || '',
+      idp_sso_url: data.settings?.idp_sso_url || '',
+      idp_slo_url: data.settings?.idp_slo_url || '',
+      idp_x509cert: data.settings?.idp_x509cert || '',
+      nameid_format: data.settings?.nameid_format || 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
+      strict: data.settings?.strict || '1',
+      debug: data.settings?.debug || '0',
+      map_name_to: data.settings?.map_name_to || 'uid',
+      map_email_to: data.settings?.map_email_to || 'email',
+      map_display_name_to: data.settings?.map_display_name_to || 'cn',
+      auto_provision: data.settings?.auto_provision || '1'
     };
   },
 

@@ -12,7 +12,7 @@ if (empty($path)) {
 
 switch ($method) {
     case 'GET':
-        if ($path === '' || $path === '/') {
+        if ($path === '/') {
             handleGetMessages();
         } elseif (preg_match('#^/([^/]+)$#', $path, $matches)) {
             handleGetMessage($matches[1]);
@@ -22,7 +22,7 @@ switch ($method) {
         break;
         
     case 'POST':
-        if ($path === '' || $path === '/') {
+        if ($path === '/') {
             handleCreateMessage();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);

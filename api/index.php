@@ -21,6 +21,10 @@ error_log("api/index.php: _GET['path'] = " . ($_GET['path'] ?? 'not set'));
 
 // If path comes from query parameter (via .htaccess rewrite or Vite proxy)
 if (!empty($path)) {
+    // Remove query string from path if present (query params are in $_GET)
+    if (($queryPos = strpos($path, '?')) !== false) {
+        $path = substr($path, 0, $queryPos);
+    }
     // Path from query parameter - ensure it starts with /
     $path = '/' . ltrim($path, '/');
     error_log("api/index.php: Path from query parameter: $path");
@@ -89,7 +93,13 @@ if ($path === '/') {
     $_SERVER['PATH_INFO'] = substr($path, 7); // Remove '/styles'
     require __DIR__ . '/styles.php';
 } elseif (strpos($path, '/chat') === 0) {
-    $_SERVER['PATH_INFO'] = substr($path, 5); // Remove '/chat'
+    $remainingPath = substr($path, 5); // Remove '/chat'
+    // Set PATH_INFO - use '/' for root endpoint, or ensure sub-paths start with /
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
     require __DIR__ . '/chat.php';
 } elseif (strpos($path, '/access') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 7); // Remove '/access'
@@ -163,6 +173,22 @@ if ($path === '/') {
     exit; // Prevent any further execution
 } elseif (strpos($path, '/ldap_test.php') === 0) {
     require __DIR__ . '/ldap_test.php';
+} elseif (strpos($path, '/saml') === 0) {
+    // SAML endpoints - handle both /saml and /saml.php
+    // Remove /saml or /saml.php prefix
+    $remainingPath = preg_replace('#^/saml(\.php)?#', '', $path);
+    // If no remaining path, set to empty (saml.php handles root with query params)
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '';
+    } else {
+        $_SERVER['PATH_INFO'] = $remainingPath;
+    }
+    require __DIR__ . '/saml.php';
+    exit; // Prevent further execution
+} elseif (strpos($path, '/saml-test') === 0 || strpos($path, '/saml-test.php') === 0) {
+    // SAML test endpoints
+    require __DIR__ . '/saml-test.php';
+    exit; // Prevent further execution
 } else {
     error_log("api/index.php: No route matched for path: $path");
     error_log("api/index.php: REQUEST_URI: $requestUri");

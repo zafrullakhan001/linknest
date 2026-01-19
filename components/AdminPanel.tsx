@@ -14,6 +14,7 @@ import { accessService, TilePermission } from '../services/accessService';
 import { APP_TABS, getDisabledTabsFromSettings, setToSortedJsonArray, type AppTabId } from '../services/tabVisibilityService';
 import { broadcastService, BroadcastMessage } from '../services/broadcastService';
 import { rolesService, Role } from '../services/rolesService';
+import SamlConfigModal from './SamlConfigModal';
 
 // Resolve API base dynamically based on current location
 // This ensures API calls work in both dev mode and runtime mode with any base path
@@ -53,9 +54,9 @@ interface AdminPanelProps {
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const { refreshSettings } = useSettings();
   // Initialize activeTab from localStorage or default to 'pending'
-  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenance'>(() => {
+  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenance'>(() => {
     const savedTab = localStorage.getItem('adminPanelActiveTab');
-    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenance'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'footer', 'tabVisibility', 'access', 'clone', 'browser', 'broadcast', 'maintenance'];
+    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenance'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer', 'tabVisibility', 'access', 'clone', 'browser', 'broadcast', 'maintenance'];
     return (savedTab && validTabs.includes(savedTab as any)) ? savedTab as any : 'pending';
   });
   // Initialize tab layout from localStorage or default to 'horizontal'
@@ -107,6 +108,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [faviconUploading, setFaviconUploading] = useState(false);
   const [faviconPreview, setFaviconPreview] = useState<string | null>(null);
+  const [samlConfigModalOpen, setSamlConfigModalOpen] = useState(false);
 
   // Database export/import state
   const [exporting, setExporting] = useState(false);
@@ -1976,6 +1978,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             }
           >
             LDAP
+          </button>
+          <button
+            onClick={() => setActiveTab('saml')}
+            className={tabLayout === 'horizontal'
+              ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'saml'
+                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+              }`
+              : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'saml'
+                ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+              }`
+            }
+          >
+            SAML
           </button>
           <button
             onClick={() => setActiveTab('footer')}
@@ -4357,6 +4374,121 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           </>
                         )}
                       </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SAML Tab */}
+              {activeTab === 'saml' && (
+                <div className="space-y-6">
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                    <div className="flex items-center justify-between mb-6">
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">SAML 2.0 Configuration</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">
+                          Configure SAML 2.0 single sign-on for enterprise authentication.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            className="sr-only peer"
+                            checked={settings.saml_enabled === '1'}
+                            onChange={async (e) => {
+                              const newValue = e.target.checked ? '1' : '0';
+                              setSettings({ ...settings, saml_enabled: newValue });
+                              
+                              // Auto-save the setting
+                              try {
+                                setSettingsSaving(true);
+                                await settingsService.updateSettings({ saml_enabled: newValue });
+                                await loadSettings();
+                                await refreshSettings();
+                              } catch (err: any) {
+                                setError(err.message || 'Failed to save SAML setting');
+                                // Revert on error
+                                setSettings({ ...settings, saml_enabled: settings.saml_enabled });
+                              } finally {
+                                setSettingsSaving(false);
+                              }
+                            }}
+                            disabled={settingsSaving}
+                          />
+                          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-300 dark:peer-focus:ring-brand-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-brand-600 peer-disabled:opacity-50"></div>
+                          <span className="ml-3 text-sm font-medium text-slate-900 dark:text-slate-300">Enable SAML</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+                      <div className="flex items-start space-x-3">
+                        <svg className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div className="flex-1">
+                          <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-1">SAML 2.0 Single Sign-On</h4>
+                          <p className="text-xs text-blue-700 dark:text-blue-300 mb-3">
+                            Configure enterprise SAML 2.0 authentication to allow users to sign in using their organization's identity provider (IdP). 
+                            Supports Azure AD, Okta, Auth0, and other SAML 2.0 compliant providers.
+                          </p>
+                          <button
+                            onClick={() => setSamlConfigModalOpen(true)}
+                            className="inline-flex items-center space-x-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm hover:shadow-md"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                            <span>Open SAML Configuration</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Status Indicators</h4>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-600 dark:text-slate-400">SAML Enabled</span>
+                            <span className={`text-xs px-2 py-1 rounded ${settings.saml_enabled === '1' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
+                              {settings.saml_enabled === '1' ? 'Active' : 'Inactive'}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-600 dark:text-slate-400">Local Auth</span>
+                            <span className={`text-xs px-2 py-1 rounded ${settings.local_auth_enabled === '1' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
+                              {settings.local_auth_enabled === '1' ? 'Active' : 'Inactive'}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-600 dark:text-slate-400">LDAP</span>
+                            <span className={`text-xs px-2 py-1 rounded ${settings.ldap_enabled === '1' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
+                              {settings.ldap_enabled === '1' ? 'Active' : 'Inactive'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Quick Actions</h4>
+                        <div className="space-y-2">
+                          <a
+                            href={`${resolveApiBase().replace('/api', '')}/api/saml?action=metadata`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="block w-full text-left px-3 py-2 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                              <span>View SP Metadata XML</span>
+                            </div>
+                          </a>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -9715,6 +9847,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           </div>
         </div>
       )}
+
+      {/* SAML Configuration Modal */}
+      <SamlConfigModal
+        isOpen={samlConfigModalOpen}
+        onClose={() => {
+          setSamlConfigModalOpen(false);
+          refreshSettings();
+        }}
+      />
     </div>
   );
 };

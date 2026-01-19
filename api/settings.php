@@ -380,7 +380,11 @@ function handleUpdateSettings() {
                 'ldap_ssl_verify', 'ldap_connection_retry', 'ldap_retry_delay', 'ldap_email_attribute',
                 'ldap_display_name_attribute', 'ldap_referrals',
                 'access_control_enabled', 'access_control_mode', 'access_control_allow_anonymous', 'access_control_audit_logging',
-                'browser_specific_links_enabled', 'browser_extension_id'
+                'browser_specific_links_enabled', 'browser_extension_id',
+                'saml_enabled', 'local_auth_enabled', 'sp_entity_id', 'sp_assertion_consumer_service',
+                'sp_single_logout_service', 'sp_site_url', 'idp_entity_id', 'idp_sso_url', 'idp_slo_url',
+                'idp_x509cert', 'nameid_format', 'strict', 'debug', 'map_name_to', 'map_email_to',
+                'map_display_name_to', 'auto_provision'
             ];
             if (!in_array($key, $allowedKeys)) {
                 continue; // Skip invalid keys
@@ -466,8 +470,14 @@ function handleUpdateSettings() {
                 $value = json_encode(array_values(array_keys($normalized)));
             }
             
+            // Store setting in database
             $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
             $stmt->execute([$key, $value, time()]);
+            
+            // Log SAML setting changes for debugging
+            if ($key === 'saml_enabled') {
+                error_log("SAML setting updated: saml_enabled = {$value}");
+            }
         }
         
         $db->commit();
