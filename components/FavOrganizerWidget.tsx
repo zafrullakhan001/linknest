@@ -76,31 +76,6 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [isCancelled, setIsCancelled] = useState<boolean>(false);
 
-  // Escape key handler to close widget
-  useEffect(() => {
-    if (!onClose) return;
-
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey) {
-        const target = e.target as HTMLElement;
-        // Don't close if user is typing in an input or if processing
-        if (loading) {
-          return;
-        }
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-          return;
-        }
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
-      }
-    };
-
-    window.addEventListener('keydown', handleEscape, true);
-    return () => {
-      window.removeEventListener('keydown', handleEscape, true);
-    };
-  }, [onClose, loading]);
   
   // Manual organization state
   const [manualTiles, setManualTiles] = useState<Array<{
