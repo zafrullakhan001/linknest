@@ -977,98 +977,68 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     const cleanWordHTML = (html: string): string => {
         if (!html) return '';
 
-        // Create a temporary div to parse the HTML
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = html;
-
-        // Remove Word-specific classes but preserve styling
-        const allElements = tempDiv.querySelectorAll('*');
-        allElements.forEach((el) => {
-            const element = el as HTMLElement;
-            
-            // Remove Word-specific classes but keep the element
-            if (element.className) {
-                const classes = element.className.split(' ');
-                const filteredClasses = classes.filter(cls => 
-                    !cls.startsWith('Mso') && 
-                    !cls.startsWith('ms-') &&
-                    cls !== 'MsoNormal' &&
-                    cls !== 'MsoListParagraph'
-                );
-                if (filteredClasses.length > 0) {
-                    element.className = filteredClasses.join(' ');
-                } else {
-                    element.removeAttribute('class');
-                }
-            }
-
-            // Preserve ALL inline styles - don't filter them
-            // Word uses inline styles for spacing, margins, padding, etc.
-            // We want to keep all of that
-
-            // Only remove Word-specific attributes, but keep all style attributes
-            element.removeAttribute('lang');
-            element.removeAttribute('xml:lang');
-            element.removeAttribute('o:p');
-            element.removeAttribute('xmlns:o');
-            element.removeAttribute('xmlns:w');
-            element.removeAttribute('xmlns:m');
-            element.removeAttribute('xmlns:v');
-        });
-
-        // Remove only truly empty spans and divs (no content, no styles)
-        const emptySpans = tempDiv.querySelectorAll('span:not([style]):empty');
-        emptySpans.forEach(span => {
-            // Only remove if it has no meaningful content
-            if (!span.textContent?.trim() && !span.innerHTML?.trim()) {
-                span.remove();
-            }
-        });
-
-        const emptyDivs = tempDiv.querySelectorAll('div:not([style]):empty');
-        emptyDivs.forEach(div => {
-            if (!div.textContent?.trim() && !div.innerHTML?.trim()) {
-                div.remove();
-            }
-        });
-
-        // Preserve Word paragraphs but clean up class names
-        const wordParagraphs = tempDiv.querySelectorAll('p[class*="Mso"]');
-        wordParagraphs.forEach(p => {
-            // Remove Word class but keep all styles and content
-            const classes = p.className.split(' ');
-            const filteredClasses = classes.filter(cls => 
-                !cls.startsWith('Mso') && 
-                !cls.startsWith('ms-')
-            );
-            if (filteredClasses.length > 0) {
-                p.className = filteredClasses.join(' ');
-            } else {
-                p.removeAttribute('class');
-            }
-        });
-
-        // Get the cleaned HTML
-        let cleaned = tempDiv.innerHTML;
+        // Minimal cleaning - only remove Word-specific XML namespaces and attributes
+        // Preserve ALL formatting, spacing, styles, margins, padding, etc.
+        let cleaned = html;
+        
+        // Remove Word-specific XML namespaces from tags (but keep content)
+        cleaned = cleaned.replace(/xmlns:o="[^"]*"/gi, '');
+        cleaned = cleaned.replace(/xmlns:w="[^"]*"/gi, '');
+        cleaned = cleaned.replace(/xmlns:m="[^"]*"/gi, '');
+        cleaned = cleaned.replace(/xmlns:v="[^"]*"/gi, '');
+        cleaned = cleaned.replace(/xmlns="[^"]*"/gi, '');
+        
+        // Remove Word's o:p tags (but preserve their content)
+        cleaned = cleaned.replace(/<o:p[^>]*>/gi, '');
+        cleaned = cleaned.replace(/<\/o:p>/gi, '');
+        
+        // Remove Word-specific attributes (but keep all style attributes)
+        cleaned = cleaned.replace(/\s+lang="[^"]*"/gi, '');
+        cleaned = cleaned.replace(/\s+xml:lang="[^"]*"/gi, '');
+        cleaned = cleaned.replace(/\s+o:p="[^"]*"/gi, '');
         
         // Remove Word-specific comments
         cleaned = cleaned.replace(/<!--[\s\S]*?-->/g, '');
         
-        // Remove Word's o:p tags (but preserve content)
-        cleaned = cleaned.replace(/<o:p[^>]*>/gi, '');
-        cleaned = cleaned.replace(/<\/o:p>/gi, '');
+        // Remove Word-specific class names but preserve all styles
+        // Use regex to remove Mso* classes from class attributes
+        cleaned = cleaned.replace(/\s+class="([^"]*Mso[^"]*|Mso[^"]*)"([^>]*)>/gi, (match, classAttr, rest) => {
+            // Remove Mso classes but keep other classes
+            const classes = classAttr.split(' ').filter((cls: string) => 
+                !cls.startsWith('Mso') && 
+                !cls.startsWith('ms-') &&
+                cls !== 'MsoNormal' &&
+                cls !== 'MsoListParagraph' &&
+                cls.trim() !== ''
+            );
+            if (classes.length > 0) {
+                return ` class="${classes.join(' ')}"${rest}>`;
+            } else {
+                return rest + '>';
+            }
+        });
         
-        // Remove empty paragraphs (only truly empty ones)
-        cleaned = cleaned.replace(/<p[^>]*>\s*<\/p>/gi, '');
-        cleaned = cleaned.replace(/<p[^>]*>&nbsp;<\/p>/gi, '');
+        // Also handle class attributes that might have Mso in the middle
+        cleaned = cleaned.replace(/\s+class="([^"]*)\s+Mso[^\s"]*([^"]*)"/gi, (match, before, after) => {
+            const classes = (before + ' ' + after).split(' ').filter((cls: string) => 
+                !cls.startsWith('Mso') && 
+                !cls.startsWith('ms-') &&
+                cls !== 'MsoNormal' &&
+                cls !== 'MsoListParagraph' &&
+                cls.trim() !== ''
+            );
+            if (classes.length > 0) {
+                return ` class="${classes.join(' ')}"`;
+            } else {
+                return '';
+            }
+        });
         
-        // Preserve spacing - don't remove line breaks
-        // Only clean up excessive breaks (more than 3)
-        cleaned = cleaned.replace(/(<br\s*\/?>){4,}/gi, '<br /><br /><br />');
+        // Preserve ALL spacing, margins, padding, fonts, colors, etc.
+        // Don't remove or modify any style attributes
         
-        // Preserve Word's spacing characters and formatting
-        // Convert Word's special spaces to regular spaces where appropriate
-        cleaned = cleaned.replace(/\u00A0/g, '&nbsp;'); // Non-breaking space
+        // Preserve non-breaking spaces
+        cleaned = cleaned.replace(/\u00A0/g, '&nbsp;');
         
         return cleaned;
     };

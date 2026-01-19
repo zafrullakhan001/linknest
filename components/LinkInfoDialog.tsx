@@ -59,15 +59,76 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto">
           <div 
-            className="prose prose-slate dark:prose-invert max-w-none text-slate-700 dark:text-slate-300"
+            className="rich-text-viewer bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
             dangerouslySetInnerHTML={{ __html: richTextContent }}
             style={{
-              // Ensure links are clickable and styled properly
               wordBreak: 'break-word',
+              whiteSpace: 'pre-wrap',
             }}
           />
+          <style>{`
+            .rich-text-viewer h1 { font-size: 2em; font-weight: bold; margin: 0.67em 0; }
+            .rich-text-viewer h2 { font-size: 1.5em; font-weight: bold; margin: 0.75em 0; }
+            .rich-text-viewer h3 { font-size: 1.17em; font-weight: bold; margin: 0.83em 0; }
+            .rich-text-viewer h4 { font-size: 1em; font-weight: bold; margin: 1.12em 0; }
+            .rich-text-viewer h5 { font-size: 0.83em; font-weight: bold; margin: 1.5em 0; }
+            .rich-text-viewer h6 { font-size: 0.75em; font-weight: bold; margin: 1.67em 0; }
+            .rich-text-viewer img { max-width: 100%; height: auto; display: block; margin: 0.5em 0; }
+            .rich-text-viewer ul, .rich-text-viewer ol { margin: 1em 0; padding-left: 2em; }
+            .rich-text-viewer ul { list-style-type: disc; }
+            .rich-text-viewer ol { list-style-type: decimal; }
+            .rich-text-viewer li { margin: 0.25em 0; }
+            .rich-text-viewer table { 
+              width: 100%; 
+              border-collapse: collapse; 
+              margin: 1em 0; 
+              border: 1px solid #cbd5e1;
+            }
+            .rich-text-viewer table th, 
+            .rich-text-viewer table td { 
+              border: 1px solid #cbd5e1; 
+              padding: 0.5em 1em; 
+              text-align: left;
+            }
+            .rich-text-viewer table th { 
+              background-color: #f1f5f9; 
+              font-weight: 600;
+            }
+            .rich-text-viewer blockquote { 
+              border-left: 4px solid #4f46e5; 
+              padding-left: 1em; 
+              margin: 1em 0; 
+              font-style: italic; 
+              color: #64748b;
+            }
+            .rich-text-viewer code { 
+              background-color: #f1f5f9; 
+              padding: 0.125em 0.25em; 
+              border-radius: 0.25rem; 
+              font-family: monospace; 
+              font-size: 0.875em;
+            }
+            .rich-text-viewer div[style*="background-color"] {
+              border-radius: 0.5rem;
+              padding: 1em;
+              margin: 1em 0;
+            }
+            .rich-text-viewer .grid {
+              display: grid;
+              gap: 1rem;
+              margin: 1em 0;
+            }
+            .rich-text-viewer .grid > div {
+              min-height: 2em;
+            }
+            @media (max-width: 768px) {
+              .rich-text-viewer .grid {
+                grid-template-columns: 1fr !important;
+              }
+            }
+          `}</style>
         </div>
 
         {/* Footer */}
