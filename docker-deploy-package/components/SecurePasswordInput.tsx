@@ -26,9 +26,10 @@ export const SecurePasswordInput: React.FC<SecurePasswordInputProps> = ({ value 
   // Update when value prop changes externally (but not from internal updates)
   useEffect(() => {
     if (!isInternalUpdateRef.current && value !== realPasswordRef.current) {
-      // If the incoming value contains dots, it might be a masked value from a bug
+      // If the incoming value is all asterisks, it might be a masked value from a bug
       // In that case, don't update - keep the current real password
-      if (value.includes('•')) {
+      const isAllAsterisks = value.length > 0 && value.replace(/\*/g, '').length === 0;
+      if (isAllAsterisks) {
         console.warn('SecurePasswordInput: Received masked value as prop, ignoring to preserve real password');
         return;
       }
@@ -36,7 +37,7 @@ export const SecurePasswordInput: React.FC<SecurePasswordInputProps> = ({ value 
       realPasswordRef.current = value;
       setDisplayLength(value.length);
       if (inputRef.current) {
-        inputRef.current.value = '•'.repeat(value.length);
+        inputRef.current.value = '*'.repeat(value.length);
       }
     }
     isInternalUpdateRef.current = false;
@@ -98,20 +99,20 @@ export const SecurePasswordInput: React.FC<SecurePasswordInputProps> = ({ value 
     realPasswordRef.current = newPassword;
     setDisplayLength(newPassword.length);
 
-    // Update display to show dots
+    // Update display to show asterisks
     setTimeout(() => {
       if (inputRef.current) {
-        inputRef.current.value = '•'.repeat(newPassword.length);
+        inputRef.current.value = '*'.repeat(newPassword.length);
         inputRef.current.setSelectionRange(cursorPos, cursorPos);
       }
     }, 0);
 
     // Trigger onChange - only if password actually changed
     if (onChangeRef.current && newPassword !== oldPassword) {
-      // Always use realPasswordRef.current (which we just updated) to ensure we never send dots
+      // Always use realPasswordRef.current (which we just updated) to ensure we never send asterisks
       const passwordToSend = realPasswordRef.current;
-      if (passwordToSend.includes('•')) {
-        console.error('SecurePasswordInput: Password ref contains dots! Skipping onChange.');
+      if (passwordToSend.includes('*')) {
+        console.error('SecurePasswordInput: Password ref contains asterisks! Skipping onChange.');
         return;
       }
       
@@ -139,17 +140,17 @@ export const SecurePasswordInput: React.FC<SecurePasswordInputProps> = ({ value 
 
     setTimeout(() => {
       if (inputRef.current) {
-        inputRef.current.value = '•'.repeat(newPassword.length);
+        inputRef.current.value = '*'.repeat(newPassword.length);
         const newCursorPos = selectionStart + pastedText.length;
         inputRef.current.setSelectionRange(newCursorPos, newCursorPos);
       }
     }, 0);
 
     if (onChangeRef.current) {
-      // Always use realPasswordRef.current to ensure we never send dots
+      // Always use realPasswordRef.current to ensure we never send asterisks
       const passwordToSend = realPasswordRef.current;
-      if (passwordToSend.includes('•')) {
-        console.error('SecurePasswordInput: Password ref contains dots after paste! Skipping onChange.');
+      if (passwordToSend.includes('*')) {
+        console.error('SecurePasswordInput: Password ref contains asterisks after paste! Skipping onChange.');
         return;
       }
       
@@ -166,13 +167,13 @@ export const SecurePasswordInput: React.FC<SecurePasswordInputProps> = ({ value 
   // Prevent input event from showing real characters
   const handleInput = useCallback((e: React.FormEvent<HTMLInputElement>) => {
     const input = e.currentTarget;
-    // Immediately replace with dots based on current password length
+    // Immediately replace with asterisks based on current password length
     setTimeout(() => {
       const currentLength = realPasswordRef.current.length;
-      if (input.value !== '•'.repeat(currentLength)) {
+      if (input.value !== '*'.repeat(currentLength)) {
         const selectionStart = input.selectionStart || 0;
         const selectionEnd = input.selectionEnd || 0;
-        input.value = '•'.repeat(currentLength);
+        input.value = '*'.repeat(currentLength);
         input.setSelectionRange(selectionStart, selectionEnd);
       }
     }, 0);
@@ -200,8 +201,8 @@ export const SecurePasswordInput: React.FC<SecurePasswordInputProps> = ({ value 
           } else if (mutation.attributeName === 'value') {
             // Restore masked value
             const currentLength = realPasswordRef.current.length;
-            if (input.value !== '•'.repeat(currentLength)) {
-              input.value = '•'.repeat(currentLength);
+            if (input.value !== '*'.repeat(currentLength)) {
+              input.value = '*'.repeat(currentLength);
             }
           }
         }
@@ -217,10 +218,10 @@ export const SecurePasswordInput: React.FC<SecurePasswordInputProps> = ({ value 
     const intervalId = setInterval(() => {
       enforcePasswordType();
       const currentLength = realPasswordRef.current.length;
-      if (input.value !== '•'.repeat(currentLength)) {
+      if (input.value !== '*'.repeat(currentLength)) {
         const selectionStart = input.selectionStart || 0;
         const selectionEnd = input.selectionEnd || 0;
-        input.value = '•'.repeat(currentLength);
+        input.value = '*'.repeat(currentLength);
         input.setSelectionRange(selectionStart, selectionEnd);
       }
     }, 100);
@@ -233,13 +234,13 @@ export const SecurePasswordInput: React.FC<SecurePasswordInputProps> = ({ value 
       if (valueDescriptor) {
         Object.defineProperty(input, 'value', {
           get: () => {
-            return '•'.repeat(realPasswordRef.current.length);
+            return '*'.repeat(realPasswordRef.current.length);
           },
           set: (newValue: string) => {
-            // Check if this is React setting the controlled value (dots matching expected length)
-            const expectedDots = '•'.repeat(displayLength);
-            const isAllDots = newValue.length > 0 && newValue.replace(/•/g, '').length === 0;
-            const isReactControlledUpdate = isAllDots && newValue.length === displayLength;
+            // Check if this is React setting the controlled value (asterisks matching expected length)
+            const expectedAsterisks = '*'.repeat(displayLength);
+            const isAllAsterisks = newValue.length > 0 && newValue.replace(/\*/g, '').length === 0;
+            const isReactControlledUpdate = isAllAsterisks && newValue.length === displayLength;
             
             if (isReactControlledUpdate) {
               // React is syncing the controlled value - just accept it silently
@@ -250,12 +251,12 @@ export const SecurePasswordInput: React.FC<SecurePasswordInputProps> = ({ value 
             }
             
             // This is either external manipulation or a real password value
-            // Only update if it's different and doesn't contain dots
-            if (!newValue.includes('•') && newValue !== realPasswordRef.current) {
+            // Only update if it's different and doesn't contain asterisks
+            if (!newValue.includes('*') && newValue !== realPasswordRef.current) {
               realPasswordRef.current = newValue;
               setDisplayLength(newValue.length);
               if (valueDescriptor.set) {
-                valueDescriptor.set.call(input, '•'.repeat(newValue.length));
+                valueDescriptor.set.call(input, '*'.repeat(newValue.length));
               }
               // Only trigger onChange if not from internal update
               if (onChangeRef.current && !isInternalUpdateRef.current) {
@@ -266,8 +267,8 @@ export const SecurePasswordInput: React.FC<SecurePasswordInputProps> = ({ value 
                 } as React.ChangeEvent<HTMLInputElement>;
                 onChangeRef.current(syntheticEvent);
               }
-            } else if (isAllDots && newValue.length !== displayLength) {
-              // Dots but wrong length - update display length only
+            } else if (isAllAsterisks && newValue.length !== displayLength) {
+              // Asterisks but wrong length - update display length only
               setDisplayLength(newValue.length);
               if (valueDescriptor.set) {
                 valueDescriptor.set.call(input, newValue);
@@ -289,7 +290,7 @@ export const SecurePasswordInput: React.FC<SecurePasswordInputProps> = ({ value 
         return;
       }
       if (name.toLowerCase() === 'value') {
-        const masked = '•'.repeat(val.length);
+        const masked = '*'.repeat(val.length);
         realPasswordRef.current = val;
         setDisplayLength(val.length);
         return originalSetAttribute(name, masked);
@@ -298,7 +299,7 @@ export const SecurePasswordInput: React.FC<SecurePasswordInputProps> = ({ value 
     };
 
     // Initialize with masked value
-    input.value = '•'.repeat(realPasswordRef.current.length);
+    input.value = '*'.repeat(realPasswordRef.current.length);
 
     return () => {
       observer.disconnect();
@@ -311,7 +312,7 @@ export const SecurePasswordInput: React.FC<SecurePasswordInputProps> = ({ value 
       {...props}
       ref={inputRef}
       type="password"
-      value={'•'.repeat(displayLength)}
+      value={'*'.repeat(displayLength)}
       onKeyDown={handleKeyDown}
       onPaste={handlePaste}
       onInput={handleInput}
