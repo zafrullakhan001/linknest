@@ -114,7 +114,12 @@ export const WidgetQuickAccess: React.FC<WidgetQuickAccessProps> = ({
       >
         {/* Header */}
         <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Widgets</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Widgets</h3>
+            <span className="text-xs text-slate-500 dark:text-slate-400 font-mono bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded">
+              Ctrl+Shift+Y
+            </span>
+          </div>
           <button
             onClick={onClose}
             className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition-colors"
@@ -196,6 +201,7 @@ export const WidgetQuickAccess: React.FC<WidgetQuickAccessProps> = ({
         <div className="px-4 py-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 rounded-b-xl">
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
             <span>Use ↑↓ to navigate, Enter to toggle, Esc to close</span>
+            <span className="font-mono bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded">Ctrl+Shift+Y</span>
           </div>
         </div>
       </div>

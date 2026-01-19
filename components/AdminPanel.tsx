@@ -144,7 +144,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
   // Add User modal state
   const [addUserModal, setAddUserModal] = useState(false);
-  const [addUserType, setAddUserType] = useState<'local' | 'ldap'>('local');
+  const [addUserType, setAddUserType] = useState<'local' | 'ldap' | 'saml'>('local');
 
   // Local user form state
   const [localUsername, setLocalUsername] = useState('');
@@ -1855,6 +1855,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     setLdapSearchTerm('');
     setLdapSearchResults([]);
     setSelectedLdapUser(null);
+    setSamlImportFile(null);
     setError('');
   };
 
@@ -7569,6 +7570,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 </button>
                 <button
                   onClick={() => {
+                    setAddUserType('saml');
+                    setBulkImportMode(false);
+                    setError('');
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    addUserType === 'saml'
+                      ? 'bg-brand-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                  }`}
+                >
+                  SAML User
+                </button>
+                <button
+                  onClick={() => {
                     setBulkImportMode(!bulkImportMode);
                     setError('');
                   }}
@@ -7662,7 +7677,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </div>
                     )}
                   </div>
-                ) : (
+                ) : addUserType === 'ldap' ? (
                   <div className="space-y-4">
                     <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
                       <p className="text-sm text-blue-800 dark:text-blue-300">
@@ -7748,7 +7763,86 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </div>
                     )}
                   </div>
-                )
+                ) : addUserType === 'saml' ? (
+                  <div className="space-y-4">
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                      <p className="text-sm text-blue-800 dark:text-blue-300">
+                        <strong>Bulk Import SAML Users</strong>
+                      </p>
+                      <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
+                        Upload a CSV file with columns: username, email, saml_nameid, displayName. The header row is optional and will be automatically skipped.
+                      </p>
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Upload CSV File
+                        </label>
+                        <button
+                          onClick={() => {
+                            // Download CSV template
+                            const csvContent = 'username,email,saml_nameid,displayName\njohn.doe,john.doe@example.com,john.doe@idp.example.com,John Doe\njane.smith,jane.smith@example.com,jane.smith@idp.example.com,Jane Smith\nadmin.user,admin.user@example.com,admin.user@idp.example.com,Admin User';
+                            const blob = new Blob([csvContent], { type: 'text/csv' });
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = 'bulk-import-saml-users-template.csv';
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            window.URL.revokeObjectURL(url);
+                          }}
+                          className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                            <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
+                            <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+                          </svg>
+                          Download Template
+                        </button>
+                      </div>
+                      <input
+                        type="file"
+                        accept=".csv,text/csv"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setSamlImportFile(file);
+                            setError('');
+                          }
+                        }}
+                        className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer"
+                      />
+                      {samlImportFile && (
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                          Selected: {samlImportFile.name}
+                        </p>
+                      )}
+                    </div>
+                    {bulkImportResults && (
+                      <div className={`p-4 rounded-lg ${
+                        bulkImportResults.summary?.errors > 0
+                          ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
+                          : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                      }`}>
+                        <p className="text-sm font-medium mb-2">
+                          {bulkImportResults.message}
+                        </p>
+                        {bulkImportResults.summary && (
+                          <div className="text-xs space-y-1">
+                            <p>Created: {bulkImportResults.summary.created}</p>
+                            {bulkImportResults.summary.skipped > 0 && (
+                              <p>Skipped: {bulkImportResults.summary.skipped}</p>
+                            )}
+                            {bulkImportResults.summary.errors > 0 && (
+                              <p className="text-red-600 dark:text-red-400">Errors: {bulkImportResults.summary.errors}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : null
               ) : addUserType === 'local' ? (
                 <div className="space-y-4">
                   <div>
@@ -7785,6 +7879,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
                       placeholder="Enter password (min 6 characters)"
                     />
+                  </div>
+                </div>
+              ) : addUserType === 'saml' ? (
+                <div className="space-y-4">
+                  <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+                    <p className="text-sm text-purple-800 dark:text-purple-300">
+                      <strong>SAML User Management</strong>
+                    </p>
+                    <p className="text-xs text-purple-700 dark:text-purple-400 mt-1">
+                      SAML users are typically created automatically when they sign in via SSO. Use the "Bulk Import" option above to manually import SAML users from a CSV file.
+                    </p>
                   </div>
                 </div>
               ) : (
@@ -7859,6 +7964,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     setBulkImportMode(false);
                     setCsvFile(null);
                     setLdapUsersText('');
+                    setSamlImportFile(null);
                     setBulkImportResults(null);
                     setError('');
                   }}
@@ -7868,16 +7974,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 </button>
                 {bulkImportMode ? (
                   <button
-                    onClick={addUserType === 'local' ? handleBulkImportLocal : handleBulkImportLdap}
-                    disabled={bulkImportLoading || (addUserType === 'local' ? !csvFile : !ldapUsersText.trim())}
+                    onClick={addUserType === 'local' ? handleBulkImportLocal : addUserType === 'ldap' ? handleBulkImportLdap : handleBulkImportSaml}
+                    disabled={bulkImportLoading || samlImporting || (addUserType === 'local' ? !csvFile : addUserType === 'ldap' ? !ldapUsersText.trim() : !samlImportFile)}
                     className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
                   >
-                    {bulkImportLoading ? 'Importing...' : 'Import Users'}
+                    {(bulkImportLoading || samlImporting) ? 'Importing...' : 'Import Users'}
                   </button>
                 ) : (
                   <button
                     onClick={addUserType === 'local' ? handleAddLocalUser : handleAddLdapUser}
-                    disabled={addUserLoading || (addUserType === 'local' ? (!localUsername.trim() || !localEmail.trim() || !localPassword.trim()) : !selectedLdapUser)}
+                    disabled={addUserLoading || addUserType === 'saml' || (addUserType === 'local' ? (!localUsername.trim() || !localEmail.trim() || !localPassword.trim()) : !selectedLdapUser)}
                     className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
                   >
                     {addUserLoading ? 'Adding...' : 'Add User'}

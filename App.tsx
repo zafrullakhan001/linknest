@@ -366,7 +366,7 @@ const AppContent: React.FC = () => {
     };
   }, [user]);
 
-  // Keyboard shortcut for widget quick access (Ctrl+Shift+W or Cmd+Shift+W)
+  // Keyboard shortcut for widget quick access (Ctrl+Shift+U or Cmd+Shift+U)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Check if user is typing in an input field (don't interfere)
@@ -380,15 +380,16 @@ const AppContent: React.FC = () => {
         return;
       }
 
-      // Ctrl+Shift+W (Windows/Linux) or Cmd+Shift+W (Mac)
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'w') {
+      // Ctrl+Shift+Y (Windows/Linux) or Cmd+Shift+Y (Mac) - Widgets menu
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'y') {
         e.preventDefault();
+        e.stopPropagation();
         setShowWidgetQuickAccess((prev) => !prev);
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown, true); // Use capture phase to intercept before browser
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, []);
 
   const toggleTheme = () => {
