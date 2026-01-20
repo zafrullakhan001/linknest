@@ -11,6 +11,8 @@ import { RichTextContentItem } from './RichTextContentItem';
 import { RichTextContent } from '../types';
 import { isPublicLinkFavorite, togglePublicLinkFavorite } from '../services/publicFavoritesService';
 import { LinkInfoDialog } from './LinkInfoDialog';
+import { MobileTileEdit } from './MobileTileEdit';
+import { useMobile } from '../hooks/useMobile';
 
 interface TileDetailProps {
     tile: Tile;
@@ -178,6 +180,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [showTileUserSelector, setShowTileUserSelector] = useState(false);
 
     const { settings } = useSettings();
+    const isMobile = useMobile(768); // Use mobile layout below 768px
 
     // Tabs State (new structure)
     const [editTabs, setEditTabs] = useState<Tab[]>(() => {
@@ -2704,7 +2707,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             {/* Export single space */}
                             <button
                                 onClick={() => exportTileToFile(tile)}
-                                className="px-4 py-2 rounded-lg bg-white/15 hover:bg-white/25 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex items-center gap-2 backdrop-blur-sm"
+                                className="px-4 py-2 rounded-lg bg-white/15 hover:bg-white/25 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 backdrop-blur-sm"
                                 title="Export this space as JSON"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -2717,7 +2720,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             <button
                                 onClick={(e) => handleCheckTileHealth(e)}
                                 disabled={checkingHealth}
-                                className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex items-center gap-2 backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed"
                                 title="Check all links in this tile"
                                 type="button"
                             >
@@ -2727,14 +2730,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                         </svg>
-                                        Checking...
+                                        <span>Checking...</span>
                                     </>
                                 ) : (
                                     <>
                                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                                             <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
                                         </svg>
-                                        Check Links
+                                        <span>Check Links</span>
                                     </>
                                 )}
                             </button>
@@ -2749,13 +2752,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             }
                                             setIsEditing(true);
                                         }}
-                                        className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex items-center gap-2 backdrop-blur-sm"
+                                        className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 backdrop-blur-sm"
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                                             <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
                                             <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
                                         </svg>
-                                        Edit
+                                        <span>Edit</span>
                                     </button>
                                     <button
                                         onClick={async () => {
@@ -2778,20 +2781,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 alert('Failed to clone space. Please try again.');
                                             }
                                         }}
-                                        className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex items-center gap-2 backdrop-blur-sm"
+                                        className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 backdrop-blur-sm"
                                         title="Clone this space"
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                                             <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
                                             <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.439A1.5 1.5 0 008.378 6H4.5z" />
                                         </svg>
-                                        Clone
+                                        <span>Clone</span>
                                     </button>
                                 </>
                             )}
                             <button
                                 onClick={() => window.location.hash = '#/'}
-                                className="p-2 rounded-lg bg-white/20 hover:bg-white/30 text-white border border-white/20 transition-all backdrop-blur-sm"
+                                className="p-2 rounded-lg bg-white/20 hover:bg-white/30 text-white border border-white/20 transition-all backdrop-blur-sm flex items-center justify-center"
                                 title="Back to Dashboard"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
@@ -3618,6 +3621,48 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     // EDIT MODE - Only show if user has edit permission
     if (isEditing && tile.canEdit) {
+        // Use mobile-optimized edit page on mobile devices
+        if (isMobile) {
+            return (
+                <MobileTileEdit
+                    tile={tile}
+                    editTitle={editTitle}
+                    editDesc={editDesc}
+                    editHtml={editHtml}
+                    editEmoji={editEmoji}
+                    editColor={editColor}
+                    editVisibility={editVisibility}
+                    editAllowedUsers={editAllowedUsers}
+                    editTabs={editTabs}
+                    onTitleChange={setEditTitle}
+                    onDescChange={setEditDesc}
+                    onHtmlChange={setEditHtml}
+                    onEmojiChange={setEditEmoji}
+                    onColorChange={setEditColor}
+                    onVisibilityChange={setEditVisibility}
+                    onAllowedUsersChange={setEditAllowedUsers}
+                    onTabsChange={setEditTabs}
+                    onSave={handleSaveChanges}
+                    onCancel={() => {
+                        const confirmed = window.confirm('Are you sure you want to cancel? All unsaved changes will be lost.');
+                        if (confirmed) {
+                            setIsEditing(false);
+                        }
+                    }}
+                    isAuthenticated={isAuthenticated}
+                    usersList={usersList}
+                    loadingUsers={loadingUsers}
+                    showEmojiPicker={showEmojiPicker}
+                    setShowEmojiPicker={setShowEmojiPicker}
+                    showTileUserSelector={showTileUserSelector}
+                    setShowTileUserSelector={setShowTileUserSelector}
+                    settings={settings}
+                    availableBrowsers={availableBrowsers}
+                />
+            );
+        }
+
+        // Desktop edit mode
         return (
             <>
             <div className="animate-in fade-in zoom-in duration-300 w-full">
