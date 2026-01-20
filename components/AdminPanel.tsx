@@ -1190,8 +1190,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
 
     // Validation: If a tile is selected, at least one link from that tile must be selected
-    const selectedTilesArray = Array.from(selectedTileIds);
-    const selectedLinksArray = Array.from(selectedLinkIds);
+    const selectedTilesArray: string[] = Array.from(selectedTileIds);
+    const selectedLinksArray: string[] = Array.from(selectedLinkIds);
     
     // Get all links for selected tiles
     const linksInSelectedTiles = new Set<string>();
@@ -2694,7 +2694,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               try {
                                 setBulkProcessing(true);
                                 setError('');
-                                const userIdsArray = Array.from(selectedUserIds);
+                                const userIdsArray: number[] = Array.from(selectedUserIds);
                                 
                                 // Delete users one by one (since there's no bulk delete endpoint)
                                 let successCount = 0;
@@ -9222,8 +9222,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           (user.username.toLowerCase().includes(tileAdminUserSearchTerm.toLowerCase()) ||
                            user.email.toLowerCase().includes(tileAdminUserSearchTerm.toLowerCase()))
                         );
-                        const filteredUserIds = filteredUsers.map(u => u.id);
-                        const selectedTileIds = Array.from(selectedTileIdsForAdmins);
+                        const filteredUserIds: number[] = filteredUsers.map(u => u.id);
+                        const selectedTileIds: string[] = Array.from(selectedTileIdsForAdmins);
                         
                         if (selectedTileIds.length === 0) return;
                         
@@ -9337,7 +9337,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
                           <div className="divide-y divide-slate-200 dark:divide-slate-700">
                             {filteredUsers.map((user) => {
-                              const selectedTileIds = Array.from(selectedTileIdsForAdmins);
+                              const selectedTileIds: string[] = Array.from(selectedTileIdsForAdmins);
                               
                               return (
                                 <div
@@ -9363,7 +9363,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   {/* Checkboxes for each selected tile */}
                                   {selectedTileIds.length > 0 && (
                                     <div className="ml-11 space-y-1">
-                                      {selectedTileIds.map((tileId) => {
+                                      {selectedTileIds.map((tileId: string) => {
                                         const tile = allTiles.find(t => t.id === tileId);
                                         const isAdmin = tileAdminsMap[tileId]?.some(admin => admin.userId === user.id) || false;
                                         
@@ -9913,277 +9913,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       )}
 
       {/* Role Links Modal - REMOVED - Now combined with Tiles Modal */}
-      {false && showRoleLinksModal && selectedRole && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  Assign Links to Role: {selectedRole.name}
-                </h2>
-                <button
-                  onClick={() => {
-                    setShowRoleLinksModal(false);
-                    setSelectedLinkIds(new Set());
-                    setLinkSearchTerm('');
-                    setExpandedTiles(new Set());
-                    setExpandedLinks(new Set());
-                    setError('');
-                  }}
-                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-4">
-              {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
-                  {error}
-                </div>
-              )}
-
-              {roleLinksLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
-                </div>
-              ) : allLinks.length === 0 ? (
-                <div className="text-center py-12 text-slate-600 dark:text-slate-400">
-                  No links available
-                </div>
-              ) : (
-                <>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                    Select links that users with this role can access. Users will see only links assigned to their roles.
-                  </p>
-                  
-                  {/* Search Input */}
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={linkSearchTerm}
-                      onChange={(e) => setLinkSearchTerm(e.target.value)}
-                      placeholder="Search links by name, URL, tile, or section..."
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 pl-10 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                    />
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 absolute left-3 top-2.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                    {linkSearchTerm && (
-                      <button
-                        onClick={() => setLinkSearchTerm('')}
-                        className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                  
-                  {/* Tree Structure for Links */}
-                  <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
-                    {allTiles
-                      .filter(tile => {
-                        if (!linkSearchTerm) return true;
-                        const searchLower = linkSearchTerm.toLowerCase();
-                        const matchesTile = (tile.title || '').toLowerCase().includes(searchLower);
-                        const hasMatchingLinks = tile.tabs?.some(tab =>
-                          tab.sections?.some(section =>
-                            section.links?.some(link =>
-                              (link.label || '').toLowerCase().includes(searchLower) ||
-                              (link.url || '').toLowerCase().includes(searchLower)
-                            )
-                          )
-                        );
-                        return matchesTile || hasMatchingLinks;
-                      })
-                      .map((tile) => {
-                        const isExpanded = expandedTiles.has(tile.id);
-                        const hasLinks = tile.tabs?.some(tab => tab.sections?.some(section => section.links && section.links.length > 0));
-                        
-                        return (
-                          <div key={tile.id} className="border-b border-slate-200 dark:border-slate-700 last:border-b-0">
-                            {/* Tile Level */}
-                            <div className="flex items-center gap-2 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50">
-                              {hasLinks && (
-                                <button
-                                  onClick={() => {
-                                    const newExpanded = new Set(expandedTiles);
-                                    if (isExpanded) {
-                                      newExpanded.delete(tile.id);
-                                    } else {
-                                      newExpanded.add(tile.id);
-                                    }
-                                    setExpandedTiles(newExpanded);
-                                  }}
-                                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-0.5"
-                                >
-                                  <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                  </svg>
-                                </button>
-                              )}
-                              {!hasLinks && <div className="w-5" />}
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                                  {tile.title || tile.id}
-                                </div>
-                              </div>
-                            </div>
-                            
-                            {/* Tabs Level */}
-                            {isExpanded && tile.tabs && tile.tabs.map((tab) => {
-                              const tabKey = `${tile.id}_${tab.id}`;
-                              const isTabExpanded = expandedLinks.has(tabKey);
-                              const hasSections = tab.sections && tab.sections.length > 0;
-                              
-                              return (
-                                <div key={tab.id} className="bg-slate-100 dark:bg-slate-800/30 border-l-2 border-slate-300 dark:border-slate-600 ml-5">
-                                  <div className="flex items-center gap-2 p-2 pl-3 hover:bg-slate-200 dark:hover:bg-slate-700/50">
-                                    {hasSections && (
-                                      <button
-                                        onClick={() => {
-                                          const newExpanded = new Set(expandedLinks);
-                                          if (isTabExpanded) {
-                                            newExpanded.delete(tabKey);
-                                          } else {
-                                            newExpanded.add(tabKey);
-                                          }
-                                          setExpandedLinks(newExpanded);
-                                        }}
-                                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-0.5"
-                                      >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${isTabExpanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                        </svg>
-                                      </button>
-                                    )}
-                                    {!hasSections && <div className="w-5" />}
-                                    <div className="flex-1 min-w-0">
-                                      <div className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                                        📑 {tab.title || 'Untitled Tab'}
-                                      </div>
-                                    </div>
-                                  </div>
-                                  
-                                  {/* Sections Level */}
-                                  {isTabExpanded && tab.sections && tab.sections.map((section) => (
-                                    <div key={section.id} className="bg-slate-200 dark:bg-slate-700/30 border-l-2 border-slate-400 dark:border-slate-500 ml-5">
-                                      <div className="p-2 pl-3">
-                                        <div className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                                          📋 {section.title || 'Untitled Section'}
-                                        </div>
-                                        
-                                        {/* Links Level */}
-                                        {section.links && section.links.length > 0 && (
-                                          <div className="ml-4 space-y-1">
-                                            {section.links
-                                              .filter(link => {
-                                                if (!linkSearchTerm) return true;
-                                                const searchLower = linkSearchTerm.toLowerCase();
-                                                return (link.label || '').toLowerCase().includes(searchLower) ||
-                                                       (link.url || '').toLowerCase().includes(searchLower);
-                                              })
-                                              .map((link) => (
-                                                <label
-                                                  key={link.id}
-                                                  className="flex items-center gap-2 p-1.5 hover:bg-slate-300 dark:hover:bg-slate-600/50 rounded cursor-pointer"
-                                                >
-                                                  <input
-                                                    type="checkbox"
-                                                    checked={selectedLinkIds.has(link.id)}
-                                                    onChange={(e) => {
-                                                      const newLinkSet = new Set(selectedLinkIds);
-                                                      if (e.target.checked) {
-                                                        newLinkSet.add(link.id);
-                                                        // Automatically select the parent tile when a link is selected
-                                                        const newTileSet = new Set(selectedTileIds);
-                                                        newTileSet.add(tile.id);
-                                                        setSelectedTileIds(newTileSet);
-                                                      } else {
-                                                        newLinkSet.delete(link.id);
-                                                      }
-                                                      setSelectedLinkIds(newLinkSet);
-                                                    }}
-                                                    className="w-3.5 h-3.5 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-1"
-                                                  />
-                                                  <div className="flex-1 min-w-0">
-                                                    <div className="text-xs text-slate-700 dark:text-slate-300 truncate">
-                                                      🔗 {link.label || 'Unnamed Link'}
-                                                    </div>
-                                                    <div className="text-xs text-slate-500 dark:text-slate-500 truncate">
-                                                      {link.url}
-                                                    </div>
-                                                  </div>
-                                                </label>
-                                              ))}
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })}
-                  </div>
-
-                  <div className="text-sm text-slate-600 dark:text-slate-400 flex justify-between items-center">
-                    <span>
-                      {selectedLinkIds.size} link{selectedLinkIds.size !== 1 ? 's' : ''} selected
-                    </span>
-                    <button
-                      onClick={() => {
-                        const allExpanded = new Set<string>();
-                        allTiles.forEach(tile => {
-                          allExpanded.add(tile.id);
-                          tile.tabs?.forEach(tab => {
-                            allExpanded.add(`${tile.id}_${tab.id}`);
-                          });
-                        });
-                        setExpandedTiles(allExpanded);
-                        setExpandedLinks(allExpanded);
-                      }}
-                      className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
-                    >
-                      Expand All
-                    </button>
-                  </div>
-                </>
-              )}
-
-              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
-                <button
-                  onClick={() => {
-                    setShowRoleLinksModal(false);
-                    setSelectedLinkIds(new Set());
-                    setLinkSearchTerm('');
-                    setExpandedTiles(new Set());
-                    setExpandedLinks(new Set());
-                    setError('');
-                  }}
-                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleAssignLinksToRole}
-                  disabled={selectedLinkIds.size === 0 || roleLinksLoading}
-                  className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  Assign {selectedLinkIds.size > 0 ? `${selectedLinkIds.size} ` : ''}Links
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Role Tabs Modal */}
       {showRoleTabsModal && selectedRole && (
