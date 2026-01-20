@@ -7524,7 +7524,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                     {/* JavaScript API Examples */}
                     <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
-                      <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">ðŸ’» JavaScript API Examples</h4>
+                      <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">💻 JavaScript API Examples</h4>
                       <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                         Use the JavaScript API for programmatic control. Try the examples below:
                       </p>
@@ -7764,7 +7764,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                     {/* Interactive Test Area */}
                     <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
-                      <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">ðŸ§ª Interactive Test Area</h4>
+                      <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">🧪 Interactive Test Area</h4>
                       <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                         Test the integration with your own URLs and browser selections:
                       </p>
@@ -7844,7 +7844,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     {/* Browser IDs Reference */}
                     <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
                       <div className="flex items-center justify-between mb-4">
-                        <h4 className="text-lg font-semibold text-slate-900 dark:text-white">ðŸ” Discovered Browser IDs</h4>
+                        <h4 className="text-lg font-semibold text-slate-900 dark:text-white">🔍 Discovered Browser IDs</h4>
                         {detectedBrowsers.length > 0 && (
                           <span className="px-2 py-1 text-xs font-semibold rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
                             {detectedBrowsers.length} active
@@ -7876,7 +7876,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                     {/* Troubleshooting */}
                     <div>
-                      <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">ðŸ”§ Troubleshooting</h4>
+                      <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">🔧 Troubleshooting</h4>
                       <div className="bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 p-4 rounded">
                         <div className="text-sm text-amber-800 dark:text-amber-300">
                           <strong>If extension is not detected:</strong>
