@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { authService, PendingUser, AllUser } from '../services/authService';
 import { settingsService, AppSettings } from '../services/settingsService';
 import { databaseService } from '../services/databaseService';
@@ -620,7 +620,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         BrowserLauncher.checkAvailability((available: boolean, message: string) => {
           if (available) {
             statusDiv.className = 'p-4 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800';
-            statusDiv.innerHTML = `<div class="text-sm text-emerald-800 dark:text-emerald-300"><strong>âœ“ Extension Available:</strong> Browser Launcher Pro is ready!<br><small>Extension ID: ${BrowserLauncher.extensionId || 'Auto-detected'} | ${message}</small></div>`;
+            statusDiv.innerHTML = `<div class="text-sm text-emerald-800 dark:text-emerald-300"><strong>✓ Extension Available:</strong> Browser Launcher Pro is ready!<br><small>Extension ID: ${BrowserLauncher.extensionId || 'Auto-detected'} | ${message}</small></div>`;
           } else {
             statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
             statusDiv.innerHTML = `<div class="text-sm text-amber-800 dark:text-amber-300"><strong>âš  Extension Status:</strong> ${message}<br><small><strong>Tips:</strong><br>1. Make sure Browser Launcher Pro extension is installed<br>2. Go to chrome://extensions and reload the extension<br>3. Refresh this page</small></div>`;
@@ -7304,7 +7304,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     <div className="mb-6">
                       <div className="flex items-start justify-between gap-4 mb-2">
                         <div className="flex-1">
-                          <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">ðŸš€ Browser Extension Integration</h3>
+                          <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">🚀 Browser Extension Integration</h3>
                           <p className="text-sm text-slate-600 dark:text-slate-400">
                             Configure and test browser-specific link opening using Browser Launcher Pro extension.
                           </p>
@@ -7431,7 +7431,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             BrowserLauncher.checkAvailability((available: boolean, message: string) => {
                               if (available) {
                                 statusDiv.className = 'p-4 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800';
-                                statusDiv.innerHTML = `<div class="text-sm text-emerald-800 dark:text-emerald-300"><strong>âœ“ Extension Available:</strong> Browser Launcher Pro is ready!<br><small>Extension ID: ${BrowserLauncher.extensionId || 'Auto-detected'} | ${message}</small></div>`;
+                                statusDiv.innerHTML = `<div class="text-sm text-emerald-800 dark:text-emerald-300"><strong>✓ Extension Available:</strong> Browser Launcher Pro is ready!<br><small>Extension ID: ${BrowserLauncher.extensionId || 'Auto-detected'} | ${message}</small></div>`;
                               } else {
                                 statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
                                 statusDiv.innerHTML = `<div class="text-sm text-amber-800 dark:text-amber-300"><strong>âš  Extension Status:</strong> ${message}<br><small><strong>Tips:</strong><br>1. Make sure Browser Launcher Pro extension is installed<br>2. Go to chrome://extensions and reload the extension<br>3. Refresh this page</small></div>`;
@@ -7440,7 +7440,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           }}
                           className="px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg text-sm font-medium transition-colors"
                         >
-                          ðŸ”„ Re-check Extension Status
+                          🔄 Re-check Extension Status
                         </button>
                         <button
                           type="button"
@@ -7465,7 +7465,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             BrowserLauncher.open('https://www.google.com', 'chrome-stable', {}, (response: any) => {
                               if (response && response.success !== false) {
                                 statusDiv.className = 'p-4 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800';
-                                statusDiv.innerHTML = '<div class="text-sm text-emerald-800 dark:text-emerald-300"><strong>âœ“ Test Successful!</strong> Extension is working! The link should have opened in Chrome.</div>';
+                                statusDiv.innerHTML = '<div class="text-sm text-emerald-800 dark:text-emerald-300"><strong>✓ Test Successful!</strong> Extension is working! The link should have opened in Chrome.</div>';
                               } else {
                                 statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
                                 statusDiv.innerHTML = `<div class="text-sm text-amber-800 dark:text-amber-300"><strong>âš  Test Result:</strong> ${response ? response.error : 'No response from extension. Check console for details.'}</div>`;
@@ -7474,7 +7474,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           }}
                           className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors"
                         >
-                          ðŸ§ª Test Extension Directly
+                          🧪 Test Extension Directly
                         </button>
                       </div>
                     </div>
@@ -7482,7 +7482,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     {/* Quick Test Links */}
                     {settings.browser_specific_links_enabled === '1' && (
                       <div className="mb-8 pb-8 border-b border-slate-200 dark:border-slate-700">
-                        <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">ðŸ“‹ Quick Test Links</h4>
+                        <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">🔗 Quick Test Links</h4>
                         <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                           Click any link below to test opening in the specified browser:
                         </p>
@@ -7539,7 +7539,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               }
                               BrowserLauncher.open('https://github.com', 'chrome-stable', {}, (response: any) => {
                                 if (response && response.success !== false) {
-                                  alert('âœ“ Opening GitHub in Chrome Stable!');
+                                  alert('✓ Opening GitHub in Chrome Stable!');
                                 } else {
                                   alert('âœ— Error: ' + (response?.error || 'Unknown error'));
                                 }
@@ -7560,7 +7560,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               }
                               BrowserLauncher.open('https://microsoft.com', 'edge-stable', {}, (response: any) => {
                                 if (response && response.success !== false) {
-                                  alert('âœ“ Opening Microsoft in Edge Stable!');
+                                  alert('✓ Opening Microsoft in Edge Stable!');
                                 } else {
                                   alert('âœ— Error: ' + (response?.error || 'Unknown error'));
                                 }
@@ -7581,7 +7581,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               }
                               BrowserLauncher.open('https://google.com', 'chrome-beta', {}, (response: any) => {
                                 if (response && response.success !== false) {
-                                  alert('âœ“ Opening Google in Chrome Beta!');
+                                  alert('✓ Opening Google in Chrome Beta!');
                                 } else {
                                   alert('âœ— Error: ' + (response?.error || 'Unknown error'));
                                 }
@@ -7709,7 +7709,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               if (response.ok) {
                                 const data = await response.json();
                                 setDetectedBrowsers([]);
-                                alert('âœ“ Browser cache cleared successfully!\n\nClick "Show Available Browsers" to refresh the list.');
+                                alert('✓ Browser cache cleared successfully!\n\nClick "Show Available Browsers" to refresh the list.');
                               } else {
                                 alert('Failed to clear browser cache.');
                               }
@@ -7822,7 +7822,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               BrowserLauncher.open(testUrl, testBrowser, { fallback: false }, (response: any) => {
                                 if (response && response.success !== false) {
                                   const message = response.message || 'Browser launch initiated';
-                                  setTestResult({ success: true, message: `âœ“ Success! ${message}` });
+                                  setTestResult({ success: true, message: `✓ Success! ${message}` });
                                 } else {
                                   setTestResult({ success: false, message: `âœ— Error: ${response ? response.error : 'No response from extension'}` });
                                 }
