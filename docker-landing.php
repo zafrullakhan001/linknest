@@ -5,6 +5,22 @@
  * Provides quick access to all application services and tools
  */
 
+// Set UTF-8 encoding headers BEFORE any output
+header('Content-Type: text/html; charset=UTF-8');
+mb_internal_encoding('UTF-8');
+mb_http_output('UTF-8');
+mb_http_input('UTF-8');
+mb_language('uni');
+
+// Start output buffering with UTF-8 encoding
+ob_start(function($buffer) {
+    // Ensure UTF-8 BOM is not added (some servers add it automatically)
+    if (substr($buffer, 0, 3) === "\xEF\xBB\xBF") {
+        $buffer = substr($buffer, 3);
+    }
+    return $buffer;
+});
+
 // Detect current protocol and host
 $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
 $host = $_SERVER['HTTP_HOST'] ?? 'localhost:8090';
@@ -31,7 +47,9 @@ $serverSoftware = $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown';
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="format-detection" content="telephone=no">
     <title>LinkNest Docker - Landing Page</title>
     <style>
         * {
@@ -41,7 +59,7 @@ $serverSoftware = $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown';
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
@@ -252,13 +270,119 @@ $serverSoftware = $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown';
         }
         
         @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+
             .grid {
                 grid-template-columns: 1fr;
+                gap: 15px;
             }
             
-            .header h1 {
-                font-size: 32px;
+            .header {
+                padding: 25px 20px;
             }
+
+            .header h1 {
+                font-size: 28px;
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .header p {
+                font-size: 16px;
+            }
+
+            .card {
+                padding: 20px;
+            }
+
+            .card-header h2 {
+                font-size: 20px;
+            }
+
+            .link-item {
+                padding: 14px;
+                min-height: 44px;
+                touch-action: manipulation;
+            }
+
+            .link-item .link-label {
+                font-size: 14px;
+            }
+
+            .link-item .link-url {
+                font-size: 12px;
+                word-break: break-all;
+            }
+
+            .info-badge {
+                font-size: 12px;
+                padding: 6px 12px;
+                margin: 3px;
+            }
+
+            .footer {
+                padding: 20px;
+            }
+
+            .footer .info-grid {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+
+            .footer .info-value {
+                font-size: 14px;
+            }
+
+            .warning-box {
+                padding: 15px;
+                font-size: 13px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .header h1 {
+                font-size: 24px;
+            }
+
+            .card {
+                padding: 15px;
+            }
+
+            .card-header h2 {
+                font-size: 18px;
+            }
+
+            .link-item {
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            .link-item .link-badge {
+                font-size: 10px;
+                padding: 3px 8px;
+            }
+        }
+
+        /* Ensure proper text rendering and encoding */
+        body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
+        }
+
+        /* Ensure emojis display correctly */
+        * {
+            font-feature-settings: normal;
+            unicode-bidi: embed;
+        }
+
+        /* Force emoji rendering with proper font stack */
+        .icon, .link-icon, h1, h2, .info-badge, .warning-box {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', 'Twemoji Mozilla', 'EmojiOne Color', 'Android Emoji';
+            font-variant-emoji: emoji;
+            text-rendering: optimizeLegibility;
         }
     </style>
 </head>

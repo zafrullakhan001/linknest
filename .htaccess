@@ -1,8 +1,12 @@
 # Enable directory access and file serving
 Options -Indexes +FollowSymLinks
 
-# Set proper MIME types for JavaScript modules
+# Set default charset to UTF-8
+AddDefaultCharset UTF-8
 <IfModule mod_mime.c>
+    # Set charset for text files
+    AddCharset UTF-8 .html .htm .php .css .js .json .txt .xml
+    
     # JavaScript files
     AddType application/javascript .js
     AddType application/javascript .mjs
@@ -20,7 +24,7 @@ Options -Indexes +FollowSymLinks
     AddType text/css .css
     
     # HTML files
-    AddType text/html .html .htm
+    AddType text/html;charset=UTF-8 .html .htm
 </IfModule>
 
 # Enable PHP for API routes

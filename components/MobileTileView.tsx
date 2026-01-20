@@ -632,6 +632,26 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                       <span>Your Apps</span>
                     </button>
                   )}
+
+                  {/* Admin Panel - Only for admin users */}
+                  {user?.is_admin && !disabledTabs.has('admin') && (
+                    <>
+                      <div className="my-2 border-t border-slate-200 dark:border-slate-700"></div>
+                      <button
+                        onClick={() => {
+                          window.location.hash = '#/admin';
+                          setIsMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 touch-manipulation"
+                        style={{ minHeight: '44px' }}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                          <path fillRule="evenodd" d="M9.293 2.293a1 1 0 011.414 0l7 7A1 1 0 0117 11h-1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3a1 1 0 00-1-1H9a1 1 0 00-1 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-6H3a1 1 0 01-.707-1.707l7-7z" clipRule="evenodd" />
+                        </svg>
+                        <span className="font-medium">Admin Panel</span>
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
 
