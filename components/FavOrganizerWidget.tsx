@@ -54,8 +54,247 @@ interface ChunkProgress {
   totalCost?: number;
 }
 
+interface BrowserExtensionTabContentProps {
+  bookmarks: Bookmark[];
+  setBookmarks: (bookmarks: Bookmark[]) => void;
+  setUniqueBookmarks: (bookmarks: Bookmark[]) => void;
+  setDuplicateCount: (count: number) => void;
+  loading: boolean;
+  setLoading: (loading: boolean) => void;
+  error: string | null;
+  setError: (error: string | null) => void;
+  autoGenerateTilesByDomain: (bookmarks: Bookmark[]) => void;
+}
+
+// Browser Extension Tab Content Component
+const BrowserExtensionTabContent: React.FC<BrowserExtensionTabContentProps> = ({
+  bookmarks,
+  setBookmarks,
+  setUniqueBookmarks,
+  setDuplicateCount,
+  loading,
+  setLoading,
+  error,
+  setError,
+  autoGenerateTilesByDomain
+}) => {
+  const [extensionId, setExtensionId] = useState<string>('');
+  const [extensionStatus, setExtensionStatus] = useState<'checking' | 'found' | 'not-found' | 'error'>('checking');
+
+  // Detect Browser Launcher Pro extension
+  useEffect(() => {
+    const detectExtension = () => {
+      setExtensionStatus('checking');
+      let extensionFound = false;
+
+      // Check if extension is available via postMessage
+      const timestamp = Date.now();
+      const checkMessage = {
+        type: 'BROWSER_LAUNCHER_CHECK',
+        timestamp: timestamp
+      };
+
+      const responseListener = (event: MessageEvent) => {
+        if (event.data &&
+          event.data.type === 'BROWSER_LAUNCHER_CHECK_RESPONSE' &&
+          event.data.timestamp === timestamp) {
+          window.removeEventListener('message', responseListener);
+          extensionFound = true;
+
+          if (event.data.available) {
+            setExtensionStatus('found');
+            // Extension ID is not needed when using postMessage
+            setExtensionId('postMessage');
+          } else {
+            setExtensionStatus('not-found');
+          }
+        }
+      };
+
+      window.addEventListener('message', responseListener);
+      window.postMessage(checkMessage, '*');
+
+      // Timeout after 3 seconds
+      setTimeout(() => {
+        window.removeEventListener('message', responseListener);
+        if (!extensionFound) {
+          setExtensionStatus('not-found');
+        }
+      }, 3000);
+    };
+
+    detectExtension();
+  }, []);
+
+  // Fetch bookmarks from browser extension
+  const fetchBookmarksFromExtension = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const timestamp = Date.now();
+      const message = {
+        type: 'BROWSER_LAUNCHER_GET_BOOKMARKS',
+        timestamp: timestamp
+      };
+
+      const responseListener = (event: MessageEvent) => {
+        if (event.data &&
+          event.data.type === 'BROWSER_LAUNCHER_BOOKMARKS_LIST' &&
+          event.data.timestamp === timestamp) {
+          window.removeEventListener('message', responseListener);
+
+          if (event.data.success && event.data.bookmarks) {
+            // Deduplicate bookmarks
+            const { unique, duplicateCount } = deduplicateBookmarks(event.data.bookmarks);
+
+            setBookmarks(unique);
+            setUniqueBookmarks(unique);
+            setDuplicateCount(duplicateCount);
+
+            // Auto-generate tiles
+            autoGenerateTilesByDomain(unique);
+
+            if (unique.length === 0) {
+              setError('No bookmarks found in browser extension.');
+            } else {
+              setError(null);
+              if (duplicateCount > 0) {
+                console.log(`Filtered ${duplicateCount} duplicate bookmark(s). Processing ${unique.length} unique links.`);
+              }
+            }
+          } else {
+            setError(event.data?.error || 'Failed to fetch bookmarks from extension.');
+          }
+
+          setLoading(false);
+        }
+      };
+
+      window.addEventListener('message', responseListener);
+      window.postMessage(message, '*');
+
+      // Timeout after 15 seconds
+      setTimeout(() => {
+        window.removeEventListener('message', responseListener);
+        if (loading) {
+          setError('Timeout waiting for extension response. Make sure Browser Launcher Pro extension is installed and enabled.');
+          setLoading(false);
+        }
+      }, 15000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch bookmarks from extension.');
+      setLoading(false);
+    }
+  };
+
+  // Helper function to deduplicate (same as in main component)
+  const deduplicateBookmarks = (bookmarks: Bookmark[]): { unique: Bookmark[]; duplicateCount: number } => {
+    const seenUrls = new Map<string, Bookmark>();
+    const unique: Bookmark[] = [];
+    let duplicates = 0;
+
+    for (const bookmark of bookmarks) {
+      const normalizedUrl = bookmark.url
+        .toLowerCase()
+        .replace(/\/$/, '')
+        .split('#')[0]
+        .trim();
+
+      if (!seenUrls.has(normalizedUrl)) {
+        seenUrls.set(normalizedUrl, bookmark);
+        unique.push(bookmark);
+      } else {
+        duplicates++;
+        const existing = seenUrls.get(normalizedUrl)!;
+        if (bookmark.title.length > existing.title.length && bookmark.title !== bookmark.url) {
+          const index = unique.findIndex(b => {
+            const norm = b.url.toLowerCase().replace(/\/$/, '').split('#')[0].trim();
+            return norm === normalizedUrl;
+          });
+          if (index !== -1) {
+            unique[index] = bookmark;
+            seenUrls.set(normalizedUrl, bookmark);
+          }
+        }
+      }
+    }
+
+    return { unique, duplicateCount: duplicates };
+  };
+
+  return (
+    <>
+      <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded text-sm text-blue-800 dark:text-blue-300">
+        <p className="text-xs">
+          Pull favorites directly from Browser Launcher Pro extension. Make sure the extension is installed and enabled.
+        </p>
+      </div>
+
+      {/* Extension Status */}
+      <div className="mb-4">
+        <div className={`p-3 rounded text-sm ${extensionStatus === 'found'
+          ? 'bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+          : extensionStatus === 'checking'
+            ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300'
+            : 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
+          }`}>
+          {extensionStatus === 'checking' && '🔍 Detecting Browser Launcher Pro extension...'}
+          {extensionStatus === 'found' && '✅ Extension detected! You can fetch bookmarks now.'}
+          {extensionStatus === 'not-found' && '⚠️ Extension not detected. Please make sure Browser Launcher Pro extension is installed and enabled. You can find it in chrome://extensions'}
+          {extensionStatus === 'error' && '❌ Error detecting extension. Please refresh the page and try again.'}
+        </div>
+      </div>
+
+      {/* Fetch Button */}
+      <div className="mb-4">
+        <button
+          onClick={fetchBookmarksFromExtension}
+          disabled={loading || extensionStatus === 'checking' || extensionStatus === 'not-found'}
+          className="w-full px-4 py-3 bg-brand-500 text-white rounded hover:bg-brand-600 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors"
+        >
+          {loading ? 'Fetching Bookmarks...' : '📥 Fetch Bookmarks from Extension'}
+        </button>
+      </div>
+
+      {/* Error Display */}
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-sm text-red-800 dark:text-red-300">
+          {error}
+        </div>
+      )}
+
+      {/* Bookmarks Count */}
+      {bookmarks.length > 0 && (
+        <>
+          <div className="mb-4 p-2 bg-slate-50 dark:bg-slate-700/50 rounded text-sm text-slate-600 dark:text-slate-400">
+            <span>
+              Found {bookmarks.length} bookmark{bookmarks.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+
+          {/* Next Steps Message */}
+          <div className="mb-4 p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded">
+            <h4 className="text-sm font-semibold text-emerald-800 dark:text-emerald-300 mb-2">
+              ✅ Bookmarks Fetched Successfully!
+            </h4>
+            <p className="text-xs text-emerald-700 dark:text-emerald-400 mb-3">
+              Your bookmarks have been automatically organized by domain. You can now:
+            </p>
+            <ul className="text-xs text-emerald-700 dark:text-emerald-400 space-y-1 list-disc list-inside">
+              <li>View and edit auto-generated categories</li>
+              <li>Customize titles, descriptions, and colors</li>
+              <li>Generate JSON for import</li>
+            </ul>
+          </div>
+        </>
+      )}
+    </>
+  );
+};
+
 export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose }) => {
-  const [activeTab, setActiveTab] = useState<'ai' | 'manual'>('manual');
+  const [activeTab, setActiveTab] = useState<'manual' | 'browser'>('browser');
   const [apiKey, setApiKey] = useState<string>('');
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [loading, setLoading] = useState(false);
@@ -76,7 +315,7 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [isCancelled, setIsCancelled] = useState<boolean>(false);
 
-  
+
   // Manual organization state
   const [manualTiles, setManualTiles] = useState<Array<{
     id: string;
@@ -86,12 +325,12 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
     themeColor: string;
     links: Bookmark[];
   }>>([]);
-  
+
   // Offline AI prompt state
   const [showOfflinePrompt, setShowOfflinePrompt] = useState(false);
   const [offlinePrompt, setOfflinePrompt] = useState<string>('');
   const [offlineResponse, setOfflineResponse] = useState<string>('');
-  
+
   // Import to category state
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [categoryName, setCategoryName] = useState<string>('');
@@ -110,13 +349,13 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
     }
 
     const domainMap = new Map<string, Bookmark[]>();
-    
+
     bookmarkList.forEach(bookmark => {
       try {
         const url = new URL(bookmark.url);
         const domain = url.hostname.replace('www.', '').replace(/^\.+/, '');
         const baseDomain = domain.split('.').slice(-2).join('.'); // Get main domain (e.g., google.com from mail.google.com)
-        
+
         if (!domainMap.has(baseDomain)) {
           domainMap.set(baseDomain, []);
         }
@@ -133,7 +372,7 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
     // Create tiles from domains
     const emojis = ['💻', '🌐', '📚', '🛠️', '🎨', '🚀', '📱', '☁️', '🔐', '💰', '📊', '🎮', '🎵', '📷', '✈️', '🛒', '🏥', '🎓', '📝', '💡'];
     const colors = ['blue', 'emerald', 'violet', 'amber', 'rose', 'cyan', 'fuchsia', 'orange', 'indigo', 'lime', 'sky', 'slate', 'teal', 'pink', 'purple', 'yellow', 'zinc', 'red', 'green', 'gray'];
-    
+
     const generatedTiles = Array.from(domainMap.entries()).map(([domain, links], index) => {
       const domainName = domain === 'misc' ? 'Miscellaneous' : domain.charAt(0).toUpperCase() + domain.slice(1);
       return {
@@ -239,14 +478,14 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
     const bookmarksList: Bookmark[] = [];
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlContent, 'text/html');
-    
+
     // Find all anchor tags (bookmarks)
     const links = doc.querySelectorAll('a');
-    
+
     links.forEach((link) => {
       const href = link.getAttribute('href');
       const title = link.textContent?.trim() || href || '';
-      
+
       if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
         bookmarksList.push({
           title: title || href,
@@ -254,7 +493,7 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
         });
       }
     });
-    
+
     return bookmarksList;
   };
 
@@ -266,22 +505,22 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
     try {
       setLoading(true);
       setError(null);
-      
+
       const text = await file.text();
       const extracted = parseHTMLBookmarks(text);
-      
+
       // Deduplicate bookmarks
       const { unique, duplicateCount } = deduplicateBookmarks(extracted);
-      
+
       setBookmarks(unique);
       setUniqueBookmarks(unique);
       setDuplicateCount(duplicateCount);
-      
+
       // Auto-generate tiles if in manual organization tab
       if (activeTab === 'manual') {
         autoGenerateTilesByDomain(unique);
       }
-      
+
       if (unique.length === 0) {
         setError('No bookmarks found in the HTML file. Please ensure it\'s a valid bookmark export file.');
       } else {
@@ -336,16 +575,16 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
 
     // Deduplicate bookmarks
     const { unique, duplicateCount } = deduplicateBookmarks(extracted);
-    
+
     setBookmarks(unique);
     setUniqueBookmarks(unique);
     setDuplicateCount(duplicateCount);
-    
+
     // Auto-generate tiles if in manual organization tab
     if (activeTab === 'manual') {
       autoGenerateTilesByDomain(unique);
     }
-    
+
     if (unique.length === 0 && lines.length > 0) {
       setError('No valid URLs found. Please use format: "Title|URL" or just "URL"');
     } else {
@@ -360,14 +599,14 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
   const generateId = (prefix: string, index: number) => `${prefix}_${index}_${Date.now()}`;
 
   // Track which links were processed and return both count and lists
-  const trackProcessedLinks = (tiles: any[], allBookmarks: Bookmark[]): { 
-    count: number; 
-    processed: Bookmark[]; 
-    unprocessed: Bookmark[] 
+  const trackProcessedLinks = (tiles: any[], allBookmarks: Bookmark[]): {
+    count: number;
+    processed: Bookmark[];
+    unprocessed: Bookmark[]
   } => {
     const processedUrls = new Set<string>();
     const processed: Bookmark[] = [];
-    
+
     // Collect all processed URLs
     for (const tile of tiles) {
       // Check tabs
@@ -413,7 +652,7 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
         }
       }
     }
-    
+
     // Find unprocessed links
     const unprocessed: Bookmark[] = [];
     for (const bookmark of allBookmarks) {
@@ -422,7 +661,7 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
         unprocessed.push(bookmark);
       }
     }
-    
+
     return {
       count: processed.length,
       processed,
@@ -450,7 +689,7 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
     const modelPricing = pricing[model] || { input: 1, output: 4 }; // Default fallback
     const inputCost = (inputTokens / 1_000_000) * modelPricing.input;
     const outputCost = (outputTokens / 1_000_000) * modelPricing.output;
-    
+
     return inputCost + outputCost;
   };
 
@@ -459,7 +698,7 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
     const bookmarksText = chunk.map((b, i) => `${i + 1}. ${b.title} - ${b.url}`).join('\n');
 
     const currentTimestamp = Math.floor(Date.now() / 1000);
-    
+
     // Optimize prompt size for small batches
     const isSmallBatch = chunk.length <= 20;
     const templateExample = isSmallBatch ? `{
@@ -680,35 +919,35 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
     const usage = data.usage || {};
     const inputTokens = usage.prompt_tokens || Math.ceil(prompt.length / 4); // Rough estimate: ~4 chars per token
     const outputTokens = usage.completion_tokens || Math.ceil(content.length / 4);
-    
+
     // Calculate cost
     const cost = estimateCost(selectedModel, inputTokens, outputTokens);
 
     // Clean the response - extract JSON more robustly
     let jsonText = content.trim();
-    
+
     // Remove markdown code blocks (handle various formats)
     jsonText = jsonText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
     jsonText = jsonText.replace(/^```\s*/i, '').replace(/\s*```$/i, '');
-    
+
     // Try to extract JSON object if there's text before/after
     // Look for first { and last } to extract JSON object
     const firstBrace = jsonText.indexOf('{');
     const lastBrace = jsonText.lastIndexOf('}');
-    
+
     if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
       jsonText = jsonText.substring(firstBrace, lastBrace + 1);
     }
-    
+
     // Clean up any remaining whitespace and remove BOM/zero-width characters
     jsonText = jsonText.trim().replace(/^\uFEFF/, '').replace(/[\u200B-\u200D\uFEFF]/g, '');
-    
+
     // Validate JSON structure completeness before parsing
     const openBraces = (jsonText.match(/{/g) || []).length;
     const closeBraces = (jsonText.match(/}/g) || []).length;
     const openBrackets = (jsonText.match(/\[/g) || []).length;
     const closeBrackets = (jsonText.match(/\]/g) || []).length;
-    
+
     if (openBraces !== closeBraces || openBrackets !== closeBrackets) {
       console.warn('JSON structure appears incomplete:', {
         braces: { open: openBraces, close: closeBraces },
@@ -717,13 +956,13 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
       // Try to fix incomplete JSON by adding missing closing brackets/braces
       // Close brackets first (inner structures), then braces (outer structure)
       let fixedJson = jsonText.trim();
-      
+
       // Remove any trailing incomplete property (ends with comma or incomplete string)
       fixedJson = fixedJson.replace(/,\s*$/, ''); // Remove trailing comma
       fixedJson = fixedJson.replace(/:\s*$/, ''); // Remove trailing colon
       fixedJson = fixedJson.replace(/:\s*"[^"]*$/, ''); // Remove incomplete string value
       fixedJson = fixedJson.replace(/:\s*[^,}\]]*$/, ''); // Remove incomplete value
-      
+
       // Close brackets first (inner structures), then braces (outer structure)
       for (let i = 0; i < openBrackets - closeBrackets; i++) {
         fixedJson += ']';
@@ -770,11 +1009,11 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
 
       for (const tile of result.tiles) {
         const key = `${tile.group || 'Main'}_${tile.title}`;
-        
+
         if (tileMap.has(key)) {
           // Merge into existing tile
           const existingTile = tileMap.get(key);
-          
+
           // Merge tabs/sections
           if (tile.tabs && Array.isArray(tile.tabs)) {
             for (const tab of tile.tabs) {
@@ -789,7 +1028,7 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
                   };
                   existingTile.tabs.push(existingTab);
                 }
-                
+
                 // Merge sections
                 for (const section of tab.sections) {
                   let existingSection = existingTab.sections.find((s: any) => s.title === section.title);
@@ -802,7 +1041,7 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
                     };
                     existingTab.sections.push(existingSection);
                   }
-                  
+
                   // Add links to section
                   if (section.links && Array.isArray(section.links)) {
                     for (const link of section.links) {
@@ -864,7 +1103,7 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
       setAbortController(controller);
 
       const startTime = Date.now();
-      
+
       // Save settings
       localStorage.setItem(MODEL_STORAGE, selectedModel);
       localStorage.setItem(CHUNK_SIZE_STORAGE, chunkSize.toString());
@@ -886,36 +1125,36 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
       let runningTotalCost = 0;
       let runningProcessedCount = 0;
       let runningUnprocessedCount = 0;
-      
+
       for (let i = 0; i < chunks.length; i++) {
         chunkStartTimes[i] = Date.now();
-        
+
         // Check if cancelled before processing chunk
         if (controller.signal.aborted) {
           throw new Error('Processing cancelled by user');
         }
 
         const { result, prompt, cost, inputTokens, outputTokens } = await processChunk(
-          chunks[i], 
-          i, 
-          totalChunks, 
+          chunks[i],
+          i,
+          totalChunks,
           startTime,
           runningTotalCost,
           controller.signal
         );
-        
+
         results.push(result);
         prompts.push(prompt);
         costs.push(cost);
         runningTotalCost += cost;
-        
+
         // Track processed links from this chunk
         const chunkTracking = trackProcessedLinks(result?.tiles || [], chunks[i]);
         runningProcessedCount += chunkTracking.count;
         runningUnprocessedCount += chunks[i].length - chunkTracking.count;
-        
-        setProgress({ 
-          current: i + 1, 
+
+        setProgress({
+          current: i + 1,
           total: totalChunks,
           startTime,
           chunkTime: i > 0 ? Date.now() - chunkStartTimes[i - 1] : undefined,
@@ -924,7 +1163,7 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
           chunkCost: cost,
           totalCost: runningTotalCost
         });
-        
+
         // Small delay to avoid rate limiting (longer for free models)
         const isFreeModel = AVAILABLE_MODELS.find(m => m.id === selectedModel)?.free || false;
         const delay = isFreeModel ? 1000 : 500;
@@ -932,7 +1171,7 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
-      
+
       setChunkCosts(costs);
 
       // Store the combined prompt (first chunk's prompt as representative)
@@ -940,10 +1179,10 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
 
       // Merge all results
       const merged = mergeOrganizedResults(results);
-      
+
       // Post-process: ensure all required IDs are generated and valid
       const processed = postProcessOrganizedData(merged);
-      
+
       // Calculate statistics and track processed/unprocessed links
       const linkTracking = trackProcessedLinks(processed?.tiles || [], bookmarks || []);
       const totalTiles = (processed?.tiles || []).length;
@@ -957,13 +1196,13 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
           }
         }
       }
-      
+
       const processingTime = Math.round((Date.now() - startTime) / 1000);
-      
+
       // Store processed and unprocessed links (ensure arrays exist)
       setProcessedLinks(linkTracking?.processed || []);
       setUnprocessedLinks(linkTracking?.unprocessed || []);
-      
+
       const finalStats: ProcessingStats = {
         totalLinks: (bookmarks?.length || 0) + (duplicateCount || 0), // Original count including duplicates
         uniqueLinks: bookmarks?.length || 0, // Unique links sent to LLM
@@ -976,9 +1215,9 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
         chunksProcessed: totalChunks,
         totalCost: runningTotalCost
       };
-      
+
       setStats(finalStats);
-      
+
       // Format as pretty JSON
       const formattedJson = JSON.stringify(processed, null, 2);
       setOrganizedJson(formattedJson);
@@ -1020,7 +1259,7 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
     const processed = { ...data };
     processed.tiles = processed.tiles.map((tile: any, tileIndex: number) => {
       const newTile = { ...tile };
-      
+
       // Ensure tile has valid ID
       if (!newTile.id || newTile.id.startsWith('tile_')) {
         newTile.id = generateId('tile', tileIndex);
@@ -1052,7 +1291,7 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
                     newLink.id = generateId('link', linkIndex);
                   }
                   newLink.position = linkIndex;
-                  
+
                   // Ensure health object exists
                   if (!newLink.health) {
                     newLink.health = {
@@ -1160,7 +1399,7 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
     }
 
     const finalCategoryName = categoryName.trim() || 'Imported Bookmarks';
-    
+
     if (!finalCategoryName) {
       setError('Please enter a category name');
       return;
@@ -1178,7 +1417,7 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
 
       // Parse the JSON
       const data = JSON.parse(organizedJson);
-      
+
       // Parse and normalize using the same functions as the app
       const parsed = parseSpaceExportObject(data);
       const normalizedTiles = normalizeImportedTiles(parsed);
@@ -1213,7 +1452,7 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
         try {
           await createTile(tile);
           successCount++;
-          
+
           // Update progress
           setImportProgress({
             current: i + 1,
@@ -1226,7 +1465,7 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
           const errorMsg = error instanceof Error ? error.message : 'Unknown error';
           errors.push(`Failed to import "${tile.title}": ${errorMsg}`);
           console.error('Failed to import tile:', tile.title, error);
-          
+
           // Update progress with error
           setImportProgress({
             current: i + 1,
@@ -1246,7 +1485,7 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
           errors: []
         });
         setError(null);
-        
+
         // Clear the dialog after a delay
         setTimeout(() => {
           setShowImportDialog(false);
@@ -1333,10 +1572,10 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
         try {
           const url = new URL(firstLink.url);
           let domain = url.hostname.replace('www.', '').replace(/^\.+/, '').toLowerCase();
-          
+
           const twoPartTlds = ['co.uk', 'co.in', 'co.il', 'co.za', 'com.au', 'com.br', 'com.mx', 'net.au', 'org.uk'];
           const parts = domain.split('.');
-          
+
           if (parts.length >= 3) {
             const lastTwo = parts.slice(-2).join('.');
             if (twoPartTlds.includes(lastTwo)) {
@@ -1349,11 +1588,11 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
           } else {
             domainKey = domain;
           }
-          
+
           domainToTileIndex.set(domainKey, index);
           domainToTileIndex.set(domain, index);
           domainToTileIndex.set(url.hostname.toLowerCase(), index);
-          
+
           return domainKey;
         } catch {
           domainKey = tile.title.toLowerCase();
@@ -1387,7 +1626,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
 
     setOfflinePrompt(prompt);
     setShowOfflinePrompt(true);
-    
+
     // Copy to clipboard
     navigator.clipboard.writeText(prompt).then(() => {
       setError(null);
@@ -1425,10 +1664,10 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
           try {
             const url = new URL(firstLink.url);
             let domain = url.hostname.replace('www.', '').replace(/^\.+/, '').toLowerCase();
-            
+
             const twoPartTlds = ['co.uk', 'co.in', 'co.il', 'co.za', 'com.au', 'com.br', 'com.mx', 'net.au', 'org.uk'];
             const parts = domain.split('.');
-            
+
             if (parts.length >= 3) {
               const lastTwo = parts.slice(-2).join('.');
               if (twoPartTlds.includes(lastTwo)) {
@@ -1441,11 +1680,11 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
             } else {
               domainKey = domain;
             }
-            
+
             domainToTileIndex.set(domainKey, index);
             domainToTileIndex.set(domain, index);
             domainToTileIndex.set(url.hostname.toLowerCase(), index);
-            
+
             return domainKey;
           } catch {
             domainKey = tile.title.toLowerCase();
@@ -1480,7 +1719,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
 
       // Process enhancements (same as generateHybridJSON)
       await processAIEnhancements(aiEnhancements, domainNames, domainToTileIndex);
-      
+
       setShowOfflinePrompt(false);
       setOfflineResponse('');
     } catch (err: any) {
@@ -1523,11 +1762,11 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
           try {
             const url = new URL(firstLink.url);
             let domain = url.hostname.replace('www.', '').replace(/^\.+/, '').toLowerCase();
-            
+
             // Handle special cases like co.uk, co.in, co.il (these are valid 2-part TLDs)
             const twoPartTlds = ['co.uk', 'co.in', 'co.il', 'co.za', 'com.au', 'com.br', 'com.mx', 'net.au', 'org.uk'];
             const parts = domain.split('.');
-            
+
             if (parts.length >= 3) {
               const lastTwo = parts.slice(-2).join('.');
               if (twoPartTlds.includes(lastTwo)) {
@@ -1542,13 +1781,13 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
             } else {
               domainKey = domain;
             }
-            
+
             // Store mapping for reliable matching
             domainToTileIndex.set(domainKey, index);
             // Also store variations
             domainToTileIndex.set(domain, index);
             domainToTileIndex.set(url.hostname.toLowerCase(), index);
-            
+
             return domainKey;
           } catch {
             domainKey = tile.title.toLowerCase();
@@ -1656,17 +1895,17 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
       // Create a map of domain to AI enhancement (match by index first, then by domain)
       const enhancementByIndex: Array<{ title: string; description: string } | null> = new Array(manualTiles.length).fill(null);
       const enhancementMap = new Map<string, { title: string; description: string }>();
-      
+
       aiEnhancements.forEach((enh: any, index: number) => {
         if (enh.domain && enh.title && enh.description) {
           // Normalize domain to base domain (same logic as extraction)
           let normalizedDomain = enh.domain.toLowerCase().trim().replace('www.', '').replace(/^\.+/, '');
-          
+
           // Handle special cases like co.uk, co.in, co.il (these are valid 2-part TLDs)
           const twoPartTlds = ['co.uk', 'co.in', 'co.il', 'co.za', 'com.au', 'com.br', 'com.mx', 'net.au', 'org.uk'];
           const parts = normalizedDomain.split('.');
           let baseDomain = normalizedDomain;
-          
+
           if (parts.length >= 3) {
             const lastTwo = parts.slice(-2).join('.');
             if (twoPartTlds.includes(lastTwo)) {
@@ -1679,13 +1918,13 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
           } else if (parts.length === 2) {
             baseDomain = normalizedDomain;
           }
-          
+
           // Match by the exact domain that was sent to AI (most reliable)
           // The AI returns domains in the same format we sent, so match by the original domain from domainNames array
           if (index < domainNames.length) {
             const originalDomainSent = domainNames[index];
             const tileIndexFromOriginal = domainToTileIndex.get(originalDomainSent);
-            
+
             if (tileIndexFromOriginal !== undefined && tileIndexFromOriginal < manualTiles.length) {
               if (!enhancementByIndex[tileIndexFromOriginal]) {
                 enhancementByIndex[tileIndexFromOriginal] = {
@@ -1702,7 +1941,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
               }
             }
           }
-          
+
           // Also try to match by index (fallback - in case order is preserved)
           if (index < manualTiles.length && !enhancementByIndex[index]) {
             enhancementByIndex[index] = {
@@ -1711,7 +1950,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
             };
             console.log(`✅ Matched by index [${index}]:`, baseDomain, '->', enh.title);
           }
-          
+
           // Also try to match by domain name using domainToTileIndex
           const tileIndexFromDomain = domainToTileIndex.get(baseDomain) ?? domainToTileIndex.get(normalizedDomain);
           if (tileIndexFromDomain !== undefined && tileIndexFromDomain < manualTiles.length && !enhancementByIndex[tileIndexFromDomain]) {
@@ -1721,7 +1960,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
             };
             console.log(`✅ Matched by domain [${tileIndexFromDomain}]:`, baseDomain, '->', enh.title);
           }
-          
+
           // Store in map for domain-based lookup with multiple variations
           // Store with the exact domain from AI response (most important - this is what AI returns)
           const aiDomainExact = enh.domain.toLowerCase().trim();
@@ -1729,7 +1968,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
             title: enh.title,
             description: enh.description
           });
-          
+
           // Store normalized variations for flexible matching
           enhancementMap.set(baseDomain, {
             title: enh.title,
@@ -1739,7 +1978,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
             title: enh.title,
             description: enh.description
           });
-          
+
           // Also store without TLD for very flexible matching (e.g., "abcya" from "abcya.com")
           const domainWithoutTld = aiDomainExact.split('.')[0];
           if (domainWithoutTld && domainWithoutTld.length > 2) {
@@ -1750,7 +1989,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
           }
         }
       });
-      
+
       const matchedCount = enhancementByIndex.filter(e => e !== null).length;
       console.log('=== ENHANCEMENT MATCHING SUMMARY ===');
       console.log('Enhancement by index:', matchedCount, 'out of', manualTiles.length);
@@ -1772,11 +2011,11 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
           try {
             const url = new URL(firstLink.url);
             let domain = url.hostname.replace('www.', '').replace(/^\.+/, '').toLowerCase();
-            
+
             // Handle special cases like co.uk, co.in, co.il (these are valid 2-part TLDs)
             const twoPartTlds = ['co.uk', 'co.in', 'co.il', 'co.za', 'com.au', 'com.br', 'com.mx'];
             const parts = domain.split('.');
-            
+
             if (parts.length >= 3) {
               const lastTwo = parts.slice(-2).join('.');
               if (twoPartTlds.includes(lastTwo)) {
@@ -1800,23 +2039,23 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
 
         // Get AI enhancement - try by index first (most reliable), then by domain
         let enhancement = enhancementByIndex[tileIndex] || null;
-        
+
         // If no match by index, try domain-based matching with multiple strategies
         if (!enhancement && firstLink) {
           try {
             const url = new URL(firstLink.url);
             const fullDomain = url.hostname.toLowerCase();
             const domainWithoutWww = fullDomain.replace('www.', '');
-            
+
             // Strategy 1: Try exact domain key match (what we extracted)
             enhancement = enhancementMap.get(domainKey);
-            
+
             // Strategy 2: Try full domain variations (with/without www)
             if (!enhancement) {
-              enhancement = enhancementMap.get(fullDomain) || 
-                           enhancementMap.get(domainWithoutWww);
+              enhancement = enhancementMap.get(fullDomain) ||
+                enhancementMap.get(domainWithoutWww);
             }
-            
+
             // Strategy 3: The AI returns domains like "abcya.com" exactly
             // Try to match by normalizing our domain to that format
             if (!enhancement) {
@@ -1824,7 +2063,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
               const normalizedForAI = domainWithoutWww.split('.').slice(-2).join('.');
               enhancement = enhancementMap.get(normalizedForAI);
             }
-            
+
             // Strategy 4: Try matching by main domain name (without TLD)
             // The AI returns "abcya.com", so if our domainKey is "abcya.com", try matching "abcya"
             if (!enhancement) {
@@ -1833,25 +2072,25 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
                 enhancement = enhancementMap.get(domainNameOnly);
               }
             }
-            
+
             // Strategy 5: Try matching by checking all keys for domain name match
             // The AI returns exact domains like "abcya.com", so check if any key matches our domain
             if (!enhancement) {
               const domainName = domainKey.split('.')[0];
               for (const [key, value] of enhancementMap.entries()) {
                 // Check if the key matches our domain in any way
-                if (key === domainKey || 
-                    key === domainWithoutWww || 
-                    key === fullDomain ||
-                    key === domainKey.split('.').slice(-2).join('.') ||
-                    (key.includes('.') && key.split('.')[0] === domainName)) {
+                if (key === domainKey ||
+                  key === domainWithoutWww ||
+                  key === fullDomain ||
+                  key === domainKey.split('.').slice(-2).join('.') ||
+                  (key.includes('.') && key.split('.')[0] === domainName)) {
                   enhancement = value;
                   console.log('✅ Found domain match:', domainKey, '->', key, '->', value.title);
                   break;
                 }
               }
             }
-            
+
             // Strategy 6: Last resort - partial matching by main domain part
             if (!enhancement) {
               const domainParts = domainKey.split('.');
@@ -1871,10 +2110,10 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
             console.warn('Error matching domain:', e);
           }
         }
-        
+
         const finalTitle = enhancement?.title || tile.title;
         const finalDescription = enhancement?.description || tile.description;
-        
+
         // Debug logging - show what's being used
         if (enhancement) {
           console.log(`✅ [${tileIndex}] Using AI enhancement:`, tile.title, '->', finalTitle);
@@ -1956,10 +2195,10 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
 
       // Calculate stats
       const totalLinks = bookmarks.length;
-      const processedLinksCount = tiles.reduce((sum, tile) => 
+      const processedLinksCount = tiles.reduce((sum, tile) =>
         sum + (tile.sections?.reduce((secSum: number, sec: any) => secSum + (sec.links?.length || 0), 0) || 0), 0
       );
-      
+
       setStats({
         totalLinks,
         uniqueLinks: totalLinks,
@@ -2074,10 +2313,10 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
 
       // Calculate stats
       const totalLinks = bookmarks.length;
-      const processedLinksCount = tiles.reduce((sum, tile) => 
+      const processedLinksCount = tiles.reduce((sum, tile) =>
         sum + (tile.sections?.reduce((secSum: number, sec: any) => secSum + (sec.links?.length || 0), 0) || 0), 0
       );
-      
+
       setStats({
         totalLinks,
         uniqueLinks: totalLinks,
@@ -2115,7 +2354,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
 
   // Update manual tile
   const updateManualTile = (tileId: string, updates: Partial<typeof manualTiles[0]>) => {
-    setManualTiles(manualTiles.map(tile => 
+    setManualTiles(manualTiles.map(tile =>
       tile.id === tileId ? { ...tile, ...updates } : tile
     ));
   };
@@ -2175,401 +2414,419 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
         <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
           Extract browser favorites and organize them into tiles, sections, and links
         </p>
+
+        {/* Tab Navigation */}
+        <div className="flex gap-2 mb-4 border-b border-slate-200 dark:border-slate-700">
+          <button
+            onClick={() => setActiveTab('manual')}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'manual'
+              ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+          >
+            Manual
+          </button>
+          <button
+            onClick={() => setActiveTab('browser')}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'browser'
+              ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+          >
+            Browser Extension
+          </button>
+        </div>
       </div>
 
-      {/* AI Organization tab content - hidden */}
-      {false ? (
-        <>
-
-      {/* API Key Input */}
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-          OpenRouter API Key
-        </label>
-        <input
-          type="password"
-          value={apiKey}
-          onChange={(e) => handleApiKeyChange(e.target.value)}
-          placeholder="sk-or-v1-..."
-          className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+      {/* Browser Extension Tab */}
+      {activeTab === 'browser' ? (
+        <BrowserExtensionTabContent
+          bookmarks={bookmarks}
+          setBookmarks={setBookmarks}
+          setUniqueBookmarks={setUniqueBookmarks}
+          setDuplicateCount={setDuplicateCount}
+          loading={loading}
+          setLoading={setLoading}
+          error={error}
+          setError={setError}
+          autoGenerateTilesByDomain={autoGenerateTilesByDomain}
         />
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-          Stored in browser storage only. Get your key from{' '}
-          <a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer" className="text-brand-500 hover:underline">
-            openrouter.ai
-          </a>
-        </p>
-      </div>
+      ) : activeTab === 'ai' ? (
+        <>
+          {/* AI Organization tab content - hidden */}
+          {false ? (
+            <>
 
-      {/* Model Selection */}
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-          AI Model
-        </label>
-        <select
-          value={selectedModel}
-          onChange={(e) => setSelectedModel(e.target.value)}
-          disabled={loading}
-          className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
-        >
-          {AVAILABLE_MODELS.map((model) => (
-            <option key={model.id} value={model.id}>
-              {model.name} {model.free ? '🆓' : `(${model.cost})`}
-            </option>
-          ))}
-        </select>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-          Free models are slower but cost-effective. Premium models provide better quality.
-        </p>
-      </div>
+              {/* API Key Input */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  OpenRouter API Key
+                </label>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => handleApiKeyChange(e.target.value)}
+                  placeholder="sk-or-v1-..."
+                  className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Stored in browser storage only. Get your key from{' '}
+                  <a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer" className="text-brand-500 hover:underline">
+                    openrouter.ai
+                  </a>
+                </p>
+              </div>
 
-      {/* Chunk Size Selection */}
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-          Chunk Size (links per batch)
-        </label>
-        <div className="flex items-center gap-2">
-          <input
-            type="number"
-            min="10"
-            max="500"
-            value={chunkSizeInput}
-            onChange={(e) => {
-              const inputValue = e.target.value;
-              // Allow free typing - update input value
-              setChunkSizeInput(inputValue);
-              // Also update the numeric value if valid
-              const val = parseInt(inputValue, 10);
-              if (!isNaN(val) && val >= 10 && val <= 500) {
-                setChunkSize(val);
-              }
-            }}
-            onBlur={(e) => {
-              const val = parseInt(e.target.value, 10);
-              // Validate and clamp on blur
-              if (isNaN(val) || val < 10) {
-                setChunkSize(10);
-                setChunkSizeInput('10');
-              } else if (val > 500) {
-                setChunkSize(500);
-                setChunkSizeInput('500');
-              } else {
-                setChunkSize(val);
-                setChunkSizeInput(val.toString());
-              }
-            }}
-            disabled={loading}
-            className="flex-1 px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
-          />
-          <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-            (10-500)
-          </span>
-        </div>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-          Smaller chunks = more accurate but slower. Larger chunks = faster but may miss some links.
-        </p>
-      </div>
+              {/* Model Selection */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  AI Model
+                </label>
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  disabled={loading}
+                  className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
+                  {AVAILABLE_MODELS.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name} {model.free ? '🆓' : `(${model.cost})`}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Free models are slower but cost-effective. Premium models provide better quality.
+                </p>
+              </div>
 
-      {/* Extraction Method */}
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-          Import Method
-        </label>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setExtractionMethod('html')}
-            className={`flex-1 px-3 py-2 text-sm rounded transition-colors ${
-              extractionMethod === 'html'
-                ? 'bg-brand-500 text-white'
-                : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-            }`}
-          >
-            HTML File
-          </button>
-          <button
-            onClick={() => setExtractionMethod('manual')}
-            className={`flex-1 px-3 py-2 text-sm rounded transition-colors ${
-              extractionMethod === 'manual'
-                ? 'bg-brand-500 text-white'
-                : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-            }`}
-          >
-            Manual Input
-          </button>
-        </div>
-      </div>
+              {/* Chunk Size Selection */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Chunk Size (links per batch)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="10"
+                    max="500"
+                    value={chunkSizeInput}
+                    onChange={(e) => {
+                      const inputValue = e.target.value;
+                      // Allow free typing - update input value
+                      setChunkSizeInput(inputValue);
+                      // Also update the numeric value if valid
+                      const val = parseInt(inputValue, 10);
+                      if (!isNaN(val) && val >= 10 && val <= 500) {
+                        setChunkSize(val);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      // Validate and clamp on blur
+                      if (isNaN(val) || val < 10) {
+                        setChunkSize(10);
+                        setChunkSizeInput('10');
+                      } else if (val > 500) {
+                        setChunkSize(500);
+                        setChunkSizeInput('500');
+                      } else {
+                        setChunkSize(val);
+                        setChunkSizeInput(val.toString());
+                      }
+                    }}
+                    disabled={loading}
+                    className="flex-1 px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                    (10-500)
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Smaller chunks = more accurate but slower. Larger chunks = faster but may miss some links.
+                </p>
+              </div>
 
-      {/* Bookmark Import */}
-      {extractionMethod === 'html' ? (
-        <div className="mb-4">
-          <div className="mb-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded text-sm text-blue-800 dark:text-blue-300">
-            <p className="font-medium mb-1">How to export bookmarks:</p>
-            <ul className="list-disc list-inside space-y-1 text-xs">
-              <li><strong>Chrome/Edge:</strong> Bookmarks → Bookmark Manager → ⋮ (three dots) → Export bookmarks</li>
-              <li><strong>Firefox:</strong> Library → Bookmarks → Show All Bookmarks → Import and Backup → Export Bookmarks to HTML</li>
-            </ul>
-          </div>
-          <label className="block w-full px-4 py-3 bg-brand-500 text-white rounded hover:bg-brand-600 cursor-pointer transition-colors text-center">
-            <input
-              type="file"
-              accept=".html,.htm"
-              onChange={handleHTMLFileImport}
-              className="hidden"
-              disabled={loading}
-            />
-            {loading ? 'Importing...' : 'Import HTML Bookmark File'}
-          </label>
-        </div>
-      ) : (
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-            Paste Bookmarks (one per line, format: Title|URL or just URL)
-          </label>
-          <textarea
-            onChange={(e) => handleManualInput(e.target.value)}
-            placeholder="https://example.com&#10;Google|https://google.com&#10;GitHub|https://github.com"
-            className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
-            rows={6}
-          />
-        </div>
-      )}
+              {/* Extraction Method */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Import Method
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setExtractionMethod('html')}
+                    className={`flex-1 px-3 py-2 text-sm rounded transition-colors ${extractionMethod === 'html'
+                      ? 'bg-brand-500 text-white'
+                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                      }`}
+                  >
+                    HTML File
+                  </button>
+                  <button
+                    onClick={() => setExtractionMethod('manual')}
+                    className={`flex-1 px-3 py-2 text-sm rounded transition-colors ${extractionMethod === 'manual'
+                      ? 'bg-brand-500 text-white'
+                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                      }`}
+                  >
+                    Manual Input
+                  </button>
+                </div>
+              </div>
 
-      {/* Bookmarks Count */}
-      {bookmarks.length > 0 && (
-        <div className="mb-4 p-2 bg-slate-50 dark:bg-slate-700/50 rounded text-sm text-slate-600 dark:text-slate-400">
-          <div className="flex items-center justify-between">
-            <span>
-              {duplicateCount > 0 ? (
-                <>
-                  <span className="font-medium">{bookmarks.length} unique</span> bookmark{bookmarks.length !== 1 ? 's' : ''} 
-                  {duplicateCount > 0 && (
-                    <span className="ml-2 text-amber-600 dark:text-amber-400">
-                      ({duplicateCount} duplicate{duplicateCount !== 1 ? 's' : ''} filtered)
-                    </span>
-                  )}
-                </>
+              {/* Bookmark Import */}
+              {extractionMethod === 'html' ? (
+                <div className="mb-4">
+                  <div className="mb-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded text-sm text-blue-800 dark:text-blue-300">
+                    <p className="font-medium mb-1">How to export bookmarks:</p>
+                    <ul className="list-disc list-inside space-y-1 text-xs">
+                      <li><strong>Chrome/Edge:</strong> Bookmarks → Bookmark Manager → ⋮ (three dots) → Export bookmarks</li>
+                      <li><strong>Firefox:</strong> Library → Bookmarks → Show All Bookmarks → Import and Backup → Export Bookmarks to HTML</li>
+                    </ul>
+                  </div>
+                  <label className="block w-full px-4 py-3 bg-brand-500 text-white rounded hover:bg-brand-600 cursor-pointer transition-colors text-center">
+                    <input
+                      type="file"
+                      accept=".html,.htm"
+                      onChange={handleHTMLFileImport}
+                      className="hidden"
+                      disabled={loading}
+                    />
+                    {loading ? 'Importing...' : 'Import HTML Bookmark File'}
+                  </label>
+                </div>
               ) : (
-                <>
-                  Found {bookmarks.length} bookmark{bookmarks.length !== 1 ? 's' : ''}
-                </>
-              )}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Error Display */}
-      {error && (
-        <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-sm text-red-700 dark:text-red-400">
-          {error}
-        </div>
-      )}
-
-      {/* Progress Display */}
-      {progress && (
-        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-blue-800 dark:text-blue-300">
-              Processing chunks...
-            </span>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-blue-600 dark:text-blue-400">
-                {progress.current} / {progress.total}
-              </span>
-              <button
-                onClick={handleCancel}
-                className="px-3 py-1 text-xs bg-red-500 text-white hover:bg-red-600 rounded transition-colors font-medium"
-                title="Cancel processing"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-          <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2 mb-2">
-            <div
-              className="bg-blue-500 dark:bg-blue-500 h-2 rounded-full transition-all duration-300"
-              style={{ width: `${(progress.current / progress.total) * 100}%` }}
-            />
-          </div>
-          {progress.startTime && (
-            <div className="text-xs text-blue-600 dark:text-blue-400 space-y-1">
-              <div>
-                Elapsed: {Math.round((Date.now() - progress.startTime) / 1000)}s
-                {progress.chunkTime && ` | Last chunk: ${Math.round(progress.chunkTime / 1000)}s`}
-              </div>
-              {progress.processedCount !== undefined && progress.unprocessedCount !== undefined && (
-                <div>
-                  Processed: <span className="font-medium text-emerald-600 dark:text-emerald-400">{progress.processedCount}</span> | 
-                  Unprocessed: <span className="font-medium text-amber-600 dark:text-amber-400">{progress.unprocessedCount}</span>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Paste Bookmarks (one per line, format: Title|URL or just URL)
+                  </label>
+                  <textarea
+                    onChange={(e) => handleManualInput(e.target.value)}
+                    placeholder="https://example.com&#10;Google|https://google.com&#10;GitHub|https://github.com"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    rows={6}
+                  />
                 </div>
               )}
-              {progress.chunkCost !== undefined && progress.totalCost !== undefined && (
-                <div>
-                  Chunk cost: <span className="font-medium">${progress.chunkCost.toFixed(4)}</span> | 
-                  Total cost: <span className="font-medium">${progress.totalCost.toFixed(4)}</span>
+
+              {/* Bookmarks Count */}
+              {bookmarks.length > 0 && (
+                <div className="mb-4 p-2 bg-slate-50 dark:bg-slate-700/50 rounded text-sm text-slate-600 dark:text-slate-400">
+                  <div className="flex items-center justify-between">
+                    <span>
+                      {duplicateCount > 0 ? (
+                        <>
+                          <span className="font-medium">{bookmarks.length} unique</span> bookmark{bookmarks.length !== 1 ? 's' : ''}
+                          {duplicateCount > 0 && (
+                            <span className="ml-2 text-amber-600 dark:text-amber-400">
+                              ({duplicateCount} duplicate{duplicateCount !== 1 ? 's' : ''} filtered)
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          Found {bookmarks.length} bookmark{bookmarks.length !== 1 ? 's' : ''}
+                        </>
+                      )}
+                    </span>
+                  </div>
                 </div>
               )}
-            </div>
-          )}
-        </div>
-      )}
 
-      {/* Cancelled Message */}
-      {isCancelled && (
-        <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded text-sm text-amber-800 dark:text-amber-300">
-          ⚠️ Processing was cancelled. Partial results may be available below.
-        </div>
-      )}
-
-      {/* Organize Button */}
-      {bookmarks.length > 0 && (
-        <div className="mb-4">
-          <button
-            onClick={handleOrganize}
-            disabled={loading || !apiKey.trim()}
-            className="w-full px-4 py-2 bg-emerald-500 text-white rounded hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {loading 
-              ? progress 
-                ? `Organizing... (${progress.current}/${progress.total} chunks)` 
-                : 'Organizing with AI...' 
-              : `Organize ${bookmarks.length} Bookmarks`}
-          </button>
-          {bookmarks.length > 100 && (
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 text-center">
-              Large set detected. Will process in chunks of 100 links.
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Statistics Display */}
-      {stats && (
-        <div className="mb-4 p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded">
-          <h4 className="text-sm font-semibold text-emerald-800 dark:text-emerald-300 mb-3">
-            Processing Complete! 📊
-          </h4>
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <span className="text-slate-600 dark:text-slate-400">Total Links Uploaded:</span>
-              <span className="ml-2 font-medium text-slate-900 dark:text-slate-100">{stats.totalLinks}</span>
-            </div>
-            <div>
-              <span className="text-slate-600 dark:text-slate-400">Unique Links:</span>
-              <span className="ml-2 font-medium text-blue-700 dark:text-blue-400">{stats.uniqueLinks}</span>
-            </div>
-            {stats.duplicateLinks > 0 && (
-              <div>
-                <span className="text-slate-600 dark:text-slate-400">Duplicates Filtered:</span>
-                <span className="ml-2 font-medium text-amber-700 dark:text-amber-400">{stats.duplicateLinks}</span>
-              </div>
-            )}
-            <div>
-              <span className="text-slate-600 dark:text-slate-400">Links Processed:</span>
-              <span className="ml-2 font-medium text-emerald-700 dark:text-emerald-400">{stats.processedLinks}</span>
-            </div>
-            <div>
-              <span className="text-slate-600 dark:text-slate-400">Links Not Processed:</span>
-              <span className={`ml-2 font-medium ${stats.unprocessedLinks > 0 ? 'text-amber-700 dark:text-amber-400' : 'text-slate-900 dark:text-slate-100'}`}>
-                {stats.unprocessedLinks}
-              </span>
-            </div>
-            <div>
-              <span className="text-slate-600 dark:text-slate-400">Tiles Generated:</span>
-              <span className="ml-2 font-medium text-slate-900 dark:text-slate-100">{stats.totalTiles}</span>
-            </div>
-            <div>
-              <span className="text-slate-600 dark:text-slate-400">Sections Created:</span>
-              <span className="ml-2 font-medium text-slate-900 dark:text-slate-100">{stats.totalSections}</span>
-            </div>
-            <div>
-              <span className="text-slate-600 dark:text-slate-400">Processing Time:</span>
-              <span className="ml-2 font-medium text-slate-900 dark:text-slate-100">{stats.processingTime}s</span>
-            </div>
-            <div>
-              <span className="text-slate-600 dark:text-slate-400">Total Cost:</span>
-              <span className="ml-2 font-medium text-slate-900 dark:text-slate-100">
-                ${stats.totalCost.toFixed(4)}
-                {stats.totalCost === 0 && <span className="text-xs text-slate-500"> (Free model)</span>}
-              </span>
-            </div>
-          </div>
-          {stats.unprocessedLinks > 0 && (
-            <div className="mt-3 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded text-xs text-amber-800 dark:text-amber-300">
-              ⚠️ {stats.unprocessedLinks} links were not included. Try using a larger model or smaller chunk size.
-            </div>
-          )}
-          {stats.processedLinks === stats.uniqueLinks && (
-            <div className="mt-3 p-2 bg-emerald-100 dark:bg-emerald-900/30 border border-emerald-300 dark:border-emerald-700 rounded text-xs text-emerald-800 dark:text-emerald-300">
-              ✅ All {stats.uniqueLinks} unique links were successfully processed!
-            </div>
-          )}
-          
-          {/* Download Links */}
-          <div className="mt-4 pt-3 border-t border-emerald-200 dark:border-emerald-800">
-            <p className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">Download Reports:</p>
-            <div className="flex flex-wrap gap-2">
-              {processedLinks.length > 0 && (
-                <button
-                  onClick={handleDownloadProcessedLinks}
-                  className="px-3 py-1.5 text-xs bg-emerald-500 text-white hover:bg-emerald-600 rounded transition-colors"
-                  title={`Download ${processedLinks.length} processed links as CSV`}
-                >
-                  📥 Processed Links ({processedLinks.length})
-                </button>
+              {/* Error Display */}
+              {error && (
+                <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-sm text-red-700 dark:text-red-400">
+                  {error}
+                </div>
               )}
-              {unprocessedLinks.length > 0 && (
-                <button
-                  onClick={handleDownloadUnprocessedLinks}
-                  className="px-3 py-1.5 text-xs bg-amber-500 text-white hover:bg-amber-600 rounded transition-colors"
-                  title={`Download ${unprocessedLinks.length} unprocessed links as CSV`}
-                >
-                  📥 Unprocessed Links ({unprocessedLinks.length})
-                </button>
-              )}
-              {lastPrompt && (
-                <button
-                  onClick={handleDownloadPrompt}
-                  className="px-3 py-1.5 text-xs bg-blue-500 text-white hover:bg-blue-600 rounded transition-colors"
-                  title="Download AI prompt used for processing"
-                >
-                  📝 AI Prompt
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
+              {/* Progress Display */}
+              {progress && (
+                <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-blue-800 dark:text-blue-300">
+                      Processing chunks...
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-blue-600 dark:text-blue-400">
+                        {progress.current} / {progress.total}
+                      </span>
+                      <button
+                        onClick={handleCancel}
+                        className="px-3 py-1 text-xs bg-red-500 text-white hover:bg-red-600 rounded transition-colors font-medium"
+                        title="Cancel processing"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                  <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2 mb-2">
+                    <div
+                      className="bg-blue-500 dark:bg-blue-500 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${(progress.current / progress.total) * 100}%` }}
+                    />
+                  </div>
+                  {progress.startTime && (
+                    <div className="text-xs text-blue-600 dark:text-blue-400 space-y-1">
+                      <div>
+                        Elapsed: {Math.round((Date.now() - progress.startTime) / 1000)}s
+                        {progress.chunkTime && ` | Last chunk: ${Math.round(progress.chunkTime / 1000)}s`}
+                      </div>
+                      {progress.processedCount !== undefined && progress.unprocessedCount !== undefined && (
+                        <div>
+                          Processed: <span className="font-medium text-emerald-600 dark:text-emerald-400">{progress.processedCount}</span> |
+                          Unprocessed: <span className="font-medium text-amber-600 dark:text-amber-400">{progress.unprocessedCount}</span>
+                        </div>
+                      )}
+                      {progress.chunkCost !== undefined && progress.totalCost !== undefined && (
+                        <div>
+                          Chunk cost: <span className="font-medium">${progress.chunkCost.toFixed(4)}</span> |
+                          Total cost: <span className="font-medium">${progress.totalCost.toFixed(4)}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Cancelled Message */}
+              {isCancelled && (
+                <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded text-sm text-amber-800 dark:text-amber-300">
+                  ⚠️ Processing was cancelled. Partial results may be available below.
+                </div>
+              )}
+
+              {/* Organize Button */}
+              {bookmarks.length > 0 && (
+                <div className="mb-4">
+                  <button
+                    onClick={handleOrganize}
+                    disabled={loading || !apiKey.trim()}
+                    className="w-full px-4 py-2 bg-emerald-500 text-white rounded hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {loading
+                      ? progress
+                        ? `Organizing... (${progress.current}/${progress.total} chunks)`
+                        : 'Organizing with AI...'
+                      : `Organize ${bookmarks.length} Bookmarks`}
+                  </button>
+                  {bookmarks.length > 100 && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 text-center">
+                      Large set detected. Will process in chunks of 100 links.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Statistics Display */}
+              {stats && (
+                <div className="mb-4 p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded">
+                  <h4 className="text-sm font-semibold text-emerald-800 dark:text-emerald-300 mb-3">
+                    Processing Complete! 📊
+                  </h4>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-slate-600 dark:text-slate-400">Total Links Uploaded:</span>
+                      <span className="ml-2 font-medium text-slate-900 dark:text-slate-100">{stats.totalLinks}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-600 dark:text-slate-400">Unique Links:</span>
+                      <span className="ml-2 font-medium text-blue-700 dark:text-blue-400">{stats.uniqueLinks}</span>
+                    </div>
+                    {stats.duplicateLinks > 0 && (
+                      <div>
+                        <span className="text-slate-600 dark:text-slate-400">Duplicates Filtered:</span>
+                        <span className="ml-2 font-medium text-amber-700 dark:text-amber-400">{stats.duplicateLinks}</span>
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-slate-600 dark:text-slate-400">Links Processed:</span>
+                      <span className="ml-2 font-medium text-emerald-700 dark:text-emerald-400">{stats.processedLinks}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-600 dark:text-slate-400">Links Not Processed:</span>
+                      <span className={`ml-2 font-medium ${stats.unprocessedLinks > 0 ? 'text-amber-700 dark:text-amber-400' : 'text-slate-900 dark:text-slate-100'}`}>
+                        {stats.unprocessedLinks}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-600 dark:text-slate-400">Tiles Generated:</span>
+                      <span className="ml-2 font-medium text-slate-900 dark:text-slate-100">{stats.totalTiles}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-600 dark:text-slate-400">Sections Created:</span>
+                      <span className="ml-2 font-medium text-slate-900 dark:text-slate-100">{stats.totalSections}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-600 dark:text-slate-400">Processing Time:</span>
+                      <span className="ml-2 font-medium text-slate-900 dark:text-slate-100">{stats.processingTime}s</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-600 dark:text-slate-400">Total Cost:</span>
+                      <span className="ml-2 font-medium text-slate-900 dark:text-slate-100">
+                        ${stats.totalCost.toFixed(4)}
+                        {stats.totalCost === 0 && <span className="text-xs text-slate-500"> (Free model)</span>}
+                      </span>
+                    </div>
+                  </div>
+                  {stats.unprocessedLinks > 0 && (
+                    <div className="mt-3 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded text-xs text-amber-800 dark:text-amber-300">
+                      ⚠️ {stats.unprocessedLinks} links were not included. Try using a larger model or smaller chunk size.
+                    </div>
+                  )}
+                  {stats.processedLinks === stats.uniqueLinks && (
+                    <div className="mt-3 p-2 bg-emerald-100 dark:bg-emerald-900/30 border border-emerald-300 dark:border-emerald-700 rounded text-xs text-emerald-800 dark:text-emerald-300">
+                      ✅ All {stats.uniqueLinks} unique links were successfully processed!
+                    </div>
+                  )}
+
+                  {/* Download Links */}
+                  <div className="mt-4 pt-3 border-t border-emerald-200 dark:border-emerald-800">
+                    <p className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">Download Reports:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {processedLinks.length > 0 && (
+                        <button
+                          onClick={handleDownloadProcessedLinks}
+                          className="px-3 py-1.5 text-xs bg-emerald-500 text-white hover:bg-emerald-600 rounded transition-colors"
+                          title={`Download ${processedLinks.length} processed links as CSV`}
+                        >
+                          📥 Processed Links ({processedLinks.length})
+                        </button>
+                      )}
+                      {unprocessedLinks.length > 0 && (
+                        <button
+                          onClick={handleDownloadUnprocessedLinks}
+                          className="px-3 py-1.5 text-xs bg-amber-500 text-white hover:bg-amber-600 rounded transition-colors"
+                          title={`Download ${unprocessedLinks.length} unprocessed links as CSV`}
+                        >
+                          📥 Unprocessed Links ({unprocessedLinks.length})
+                        </button>
+                      )}
+                      {lastPrompt && (
+                        <button
+                          onClick={handleDownloadPrompt}
+                          className="px-3 py-1.5 text-xs bg-blue-500 text-white hover:bg-blue-600 rounded transition-colors"
+                          title="Download AI prompt used for processing"
+                        >
+                          📝 AI Prompt
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : null}
         </>
-      ) : (
+      ) : activeTab === 'manual' ? (
         <>
           {/* Organization Tab */}
           <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded text-sm text-blue-800 dark:text-blue-300">
             <p className="text-xs">
-              Organize your bookmarks manually without AI. Import bookmarks first, then create categories and assign links.
-              Use "Enhance Titles with AI" to get AI-generated titles/descriptions for your categories (very low cost - only sends domain names).
+              Organize your bookmarks manually. Import bookmarks first, then create categories and assign links.
             </p>
           </div>
 
-          {/* API Key Input for Hybrid Mode */}
-          {manualTiles.length > 0 && (
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                OpenRouter API Key (Optional - for AI title enhancement)
-              </label>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => handleApiKeyChange(e.target.value)}
-                placeholder="sk-or-v1-..."
-                className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
-              />
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                Only needed for AI title enhancement. Very low cost - only sends domain names, not full URLs.
-              </p>
-            </div>
-          )}
+
 
           {/* Import Method for Manual Tab */}
           <div className="mb-4">
@@ -2579,21 +2836,19 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
             <div className="flex gap-2">
               <button
                 onClick={() => setExtractionMethod('html')}
-                className={`flex-1 px-3 py-2 text-sm rounded transition-colors ${
-                  extractionMethod === 'html'
-                    ? 'bg-brand-500 text-white'
-                    : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-                }`}
+                className={`flex-1 px-3 py-2 text-sm rounded transition-colors ${extractionMethod === 'html'
+                  ? 'bg-brand-500 text-white'
+                  : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                  }`}
               >
                 HTML File
               </button>
               <button
                 onClick={() => setExtractionMethod('manual')}
-                className={`flex-1 px-3 py-2 text-sm rounded transition-colors ${
-                  extractionMethod === 'manual'
-                    ? 'bg-brand-500 text-white'
-                    : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-                }`}
+                className={`flex-1 px-3 py-2 text-sm rounded transition-colors ${extractionMethod === 'manual'
+                  ? 'bg-brand-500 text-white'
+                  : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                  }`}
               >
                 Manual Input
               </button>
@@ -2772,29 +3027,21 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
                 {loading ? 'Generating JSON...' : 'Generate JSON (No AI)'}
               </button>
               {manualTiles.length > 0 && (
-                <div className="space-y-2">
-                  <button
-                    onClick={generateHybridJSON}
-                    disabled={loading || !apiKey.trim()}
-                    className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {loading ? 'Enhancing with AI...' : '🤖 Enhance Titles with AI (Low Cost)'}
-                  </button>
-                  <button
-                    onClick={generateOfflinePrompt}
-                    disabled={loading}
-                    className="w-full px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    📋 Generate Offline Prompt (Free Testing)
-                  </button>
-                </div>
+                <button
+                  onClick={generateOfflinePrompt}
+                  disabled={loading}
+                  className="w-full px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  📋 Generate Offline Prompt (Use Any AI)
+                </button>
               )}
+
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 text-center">
-                {manualTiles.length === 0 
+                {manualTiles.length === 0
                   ? 'Will auto-organize by domain if no categories are created'
-                  : `Will use ${manualTiles.length} categor${manualTiles.length !== 1 ? 'ies' : 'y'}. AI enhancement only generates titles/descriptions (very low cost - only sends domain names).`}
+                  : `Will use ${manualTiles.length} categor${manualTiles.length !== 1 ? 'ies' : 'y'}.`}
               </p>
-              
+
               {/* Offline AI Prompt Section */}
               {showOfflinePrompt && (
                 <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 space-y-3">
@@ -2811,7 +3058,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
                       ✕
                     </button>
                   </div>
-                  
+
                   <div>
                     <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                       AI Prompt (copied to clipboard):
@@ -2835,7 +3082,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
                       📋 Copy Prompt Again
                     </button>
                   </div>
-                  
+
                   <div>
                     <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                       Paste AI Response Here:
@@ -2848,7 +3095,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
                       placeholder="Paste the JSON response from ChatGPT/Claude here..."
                     />
                   </div>
-                  
+
                   <button
                     onClick={processOfflineResponse}
                     disabled={loading || !offlineResponse.trim()}
@@ -2856,7 +3103,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
                   >
                     {loading ? 'Processing...' : '✅ Process AI Response'}
                   </button>
-                  
+
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     💡 Tip: Copy the prompt above, paste it into ChatGPT or Claude, then paste the JSON response here.
                   </p>
@@ -2865,7 +3112,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
             </div>
           )}
         </>
-      )}
+      ) : null}
 
       {/* Shared: Error Display */}
       {error && (
@@ -2932,7 +3179,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             You can import this JSON file using the category import feature in the app
           </p>
-          
+
           {/* Import to Category Button */}
           <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
             <button
@@ -3002,7 +3249,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
                       </div>
                     )}
                   </div>
-                  
+
                   {importProgress.errors.length > 0 && (
                     <div className="mt-3 max-h-32 overflow-y-auto">
                       <p className="text-xs font-medium text-red-600 dark:text-red-400 mb-1">
