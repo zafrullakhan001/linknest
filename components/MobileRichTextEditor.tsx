@@ -69,12 +69,13 @@ export const MobileRichTextEditor: React.FC<MobileRichTextEditorProps> = ({
 
     return (
         <div className={`mobile-rich-text-editor ${className}`} ref={editorRef}>
-            {/* Mobile Toolbar Toggle Button */}
-            <div className="flex items-center justify-between mb-2 gap-2">
+            {/* Mobile Controls - Only show fullscreen button on mobile, hide "Show Formatting" */}
+            <div className="flex items-center justify-end mb-2 gap-2 md:justify-between">
+                {/* Show Formatting button - Hidden on mobile, visible on desktop */}
                 <button
                     type="button"
                     onClick={() => setShowToolbar(!showToolbar)}
-                    className="flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 active:bg-slate-200 dark:active:bg-slate-700 touch-manipulation flex-1"
+                    className="hidden md:flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 active:bg-slate-200 dark:active:bg-slate-700 touch-manipulation flex-1"
                     style={{ minHeight: '44px' }}
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
@@ -82,6 +83,7 @@ export const MobileRichTextEditor: React.FC<MobileRichTextEditorProps> = ({
                     </svg>
                     {showToolbar ? 'Hide Formatting' : 'Show Formatting'}
                 </button>
+                {/* Fullscreen button - Always visible */}
                 <button
                     type="button"
                     onClick={() => setIsFullscreen(!isFullscreen)}
@@ -118,6 +120,7 @@ export const MobileRichTextEditor: React.FC<MobileRichTextEditorProps> = ({
                         </button>
                     </div>
                     <div className="flex-1 overflow-auto p-4">
+                        {/* In fullscreen, show the full editor with all controls */}
                         <RichTextEditor
                             value={value}
                             onChange={onChange}
@@ -131,8 +134,9 @@ export const MobileRichTextEditor: React.FC<MobileRichTextEditorProps> = ({
             {/* Regular Editor (when not fullscreen) */}
             {!isFullscreen && (
                 <div className="relative">
-                    {/* Enhanced Collapsible Toolbar */}
+                    {/* Enhanced Collapsible Toolbar - Hidden on mobile, visible on desktop */}
                     {showToolbar && (
+                        <div className="hidden md:block">
                         <div className="mb-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
                             {/* Toolbar Category Tabs */}
                             <div className="flex border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
@@ -383,15 +387,18 @@ export const MobileRichTextEditor: React.FC<MobileRichTextEditorProps> = ({
                                 )}
                             </div>
                         </div>
+                        </div>
                     )}
 
-                    {/* Editor */}
-                    <RichTextEditor
-                        value={value}
-                        onChange={onChange}
-                        placeholder={placeholder}
-                        className="mobile-editor"
-                    />
+                    {/* Editor - Hide RichTextEditor's toolbar on mobile when not fullscreen */}
+                    <div className="mobile-editor-wrapper">
+                        <RichTextEditor
+                            value={value}
+                            onChange={onChange}
+                            placeholder={placeholder}
+                            className="mobile-editor"
+                        />
+                    </div>
                 </div>
             )}
         </div>

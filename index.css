@@ -45,6 +45,17 @@
     user-select: none;
     -webkit-user-select: none;
   }
+  
+  /* Hide RichTextEditor toolbar on mobile when in mobile editor wrapper (not fullscreen) */
+  .mobile-editor-wrapper .rich-text-editor > div:first-child {
+    display: none !important;
+  }
+  
+  .mobile-editor-wrapper .rich-text-editor [contenteditable="true"] {
+    border-top-left-radius: 0.5rem !important;
+    border-top-right-radius: 0.5rem !important;
+    border-top-width: 2px !important;
+  }
 }
 
 /* Local tile decoration override - must take precedence over global styles with !important */
