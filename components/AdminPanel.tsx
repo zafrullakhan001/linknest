@@ -2748,7 +2748,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     
                                     {/* Dropdown menu */}
                                     {openDropdownUserId === user.id && (
-                                      <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 z-50 py-1">
+                                      <div className="absolute right-0 bottom-full mb-1 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 z-50 py-1">
                                         {/* Promote/Demote */}
                                         <button
                                           onClick={async () => {
