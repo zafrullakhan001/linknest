@@ -15,6 +15,7 @@ import { APP_TABS, getDisabledTabsFromSettings, setToSortedJsonArray, type AppTa
 import { broadcastService, BroadcastMessage } from '../services/broadcastService';
 import { rolesService, Role } from '../services/rolesService';
 import SamlConfigModal from './SamlConfigModal';
+import { useMobile } from '../hooks/useMobile';
 
 // Resolve API base dynamically based on current location
 // This ensures API calls work in both dev mode and runtime mode with any base path
@@ -53,6 +54,7 @@ interface AdminPanelProps {
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const { refreshSettings } = useSettings();
+  const isMobile = useMobile();
   // Initialize activeTab from localStorage or default to 'pending'
   const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenance'>(() => {
     const savedTab = localStorage.getItem('adminPanelActiveTab');
@@ -2298,9 +2300,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               {/* All Users Tab */}
               {activeTab === 'all' && (
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between gap-4">
+                  <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} gap-4`}>
                     {/* Search Input */}
-                    <div className="flex-1 max-w-md">
+                    <div className={`${isMobile ? 'w-full' : 'flex-1 max-w-md'}`}>
                       <div className="relative">
                         <input
                           type="text"
@@ -2336,13 +2338,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className={`flex items-center gap-2 ${isMobile ? 'flex-wrap w-full' : 'flex-wrap'}`}>
                       {selectedUserIds.size > 0 && (
                         <>
                           <button
                             onClick={handleBulkDisable}
                             disabled={bulkProcessing}
-                            className="px-4 py-2 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                            className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2 text-sm'} bg-orange-600 hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center gap-2 touch-manipulation`}
+                            style={isMobile ? { minHeight: '44px' } : {}}
                           >
                             {bulkProcessing ? (
                               <>
@@ -2364,7 +2367,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <button
                             onClick={handleBulkPromote}
                             disabled={bulkProcessing}
-                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                            className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2 text-sm'} bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center gap-2 touch-manipulation`}
+                            style={isMobile ? { minHeight: '44px' } : {}}
                           >
                             {bulkProcessing ? (
                               <>
@@ -2386,7 +2390,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <button
                             onClick={handleBulkToggleApproval}
                             disabled={bulkProcessing}
-                            className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                            className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2 text-sm'} bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center gap-2 touch-manipulation`}
+                            style={isMobile ? { minHeight: '44px' } : {}}
                           >
                             {bulkProcessing ? (
                               <>
@@ -2451,7 +2456,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               }
                             }}
                             disabled={bulkProcessing}
-                            className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                            className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2 text-sm'} bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center gap-2 touch-manipulation`}
+                            style={isMobile ? { minHeight: '44px' } : {}}
                           >
                             {bulkProcessing ? (
                               <>
@@ -2475,7 +2481,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       <button
                         onClick={handleAutoDetectAuthSources}
                         disabled={autoDetecting}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                        className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2 text-sm'} bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center gap-2 touch-manipulation`}
+                        style={isMobile ? { minHeight: '44px' } : {}}
                         title="Auto-detect authentication sources for all users (SAML > LDAP > Local)"
                       >
                         {autoDetecting ? (
@@ -2497,7 +2504,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </button>
                       <button
                         onClick={openAddUserModal}
-                        className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                        className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2 text-sm'} bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors flex items-center gap-2 touch-manipulation`}
+                        style={isMobile ? { minHeight: '44px' } : {}}
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                           <path d="M10 5a3 3 0 100 6 3 3 0 000-6zM3.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM15.75 6a3 3 0 11-6 0 3 3 0 016 0zm1.423 11.285a1.224 1.224 0 00-.569-1.175 5.964 5.964 0 00-1.576-.19 5.964 5.964 0 00-2.383.676.224.224 0 00-.12.219c0 .288.09.567.26.804a5.96 5.96 0 013.5 2.377 5.96 5.96 0 003.5-2.377c.17-.237.26-.516.26-.804a.225.225 0 00-.12-.219z" />
@@ -2506,9 +2514,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </button>
                     </div>
                   </div>
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
+                  
+                  {/* Desktop Table View */}
+                  {!isMobile && (
+                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
                         <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
                           <tr>
                             <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
@@ -2917,7 +2928,383 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </tbody>
                       </table>
                     </div>
-                    
+                    </div>
+                  )}
+                  
+                  {/* Mobile Card View */}
+                  {isMobile && (
+                    <div className="space-y-3">
+                      {allUsers
+                        .filter(user => {
+                          if (!allUsersSearchTerm) return true;
+                          const search = allUsersSearchTerm.toLowerCase();
+                          return user.username.toLowerCase().includes(search) ||
+                                 user.email.toLowerCase().includes(search);
+                        })
+                        .map((user) => {
+                          // Get user's roles
+                          const userRoles = userRolesMap[user.id] || [];
+                          // Get user's tile admin count (tiles where they have canEdit=true)
+                          const tileAdminCount = permissions.filter(
+                            p => p.userId === user.id && p.canEdit
+                          ).length;
+                          
+                          return (
+                            <div
+                              key={user.id}
+                              className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-sm"
+                            >
+                              {/* User Header */}
+                              <div className="flex items-start gap-3 mb-3">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedUserIds.has(user.id)}
+                                  onChange={() => {
+                                    const newSelection = new Set(selectedUserIds);
+                                    if (newSelection.has(user.id)) {
+                                      newSelection.delete(user.id);
+                                    } else {
+                                      newSelection.add(user.id);
+                                    }
+                                    setSelectedUserIds(newSelection);
+                                  }}
+                                  className="w-5 h-5 mt-1 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2 flex-shrink-0"
+                                />
+                                <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 ${user.is_admin
+                                  ? 'bg-gradient-to-br from-amber-500 to-orange-600'
+                                  : 'bg-gradient-to-br from-brand-500 to-brand-600'
+                                  }`}>
+                                  {user.username.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-start justify-between gap-2 mb-1">
+                                    <h3 className="font-semibold text-slate-900 dark:text-white text-base truncate">
+                                      {user.username}
+                                    </h3>
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-wrap mb-2">
+                                    {user.is_admin && (
+                                      <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-semibold whitespace-nowrap">
+                                        Admin
+                                      </span>
+                                    )}
+                                    {user.auth_source === 'saml' ? (
+                                      <span className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-xs font-semibold whitespace-nowrap">
+                                        SAML
+                                      </span>
+                                    ) : user.auth_source === 'ldap' ? (
+                                      <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs font-semibold whitespace-nowrap">
+                                        LDAP
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold whitespace-nowrap">
+                                        Local
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              {/* Email */}
+                              <div className="mb-3">
+                                <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Email</div>
+                                <div className="text-sm text-slate-900 dark:text-white break-all">{user.email}</div>
+                              </div>
+                              
+                              {/* Badges */}
+                              <div className="mb-3">
+                                <div className="text-xs text-slate-500 dark:text-slate-400 mb-1.5">Badges</div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {userRolesLoading ? (
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-brand-500"></div>
+                                  ) : (
+                                    <>
+                                      {userRoles.map((role) => (
+                                        <span
+                                          key={role.id}
+                                          className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-xs font-semibold whitespace-nowrap flex items-center gap-1"
+                                        >
+                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                            <path d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                                          </svg>
+                                          {role.name}
+                                        </span>
+                                      ))}
+                                      {tileAdminCount > 0 && (
+                                        <span className="px-2 py-0.5 rounded-full bg-brand-100 dark:bg-brand-500/20 text-brand-700 dark:text-brand-400 text-xs font-semibold whitespace-nowrap flex items-center gap-1">
+                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-5.5-2.5a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0zM10 12a5.98 5.98 0 00-4.93 2.26l.896 1.79a1 1 0 101.788.894l-1.062-2.12A5.98 5.98 0 0110 12z" clipRule="evenodd" />
+                                          </svg>
+                                          Tile Admin ({tileAdminCount})
+                                        </span>
+                                      )}
+                                      {userRoles.length === 0 && tileAdminCount === 0 && (
+                                        <span className="text-xs text-slate-400 dark:text-slate-500 italic">No badges</span>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                              
+                              {/* Status and Registered Date */}
+                              <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-200 dark:border-slate-700">
+                                <div>
+                                  <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Status</div>
+                                  {user.is_disabled ? (
+                                    <span className="px-2 py-1 rounded-full bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 text-xs font-semibold">
+                                      Disabled
+                                    </span>
+                                  ) : user.is_approved ? (
+                                    <span className="px-2 py-1 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-semibold">
+                                      Approved
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-1 rounded-full bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 text-xs font-semibold">
+                                      Pending
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Registered</div>
+                                  <div className="text-xs text-slate-600 dark:text-slate-400">{formatDate(user.created_at)}</div>
+                                </div>
+                              </div>
+                              
+                              {/* Action Buttons */}
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {!user.is_admin && (
+                                  <button
+                                    onClick={() => {
+                                      setEditUserModal({ open: true, userId: user.id, username: user.username, email: user.email, auth_source: user.auth_source || 'local' });
+                                      setEditUsername(user.username);
+                                      setEditEmail(user.email);
+                                      setEditAuthSource((user.auth_source || 'local') as 'local' | 'ldap' | 'saml');
+                                    }}
+                                    disabled={processing === user.id}
+                                    className="flex-1 min-w-[100px] px-3 py-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1.5 touch-manipulation"
+                                    style={{ minHeight: '44px' }}
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                      <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.919 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
+                                      <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
+                                    </svg>
+                                    Edit
+                                  </button>
+                                )}
+                                {!user.is_admin && (
+                                  <button
+                                    onClick={() => handleDeleteUser(user.id, user.username)}
+                                    disabled={processing === user.id}
+                                    className="flex-1 min-w-[100px] px-3 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1.5 touch-manipulation"
+                                    style={{ minHeight: '44px' }}
+                                  >
+                                    {processing === user.id ? (
+                                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                      </svg>
+                                    ) : (
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                        <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                                      </svg>
+                                    )}
+                                    Delete
+                                  </button>
+                                )}
+                                
+                                {/* Dropdown menu button */}
+                                <div className="relative">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setOpenDropdownUserId(openDropdownUserId === user.id ? null : user.id);
+                                    }}
+                                    className="px-3 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1.5 touch-manipulation"
+                                    style={{ minHeight: '44px' }}
+                                    title="More actions"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                      <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
+                                    </svg>
+                                    More
+                                  </button>
+                                  
+                                  {/* Dropdown menu */}
+                                  {openDropdownUserId === user.id && (
+                                    <div className="absolute right-0 bottom-full mb-2 w-56 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-50 py-2">
+                                      {/* Promote/Demote */}
+                                      <button
+                                        onClick={async () => {
+                                          setOpenDropdownUserId(null);
+                                          try {
+                                            setProcessing(user.id);
+                                            setError('');
+                                            const result = await authService.toggleAdmin(user.id);
+                                            setAllUsers(prevUsers =>
+                                              prevUsers.map(u =>
+                                                u.id === user.id ? { ...u, is_admin: result.is_admin } : u
+                                              )
+                                            );
+                                          } catch (err: any) {
+                                            setError(err.message || 'Failed to toggle admin status');
+                                          } finally {
+                                            setProcessing(null);
+                                          }
+                                        }}
+                                        disabled={processing === user.id}
+                                        className={`w-full px-4 py-3 text-left text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700 touch-manipulation ${user.is_admin
+                                          ? 'text-amber-700 dark:text-amber-400'
+                                          : 'text-emerald-700 dark:text-emerald-400'
+                                          }`}
+                                        style={{ minHeight: '44px' }}
+                                      >
+                                        {processing === user.id ? (
+                                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                          </svg>
+                                        ) : user.is_admin ? (
+                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                                          </svg>
+                                        ) : (
+                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                                          </svg>
+                                        )}
+                                        {user.is_admin ? 'Demote from Admin' : 'Promote to Admin'}
+                                      </button>
+                                      
+                                      {!user.is_admin && (
+                                        <>
+                                          {/* Disable/Enable */}
+                                          <button
+                                            onClick={() => {
+                                              setOpenDropdownUserId(null);
+                                              handleToggleDisable(user.id);
+                                            }}
+                                            disabled={processing === user.id}
+                                            className={`w-full px-4 py-3 text-left text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700 touch-manipulation ${user.is_disabled
+                                              ? 'text-emerald-700 dark:text-emerald-400'
+                                              : 'text-orange-700 dark:text-orange-400'
+                                              }`}
+                                            style={{ minHeight: '44px' }}
+                                          >
+                                            {user.is_disabled ? (
+                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                                              </svg>
+                                            ) : (
+                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                                              </svg>
+                                            )}
+                                            {user.is_disabled ? 'Enable User' : 'Disable User'}
+                                          </button>
+                                          
+                                          {/* Toggle Auth Source */}
+                                          <button
+                                            onClick={async () => {
+                                              setOpenDropdownUserId(null);
+                                              try {
+                                                setProcessing(user.id);
+                                                setError('');
+                                                const result = await authService.toggleAuthSource(user.id);
+                                                setAllUsers(prevUsers =>
+                                                  prevUsers.map(u =>
+                                                    u.id === user.id ? { ...u, auth_source: result.auth_source } : u
+                                                  )
+                                                );
+                                              } catch (err: any) {
+                                                setError(err.message || 'Failed to toggle auth source');
+                                              } finally {
+                                                setProcessing(null);
+                                              }
+                                            }}
+                                            disabled={processing === user.id}
+                                            className="w-full px-4 py-3 text-left text-sm font-medium text-purple-700 dark:text-purple-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700 touch-manipulation"
+                                            style={{ minHeight: '44px' }}
+                                          >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                              <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                                            </svg>
+                                            Toggle Auth Source
+                                          </button>
+                                          
+                                          {/* Reset Password */}
+                                          {user.auth_source !== 'ldap' && user.auth_source !== 'saml' && (
+                                            <button
+                                              onClick={() => {
+                                                setOpenDropdownUserId(null);
+                                                setResetPasswordModal({ open: true, userId: user.id, username: user.username });
+                                              }}
+                                              disabled={processing === user.id}
+                                              className="w-full px-4 py-3 text-left text-sm font-medium text-blue-700 dark:text-blue-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700 touch-manipulation"
+                                              style={{ minHeight: '44px' }}
+                                            >
+                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
+                                              </svg>
+                                              Reset Password
+                                            </button>
+                                          )}
+                                          
+                                          {/* Impersonate */}
+                                          <button
+                                            onClick={async () => {
+                                              setOpenDropdownUserId(null);
+                                              try {
+                                                setProcessing(user.id);
+                                                setError('');
+                                                await authService.startImpersonation(user.id);
+                                                window.location.reload();
+                                              } catch (err: any) {
+                                                setError(err.message || 'Failed to start impersonation');
+                                                setProcessing(null);
+                                              }
+                                            }}
+                                            disabled={processing === user.id}
+                                            className="w-full px-4 py-3 text-left text-sm font-medium text-indigo-700 dark:text-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700 touch-manipulation"
+                                            style={{ minHeight: '44px' }}
+                                          >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                              <path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM16 8a2 2 0 11-4 0 2 2 0 014 0zm-1.615 8.428a1.224 1.224 0 00.569-1.175 5.966 5.966 0 00-2.081-.416 5.967 5.967 0 00-1.788.27A9.953 9.953 0 0013 18a9.953 9.953 0 003.385-.572z" />
+                                            </svg>
+                                            Impersonate
+                                          </button>
+                                          
+                                          {/* Roles */}
+                                          <button
+                                            onClick={async () => {
+                                              setOpenDropdownUserId(null);
+                                              try {
+                                                await handleManageUserRoles(user.id);
+                                              } catch (err: any) {
+                                                setError(err.message || 'Failed to load user roles');
+                                              }
+                                            }}
+                                            disabled={processing === user.id}
+                                            className="w-full px-4 py-3 text-left text-sm font-medium text-violet-700 dark:text-violet-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700 touch-manipulation"
+                                            style={{ minHeight: '44px' }}
+                                          >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                              <path d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                                            </svg>
+                                            Assign Roles
+                                          </button>
+                                        </>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                        .slice((allUsersPage - 1) * allUsersPerPage, allUsersPage * allUsersPerPage)}
+                    </div>
+                  )}
+                  
                     {/* Pagination Controls */}
                     {(() => {
                       const filteredUsers = allUsers.filter(user => {
@@ -2932,9 +3319,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       const endUser = Math.min(allUsersPage * allUsersPerPage, totalUsers);
                       
                       return (
-                        <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
-                          <div className="flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-4">
+                        <div className={`${isMobile ? 'px-4' : 'px-6'} py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50`}>
+                          <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} gap-4`}>
+                            <div className={`flex ${isMobile ? 'flex-col sm:flex-row' : 'items-center'} gap-4`}>
                               <div className="text-sm text-slate-600 dark:text-slate-400">
                                 Showing <span className="font-medium text-slate-900 dark:text-white">{startUser}</span> to{' '}
                                 <span className="font-medium text-slate-900 dark:text-white">{endUser}</span> of{' '}
@@ -2950,7 +3337,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     setAllUsersPerPage(parseInt(e.target.value));
                                     setAllUsersPage(1); // Reset to first page when changing items per page
                                   }}
-                                  className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                  className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 touch-manipulation"
+                                  style={{ minHeight: '44px' }}
                                 >
                                   <option value={10}>10</option>
                                   <option value={25}>25</option>
@@ -2961,16 +3349,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             </div>
                             
                             {totalPages > 1 && (
-                              <div className="flex items-center gap-2">
+                              <div className={`flex items-center ${isMobile ? 'justify-center flex-wrap' : 'gap-2'}`}>
                                 <button
                                   onClick={() => setAllUsersPage(prev => Math.max(1, prev - 1))}
                                   disabled={allUsersPage === 1}
-                                  className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                  className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors touch-manipulation"
+                                  style={{ minHeight: '44px' }}
                                 >
                                   Previous
                                 </button>
                                 
-                                <div className="flex items-center gap-1">
+                                <div className="flex items-center gap-1 mx-2">
                                   {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                                     let pageNum;
                                     if (totalPages <= 5) {
@@ -2987,11 +3376,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       <button
                                         key={pageNum}
                                         onClick={() => setAllUsersPage(pageNum)}
-                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors touch-manipulation ${
                                           allUsersPage === pageNum
                                             ? 'bg-brand-600 text-white'
                                             : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
                                         }`}
+                                        style={{ minHeight: '44px', minWidth: '44px' }}
                                       >
                                         {pageNum}
                                       </button>
@@ -3002,7 +3392,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 <button
                                   onClick={() => setAllUsersPage(prev => Math.min(totalPages, prev + 1))}
                                   disabled={allUsersPage === totalPages}
-                                  className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                  className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors touch-manipulation"
+                                  style={{ minHeight: '44px' }}
                                 >
                                   Next
                                 </button>
@@ -3012,16 +3403,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </div>
                       );
                     })()}
-                  </div>
                 </div>
               )}
 
               {/* Database Tab */}
               {activeTab === 'database' && (
                 <div className="space-y-6">
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Database Export & Import</h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                  <div className={`bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl ${isMobile ? 'p-4' : 'p-6'}`}>
+                    <h3 className={`${isMobile ? 'text-base' : 'text-lg'} font-bold text-slate-900 dark:text-white mb-4`}>Database Export & Import</h3>
+                    <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 mb-6`}>
                       Export your database as a JSON file for backup or import it to restore data on a new instance.
                     </p>
 
@@ -3029,8 +3419,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       {/* Export Section */}
                       <div className="space-y-4">
                         <div>
-                          <h4 className="text-base font-semibold text-slate-900 dark:text-white mb-2">Export Database</h4>
-                          <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                          <h4 className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold text-slate-900 dark:text-white mb-2`}>Export Database</h4>
+                          <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 mb-4`}>
                             Download all database data (users, tiles, tabs, sections, links, settings, arrangements, rich text content, favorites, permissions, style profiles, and user preferences) as a JSON file.
                           </p>
                           <button
@@ -3047,7 +3437,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               }
                             }}
                             disabled={exporting}
-                            className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                            className={`w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white ${isMobile ? 'px-3 py-3 text-sm' : 'px-4 py-2.5 text-sm'} font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 touch-manipulation`}
+                            style={isMobile ? { minHeight: '44px' } : {}}
                           >
                             {exporting ? (
                               <>
@@ -3073,13 +3464,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       {/* Import Section */}
                       <div className="space-y-4">
                         <div>
-                          <h4 className="text-base font-semibold text-slate-900 dark:text-white mb-2">Import Database</h4>
-                          <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                          <h4 className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold text-slate-900 dark:text-white mb-2`}>Import Database</h4>
+                          <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 mb-4`}>
                             Import a previously exported JSON file. This will replace all existing data.
                           </p>
                           <div className="space-y-3">
                             <div>
-                              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                              <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-600 dark:text-slate-400 mb-2`}>
                                 Select JSON File
                               </label>
                               <input
@@ -3092,10 +3483,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     setError('');
                                   }
                                 }}
-                                className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer"
+                                className={`w-full ${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 file:mr-4 ${isMobile ? 'file:py-3 file:px-3' : 'file:py-2 file:px-4'} file:rounded-lg file:border-0 ${isMobile ? 'file:text-xs' : 'file:text-sm'} file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer touch-manipulation`}
+                                style={isMobile ? { minHeight: '44px' } : {}}
                               />
                               {importFile && (
-                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                                <p className={`${isMobile ? 'text-xs' : 'text-xs'} text-slate-500 dark:text-slate-400 mt-2 break-all`}>
                                   Selected: {importFile.name}
                                 </p>
                               )}
@@ -3156,7 +3548,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 }
                               }}
                               disabled={importing || !importFile}
-                              className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                              className={`w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white ${isMobile ? 'px-3 py-3 text-sm' : 'px-4 py-2.5 text-sm'} font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 touch-manipulation`}
+                              style={isMobile ? { minHeight: '44px' } : {}}
                             >
                               {importing ? (
                                 <>
@@ -3181,14 +3574,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </div>
                     </div>
 
-                    <div className="mt-6 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-                      <div className="flex gap-3">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5">
+                    <div className={`mt-6 ${isMobile ? 'p-3' : 'p-4'} bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg`}>
+                      <div className={`flex ${isMobile ? 'flex-col sm:flex-row' : 'flex-row'} gap-3`}>
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5'} text-amber-600 dark:text-amber-400 flex-shrink-0 ${isMobile ? '' : 'mt-0.5'}`}>
                           <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
                         </svg>
-                        <div>
-                          <p className="text-sm font-semibold text-amber-800 dark:text-amber-300 mb-1">Important Notes</p>
-                          <ul className="text-xs text-amber-700 dark:text-amber-400 space-y-1 list-disc list-inside">
+                        <div className="flex-1">
+                          <p className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-amber-800 dark:text-amber-300 mb-1`}>Important Notes</p>
+                          <ul className={`${isMobile ? 'text-[11px]' : 'text-xs'} text-amber-700 dark:text-amber-400 space-y-1 list-disc list-inside`}>
                             <li>Export creates a complete backup of all database tables including: users, tiles, tabs, sections, links, settings, arrangements, rich text content, user favorites, user permissions, style profiles, and user preferences</li>
                             <li>Export includes all data: user authentication sources, link health status, visibility settings, notes, tooltips, rich text formatting, access control permissions, and style configurations</li>
                             <li>Import will replace ALL existing data - use with caution</li>
@@ -3202,16 +3595,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
 
                     {/* Snapshots Management Section */}
-                    <div className="mt-8 pt-8 border-t border-slate-200 dark:border-slate-700">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Database Snapshots (Backups)</h3>
-                        <div className="flex items-center gap-2">
+                    <div className={`${isMobile ? 'mt-6' : 'mt-8'} ${isMobile ? 'pt-6' : 'pt-8'} border-t border-slate-200 dark:border-slate-700`}>
+                      <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-3' : ''} mb-4`}>
+                        <h3 className={`${isMobile ? 'text-base' : 'text-lg'} font-bold text-slate-900 dark:text-white`}>Database Snapshots (Backups)</h3>
+                        <div className={`flex items-center ${isMobile ? 'w-full justify-between' : 'gap-2'}`}>
                           <button
                             onClick={loadSnapshots}
-                            className="p-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                            className={`${isMobile ? 'p-2.5' : 'p-2'} text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors touch-manipulation`}
+                            style={isMobile ? { minHeight: '44px', minWidth: '44px' } : {}}
                             title="Refresh list"
                           >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-5 h-5 ${snapshotsLoading ? 'animate-spin' : ''}`}>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`${isMobile ? 'w-5 h-5' : 'w-5 h-5'} ${snapshotsLoading ? 'animate-spin' : ''}`}>
                               <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
                             </svg>
                           </button>
@@ -3229,19 +3623,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               }
                             }}
                             disabled={snapshotCreating}
-                            className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
+                            className={`bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white ${isMobile ? 'px-3 py-2.5 text-xs' : 'px-4 py-2 text-sm'} rounded-lg font-semibold transition-colors flex items-center gap-2 touch-manipulation`}
+                            style={isMobile ? { minHeight: '44px' } : {}}
                           >
                             {snapshotCreating ? 'Creating...' : '+ Create Snapshot'}
                           </button>
                         </div>
                       </div>
-                      <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                      <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 mb-6`}>
                         Manage full database snapshots stored on the server. Snapshots can be used to quickly restore the entire application state.
                         A nightly snapshot is automatically taken and kept for 30 days.
                       </p>
 
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+                      {/* Desktop Table View */}
+                      {!isMobile && (
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
                           <thead>
                             <tr>
                               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Date & Time</th>
@@ -3313,19 +3710,105 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             )}
                           </tbody>
                         </table>
-                      </div>
+                        </div>
+                      )}
 
-                      <div className="mt-8 p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg">
-                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-brand-500">
+                      {/* Mobile Card View */}
+                      {isMobile && (
+                        <div className="space-y-3">
+                          {snapshotsLoading && snapshots.length === 0 ? (
+                            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 text-center">
+                              <p className="text-sm text-slate-500">Loading snapshots...</p>
+                            </div>
+                          ) : snapshots.length === 0 ? (
+                            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 text-center">
+                              <p className="text-sm text-slate-500">No snapshots found.</p>
+                            </div>
+                          ) : (
+                            snapshots.map((snap) => (
+                              <div
+                                key={snap.filename}
+                                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-sm"
+                              >
+                                <div className="space-y-3">
+                                  <div>
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Date & Time</div>
+                                    <div className="text-sm font-medium text-slate-900 dark:text-white">
+                                      {snap.created_at_formatted}
+                                    </div>
+                                  </div>
+                                  
+                                  <div>
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Filename</div>
+                                    <div className="text-sm text-slate-600 dark:text-slate-400 break-all">
+                                      {snap.filename}
+                                    </div>
+                                  </div>
+                                  
+                                  <div>
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Size</div>
+                                    <div className="text-sm text-slate-600 dark:text-slate-400 font-mono">
+                                      {snap.size_formatted}
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
+                                    <div className="flex flex-col gap-2">
+                                      <button
+                                        onClick={async () => {
+                                          if (!confirm(`Are you sure you want to RESTORE the database from ${snap.filename}? This will OVERWRITE all current data!`)) return;
+                                          try {
+                                            setSnapshotRestoring(snap.filename);
+                                            await databaseService.restoreSnapshot(snap.filename);
+                                            alert('Database restored successfully! The page will now reload.');
+                                            window.location.reload();
+                                          } catch (err: any) {
+                                            setError(err.message || 'Failed to restore snapshot');
+                                          } finally {
+                                            setSnapshotRestoring(null);
+                                          }
+                                        }}
+                                        disabled={snapshotRestoring !== null}
+                                        className="w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors touch-manipulation"
+                                        style={{ minHeight: '44px' }}
+                                      >
+                                        {snapshotRestoring === snap.filename ? 'Restoring...' : 'Restore'}
+                                      </button>
+                                      <button
+                                        onClick={async () => {
+                                          if (!confirm(`Are you sure you want to DELETE snapshot ${snap.filename}?`)) return;
+                                          try {
+                                            await databaseService.deleteSnapshot(snap.filename);
+                                            await loadSnapshots();
+                                          } catch (err: any) {
+                                            setError(err.message || 'Failed to delete snapshot');
+                                          }
+                                        }}
+                                        className="w-full px-4 py-2.5 bg-slate-200 hover:bg-red-100 dark:bg-slate-700 dark:hover:bg-red-900/30 text-slate-700 hover:text-red-600 dark:text-slate-300 dark:hover:text-red-400 rounded-lg text-sm font-medium transition-colors touch-manipulation"
+                                        style={{ minHeight: '44px' }}
+                                      >
+                                        Delete
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
+
+                      <div className={`${isMobile ? 'mt-6' : 'mt-8'} ${isMobile ? 'p-3' : 'p-4'} bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg`}>
+                        <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2`}>
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`${isMobile ? 'w-3.5 h-3.5' : 'w-4 h-4'} text-brand-500`}>
                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
                           </svg>
                           Automated Snapshots (Cron / Task Scheduler)
                         </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className={`grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2'} gap-6`}>
                           <div>
-                            <p className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase">Windows (XAMPP)</p>
-                            <div className="text-[11px] text-slate-600 dark:text-slate-400 space-y-2">
+                            <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase`}>Windows (XAMPP)</p>
+                            <div className={`${isMobile ? 'text-[10px]' : 'text-[11px]'} text-slate-600 dark:text-slate-400 space-y-2`}>
                               <p>To schedule a daily backup at 3:00 AM:</p>
                               <ol className="list-decimal list-inside space-y-1">
                                 <li>Open <strong>Task Scheduler</strong></li>
@@ -3339,13 +3822,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             </div>
                           </div>
                           <div>
-                            <p className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase">Linux (Cron)</p>
-                            <div className="text-[11px] text-slate-600 dark:text-slate-400 space-y-2">
+                            <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase`}>Linux (Cron)</p>
+                            <div className={`${isMobile ? 'text-[10px]' : 'text-[11px]'} text-slate-600 dark:text-slate-400 space-y-2`}>
                               <p>Add this to your crontab (<code>crontab -e</code>):</p>
-                              <code className="block p-2 bg-slate-100 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 text-brand-600 dark:text-brand-400 select-all">
+                              <code className={`block ${isMobile ? 'p-1.5 text-[9px]' : 'p-2'} bg-slate-100 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 text-brand-600 dark:text-brand-400 select-all break-all`}>
                                 0 3 * * * /usr/bin/php {window.location.protocol === 'http:' ? 'C:\\xampp\\htdocs\\linknest\\api\\snapshot.php' : '/var/www/html/api/snapshot.php'} &gt; /dev/null 2&gt;&amp;1
                               </code>
-                              <p className="text-[10px] mt-2 italic">Note: Ensure the user running the task has write permissions to the <code>data/backups</code> directory.</p>
+                              <p className={`${isMobile ? 'text-[9px]' : 'text-[10px]'} mt-2 italic`}>Note: Ensure the user running the task has write permissions to the <code>data/backups</code> directory.</p>
                             </div>
                           </div>
                         </div>
