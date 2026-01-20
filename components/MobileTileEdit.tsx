@@ -296,6 +296,29 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         });
     };
 
+    const handleCloneLink = (tabId: string, sectionId: string, linkId: string) => {
+        const updatedTabs = editTabs.map(tab =>
+            tab.id === tabId
+                ? {
+                      ...tab,
+                      sections: tab.sections?.map(section => {
+                          if (section.id !== sectionId) return section;
+                          const clonedLinks = (section.links || []).flatMap(link => {
+                              if (link.id !== linkId) return [link];
+                              const newLink: Link = {
+                                  ...link,
+                                  id: `link_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+                              };
+                              return [link, newLink];
+                          });
+                          return { ...section, links: clonedLinks };
+                      }) || []
+                  }
+                : tab
+        );
+        onTabsChange(updatedTabs);
+    };
+
     const handleDeleteLink = (tabId: string, sectionId: string, linkId: string) => {
         if (!confirm('Are you sure you want to delete this link?')) return;
 
@@ -1224,6 +1247,17 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                                             </div>
                                                                                         </div>
                                                                                         <div className="flex gap-1">
+                                                                                            <button
+                                                                                                onClick={() => handleCloneLink(tab.id, section.id, link.id)}
+                                                                                                className="p-2 text-emerald-500 hover:text-emerald-600 active:bg-emerald-50 dark:active:bg-emerald-900/20 rounded-lg touch-manipulation"
+                                                                                                style={{ minHeight: '44px', minWidth: '44px' }}
+                                                                                                title="Clone Link"
+                                                                                            >
+                                                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                                                                    <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                                                                                                    <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
+                                                                                                </svg>
+                                                                                            </button>
                                                                                             <button
                                                                                                 onClick={() => handleStartEditLink(tab.id, section.id, link.id)}
                                                                                                 className="p-2 text-brand-500 hover:text-brand-600 active:bg-brand-50 dark:active:bg-brand-900/20 rounded-lg touch-manipulation"
