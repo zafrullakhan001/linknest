@@ -86,6 +86,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [editUserLoading, setEditUserLoading] = useState(false);
   const [openDropdownUserId, setOpenDropdownUserId] = useState<number | null>(null);
   const [autoDetecting, setAutoDetecting] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Settings state
   const [settings, setSettings] = useState<AppSettings>({
@@ -1888,267 +1889,535 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Admin Panel</h1>
-          <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Manage users and approvals</p>
+      {/* Header */}
+      <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-4' : ''}`}>
+        <div className={`flex ${isMobile ? 'items-center justify-between w-full' : ''}`}>
+          <div>
+            <h1 className={`${isMobile ? 'text-xl' : 'text-2xl'} font-bold text-slate-900 dark:text-white`}>Admin Panel</h1>
+            <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-500 dark:text-slate-400 ${isMobile ? 'mt-0.5' : 'mt-1'}`}>Manage users and approvals</p>
+          </div>
+          {/* Mobile Hamburger Menu Button */}
+          {isMobile && (
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="p-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg transition-colors touch-manipulation"
+              style={{ minHeight: '44px', minWidth: '44px' }}
+              aria-label="Toggle menu"
+            >
+              {mobileMenuOpen ? (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-6 h-6">
+                  <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-6 h-6">
+                  <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
+                </svg>
+              )}
+            </button>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setTabLayout(tabLayout === 'horizontal' ? 'vertical' : 'horizontal')}
-            className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-            title={`Switch to ${tabLayout === 'horizontal' ? 'vertical' : 'horizontal'} layout`}
-          >
-            {tabLayout === 'horizontal' ? (
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.75 9.083a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 12.663a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 16.25a.75.75 0 000 1.5h14.5a.75.75 0 100-1.5H2.75z" />
-              </svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                <path d="M2 4.5A2.5 2.5 0 014.5 2h3A2.5 2.5 0 0110 4.5v11A2.5 2.5 0 017.5 18h-3A2.5 2.5 0 012 15.5v-11zM10.75 2.75a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM10.75 6.25a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM10.75 9.75a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM10.75 13.25a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM10.75 16.75a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5z" />
-              </svg>
-            )}
-            {tabLayout === 'horizontal' ? 'Vertical' : 'Horizontal'}
-          </button>
+        <div className={`flex items-center ${isMobile ? 'w-full justify-between' : 'gap-2'}`}>
+          {/* Hide horizontal/vertical toggle on mobile */}
+          {!isMobile && (
+            <button
+              onClick={() => setTabLayout(tabLayout === 'horizontal' ? 'vertical' : 'horizontal')}
+              className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+              title={`Switch to ${tabLayout === 'horizontal' ? 'vertical' : 'horizontal'} layout`}
+            >
+              {tabLayout === 'horizontal' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.75 9.083a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 12.663a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 16.25a.75.75 0 000 1.5h14.5a.75.75 0 100-1.5H2.75z" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M2 4.5A2.5 2.5 0 014.5 2h3A2.5 2.5 0 0110 4.5v11A2.5 2.5 0 017.5 18h-3A2.5 2.5 0 012 15.5v-11zM10.75 2.75a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM10.75 6.25a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM10.75 9.75a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM10.75 13.25a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM10.75 16.75a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5z" />
+                </svg>
+              )}
+              {tabLayout === 'horizontal' ? 'Vertical' : 'Horizontal'}
+            </button>
+          )}
           <button
             onClick={loadData}
             disabled={loading}
-            className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+            className={`${isMobile ? 'px-3 py-2.5 text-xs' : 'px-4 py-2 text-sm'} bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg font-medium transition-colors flex items-center gap-2 touch-manipulation`}
+            style={isMobile ? { minHeight: '44px' } : {}}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`${isMobile ? 'w-4 h-4' : 'w-4 h-4'}`}>
               <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
             </svg>
-            Refresh
+            {!isMobile && 'Refresh'}
           </button>
         </div>
       </div>
 
+      {/* Mobile Menu Overlay */}
+      {isMobile && mobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Tabs and Content Container */}
-      <div className={tabLayout === 'horizontal' ? 'space-y-6' : 'flex gap-6'}>
-        {/* Tabs */}
-        <div className={tabLayout === 'horizontal'
-          ? "flex gap-2 border-b border-slate-200 dark:border-slate-700 overflow-x-auto"
-          : "flex flex-col gap-1 w-64 border-r border-slate-200 dark:border-slate-700 pr-4"
-        }>
-          <button
-            onClick={() => setActiveTab('pending')}
-            className={tabLayout === 'horizontal'
-              ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'pending'
-                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-              }`
-              : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'pending'
-                ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-              }`
-            }
-          >
-            Pending Users
-            {pendingUsers.length > 0 && (
-              <span className="ml-2 px-2 py-0.5 rounded-full bg-brand-100 dark:bg-brand-500/20 text-brand-600 dark:text-brand-400 text-xs font-semibold">
-                {pendingUsers.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('all')}
-            className={tabLayout === 'horizontal'
-              ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'all'
-                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-              }`
-              : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'all'
-                ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-              }`
-            }
-          >
-            All Users
-          </button>
-          <button
-            onClick={() => setActiveTab('settings')}
-            className={tabLayout === 'horizontal'
-              ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'settings'
-                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-              }`
-              : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'settings'
-                ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-              }`
-            }
-          >
-            Settings
-          </button>
-          <button
-            onClick={() => setActiveTab('database')}
-            className={tabLayout === 'horizontal'
-              ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'database'
-                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-              }`
-              : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'database'
-                ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-              }`
-            }
-          >
-            Database
-          </button>
-          <button
-            onClick={() => setActiveTab('spaces')}
-            className={tabLayout === 'horizontal'
-              ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'spaces'
-                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-              }`
-              : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'spaces'
-                ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-              }`
-            }
-          >
-            Spaces
-          </button>
-          <button
-            onClick={() => setActiveTab('ldap')}
-            className={tabLayout === 'horizontal'
-              ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'ldap'
-                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-              }`
-              : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'ldap'
-                ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-              }`
-            }
-          >
-            LDAP
-          </button>
-          <button
-            onClick={() => setActiveTab('saml')}
-            className={tabLayout === 'horizontal'
-              ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'saml'
-                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-              }`
-              : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'saml'
-                ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-              }`
-            }
-          >
-            SAML
-          </button>
-          <button
-            onClick={() => setActiveTab('footer')}
-            className={tabLayout === 'horizontal'
-              ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'footer'
-                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-              }`
-              : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'footer'
-                ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-              }`
-            }
-          >
-            Footer
-          </button>
-          <button
-            onClick={() => setActiveTab('tabVisibility')}
-            className={tabLayout === 'horizontal'
-              ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'tabVisibility'
-                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-              }`
-              : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'tabVisibility'
-                ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-              }`
-            }
-          >
-            Enable/Disable Tabs
-          </button>
-          <button
-            onClick={() => setActiveTab('access')}
-            className={tabLayout === 'horizontal'
-              ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'access'
-                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-              }`
-              : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'access'
-                ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-              }`
-            }
-          >
-            Access Manager
-          </button>
-          <button
-            onClick={() => setActiveTab('clone')}
-            className={tabLayout === 'horizontal'
-              ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'clone'
-                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-              }`
-              : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'clone'
-                ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-              }`
-            }
-          >
-            Clone
-          </button>
-          <button
-            onClick={() => setActiveTab('browser')}
-            className={tabLayout === 'horizontal'
-              ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'browser'
-                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-              }`
-              : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'browser'
-                ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-              }`
-            }
-          >
-            Browser Extn Integration
-          </button>
-          <button
-            onClick={() => setActiveTab('broadcast')}
-            className={tabLayout === 'horizontal'
-              ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'broadcast'
-                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-              }`
-              : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'broadcast'
-                ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-              }`
-            }
-          >
-            Broadcast Message
-          </button>
-          <button
-            onClick={() => setActiveTab('maintenance')}
-            className={tabLayout === 'horizontal'
-              ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'maintenance'
-                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-              }`
-              : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'maintenance'
-                ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
-              }`
-            }
-          >
-            Maintenance
-          </button>
-        </div>
+      <div className={isMobile ? 'space-y-6' : (tabLayout === 'horizontal' ? 'space-y-6' : 'flex gap-6')}>
+        {/* Tabs - Mobile Sidebar */}
+        {isMobile ? (
+          <>
+            {/* Mobile Sidebar Menu */}
+            <div
+              className={`fixed top-0 left-0 h-full w-72 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 z-50 transform transition-transform duration-300 ease-in-out overflow-y-auto ${
+                mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+              }`}
+            >
+              <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white">Menu</h2>
+                <button
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="p-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 rounded-lg transition-colors touch-manipulation"
+                  style={{ minHeight: '44px', minWidth: '44px' }}
+                  aria-label="Close menu"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-6 h-6">
+                    <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                  </svg>
+                </button>
+              </div>
+              <div className="flex flex-col gap-1 p-2">
+                {/* Home Button */}
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    window.location.hash = '#/';
+                  }}
+                  className="px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent flex items-center gap-2"
+                  style={{ minHeight: '44px' }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                    <path fillRule="evenodd" d="M9.293 2.293a1 1 0 011.414 0l7 7A1 1 0 0117 11h-1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3a1 1 0 00-1-1H9a1 1 0 00-1 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-6H3a1 1 0 01-.707-1.707l7-7z" clipRule="evenodd" />
+                  </svg>
+                  <span>Home</span>
+                </button>
+                
+                <div className="my-2 border-t border-slate-200 dark:border-slate-700"></div>
+                
+                <button
+                  onClick={() => {
+                    setActiveTab('pending');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'pending'
+                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                  }`}
+                  style={{ minHeight: '44px' }}
+                >
+                  <div className="flex items-center justify-between">
+                    <span>Pending Users</span>
+                    {pendingUsers.length > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-brand-100 dark:bg-brand-500/20 text-brand-600 dark:text-brand-400 text-xs font-semibold">
+                        {pendingUsers.length}
+                      </span>
+                    )}
+                  </div>
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('all');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'all'
+                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                  }`}
+                  style={{ minHeight: '44px' }}
+                >
+                  All Users
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('settings');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'settings'
+                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                  }`}
+                  style={{ minHeight: '44px' }}
+                >
+                  Settings
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('database');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'database'
+                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                  }`}
+                  style={{ minHeight: '44px' }}
+                >
+                  Database
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('spaces');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'spaces'
+                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                  }`}
+                  style={{ minHeight: '44px' }}
+                >
+                  Spaces
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('ldap');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'ldap'
+                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                  }`}
+                  style={{ minHeight: '44px' }}
+                >
+                  LDAP
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('saml');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'saml'
+                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                  }`}
+                  style={{ minHeight: '44px' }}
+                >
+                  SAML
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('footer');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'footer'
+                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                  }`}
+                  style={{ minHeight: '44px' }}
+                >
+                  Footer
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('tabVisibility');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'tabVisibility'
+                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                  }`}
+                  style={{ minHeight: '44px' }}
+                >
+                  Enable/Disable Tabs
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('access');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'access'
+                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                  }`}
+                  style={{ minHeight: '44px' }}
+                >
+                  Access Manager
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('clone');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'clone'
+                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                  }`}
+                  style={{ minHeight: '44px' }}
+                >
+                  Clone
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('browser');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'browser'
+                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                  }`}
+                  style={{ minHeight: '44px' }}
+                >
+                  Browser Extn Integration
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('broadcast');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'broadcast'
+                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                  }`}
+                  style={{ minHeight: '44px' }}
+                >
+                  Broadcast Message
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('maintenance');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'maintenance'
+                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                  }`}
+                  style={{ minHeight: '44px' }}
+                >
+                  Maintenance
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          /* Desktop Tabs */
+          <div className={tabLayout === 'horizontal'
+            ? "flex gap-2 border-b border-slate-200 dark:border-slate-700 overflow-x-auto"
+            : "flex flex-col gap-1 w-64 border-r border-slate-200 dark:border-slate-700 pr-4"
+          }>
+            <button
+              onClick={() => setActiveTab('pending')}
+              className={tabLayout === 'horizontal'
+                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'pending'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`
+                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'pending'
+                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                }`
+              }
+            >
+              Pending Users
+              {pendingUsers.length > 0 && (
+                <span className="ml-2 px-2 py-0.5 rounded-full bg-brand-100 dark:bg-brand-500/20 text-brand-600 dark:text-brand-400 text-xs font-semibold">
+                  {pendingUsers.length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab('all')}
+              className={tabLayout === 'horizontal'
+                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'all'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`
+                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'all'
+                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                }`
+              }
+            >
+              All Users
+            </button>
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={tabLayout === 'horizontal'
+                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'settings'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`
+                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'settings'
+                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                }`
+              }
+            >
+              Settings
+            </button>
+            <button
+              onClick={() => setActiveTab('database')}
+              className={tabLayout === 'horizontal'
+                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'database'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`
+                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'database'
+                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                }`
+              }
+            >
+              Database
+            </button>
+            <button
+              onClick={() => setActiveTab('spaces')}
+              className={tabLayout === 'horizontal'
+                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'spaces'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`
+                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'spaces'
+                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                }`
+              }
+            >
+              Spaces
+            </button>
+            <button
+              onClick={() => setActiveTab('ldap')}
+              className={tabLayout === 'horizontal'
+                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'ldap'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`
+                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'ldap'
+                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                }`
+              }
+            >
+              LDAP
+            </button>
+            <button
+              onClick={() => setActiveTab('saml')}
+              className={tabLayout === 'horizontal'
+                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'saml'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`
+                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'saml'
+                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                }`
+              }
+            >
+              SAML
+            </button>
+            <button
+              onClick={() => setActiveTab('footer')}
+              className={tabLayout === 'horizontal'
+                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'footer'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`
+                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'footer'
+                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                }`
+              }
+            >
+              Footer
+            </button>
+            <button
+              onClick={() => setActiveTab('tabVisibility')}
+              className={tabLayout === 'horizontal'
+                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'tabVisibility'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`
+                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'tabVisibility'
+                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                }`
+              }
+            >
+              Enable/Disable Tabs
+            </button>
+            <button
+              onClick={() => setActiveTab('access')}
+              className={tabLayout === 'horizontal'
+                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'access'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`
+                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'access'
+                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                }`
+              }
+            >
+              Access Manager
+            </button>
+            <button
+              onClick={() => setActiveTab('clone')}
+              className={tabLayout === 'horizontal'
+                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'clone'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`
+                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'clone'
+                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                }`
+              }
+            >
+              Clone
+            </button>
+            <button
+              onClick={() => setActiveTab('browser')}
+              className={tabLayout === 'horizontal'
+                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'browser'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`
+                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'browser'
+                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                }`
+              }
+            >
+              Browser Extn Integration
+            </button>
+            <button
+              onClick={() => setActiveTab('broadcast')}
+              className={tabLayout === 'horizontal'
+                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'broadcast'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`
+                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'broadcast'
+                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                }`
+              }
+            >
+              Broadcast Message
+            </button>
+            <button
+              onClick={() => setActiveTab('maintenance')}
+              className={tabLayout === 'horizontal'
+                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'maintenance'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`
+                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'maintenance'
+                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                }`
+              }
+            >
+              Maintenance
+            </button>
+          </div>
+        )}
 
         {/* Content Area */}
-        <div className={tabLayout === 'horizontal' ? '' : 'flex-1'}>
+        <div className={isMobile ? 'w-full' : (tabLayout === 'horizontal' ? '' : 'flex-1')}>
           {error && (
             <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
               {error}
@@ -4250,72 +4519,82 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               {/* LDAP Tab */}
               {activeTab === 'ldap' && (
                 <div className="space-y-6">
-                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-                    <div className="flex items-center justify-between mb-6">
-                      <div>
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">LDAP Configuration</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
+                  <div className={`bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl ${isMobile ? 'p-4' : 'p-6'}`}>
+                    <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-4' : ''} mb-6`}>
+                      <div className={isMobile ? 'w-full' : ''}>
+                        <h3 className={`${isMobile ? 'text-base' : 'text-lg'} font-bold text-slate-900 dark:text-white`}>LDAP Configuration</h3>
+                        <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400`}>
                           Configure LDAP integration for user authentication.
                         </p>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <label className="relative inline-flex items-center cursor-pointer">
+                      <div className={`flex items-center ${isMobile ? 'w-full justify-between' : 'gap-3'}`}>
+                        <label className={`relative inline-flex items-center cursor-pointer touch-manipulation ${isMobile ? 'flex-1' : ''}`}>
                           <input
                             type="checkbox"
                             className="sr-only peer"
                             checked={settings.ldap_enabled === '1'}
                             onChange={(e) => setSettings({ ...settings, ldap_enabled: e.target.checked ? '1' : '0' })}
                           />
-                          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-300 dark:peer-focus:ring-brand-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-brand-600"></div>
-                          <span className="ml-3 text-sm font-medium text-slate-900 dark:text-slate-300">Enable LDAP</span>
+                          {isMobile ? (
+                            // Mobile: Larger toggle with better touch target
+                            <div className="w-14 h-8 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-300 dark:peer-focus:ring-brand-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-7 after:w-7 after:transition-all dark:border-gray-600 peer-checked:bg-brand-600"></div>
+                          ) : (
+                            // Desktop: Original size
+                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-300 dark:peer-focus:ring-brand-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-brand-600"></div>
+                          )}
+                          <span className={`${isMobile ? 'ml-3 text-sm' : 'ml-3 text-sm'} font-medium text-slate-900 dark:text-slate-300`}>Enable LDAP</span>
                         </label>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className={`grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2'} gap-6`}>
                       {/* Connection Settings */}
                       <div className="space-y-4">
-                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 pb-2">Connection</h4>
+                        <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 pb-2`}>Connection</h4>
 
                         <div>
-                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Server Host</label>
+                          <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Server Host</label>
                           <input
                             type="text"
                             value={settings.ldap_server || ''}
                             onChange={(e) => setSettings({ ...settings, ldap_server: e.target.value })}
-                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                            className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} touch-manipulation`}
+                            style={isMobile ? { minHeight: '44px' } : {}}
                             placeholder="ldap.example.com"
                           />
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
                           <div>
-                            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Port</label>
+                            <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Port</label>
                             <input
                               type="number"
                               value={settings.ldap_port || '389'}
                               onChange={(e) => setSettings({ ...settings, ldap_port: e.target.value })}
-                              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                              className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} touch-manipulation`}
+                              style={isMobile ? { minHeight: '44px' } : {}}
                             />
                           </div>
                           <div>
-                            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Timeout (sec)</label>
+                            <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Timeout (sec)</label>
                             <input
                               type="number"
                               value={settings.ldap_timeout || '30'}
                               onChange={(e) => setSettings({ ...settings, ldap_timeout: e.target.value })}
-                              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                              className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} touch-manipulation`}
+                              style={isMobile ? { minHeight: '44px' } : {}}
                             />
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
                           <div>
-                            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Protocol</label>
+                            <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Protocol</label>
                             <select
                               value={settings.ldap_protocol || 'ldap'}
                               onChange={(e) => setSettings({ ...settings, ldap_protocol: e.target.value })}
-                              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                              className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} touch-manipulation`}
+                              style={isMobile ? { minHeight: '44px' } : {}}
                             >
                               <option value="ldap">LDAP</option>
                               <option value="ldaps">LDAPS (SSL)</option>
@@ -4337,22 +4616,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                       {/* Authentication Settings */}
                       <div className="space-y-4">
-                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 pb-2">Service Account (Bind)</h4>
+                        <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 pb-2`}>Service Account (Bind)</h4>
 
                         <div>
-                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Bind DN</label>
+                          <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Bind DN</label>
                           <input
                             type="text"
                             value={settings.ldap_bind_dn || ''}
                             onChange={(e) => setSettings({ ...settings, ldap_bind_dn: e.target.value })}
-                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                            className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} touch-manipulation`}
+                            style={isMobile ? { minHeight: '44px' } : {}}
                             placeholder="cn=admin,dc=example,dc=com"
                           />
                           <p className="text-[10px] text-slate-500 mt-1">Leave empty for anonymous bind</p>
                         </div>
 
                         <div>
-                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Bind Password</label>
+                          <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Bind Password</label>
                           <SecurePasswordInput
                             value={settings.ldap_bind_password || ''}
                             onChange={(e) => {
@@ -4360,7 +4640,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               ldapBindPasswordRef.current = password; // Store in ref for immediate access
                               setSettings({ ...settings, ldap_bind_password: password });
                             }}
-                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                            className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} touch-manipulation`}
+                            style={isMobile ? { minHeight: '44px' } : {}}
                             placeholder="********"
                             autoComplete="current-password"
                           />
@@ -4369,28 +4650,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                       {/* User Schema */}
                       <div className="space-y-4 md:col-span-2">
-                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 pb-2">User Schema</h4>
+                        <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 pb-2`}>User Schema</h4>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className={`grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2'} gap-6`}>
                           <div className="space-y-4">
                             <div>
-                              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Base DN</label>
+                              <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Base DN</label>
                               <input
                                 type="text"
                                 value={settings.ldap_user_search_base || ''}
                                 onChange={(e) => setSettings({ ...settings, ldap_user_search_base: e.target.value })}
-                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                                className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} touch-manipulation`}
+                                style={isMobile ? { minHeight: '44px' } : {}}
                                 placeholder="ou=users,dc=example,dc=com"
                               />
                             </div>
 
                             <div>
-                              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">User Filter</label>
+                              <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>User Filter</label>
                               <input
                                 type="text"
                                 value={settings.ldap_user_filter || ''}
                                 onChange={(e) => setSettings({ ...settings, ldap_user_filter: e.target.value })}
-                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
+                                className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} font-mono touch-manipulation`}
+                                style={isMobile ? { minHeight: '44px' } : {}}
                                 placeholder="(sAMAccountName={username})"
                               />
                               <p className="text-[10px] text-slate-500 mt-1">Use {`{username}`} as placeholder for login input</p>
@@ -4399,12 +4682,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                           <div className="space-y-4">
                             <div>
-                              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Attributes</label>
+                              <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Attributes</label>
                               <input
                                 type="text"
                                 value={settings.ldap_user_attributes || ''}
                                 onChange={(e) => setSettings({ ...settings, ldap_user_attributes: e.target.value })}
-                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
+                                className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} font-mono touch-manipulation`}
+                                style={isMobile ? { minHeight: '44px' } : {}}
                                 placeholder="sAMAccountName,mail,displayName"
                               />
                               <p className="text-[10px] text-slate-500 mt-1">Comma separated list of attributes to fetch</p>
@@ -4415,7 +4699,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                       {/* Group Membership */}
                       <div className="space-y-4 md:col-span-2 mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
-                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 pb-2">Group Membership</h4>
+                        <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 pb-2`}>Group Membership</h4>
 
                         <div className="space-y-4">
                           <div className="space-y-2">
@@ -4433,12 +4717,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                           {settings.ldap_require_group_membership === '1' && (
                             <div>
-                              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Required Groups (comma-separated)</label>
+                              <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Required Groups (comma-separated)</label>
                               <input
                                 type="text"
                                 value={settings.ldap_required_groups || ''}
                                 onChange={(e) => setSettings({ ...settings, ldap_required_groups: e.target.value })}
-                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
+                                className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} font-mono touch-manipulation`}
+                                style={isMobile ? { minHeight: '44px' } : {}}
                                 placeholder="CN=Admins,CN=Users,DC=example,DC=com"
                               />
                               <p className="text-[10px] text-slate-500 mt-1">User must be a member of at least one of these groups. Enter full DN or partial match.</p>
@@ -4449,16 +4734,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
                       {/* Advanced Options */}
                       <div className="space-y-4 md:col-span-2 mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
-                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 pb-2">Advanced Options</h4>
+                        <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 pb-2`}>Advanced Options</h4>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className={`grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2'} gap-6`}>
                           <div className="space-y-4">
                             <div>
-                              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Search Scope</label>
+                              <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Search Scope</label>
                               <select
                                 value={settings.ldap_search_scope || 'sub'}
                                 onChange={(e) => setSettings({ ...settings, ldap_search_scope: e.target.value })}
-                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                                className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} touch-manipulation`}
+                                style={isMobile ? { minHeight: '44px' } : {}}
                               >
                                 <option value="base">Base (exact match only)</option>
                                 <option value="one">One-level (immediate children)</option>
@@ -4468,12 +4754,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             </div>
 
                             <div>
-                              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">User DN Template (Alternative)</label>
+                              <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>User DN Template (Alternative)</label>
                               <input
                                 type="text"
                                 value={settings.ldap_user_dn_template || ''}
                                 onChange={(e) => setSettings({ ...settings, ldap_user_dn_template: e.target.value })}
-                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
+                                className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} font-mono touch-manipulation`}
+                                style={isMobile ? { minHeight: '44px' } : {}}
                                 placeholder="CN={username},CN=Users,DC=example,DC=com"
                               />
                               <p className="text-[10px] text-slate-500 mt-1">Direct bind without search. Use {`{username}`} placeholder. Leave empty to use search-based auth.</p>
@@ -4507,27 +4794,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           </div>
 
                           <div className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
                               <div>
-                                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Connection Retries</label>
+                                <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Connection Retries</label>
                                 <input
                                   type="number"
                                   min="0"
                                   max="10"
                                   value={settings.ldap_connection_retry || '3'}
                                   onChange={(e) => setSettings({ ...settings, ldap_connection_retry: e.target.value })}
-                                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                                  className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} touch-manipulation`}
+                                  style={isMobile ? { minHeight: '44px' } : {}}
                                 />
                               </div>
                               <div>
-                                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Retry Delay (sec)</label>
+                                <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Retry Delay (sec)</label>
                                 <input
                                   type="number"
                                   min="0"
                                   max="10"
                                   value={settings.ldap_retry_delay || '1'}
                                   onChange={(e) => setSettings({ ...settings, ldap_retry_delay: e.target.value })}
-                                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                                  className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} touch-manipulation`}
+                                  style={isMobile ? { minHeight: '44px' } : {}}
                                 />
                               </div>
                             </div>
@@ -4559,36 +4848,39 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             </div>
 
                             <div>
-                              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Custom Email Attribute</label>
+                              <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Custom Email Attribute</label>
                               <input
                                 type="text"
                                 value={settings.ldap_email_attribute || ''}
                                 onChange={(e) => setSettings({ ...settings, ldap_email_attribute: e.target.value })}
-                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
+                                className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} font-mono touch-manipulation`}
+                                style={isMobile ? { minHeight: '44px' } : {}}
                                 placeholder="mail"
                               />
                               <p className="text-[10px] text-slate-500 mt-1">Override default email attribute (leave empty for auto-detect)</p>
                             </div>
 
                             <div>
-                              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Custom Display Name Attribute</label>
+                              <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Custom Display Name Attribute</label>
                               <input
                                 type="text"
                                 value={settings.ldap_display_name_attribute || ''}
                                 onChange={(e) => setSettings({ ...settings, ldap_display_name_attribute: e.target.value })}
-                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
+                                className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} font-mono touch-manipulation`}
+                                style={isMobile ? { minHeight: '44px' } : {}}
                                 placeholder="displayName"
                               />
                               <p className="text-[10px] text-slate-500 mt-1">Override default display name attribute (leave empty for auto-detect)</p>
                             </div>
 
                             <div>
-                              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Login Domain (UI Label)</label>
+                              <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Login Domain (UI Label)</label>
                               <input
                                 type="text"
                                 value={settings.ldap_login_domain || ''}
                                 onChange={(e) => setSettings({ ...settings, ldap_login_domain: e.target.value })}
-                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                                className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} touch-manipulation`}
+                                style={isMobile ? { minHeight: '44px' } : {}}
                                 placeholder="oneflorida.org"
                               />
                               <p className="text-[10px] text-slate-500 mt-1">
@@ -4601,8 +4893,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
 
                     {/* Test Connection */}
-                    <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-700">
-                      <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Test Connection</h4>
+                    <div className={`${isMobile ? 'mt-6' : 'mt-8'} ${isMobile ? 'pt-6' : 'pt-6'} border-t border-slate-200 dark:border-slate-700`}>
+                      <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white mb-4`}>Test Connection</h4>
 
                       <form
                         onSubmit={async (e) => {
@@ -4634,25 +4926,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             setLdapTestLoading(false);
                           }
                         }}
-                        className="flex flex-col md:flex-row gap-4 items-end"
+                        className={`flex ${isMobile ? 'flex-col' : 'flex-col md:flex-row'} gap-4 ${isMobile ? 'items-stretch' : 'items-end'}`}
                       >
                         <div className="flex-1 w-full">
-                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Test Username</label>
+                          <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Test Username</label>
                           <input
                             type="text"
                             value={ldapTestUser}
                             onChange={(e) => setLdapTestUser(e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                            className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} touch-manipulation`}
+                            style={isMobile ? { minHeight: '44px' } : {}}
                             placeholder="Optional: Test authentication for user"
                             autoComplete="username"
                           />
                         </div>
                         <div className="flex-1 w-full">
-                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Test Password</label>
+                          <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Test Password</label>
                           <SecurePasswordInput
                             value={ldapTestPassword}
                             onChange={(e) => setLdapTestPassword(e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                            className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} touch-manipulation`}
+                            style={isMobile ? { minHeight: '44px' } : {}}
                             placeholder="Optional"
                             autoComplete="current-password"
                           />
@@ -4660,7 +4954,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <button
                           type="submit"
                           disabled={ldapTestLoading}
-                          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap"
+                          className={`${isMobile ? 'w-full px-4 py-3 text-sm' : 'px-4 py-2 text-sm'} bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2 whitespace-nowrap touch-manipulation`}
+                          style={isMobile ? { minHeight: '44px' } : {}}
                         >
                           {ldapTestLoading ? (
                             <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -4699,10 +4994,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
 
                     {/* Export & Import LDAP Settings */}
-                    <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-700">
-                      <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Export & Import LDAP Settings</h4>
+                    <div className={`${isMobile ? 'mt-6' : 'mt-8'} ${isMobile ? 'pt-6' : 'pt-6'} border-t border-slate-200 dark:border-slate-700`}>
+                      <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white mb-4`}>Export & Import LDAP Settings</h4>
 
-                      <div className="flex flex-wrap gap-3 items-start">
+                      <div className={`flex ${isMobile ? 'flex-col' : 'flex-wrap'} gap-3 items-start`}>
                         {/* Export Section */}
                         <button
                           onClick={async () => {
@@ -4761,7 +5056,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             }
                           }}
                           disabled={ldapExporting}
-                          className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
+                          className={`bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white ${isMobile ? 'w-full px-4 py-3 text-sm' : 'px-3 py-1.5 text-xs'} rounded-lg font-medium transition-colors flex items-center justify-center gap-1.5 touch-manipulation`}
+                          style={isMobile ? { minHeight: '44px' } : {}}
                         >
                           {ldapExporting ? (
                             <>
@@ -4783,7 +5079,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </button>
 
                         {/* Import Section */}
-                        <div className="flex items-center gap-2">
+                        <div className={`flex ${isMobile ? 'flex-col' : 'items-center'} gap-2 ${isMobile ? 'w-full' : ''}`}>
                           <input
                             type="file"
                             accept=".json,application/json"
@@ -4794,7 +5090,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 setError('');
                               }
                             }}
-                            className="text-xs text-slate-600 dark:text-slate-400 file:mr-2 file:py-1.5 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer"
+                            className={`${isMobile ? 'w-full text-sm' : 'text-xs'} text-slate-600 dark:text-slate-400 file:mr-2 ${isMobile ? 'file:py-2.5 file:px-3 file:text-sm' : 'file:py-1.5 file:px-2.5 file:text-xs'} file:rounded-lg file:border-0 file:font-medium file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-900/30 dark:file:text-brand-300 cursor-pointer touch-manipulation`}
+                            style={isMobile ? { minHeight: '44px' } : {}}
                           />
                           <button
                             onClick={async () => {
@@ -4868,7 +5165,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               }
                             }}
                             disabled={ldapImporting || !ldapImportFile}
-                            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
+                            className={`bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white ${isMobile ? 'w-full px-4 py-3 text-sm' : 'px-3 py-1.5 text-xs'} rounded-lg font-medium transition-colors flex items-center justify-center gap-1.5 touch-manipulation`}
+                            style={isMobile ? { minHeight: '44px' } : {}}
                           >
                             {ldapImporting ? (
                               <>
@@ -4893,7 +5191,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
 
                     {/* Save Button */}
-                    <div className="mt-6 flex justify-end">
+                    <div className={`mt-6 flex ${isMobile ? 'justify-stretch' : 'justify-end'}`}>
                       <button
                         onClick={async () => {
                           try {
@@ -4910,7 +5208,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           }
                         }}
                         disabled={settingsSaving}
-                        className="px-6 py-2.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
+                        className={`${isMobile ? 'w-full px-4 py-3 text-sm' : 'px-6 py-2.5 text-sm'} bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 touch-manipulation`}
+                        style={isMobile ? { minHeight: '44px' } : {}}
                       >
                         {settingsSaving ? (
                           <>
