@@ -51,6 +51,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [progress, setProgress] = useState(0);
   const [countdown, setCountdown] = useState(30);
   const [currentMethod, setCurrentMethod] = useState<'ldap' | 'local' | null>(null);
+  const [showHelpInfo, setShowHelpInfo] = useState(false);
+  const [showPasswordResetInfo, setShowPasswordResetInfo] = useState(false);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -361,77 +363,73 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4">
       <div className="absolute inset-0 bg-slate-900/60 dark:bg-slate-900/80 backdrop-blur-sm" onClick={onClose}></div>
-      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-2xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200">
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl sm:rounded-2xl w-full max-w-md sm:max-w-2xl p-4 sm:p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[95vh] overflow-y-auto">
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors z-10"
+          className="absolute top-2 right-2 sm:top-4 sm:right-4 p-1.5 sm:p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors z-10"
           type="button"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 sm:w-5 sm:h-5">
             <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
           </svg>
         </button>
 
         {/* Logo and Application Name */}
-        <div className="flex items-center justify-between mb-6 relative">
-          {/* Left: Logo and App Name */}
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-center mb-4 sm:mb-6 relative">
+          {/* Mobile: Centered Logo and Title */}
+          <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3">
             {appSettings.logo_type === 'image' && appSettings.logo_image ? (
               <img
                 src={appSettings.logo_image}
                 alt={appSettings.app_name || 'LinkNest'}
-                className="w-12 h-12 rounded-lg object-contain"
+                className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg object-contain"
               />
             ) : (
-              <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow-lg text-2xl">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 flex items-center justify-center shadow-lg text-xl sm:text-2xl">
                 {appSettings.logo_icon || '🔗'}
               </div>
             )}
-            {appSettings.app_name && (
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
-                {appSettings.app_name}
-              </h2>
-            )}
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white text-center sm:text-left">
+              {mode === 'login' ? 'Sign In' : 'Create Account'}
+            </h2>
           </div>
-          
-          {/* Center: Sign In */}
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white absolute left-1/2 transform -translate-x-1/2">
-            {mode === 'login' ? 'Sign In' : 'Create Account'}
-          </h2>
         </div>
 
         {error && (
-          <div className="mb-3 p-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
+          <div className="mb-2 sm:mb-3 p-2 sm:p-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-xs sm:text-sm">
             {error}
           </div>
         )}
 
         {success && (
-          <div className="mb-3 p-2.5 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg text-emerald-600 dark:text-emerald-400 text-sm">
+          <div className="mb-2 sm:mb-3 p-2 sm:p-2.5 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg text-emerald-600 dark:text-emerald-400 text-xs sm:text-sm">
             {success}
           </div>
         )}
 
         {mode === 'login' && (
           <>
-            {/* Status Indicators */}
-            <div className="flex items-center gap-2 justify-end mb-2">
-              <span className="px-3 py-1.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-semibold flex items-center gap-1.5">
-                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                DB Online
+            {/* Status Indicators - Compact on Mobile */}
+            <div className="flex items-center gap-1 sm:gap-2 justify-center sm:justify-end mb-2 flex-wrap">
+              <span className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[10px] sm:text-xs font-semibold flex items-center gap-1">
+                <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                <span className="hidden sm:inline">DB Online</span>
+                <span className="sm:hidden">DB</span>
               </span>
               {ldapEnabled && (
-                <span className="px-3 py-1.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-semibold flex items-center gap-1.5">
-                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                  LDAP Active
+                <span className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[10px] sm:text-xs font-semibold flex items-center gap-1">
+                  <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                  <span className="hidden sm:inline">LDAP Active</span>
+                  <span className="sm:hidden">LDAP</span>
                 </span>
               )}
               {samlEnabled && (
-                <span className="px-3 py-1.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-xs font-semibold flex items-center gap-1.5">
-                  <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></div>
-                  SAML Active
+                <span className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-[10px] sm:text-xs font-semibold flex items-center gap-1">
+                  <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-purple-500 rounded-full animate-pulse"></div>
+                  <span className="hidden sm:inline">SAML Active</span>
+                  <span className="sm:hidden">SAML</span>
                 </span>
               )}
             </div>
@@ -439,24 +437,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           </>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
           {mode === 'login' && (localAuthEnabled || samlEnabled || ldapEnabled) && (
             <>
               {/* Authentication Method Selection - Radio Buttons */}
               {(ldapEnabled || samlEnabled || localAuthEnabled) && (
-                <div className="mb-3">
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                <div className="mb-2 sm:mb-3">
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
                     Authentication Method
                   </label>
-                  <div className={`grid gap-2 ${
-                    samlEnabled && ldapEnabled && localAuthEnabled ? 'grid-cols-4' :
-                    (samlEnabled && ldapEnabled) || (samlEnabled && localAuthEnabled) || (ldapEnabled && localAuthEnabled) ? 'grid-cols-3' :
-                    (samlEnabled && localAuthEnabled) ? 'grid-cols-2' :
+                  <div className={`grid gap-1.5 sm:gap-2 ${
+                    samlEnabled && ldapEnabled && localAuthEnabled ? 'grid-cols-1 sm:grid-cols-4' :
+                    (samlEnabled && ldapEnabled) || (samlEnabled && localAuthEnabled) || (ldapEnabled && localAuthEnabled) ? 'grid-cols-1 sm:grid-cols-3' :
+                    (samlEnabled && localAuthEnabled) ? 'grid-cols-1 sm:grid-cols-2' :
                     'grid-cols-1'
                   }`}>
                     {/* Auto Option - Only show when LDAP is enabled */}
                     {ldapEnabled && localAuthEnabled && (
-                      <label className={`relative flex flex-col items-center justify-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                      <label className={`relative flex flex-row sm:flex-col items-center justify-start sm:justify-center p-2 sm:p-3 border-2 rounded-lg cursor-pointer transition-all ${
                         authMethod === 'auto' 
                           ? 'border-brand-600 bg-brand-50 dark:bg-brand-900/20 dark:border-brand-500' 
                           : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800'
@@ -470,17 +468,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                           disabled={loading}
                           className="sr-only"
                         />
-                        <svg className="w-6 h-6 mb-1.5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-0 sm:mb-1.5 mr-2 sm:mr-0 text-slate-600 dark:text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
-                        <span className="text-xs font-medium text-slate-700 dark:text-slate-300 text-center">Auto</span>
-                        <span className="text-xs text-slate-500 dark:text-slate-400 text-center mt-0.5">Try LDAP, then Local</span>
+                        <div className="flex-1 sm:flex-none text-center sm:text-center">
+                          <span className="text-xs font-medium text-slate-700 dark:text-slate-300 block">Auto</span>
+                          <span className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 block mt-0.5">Try LDAP, then Local</span>
+                        </div>
                       </label>
                     )}
                     
                     {/* LDAP Option */}
                     {ldapEnabled && (
-                      <label className={`relative flex flex-col items-center justify-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                      <label className={`relative flex flex-row sm:flex-col items-center justify-start sm:justify-center p-2 sm:p-3 border-2 rounded-lg cursor-pointer transition-all ${
                         authMethod === 'ldap' 
                           ? 'border-brand-600 bg-brand-50 dark:bg-brand-900/20 dark:border-brand-500' 
                           : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800'
@@ -494,17 +494,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                           disabled={loading || !ldapEnabled}
                           className="sr-only"
                         />
-                        <svg className="w-6 h-6 mb-1.5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-0 sm:mb-1.5 mr-2 sm:mr-0 text-slate-600 dark:text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                         </svg>
-                        <span className="text-xs font-medium text-slate-700 dark:text-slate-300 text-center">LDAP</span>
-                        <span className="text-xs text-slate-500 dark:text-slate-400 text-center mt-0.5">{ldapDomain || 'Enterprise'}</span>
+                        <div className="flex-1 sm:flex-none text-center sm:text-center">
+                          <span className="text-xs font-medium text-slate-700 dark:text-slate-300 block">LDAP</span>
+                          <span className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 block mt-0.5">{ldapDomain || 'Enterprise'}</span>
+                        </div>
                       </label>
                     )}
                     
                     {/* Local Option */}
                     {localAuthEnabled && (
-                      <label className={`relative flex flex-col items-center justify-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                      <label className={`relative flex flex-row sm:flex-col items-center justify-start sm:justify-center p-2 sm:p-3 border-2 rounded-lg cursor-pointer transition-all ${
                         authMethod === 'local' 
                           ? 'border-brand-600 bg-brand-50 dark:bg-brand-900/20 dark:border-brand-500' 
                           : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800'
@@ -518,17 +520,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                           disabled={loading}
                           className="sr-only"
                         />
-                        <svg className="w-6 h-6 mb-1.5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-0 sm:mb-1.5 mr-2 sm:mr-0 text-slate-600 dark:text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                         </svg>
-                        <span className="text-xs font-medium text-slate-700 dark:text-slate-300 text-center">Local</span>
-                        <span className="text-xs text-slate-500 dark:text-slate-400 text-center mt-0.5">Account</span>
+                        <div className="flex-1 sm:flex-none text-center sm:text-center">
+                          <span className="text-xs font-medium text-slate-700 dark:text-slate-300 block">Local</span>
+                          <span className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 block mt-0.5">Account</span>
+                        </div>
                       </label>
                     )}
                     
                     {/* SAML Option */}
                     {samlEnabled && (
-                      <label className={`relative flex flex-col items-center justify-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                      <label className={`relative flex flex-row sm:flex-col items-center justify-start sm:justify-center p-2 sm:p-3 border-2 rounded-lg cursor-pointer transition-all ${
                         authMethod === 'saml' 
                           ? 'border-brand-600 bg-brand-50 dark:bg-brand-900/20 dark:border-brand-500' 
                           : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800'
@@ -542,34 +546,55 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                           disabled={loading}
                           className="sr-only"
                         />
-                        <svg className="w-6 h-6 mb-1.5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-0 sm:mb-1.5 mr-2 sm:mr-0 text-slate-600 dark:text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                         </svg>
-                        <span className="text-xs font-medium text-slate-700 dark:text-slate-300 text-center">SAML</span>
-                        <span className="text-xs text-slate-500 dark:text-slate-400 text-center mt-0.5">SSO</span>
+                        <div className="flex-1 sm:flex-none text-center sm:text-center">
+                          <span className="text-xs font-medium text-slate-700 dark:text-slate-300 block">SAML</span>
+                          <span className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 block mt-0.5">SSO</span>
+                        </div>
                       </label>
                     )}
                   </div>
                 </div>
               )}
 
-              {/* Authentication Method Explanation */}
+              {/* Authentication Method Explanation - Collapsible on Mobile */}
               {(samlEnabled || ldapEnabled) && (
-                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-2.5 mb-3">
-                  <p className="text-xs text-blue-700 dark:text-blue-300">
-                    <strong>How it works:</strong> The system supports multiple authentication methods: {samlEnabled && 'SAML Single Sign-On, '}{ldapEnabled && 'LDAP, '}and local accounts. {samlEnabled && 'Select SAML to be redirected to your organization\'s login page, or '}enter credentials for {ldapEnabled ? 'LDAP/' : ''}local authentication.
-                  </p>
+                <div className="mb-2 sm:mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowHelpInfo(!showHelpInfo)}
+                    className="w-full flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-2 sm:p-2.5 text-left"
+                  >
+                    <span className="text-[10px] sm:text-xs text-blue-700 dark:text-blue-300 font-medium">
+                      How it works
+                    </span>
+                    <svg
+                      className={`w-3 h-3 sm:w-4 sm:h-4 text-blue-700 dark:text-blue-300 transition-transform ${showHelpInfo ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {showHelpInfo && (
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-2 sm:p-2.5 mt-1">
+                      <p className="text-[10px] sm:text-xs text-blue-700 dark:text-blue-300">
+                        The system supports multiple authentication methods: {samlEnabled && 'SAML Single Sign-On, '}{ldapEnabled && 'LDAP, '}and local accounts. {samlEnabled && 'Select SAML to be redirected to your organization\'s login page, or '}enter credentials for {ldapEnabled ? 'LDAP/' : ''}local authentication.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* Username/Password fields - only show if not using SAML */}
               {authMethod !== 'saml' && (
                 <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Username or Email
-                    </label>
-                  </div>
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
+                    Username or Email
+                  </label>
                   <input
                     type="text"
                     value={username}
@@ -577,7 +602,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     required={authMethod !== 'saml'}
                     disabled={loading}
                     autoComplete="username"
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                     placeholder={ldapEnabled ? "Enter username (LDAP or local account)" : "Enter username (local account)"}
                   />
                 </div>
@@ -585,8 +610,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
               {/* SAML Info Message */}
               {authMethod === 'saml' && (
-                <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-3 mb-3">
-                  <p className="text-sm text-purple-700 dark:text-purple-300 text-center">
+                <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-2.5 sm:p-3 mb-2 sm:mb-3">
+                  <p className="text-xs sm:text-sm text-purple-700 dark:text-purple-300 text-center">
                     Click "Sign In" to be redirected to your organization's SAML login page.
                   </p>
                 </div>
@@ -595,8 +620,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           )}
 
           {mode === 'login' && !localAuthEnabled && !samlEnabled && (
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 text-center">
-              <p className="text-sm text-yellow-800 dark:text-yellow-200">
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 sm:p-4 text-center">
+              <p className="text-xs sm:text-sm text-yellow-800 dark:text-yellow-200">
                 No authentication methods are currently enabled. Please contact your administrator.
               </p>
             </div>
@@ -604,7 +629,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
           {mode === 'register' && (
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+              <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
                 Email
               </label>
               <input
@@ -614,7 +639,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 required
                 disabled={loading}
                 autoComplete="email"
-                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                 placeholder="Enter your email"
               />
             </div>
@@ -623,7 +648,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           {/* Password field - only show if not using SAML */}
           {authMethod !== 'saml' && (
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+              <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
                 Password
               </label>
               <SecurePasswordInput
@@ -633,7 +658,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 disabled={loading}
                 minLength={mode === 'register' ? 6 : undefined}
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                 placeholder="Enter your password"
               />
             </div>
@@ -647,9 +672,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 checked={rememberMe}
                 onChange={(e) => setRememberMe(e.target.checked)}
                 disabled={loading}
-                className="h-4 w-4 text-brand-600 focus:ring-brand-500 border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-brand-600 focus:ring-brand-500 border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
               />
-              <label htmlFor="rememberMe" className="ml-2 block text-sm text-slate-700 dark:text-slate-300">
+              <label htmlFor="rememberMe" className="ml-2 block text-xs sm:text-sm text-slate-700 dark:text-slate-300">
                 Keep me logged in
               </label>
             </div>
@@ -657,16 +682,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
           {/* Progress Bar Section - Only show during login authentication */}
           {mode === 'login' && loading && (authState === 'connecting' || authState === 'ldap_attempting' || authState === 'ldap_authenticating' || authState === 'local_authenticating') && (
-            <div className="bg-slate-100 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-lg p-4 space-y-3">
-              <div className="flex items-center gap-3">
+            <div className="bg-slate-100 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-lg p-3 sm:p-4 space-y-2 sm:space-y-3">
+              <div className="flex items-center gap-2 sm:gap-3">
                 {/* Animated Icon */}
-                <div className="relative flex-shrink-0 w-6 h-6">
+                <div className="relative flex-shrink-0 w-5 h-5 sm:w-6 sm:h-6">
                   {/* Shield Icon */}
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     viewBox="0 0 24 24"
                     fill="currentColor"
-                    className="w-6 h-6 text-brand-600 dark:text-brand-400"
+                    className="w-5 h-5 sm:w-6 sm:h-6 text-brand-600 dark:text-brand-400"
                   >
                     <path
                       fillRule="evenodd"
@@ -683,7 +708,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   {/* Spinning ring animation around shield */}
                   {(authState === 'connecting' || authState === 'ldap_attempting' || authState === 'ldap_authenticating') && (
                     <svg
-                      className="absolute inset-0 w-6 h-6 text-brand-600/30 dark:text-brand-400/30 -z-10"
+                      className="absolute inset-0 w-5 h-5 sm:w-6 sm:h-6 text-brand-600/30 dark:text-brand-400/30 -z-10"
                       xmlns="http://www.w3.org/2000/svg"
                       viewBox="0 0 24 24"
                     >
@@ -702,33 +727,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     </svg>
                   )}
                 </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1.5 sm:mb-2">
+                    <h3 className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white truncate">
                       {authState === 'connecting'
                         ? 'Connecting...'
                         : authState === 'ldap_attempting' || authState === 'ldap_authenticating'
-                          ? 'Attempting LDAP Authentication...'
+                          ? 'Attempting LDAP...'
                           : authState === 'local_authenticating'
-                            ? 'Authenticating with Local Account...'
+                            ? 'Authenticating...'
                             : 'Signing In...'}
                     </h3>
                     {(authState === 'ldap_attempting' || authState === 'ldap_authenticating') && countdown > 0 && (
-                      <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                      <span className="text-[10px] sm:text-xs font-medium text-slate-600 dark:text-slate-400 flex-shrink-0 ml-1">
                         {countdown}s
                       </span>
                     )}
                   </div>
                   {/* Progress Bar */}
-                  <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-2 overflow-hidden">
+                  <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-1.5 sm:h-2 overflow-hidden">
                     <div
-                      className="bg-brand-600 dark:bg-brand-500 h-2 rounded-full transition-all duration-300 ease-out"
+                      className="bg-brand-600 dark:bg-brand-500 h-1.5 sm:h-2 rounded-full transition-all duration-300 ease-out"
                       style={{ width: `${progress}%` }}
                     />
                   </div>
                   {/* Fallback message for LDAP */}
                   {(authState === 'ldap_attempting' || authState === 'ldap_authenticating') && authMethod === 'auto' && (
-                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-2">
+                    <p className="text-[10px] sm:text-xs text-slate-600 dark:text-slate-400 mt-1.5 sm:mt-2">
                       Will automatically switch to local authentication if LDAP times out.
                     </p>
                   )}
@@ -738,17 +763,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           )}
 
           {/* Button Group */}
-          <div className="flex gap-3 pt-1">
+          <div className="flex gap-2 sm:gap-3 pt-1">
             {loading && mode === 'login' && (authState === 'connecting' || authState === 'ldap_attempting') && (
               <button
                 type="button"
-                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-3 rounded-lg font-medium transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg font-medium transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 text-xs sm:text-sm"
                 disabled
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 sm:w-4 sm:h-4">
                   <path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 12a3 3 0 00-3 3v1a1 1 0 001 1h10a1 1 0 001-1v-1a3 3 0 00-3-3H6z" />
                 </svg>
-                Connecting...
+                <span className="hidden sm:inline">Connecting...</span>
+                <span className="sm:hidden">Connecting</span>
               </button>
             )}
             {loading && (
@@ -761,7 +787,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   setCurrentMethod(null);
                   setCountdown(30);
                 }}
-                className="px-6 py-3 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors"
+                className="px-4 sm:px-6 py-2.5 sm:py-3 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors text-xs sm:text-sm"
               >
                 Cancel
               </button>
@@ -772,7 +798,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
               className={`${loading && (authState === 'ldap_authenticating' || authState === 'local_authenticating')
                   ? 'flex-1'
                   : 'flex-1'
-                } bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-lg font-semibold transition-all shadow-lg shadow-brand-500/20 text-sm`}
+                } bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 sm:px-6 py-2.5 rounded-lg font-semibold transition-all shadow-lg shadow-brand-500/20 text-xs sm:text-sm`}
             >
               {loading
                 ? authState === 'ldap_authenticating' || authState === 'local_authenticating'
@@ -786,7 +812,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         </form>
 
         {mode === 'login' && (
-          <div className="mt-3 space-y-2">
+          <div className="mt-2 sm:mt-3 space-y-1.5 sm:space-y-2">
             <div className="text-center">
               <button
                 type="button"
@@ -794,36 +820,59 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   // TODO: Implement forgot password functionality
                   setError('Password reset functionality coming soon. Please contact your administrator.');
                 }}
-                className="text-sm text-brand-600 dark:text-brand-400 hover:underline"
+                className="text-xs sm:text-sm text-brand-600 dark:text-brand-400 hover:underline"
               >
                 Forgot your password?
               </button>
             </div>
-            <div className="text-xs text-slate-500 dark:text-slate-400 space-y-1 px-2">
-              {samlEnabled && (
-                <p>SAML Users: Use your organization's password reset option</p>
-              )}
-              {ldapEnabled && (
-                <p>LDAP Users: Use your enterprise password reset option</p>
-              )}
-              {localAuthEnabled && (
-                <p>Local Accounts: Click above to reset via email</p>
-              )}
-            </div>
-            <div className="border-t border-slate-200 dark:border-slate-700 pt-3 space-y-2">
-              <div className="flex items-start space-x-2 text-xs">
-                <span className="text-slate-400">🔒</span>
+            {/* Password Reset Info - Collapsible on Mobile */}
+            {(samlEnabled || ldapEnabled || localAuthEnabled) && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordResetInfo(!showPasswordResetInfo)}
+                  className="w-full flex items-center justify-center gap-1 text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                >
+                  <span>Password reset info</span>
+                  <svg
+                    className={`w-3 h-3 transition-transform ${showPasswordResetInfo ? 'rotate-180' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {showPasswordResetInfo && (
+                  <div className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 space-y-0.5 sm:space-y-1 px-2 mt-1">
+                    {samlEnabled && (
+                      <p>SAML Users: Use your organization's password reset option</p>
+                    )}
+                    {ldapEnabled && (
+                      <p>LDAP Users: Use your enterprise password reset option</p>
+                    )}
+                    {localAuthEnabled && (
+                      <p>Local Accounts: Click above to reset via email</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            {/* Account Type Info - Compact on Mobile */}
+            <div className="border-t border-slate-200 dark:border-slate-700 pt-2 sm:pt-3 space-y-1 sm:space-y-2">
+              <div className="flex items-start space-x-1.5 sm:space-x-2 text-[10px] sm:text-xs">
+                <span className="text-slate-400 flex-shrink-0">🔒</span>
                 <span className="text-slate-600 dark:text-slate-400">Login: Save permanently, file management, advanced features</span>
               </div>
-              <div className="flex items-start space-x-2 text-xs">
-                <span className="text-slate-400">👤</span>
+              <div className="flex items-start space-x-1.5 sm:space-x-2 text-[10px] sm:text-xs">
+                <span className="text-slate-400 flex-shrink-0">👤</span>
                 <span className="text-slate-600 dark:text-slate-400">Guest: Create locally, no saving, basic features only</span>
               </div>
             </div>
           </div>
         )}
 
-        <div className="mt-4 text-center">
+        <div className="mt-3 sm:mt-4 text-center">
           <button
             onClick={() => {
               setMode(mode === 'login' ? 'register' : 'login');
@@ -832,7 +881,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
               setAuthMethod('auto');
               setRememberMe(false);
             }}
-            className="text-sm text-brand-600 dark:text-brand-400 hover:underline"
+            className="text-xs sm:text-sm text-brand-600 dark:text-brand-400 hover:underline"
           >
             {mode === 'login'
               ? "Don't have an account? Sign up"

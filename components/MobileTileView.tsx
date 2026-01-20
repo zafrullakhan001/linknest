@@ -510,6 +510,35 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                 <h2 className="text-lg font-bold text-slate-900 dark:text-white">Navigation</h2>
               </div>
 
+              {/* User Info & Logout - moved to top */}
+              {user && (
+                <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800">
+                  <div className="flex flex-col gap-2">
+                    <div className="text-sm font-semibold text-slate-900 dark:text-white text-center flex items-center justify-center gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-slate-600 dark:text-slate-400">
+                        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                      </svg>
+                      {user.username}
+                    </div>
+                    <hr className="border-slate-200 dark:border-slate-700 my-1" />
+                    <button
+                      onClick={async () => {
+                        try {
+                          await logout();
+                          window.location.hash = '#/';
+                          setIsMenuOpen(false);
+                        } catch (error) {
+                          console.error('Logout failed:', error);
+                        }
+                      }}
+                      className="w-full px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-500 active:bg-blue-600 rounded-lg transition-colors shadow-sm"
+                    >
+                      Logout
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Sign In Button - At top of menu if not authenticated */}
               {!isAuthenticated && onLoginClick && (
                 <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800">
@@ -597,30 +626,6 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                 </div>
               </div>
 
-              {/* User Section - Only show if authenticated */}
-              {user && (
-                <div className="border-t border-slate-200 dark:border-slate-800 px-2 py-4">
-                  <div className="px-4 py-2">
-                    <div className="text-sm text-slate-600 dark:text-slate-400 mb-3">
-                      {user.username}
-                    </div>
-                    <button
-                      onClick={async () => {
-                        try {
-                          await logout();
-                          window.location.hash = '#/';
-                          setIsMenuOpen(false);
-                        } catch (error) {
-                          console.error('Logout failed:', error);
-                        }
-                      }}
-                      className="w-full px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors text-left"
-                    >
-                      Logout
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </>
