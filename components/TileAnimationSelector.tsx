@@ -472,9 +472,10 @@ const DECORATION_STORAGE_KEY = 'linknest_tile_decoration';
 interface TileAnimationSelectorProps {
     onAnimationChange?: (animation: TileAnimation) => void;
     onDecorationChange?: (decoration: TileDecoration) => void;
+    compact?: boolean;
 }
 
-export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ onAnimationChange, onDecorationChange }) => {
+export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ onAnimationChange, onDecorationChange, compact = false }) => {
     const [selectedAnimation, setSelectedAnimation] = useState<TileAnimation>('fade-in');
     const [selectedDecoration, setSelectedDecoration] = useState<TileDecoration>('none');
     const [activeTab, setActiveTab] = useState<'animations' | 'decorations'>('animations');
@@ -553,9 +554,26 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ on
     useEffect(() => {
         if (isOpen && buttonRef.current) {
             const rect = buttonRef.current.getBoundingClientRect();
+            const dropdownWidth = 360;
+            const viewportWidth = window.innerWidth;
+
+            // Center the dropdown on mobile, or align to button on desktop
+            let leftPosition;
+            if (viewportWidth < 640) {
+                // Mobile: center the dropdown
+                leftPosition = (viewportWidth - dropdownWidth) / 2;
+            } else {
+                // Desktop: align to right edge of button, but ensure it doesn't go off-screen
+                leftPosition = Math.min(
+                    rect.right + window.scrollX - dropdownWidth,
+                    viewportWidth - dropdownWidth - 16 // 16px margin from edge
+                );
+                leftPosition = Math.max(16, leftPosition); // Ensure 16px margin from left edge
+            }
+
             setDropdownPosition({
                 top: rect.bottom + window.scrollY + 8,
-                left: rect.right + window.scrollX - 320, // 320px is the dropdown width
+                left: leftPosition,
             });
         }
     }, [isOpen]);
@@ -614,27 +632,34 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ on
     return (
         <>
             {/* Trigger Button */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center">
                 <button
                     ref={buttonRef}
                     onClick={() => setIsOpen(!isOpen)}
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 transition-all shadow-sm hover:shadow-md"
+                    className={compact
+                        ? "p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all flex items-center justify-center"
+                        : "flex items-center gap-2 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 transition-all shadow-sm hover:shadow-md"
+                    }
                     title="Select tile animation and decoration"
                 >
-                    <span className="text-lg">{selectedAnimationOption.icon}</span>
-                    <div className="flex flex-col items-start">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                            Style
-                        </span>
-                        <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                            {selectedAnimationOption.name} {selectedDecoration !== 'none' && `+ ${selectedDecorationOption.icon}`}
-                        </span>
-                    </div>
+                    {!compact && (
+                        <>
+                            <span className="text-lg">{selectedAnimationOption.icon}</span>
+                            <div className="flex flex-col items-start">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                    Style
+                                </span>
+                                <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                    {selectedAnimationOption.name} {selectedDecoration !== 'none' && `+ ${selectedDecorationOption.icon}`}
+                                </span>
+                            </div>
+                        </>
+                    )}
                     <svg
                         xmlns="http://www.w3.org/2000/svg"
                         viewBox="0 0 20 20"
                         fill="currentColor"
-                        className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                        className={`${compact ? 'w-5 h-5' : 'w-4 h-4'} text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
                     >
                         <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
                     </svg>

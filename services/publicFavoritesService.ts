@@ -8,12 +8,57 @@ const STORAGE_KEY = 'linknest_public_favorites';
 const LINK_STORAGE_KEY = 'linknest_public_link_favorites';
 const ACTIVE_TAB_KEY = 'linknest_public_active_tab';
 
+// ============ LOCALSTORAGE AVAILABILITY CHECK ============
+
+/**
+ * Check if localStorage is available and working in the current browser
+ * This handles cases where:
+ * - localStorage is blocked (e.g., Safari private mode, some mobile browsers)
+ * - localStorage quota is exceeded
+ * - localStorage is disabled by user/browser settings
+ */
+const isLocalStorageAvailable = (): boolean => {
+  try {
+    const test = '__localStorage_test__';
+    localStorage.setItem(test, test);
+    localStorage.removeItem(test);
+    return true;
+  } catch (e) {
+    // localStorage is not available (blocked, quota exceeded, or disabled)
+    return false;
+  }
+};
+
+/**
+ * Check if localStorage is available and log a warning if not
+ * This helps users understand why favorites might not work
+ */
+export const checkLocalStorageAvailability = (): boolean => {
+  const available = isLocalStorageAvailable();
+  if (!available) {
+    console.warn(
+      '[PublicFavoritesService] localStorage is not available. ' +
+      'Public favorites feature will not work. This may happen if: ' +
+      '1. You are in private/incognito mode (some browsers clear localStorage), ' +
+      '2. localStorage is disabled in browser settings, ' +
+      '3. Storage quota is exceeded, or ' +
+      '4. Your browser does not support localStorage.'
+    );
+  }
+  return available;
+};
+
 // ============ TILE FAVORITES ============
 
 /**
  * Get all public favorite tile IDs from localStorage
+ * Returns empty array if localStorage is not available
  */
 export const getPublicFavorites = (): string[] => {
+  if (!isLocalStorageAvailable()) {
+    return [];
+  }
+  
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (!stored) return [];
@@ -35,29 +80,45 @@ export const isPublicFavorite = (tileId: string): boolean => {
 
 /**
  * Add a tile to public favorites
+ * Returns true if successful, false if localStorage is not available
  */
-export const addPublicFavorite = (tileId: string): void => {
+export const addPublicFavorite = (tileId: string): boolean => {
+  if (!isLocalStorageAvailable()) {
+    checkLocalStorageAvailability(); // Log warning
+    return false;
+  }
+  
   try {
     const favorites = getPublicFavorites();
     if (!favorites.includes(tileId)) {
       favorites.push(tileId);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(favorites));
+      return true;
     }
+    return true; // Already in favorites
   } catch (error) {
     console.error('Failed to add public favorite:', error);
+    return false;
   }
 };
 
 /**
  * Remove a tile from public favorites
+ * Returns true if successful, false if localStorage is not available
  */
-export const removePublicFavorite = (tileId: string): void => {
+export const removePublicFavorite = (tileId: string): boolean => {
+  if (!isLocalStorageAvailable()) {
+    return false;
+  }
+  
   try {
     const favorites = getPublicFavorites();
     const filtered = favorites.filter(id => id !== tileId);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+    return true;
   } catch (error) {
     console.error('Failed to remove public favorite:', error);
+    return false;
   }
 };
 

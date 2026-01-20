@@ -4587,6 +4587,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
         disabledTabs={disabledAppTabs}
         onLoginClick={onAuthRequired}
         user={user}
+        onToggleFavorite={handleToggleFavorite}
+        onUpdateTiles={onUpdateTiles}
       />
     );
   }
