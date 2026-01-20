@@ -7993,6 +7993,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
           linkIcon={linkInfoDialog.link.icon}
           richTextContent={linkInfoDialog.link.richTextContent || ''}
           linkUrl={linkInfoDialog.link.url}
+          browser={linkInfoDialog.link.browser}
         />
       )}
     </div >

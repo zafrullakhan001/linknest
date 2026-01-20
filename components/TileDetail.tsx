@@ -3613,6 +3613,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     linkIcon={linkInfoDialog.link.icon}
                     richTextContent={linkInfoDialog.link.richTextContent || ''}
                     linkUrl={linkInfoDialog.link.url}
+                    browser={linkInfoDialog.link.browser}
                 />
             )}
             </>

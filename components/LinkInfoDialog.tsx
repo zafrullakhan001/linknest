@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useSettings } from '../contexts/SettingsContext';
 
 interface LinkInfoDialogProps {
   isOpen: boolean;
@@ -8,6 +9,7 @@ interface LinkInfoDialogProps {
   linkIcon?: string;
   richTextContent: string;
   linkUrl?: string;
+  browser?: string; // Browser to open link in (e.g., 'chrome-stable', 'edge-stable', 'default')
 }
 
 // Function to format/beautify HTML (same as RichTextEditor)
@@ -116,11 +118,80 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
   linkLabel, 
   linkIcon,
   richTextContent,
-  linkUrl 
+  linkUrl,
+  browser 
 }) => {
+  const { settings } = useSettings();
   const [showCodeView, setShowCodeView] = useState(false);
   const [codeViewValue, setCodeViewValue] = useState('');
   const [copied, setCopied] = useState(false);
+
+  // Helper function to format browser name for display
+  const formatBrowserName = (browserId: string | null | undefined): string => {
+    if (!browserId || browserId === 'default') return '';
+    return browserId
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, (l) => l.toUpperCase())
+      .replace('Wsl', '(WSL)')
+      .replace('Stable', 'Stable')
+      .replace('Beta', 'Beta')
+      .replace('Dev', 'Dev');
+  };
+
+  // Normalize browser ID (same logic as TileDetail)
+  const normalizeBrowserId = (browserId: string): string => {
+    if (!browserId) return browserId;
+
+    const normalized = browserId.toLowerCase().trim();
+
+    // Only handle short aliases that need mapping
+    const shortAliases: Record<string, string> = {
+      'edge': 'edge-stable-local',
+      'chrome': 'chrome-stable-local'
+    };
+
+    if (shortAliases[normalized]) {
+      return shortAliases[normalized];
+    }
+
+    // Return as-is - let the extension's normalizeBrowserId handle all WSL/local mapping
+    return browserId;
+  };
+
+  // Function to open link in a specific browser
+  const openLinkInBrowser = (url: string, browserId: string) => {
+    if (typeof window !== 'undefined' && (window as any).BrowserLauncher) {
+      const BrowserLauncher = (window as any).BrowserLauncher;
+
+      // Configure extension ID if provided
+      if (settings.browser_extension_id) {
+        BrowserLauncher.setExtensionId(settings.browser_extension_id);
+      }
+
+      // Normalize browser ID before opening
+      const normalizedBrowserId = normalizeBrowserId(browserId);
+      console.log('Opening link in browser:', url, 'browserId:', browserId, 'normalized:', normalizedBrowserId);
+
+      // Open link in specified browser
+      BrowserLauncher.open(url, normalizedBrowserId, { fallback: true }, (response: any) => {
+        if (response && response.success !== false) {
+          console.log('Link opened successfully in browser:', normalizedBrowserId);
+        } else {
+          // Fallback to default behavior if extension fails
+          console.warn('Browser extension failed, falling back to default:', response?.error);
+          window.open(url, '_blank', 'noopener,noreferrer');
+        }
+      }).catch((error: any) => {
+        // Fallback to default behavior on error
+        console.warn('Browser extension error, falling back to default:', error);
+        window.open(url, '_blank', 'noopener,noreferrer');
+      });
+    } else {
+      // Fallback to default behavior if BrowserLauncher is not available
+      console.warn('BrowserLauncher not available, using default browser');
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  };
 
   useEffect(() => {
     if (showCodeView && richTextContent) {
@@ -362,20 +433,34 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
         {/* Footer */}
         <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between gap-3">
           {linkUrl && (
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                window.open(linkUrl, '_blank', 'noopener,noreferrer');
-              }}
-              className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg font-medium transition-colors flex items-center gap-2"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
-                <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />
-              </svg>
-              Open Link
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  
+                  // If browser is specified and browser-specific links are enabled, use the assigned browser
+                  if (settings.browser_specific_links_enabled === '1' && browser && browser !== 'default') {
+                    openLinkInBrowser(linkUrl, browser);
+                  } else {
+                    // Default behavior: open in new tab
+                    window.open(linkUrl, '_blank', 'noopener,noreferrer');
+                  }
+                }}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg font-medium transition-colors flex items-center gap-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
+                  <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />
+                </svg>
+                Open Link
+              </button>
+              {settings.browser_specific_links_enabled === '1' && browser && browser !== 'default' && (
+                <span className="text-xs text-slate-500 dark:text-slate-400 italic">
+                  Will open in {formatBrowserName(browser)} browser
+                </span>
+              )}
+            </div>
           )}
           <button
             onClick={onClose}

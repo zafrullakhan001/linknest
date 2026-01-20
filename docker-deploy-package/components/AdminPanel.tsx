@@ -4695,7 +4695,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     <div className="mb-6">
                       <div className="flex items-start justify-between gap-4 mb-2">
                         <div className="flex-1">
-                          <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">ðŸš€ Browser Extension Integration</h3>
+                          <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Browser Extension Integration</h3>
                           <p className="text-sm text-slate-600 dark:text-slate-400">
                             Configure and test browser-specific link opening using Browser Launcher Pro extension.
                           </p>
