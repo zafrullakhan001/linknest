@@ -279,6 +279,25 @@ function initDatabase() {
             created_at INTEGER NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )');
+
+        // Create tile_versions table for history/version control
+        $db->exec('CREATE TABLE IF NOT EXISTS tile_versions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tile_id TEXT NOT NULL,
+            version_number INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            user_id INTEGER,
+            tile_data TEXT NOT NULL,
+            changelog_summary TEXT,
+            is_locked INTEGER DEFAULT 0,
+            FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+        )');
+
+        // Indexes for tile_versions
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_tile_versions_tile_id ON tile_versions(tile_id)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_tile_versions_created_at ON tile_versions(created_at DESC)');
+
         
         // Migrate existing tiles table to add position column if it doesn't exist
         try {
