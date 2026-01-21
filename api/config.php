@@ -290,6 +290,7 @@ function initDatabase() {
             tile_data TEXT NOT NULL,
             changelog_summary TEXT,
             is_locked INTEGER DEFAULT 0,
+            is_temp INTEGER DEFAULT 0,
             FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
         )');

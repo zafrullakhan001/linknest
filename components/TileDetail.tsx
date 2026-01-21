@@ -13,6 +13,7 @@ import { isPublicLinkFavorite, togglePublicLinkFavorite } from '../services/publ
 import { LinkInfoDialog } from './LinkInfoDialog';
 import { MobileTileEdit } from './MobileTileEdit';
 import { useMobile } from '../hooks/useMobile';
+import { VersionDiffViewer } from './VersionDiffViewer';
 
 interface TileVersion {
     id: number;
@@ -325,6 +326,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [loadingVersions, setLoadingVersions] = useState(false);
     const [versionActionLoading, setVersionActionLoading] = useState<number | null>(null);
 
+    // Diff Viewer State
+    const [diffViewerOpen, setDiffViewerOpen] = useState(false);
+    const [diffOriginalTile, setDiffOriginalTile] = useState<any | null>(null);
+    const [diffModifiedTile, setDiffModifiedTile] = useState<any | null>(null);
+    const [diffTitle, setDiffTitle] = useState('');
+    const [isDiffLoading, setIsDiffLoading] = useState(false);
+
 
     // Handle ESC key to close notes dialog
     useEffect(() => {
@@ -611,8 +619,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     }, [isEditing]);
 
     // Refresh editTabs when entering edit mode to ensure we have the latest data
+    // AND create a temp version snapshot
     useEffect(() => {
         if (isEditing && tile.canEdit) {
+            // Create temp version snapshot
+            const createTempVersion = async () => {
+                try {
+                    const API_BASE = (import.meta as any).env?.VITE_API_BASE || '/api';
+                    await fetch(`${API_BASE}/tiles/${tile.id}/create-temp-version`, {
+                        method: 'POST',
+                        credentials: 'include',
+                    });
+                    console.log('Temp version created for tile:', tile.id);
+                } catch (error) {
+                    console.error('Failed to create temp version:', error);
+                }
+            };
+
+            createTempVersion();
+
             if (tile.tabs && tile.tabs.length > 0) {
                 const clonedTabs = tile.tabs.map(tab => ({
                     ...tab,
@@ -836,6 +861,36 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     };
 
+    const handleCompareWithCurrent = async (version: TileVersion) => {
+        try {
+            setIsDiffLoading(true);
+            setVersionActionLoading(version.id);
+
+            const API_BASE = (import.meta as any).env?.VITE_API_BASE || '/api';
+            const res = await fetch(`${API_BASE}/tiles/${tile.id}/versions/${version.id}`, {
+                credentials: 'include'
+            });
+
+            if (!res.ok) throw new Error('Failed to fetch version details');
+            const data = await res.json();
+
+            if (data.version && data.version.tile_data) {
+                const versionParams = JSON.parse(data.version.tile_data);
+
+                setDiffOriginalTile(versionParams);
+                setDiffModifiedTile(tile); // Current state
+                setDiffTitle(`Comparing Version ${version.version_number} vs Current`);
+                setDiffViewerOpen(true);
+            }
+        } catch (error) {
+            console.error('Error preparing comparison:', error);
+            alert('Failed to load version details for comparison');
+        } finally {
+            setIsDiffLoading(false);
+            setVersionActionLoading(null);
+        }
+    };
+
     const handleDeleteVersion = async (versionId: number) => {
         if (!window.confirm('Are you sure you want to delete this version?')) return;
 
@@ -859,11 +914,96 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     };
 
+    const handleDeleteAllVersions = async () => {
+        if (!window.confirm('Are you sure you want to delete ALL unlocked versions? This cannot be undone!')) return;
+
+        try {
+            setLoadingVersions(true);
+            const API_BASE = (import.meta as any).env?.VITE_API_BASE || '/api';
+            const response = await fetch(`${API_BASE}/tiles/${tile.id}/versions/delete-all`, {
+                method: 'POST',
+                credentials: 'include',
+            });
+            if (response.ok) {
+                const data = await response.json();
+                alert(`Successfully deleted ${data.deleted} version(s).`);
+                fetchVersions(); // Refresh the list
+            } else {
+                const data = await response.json();
+                alert(data.error || 'Failed to delete versions.');
+            }
+        } catch (err) {
+            console.error('Error deleting all versions:', err);
+            alert('Error deleting versions.');
+        } finally {
+            setLoadingVersions(false);
+        }
+    };
+
+    const handleDeleteEmptyVersions = async () => {
+        if (!window.confirm('Delete all versions with no differences? This cannot be undone!')) return;
+
+        try {
+            setLoadingVersions(true);
+            const API_BASE = (import.meta as any).env?.VITE_API_BASE || '/api';
+            const response = await fetch(`${API_BASE}/tiles/${tile.id}/versions/delete-empty`, {
+                method: 'POST',
+                credentials: 'include',
+            });
+            if (response.ok) {
+                const data = await response.json();
+                if (data.deleted > 0) {
+                    alert(`Successfully deleted ${data.deleted} empty version(s).`);
+                    fetchVersions(); // Refresh the list
+                } else {
+                    alert('No empty versions found.');
+                }
+            } else {
+                const data = await response.json();
+                alert(data.error || 'Failed to delete empty versions.');
+            }
+        } catch (err) {
+            console.error('Error deleting empty versions:', err);
+            alert('Error deleting empty versions.');
+        } finally {
+            setLoadingVersions(false);
+        }
+    };
+
+    const cleanupEmptyVersions = async () => {
+        try {
+            const API_BASE = (import.meta as any).env?.VITE_API_BASE || '/api';
+            const response = await fetch(`${API_BASE}/tiles/${tile.id}/versions/cleanup-empty`, {
+                method: 'POST',
+                credentials: 'include',
+            });
+            if (response.ok) {
+                const data = await response.json();
+                if (data.deleted > 0) {
+                    console.log(`Auto-cleaned ${data.deleted} empty version(s)`);
+                    // Silently refresh versions if we're showing them
+                    if (showVersions) {
+                        fetchVersions();
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Error auto-cleaning empty versions:', err);
+        }
+    };
+
     useEffect(() => {
         if (showVersions && isEditing) {
             fetchVersions();
         }
     }, [showVersions, isEditing]);
+
+    // Auto-cleanup empty versions when tile is opened
+    useEffect(() => {
+        if (tile.id) {
+            cleanupEmptyVersions();
+        }
+    }, [tile.id]);
 
     // Function to update link browser for admin users
     const handleUpdateLinkBrowser = async (linkId: string, browserId: string) => {
@@ -970,6 +1110,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     };
 
+
+
     const handleSaveChanges = () => {
 
         // Check if user has edit permission
@@ -1012,12 +1154,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             browser: editBrowser !== 'default' ? editBrowser : undefined,
         };
 
-
         const updatedTiles = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
 
         // Push the updated tiles up; App will persist them and re‑pass
         // the updated `tile` prop back down.
         // Note: onUpdateTiles will reload from server, which should include richTextContent
+        // The backend will handle change detection via temp version comparison
         onUpdateTiles(updatedTiles);
 
         // Only exit edit mode if this is NOT an auto-save
@@ -4209,12 +4351,34 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             </svg>
                                             Version History
                                         </h3>
-                                        <button
-                                            onClick={() => setShowVersions(!showVersions)}
-                                            className="text-slate-500 hover:text-brand-600 dark:hover:text-brand-400 text-xs font-semibold"
-                                        >
-                                            {showVersions ? 'Hide' : 'Show'}
-                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            {showVersions && tileVersions.length > 0 && (
+                                                <>
+                                                    <button
+                                                        onClick={handleDeleteEmptyVersions}
+                                                        disabled={loadingVersions}
+                                                        className="text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300 text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        title="Delete versions with no differences"
+                                                    >
+                                                        Delete Empty
+                                                    </button>
+                                                    <button
+                                                        onClick={handleDeleteAllVersions}
+                                                        disabled={loadingVersions}
+                                                        className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        title="Delete all unlocked versions"
+                                                    >
+                                                        Delete All
+                                                    </button>
+                                                </>
+                                            )}
+                                            <button
+                                                onClick={() => setShowVersions(!showVersions)}
+                                                className="text-slate-500 hover:text-brand-600 dark:hover:text-brand-400 text-xs font-semibold"
+                                            >
+                                                {showVersions ? 'Hide' : 'Show'}
+                                            </button>
+                                        </div>
                                     </div>
 
                                     {showVersions && (
@@ -4269,6 +4433,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 </div>
                                                             </div>
                                                             <div className="flex gap-2 mt-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                                                                <button
+                                                                    onClick={() => handleCompareWithCurrent(version)}
+                                                                    disabled={versionActionLoading === version.id || isDiffLoading}
+                                                                    className="py-1.5 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700/50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-semibold rounded transition-colors flex items-center justify-center gap-1"
+                                                                    title="Compare with Current State"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+                                                                    </svg>
+                                                                    Diff
+                                                                </button>
                                                                 <button
                                                                     onClick={() => handleRestoreVersion(version.id)}
                                                                     disabled={versionActionLoading === version.id}
@@ -6846,9 +7021,21 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         )}
                     </>
                 )}
+
+                {/* Version Diff Viewer */}
+                {diffViewerOpen && diffOriginalTile && diffModifiedTile && (
+                    <VersionDiffViewer
+                        originalData={diffOriginalTile}
+                        modifiedData={diffModifiedTile}
+                        originalTitle={`Old Version`}
+                        modifiedTitle={`Current State`}
+                        onClose={() => setDiffViewerOpen(false)}
+                    />
+                )}
             </>
         );
     }
+
 
     // Fallback: if somehow in edit mode without permission, return view mode
     // (useEffect will handle resetting isEditing state)

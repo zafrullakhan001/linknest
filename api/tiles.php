@@ -24,6 +24,8 @@ switch ($method) {
             handleGetArchive();
         } elseif (preg_match('#^/([^/]+)/versions$#', $path, $matches)) {
             handleGetTileVersions($matches[1]);
+        } elseif (preg_match('#^/([^/]+)/versions/([^/]+)$#', $path, $matches)) {
+            handleGetVersionDetails($matches[1], $matches[2]);
         } elseif (preg_match('#^/([^/]+)$#', $path, $matches)) {
             handleGetTile($matches[1]);
         } else {
@@ -58,8 +60,17 @@ switch ($method) {
             handleUnarchiveTile($matches[1]);
         } elseif (preg_match('#^/([^/]+)/versions/([^/]+)/lock$#', $path, $matches)) {
             handleToggleVersionLock($matches[1], $matches[2]);
+
         } elseif (preg_match('#^/([^/]+)/versions/([^/]+)/restore$#', $path, $matches)) {
             handleRestoreVersion($matches[1], $matches[2]);
+        } elseif (preg_match('#^/([^/]+)/create-temp-version$#', $path, $matches)) {
+            handleCreateTempVersion($matches[1]);
+        } elseif (preg_match('#^/([^/]+)/versions/delete-all$#', $path, $matches)) {
+            handleDeleteAllVersions($matches[1]);
+        } elseif (preg_match('#^/([^/]+)/versions/delete-empty$#', $path, $matches)) {
+            handleDeleteEmptyVersions($matches[1]);
+        } elseif (preg_match('#^/([^/]+)/versions/cleanup-empty$#', $path, $matches)) {
+            handleCleanupEmptyVersions($matches[1]);
         } elseif (preg_match('#^/([^/]+)/update-links-browser$#', $path, $matches)) {
             handleUpdateLinksBrowser($matches[1]);
         } else {
@@ -3526,7 +3537,7 @@ function handleGetTileVersions($tileId) {
         sendJSON(['error' => 'Permission denied'], 403);
     }
 
-    $stmt = $db->prepare('SELECT id, version_number, created_at, user_id, changelog_summary, is_locked FROM tile_versions WHERE tile_id = ? ORDER BY version_number DESC');
+    $stmt = $db->prepare('SELECT id, version_number, created_at, user_id, changelog_summary, is_locked FROM tile_versions WHERE tile_id = ? AND is_temp = 0 ORDER BY version_number DESC');
     $stmt->execute([$tileId]);
     $versions = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -3642,12 +3653,12 @@ function getTileForVersion($tileId, $db) {
         'allowedUsers' => $row['allowed_users'] ? json_decode($row['allowed_users'], true) : [],
         'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
         'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
-        'openInNewTab' => isset($row['open_in_new_tab']) ? (bool)$row['open_in_new_tab'] : null,
+        'openInNewTab' => isset($row['open_in_new_tab']) ? (bool)$row['open_in_new_tab'] : false,
         'browser' => isset($row['browser']) ? $row['browser'] : null,
         'visibleFrom' => $row['visible_from'] ?? null,
         'expiresAt' => $row['expires_at'] ?? null,
         'tileBackgroundColor' => !empty($row['tile_background_color']) ? $row['tile_background_color'] : null,
-        'tileGradientEnabled' => isset($row['tile_gradient_enabled']) && $row['tile_gradient_enabled'] !== null ? (bool)$row['tile_gradient_enabled'] : null,
+        'tileGradientEnabled' => isset($row['tile_gradient_enabled']) && $row['tile_gradient_enabled'] !== null ? (bool)$row['tile_gradient_enabled'] : false,
         'tileGradientColors' => $tileGradientColors,
         'tileGradientColorPositions' => $tileGradientColorPositions,
         'tileGradientDirection' => isset($row['tile_gradient_direction']) && $row['tile_gradient_direction'] !== null && $row['tile_gradient_direction'] !== '' ? (is_numeric($row['tile_gradient_direction']) ? (int)$row['tile_gradient_direction'] : $row['tile_gradient_direction']) : null,
@@ -3775,34 +3786,56 @@ function getTileForVersion($tileId, $db) {
     return $tile;
 }
 
-function saveVersion($tileId, $db, $userId) {
+function saveVersion($tileId, $db, $userId, $summary = null, $isTemp = false) {
     try {
         $tileData = getTileForVersion($tileId, $db);
-        if (!$tileData) return;
+        if (!$tileData) return null;
 
         $jsonData = json_encode($tileData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         
+        // Check for duplicate: Compare with the most recent version (excluding temp versions)
+        $stmt = $db->prepare('SELECT tile_data FROM tile_versions WHERE tile_id = ? AND is_temp = 0 ORDER BY version_number DESC LIMIT 1');
+        $stmt->execute([$tileId]);
+        $latestVersion = $stmt->fetch();
+        
+        if ($latestVersion) {
+            $latestData = json_decode($latestVersion['tile_data'], true);
+            
+            // Compare the data - if identical, don't create duplicate
+            if (areTilesEqual($tileData, $latestData)) {
+                error_log("Prevented duplicate version creation for tile: $tileId");
+                return null; // Don't create duplicate
+            }
+        }
+        
         // Find next version number
-        $stmt = $db->prepare('SELECT MAX(version_number) FROM tile_versions WHERE tile_id = ?');
+        $stmt = $db->prepare('SELECT MAX(version_number) FROM tile_versions WHERE tile_id = ? AND is_temp = 0');
         $stmt->execute([$tileId]);
         $maxVer = $stmt->fetchColumn();
         $nextVer = ($maxVer !== false) ? $maxVer + 1 : 1;
 
-        $stmt = $db->prepare('INSERT INTO tile_versions (tile_id, version_number, created_at, user_id, tile_data) VALUES (?, ?, ?, ?, ?)');
-        $stmt->execute([$tileId, $nextVer, time(), $userId, $jsonData]);
+        $stmt = $db->prepare('INSERT INTO tile_versions (tile_id, version_number, created_at, user_id, tile_data, changelog_summary, is_temp) VALUES (?, ?, ?, ?, ?, ?, ?)');
+        $stmt->execute([$tileId, $nextVer, time(), $userId, $jsonData, $summary, $isTemp ? 1 : 0]);
+        
+        $versionId = $db->lastInsertId();
 
-        // Cleanup: Keep max 10 UNLOCKED versions
-        $stmt = $db->prepare('SELECT id FROM tile_versions WHERE tile_id = ? AND is_locked = 0 ORDER BY created_at DESC LIMIT -1 OFFSET 10');
-        $stmt->execute([$tileId]);
-        $idsToDelete = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        // Cleanup: Keep max 10 UNLOCKED, NON-TEMP versions
+        if (!$isTemp) {
+            $stmt = $db->prepare('SELECT id FROM tile_versions WHERE tile_id = ? AND is_locked = 0 AND is_temp = 0 ORDER BY created_at DESC LIMIT -1 OFFSET 10');
+            $stmt->execute([$tileId]);
+            $idsToDelete = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-        if (!empty($idsToDelete)) {
-            $placeholders = implode(',', array_fill(0, count($idsToDelete), '?'));
-            $delStmt = $db->prepare("DELETE FROM tile_versions WHERE id IN ($placeholders)");
-            $delStmt->execute($idsToDelete);
+            if (!empty($idsToDelete)) {
+                $placeholders = implode(',', array_fill(0, count($idsToDelete), '?'));
+                $delStmt = $db->prepare("DELETE FROM tile_versions WHERE id IN ($placeholders)");
+                $delStmt->execute($idsToDelete);
+            }
         }
+        
+        return $versionId;
     } catch (Exception $e) {
         error_log('Failed to save version: ' . $e->getMessage());
+        return null;
     }
 }
 
@@ -3826,16 +3859,27 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false) {
     }
 
     if (!$hasChanges) {
-        // No changes detected, ignore update
+        // No changes detected - delete any temp version for this tile
+        $stmt = $db->prepare('DELETE FROM tile_versions WHERE tile_id = ? AND is_temp = 1');
+        $stmt->execute([$tileId]);
         return;
     }
 
-    // Save version history BEFORE update
-    // Logic:
-    // 1. If it's a restore operation, DO NOT create a new version (prevents restore loops).
-    // 2. If it's a regular update, ONLY create a version if there are changes (checked above).
-    if (!$isRestore) {
-        saveVersion($tileId, $db, $user['id']);
+    // Handle temp version conversion
+    // Check if there's a temp version for this tile
+    $stmt = $db->prepare('SELECT id FROM tile_versions WHERE tile_id = ? AND is_temp = 1 LIMIT 1');
+    $stmt->execute([$tileId]);
+    $tempVersion = $stmt->fetch();
+    
+    if ($tempVersion && !$isRestore) {
+        // Convert temp version to permanent
+        $summary = generateChangelogSummary($currentTileData, $data);
+        $stmt = $db->prepare('UPDATE tile_versions SET is_temp = 0, changelog_summary = ? WHERE id = ?');
+        $stmt->execute(["Pre-update: " . $summary, $tempVersion['id']]);
+    } elseif (!$isRestore) {
+        // No temp version exists, create a regular version (fallback for direct saves)
+        $summary = generateChangelogSummary($currentTileData, $data);
+        saveVersion($tileId, $db, $user['id'], "Pre-update: " . $summary, false);
     }
 
     // Begin transaction
@@ -4081,19 +4125,38 @@ function areTilesEqual($a, $b) {
 
 function normalizeForComparison($data) {
     if (is_array($data)) {
+        // Metadata and transient fields to exclude from comparison
+        $excludeKeys = [
+            'createdAt', 'created_at',
+            'updatedAt', 'updated_at',
+            'deletedAt', 'deleted_at',
+            'archivedAt', 'archived_at',
+            'user_id', 'userId',
+            'canView', 'can_view',
+            'canEdit', 'can_edit',
+            'canDelete', 'can_delete',
+            'hasRoleAccess', 'has_role_access',
+            'isFavorite', 'is_favorite',
+            'health' // Transient link health data
+        ];
+
         $result = [];
         foreach ($data as $k => $v) {
+            if (in_array($k, $excludeKeys)) continue;
+
             // Filter nulls and empty strings for cleaner comparison
             if (is_array($v)) {
                 $child = normalizeForComparison($v);
                 $result[$k] = $child;
             } elseif (!is_null($v) && $v !== '') {
                 // Determine if we should include this key
-                // Exclude system fields or fields that might change but not affect content?
-                // For now, include everything that is not empty
-                
                 // Convert to string for loose comparison (DB sometimes returns string for int)
-                $result[$k] = (string)$v;
+                // Normalize booleans to strings "0" or "1" to ensure match
+                if (is_bool($v)) {
+                    $result[$k] = $v ? "1" : "0";
+                } else {
+                    $result[$k] = (string)$v;
+                }
             }
         }
         internal_recursive_ksort($result);
@@ -4112,3 +4175,173 @@ function internal_recursive_ksort(&$array) {
 }
 
 
+
+function handleGetVersionDetails($tileId, $versionId) {
+    $user = requireAuth();
+    $db = getDB();
+
+    if (!canUserViewTile($user['id'], $tileId, $db)) {
+        sendJSON(['error' => 'Permission denied'], 403);
+    }
+
+    $stmt = $db->prepare('SELECT tile_data, created_at, version_number FROM tile_versions WHERE id = ? AND tile_id = ?');
+    $stmt->execute([$versionId, $tileId]);
+    $version = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$version) {
+        sendJSON(['error' => 'Version not found'], 404);
+    }
+
+    $data = json_decode($version['tile_data'], true);
+    if (!$data) {
+        sendJSON(['error' => 'Corrupt version data'], 500);
+    }
+    
+    sendJSON([
+        'version' => [
+            'id' => $versionId,
+            'version_number' => $version['version_number'],
+            'created_at' => $version['created_at'],
+            'tile_data' => $version['tile_data'], // Include raw string for frontend parsing
+            'data' => $data
+        ]
+    ]);
+}
+
+function generateChangelogSummary($old, $new) {
+    if (!$old || !$new) return "Update";
+    
+    $changes = [];
+    $rootFields = ['title', 'description', 'group', 'emoji', 'visibility'];
+    foreach ($rootFields as $f) {
+        $oldVal = is_array($old) ? ($old[$f] ?? null) : null;
+        $newVal = is_array($new) ? ($new[$f] ?? null) : null;
+        if ((string)$oldVal !== (string)$newVal) {
+            $changes[] = ucfirst($f);
+        }
+    }
+    
+    // Check tabs/content
+    $oldTabs = $old['tabs'] ?? [];
+    $newTabs = $new['tabs'] ?? [];
+    
+    if (count($oldTabs) !== count($newTabs)) {
+        $changes[] = "Structure";
+    } else {
+        // Quick check for content changes
+        // Using json_encode is a rough way but works for summary
+        if (json_encode($oldTabs) !== json_encode($newTabs)) {
+             $changes[] = "Content";
+        }
+    }
+    
+    if (empty($changes)) return "Minor update";
+    return implode(", ", array_unique($changes));
+}
+
+function handleCreateTempVersion($tileId) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Check edit permission
+    if (!canUserEditTile($user['id'], $tileId, $db)) {
+        sendJSON(['error' => 'Permission denied'], 403);
+    }
+    
+    // Delete any existing temp version for this tile
+    $stmt = $db->prepare('DELETE FROM tile_versions WHERE tile_id = ? AND is_temp = 1');
+    $stmt->execute([$tileId]);
+    
+    // Create new temp version
+    $versionId = saveVersion($tileId, $db, $user['id'], 'Editing in progress...', true);
+    
+    if ($versionId) {
+        sendJSON(['success' => true, 'versionId' => $versionId]);
+    } else {
+        sendJSON(['error' => 'Failed to create temp version'], 500);
+    }
+}
+
+function handleDeleteAllVersions($tileId) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Check edit permission
+    if (!canUserEditTile($user['id'], $tileId, $db)) {
+        sendJSON(['error' => 'Permission denied'], 403);
+    }
+    
+    // Delete all unlocked, non-temp versions
+    $stmt = $db->prepare('DELETE FROM tile_versions WHERE tile_id = ? AND is_locked = 0 AND is_temp = 0');
+    $stmt->execute([$tileId]);
+    $deleted = $stmt->rowCount();
+    
+    sendJSON(['success' => true, 'deleted' => $deleted]);
+}
+
+function handleDeleteEmptyVersions($tileId) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Check edit permission
+    if (!canUserEditTile($user['id'], $tileId, $db)) {
+        sendJSON(['error' => 'Permission denied'], 403);
+    }
+    
+    $deleted = deleteEmptyDiffVersions($tileId, $db);
+    
+    sendJSON(['success' => true, 'deleted' => $deleted]);
+}
+
+function handleCleanupEmptyVersions($tileId) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Check view permission (cleanup can run on view)
+    if (!canUserViewTile($user['id'], $tileId, $db)) {
+        sendJSON(['error' => 'Permission denied'], 403);
+    }
+    
+    $deleted = deleteEmptyDiffVersions($tileId, $db);
+    
+    sendJSON(['success' => true, 'deleted' => $deleted]);
+}
+
+function deleteEmptyDiffVersions($tileId, $db) {
+    // Get all versions for this tile (excluding temp and locked)
+    $stmt = $db->prepare('SELECT id, version_number, tile_data FROM tile_versions WHERE tile_id = ? AND is_temp = 0 AND is_locked = 0 ORDER BY version_number DESC');
+    $stmt->execute([$tileId]);
+    $versions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    if (count($versions) < 2) {
+        return 0; // Need at least 2 versions to compare
+    }
+    
+    $deleted = 0;
+    $versionsToDelete = [];
+    
+    // Compare each version with the next one (going from newest to oldest)
+    for ($i = 0; $i < count($versions) - 1; $i++) {
+        $currentVersion = $versions[$i];
+        $previousVersion = $versions[$i + 1];
+        
+        $currentData = json_decode($currentVersion['tile_data'], true);
+        $previousData = json_decode($previousVersion['tile_data'], true);
+        
+        // Check if they are equal (no diff)
+        if (areTilesEqual($currentData, $previousData)) {
+            // This version has no changes from the previous one - mark for deletion
+            $versionsToDelete[] = $currentVersion['id'];
+        }
+    }
+    
+    // Delete the empty diff versions
+    if (!empty($versionsToDelete)) {
+        $placeholders = implode(',', array_fill(0, count($versionsToDelete), '?'));
+        $delStmt = $db->prepare("DELETE FROM tile_versions WHERE id IN ($placeholders)");
+        $delStmt->execute($versionsToDelete);
+        $deleted = $delStmt->rowCount();
+    }
+    
+    return $deleted;
+}
