@@ -4,7 +4,7 @@ import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STY
 import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
 import { authService, UserListItem } from '../services/authService';
 import { exportTileToFile } from '../services/spaceTransferService';
-import { cloneTile, getTiles, saveTile, toggleLinkFavorite } from '../services/storageService';
+import { cloneTile, getTiles, saveTile, toggleLinkFavorite, createTempVersion } from '../services/storageService';
 import { useSettings } from '../contexts/SettingsContext';
 import { RichTextEditor } from './RichTextEditor';
 import { RichTextContentItem } from './RichTextContentItem';
@@ -28,7 +28,7 @@ interface TileVersion {
 interface TileDetailProps {
     tile: Tile;
     allTiles: Tile[];
-    onUpdateTiles: (tiles: Tile[], skipReload?: boolean) => void;
+    onUpdateTiles: (tiles: Tile[], skipReload?: boolean, isFinal?: boolean) => void;
     isAuthenticated?: boolean;
     onAuthRequired?: () => void;
     sourceTab?: 'public' | 'your-apps' | 'private' | 'favorites' | 'public-favorites' | null;
@@ -1160,7 +1160,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         // the updated `tile` prop back down.
         // Note: onUpdateTiles will reload from server, which should include richTextContent
         // The backend will handle change detection via temp version comparison
-        onUpdateTiles(updatedTiles);
+        onUpdateTiles(updatedTiles, false, true);
 
         // Only exit edit mode if this is NOT an auto-save
         if (!autoSavingRef.current) {
@@ -3007,11 +3007,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 {isAuthenticated && tile.canEdit && (
                                     <>
                                         <button
-                                            onClick={() => {
+                                            onClick={async () => {
                                                 if (!tile.canEdit) {
                                                     alert('You do not have permission to edit this tile.');
                                                     return;
                                                 }
+                                                // Create a temporary snapshot before editing starts
+                                                await createTempVersion(tile.id);
                                                 setIsEditing(true);
                                             }}
                                             className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 backdrop-blur-sm"

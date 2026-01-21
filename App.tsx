@@ -202,21 +202,21 @@ const AppContent: React.FC = () => {
 
   // Chat unread messages state
   const [hasUnreadChatMessages, setHasUnreadChatMessages] = useState(false);
-  
+
   // Widget Quick Access Menu State
   const [showWidgetQuickAccess, setShowWidgetQuickAccess] = useState(false);
-  
+
   // Poll for unread messages when widget is closed
   useEffect(() => {
     if (!isAuthenticated || showChat || !user) return;
-    
+
     const checkUnreadMessages = async () => {
       try {
         const messages = await getMessages(1, 0, null); // Get latest message
         if (messages.length > 0) {
           const lastSeenId = parseInt(localStorage.getItem(`linknest_last_seen_message_${user.id}`) || '0', 10);
-          const hasUnread = messages.some(msg => 
-            msg.user_id !== user.id && 
+          const hasUnread = messages.some(msg =>
+            msg.user_id !== user.id &&
             msg.id > lastSeenId
           );
           setHasUnreadChatMessages(hasUnread);
@@ -225,10 +225,10 @@ const AppContent: React.FC = () => {
         // Silently fail - don't spam console
       }
     };
-    
+
     // Check immediately
     checkUnreadMessages();
-    
+
     // Then poll every 5 seconds
     const interval = setInterval(checkUnreadMessages, 5000);
     return () => clearInterval(interval);
@@ -529,7 +529,7 @@ const AppContent: React.FC = () => {
     loadDatabasePath();
   }, []);
 
-  const handleUpdateTiles = async (newTiles: Tile[], skipReload: boolean = false) => {
+  const handleUpdateTiles = async (newTiles: Tile[], skipReload: boolean = false, isFinal: boolean = false) => {
     if (!isAuthenticated) {
       // Guest mode: just update local state for viewing
       setTiles(newTiles);
@@ -538,7 +538,7 @@ const AppContent: React.FC = () => {
 
     try {
       setTiles(newTiles);
-      await saveTiles(newTiles);
+      await saveTiles(newTiles, isFinal);
 
       // Reload from server after successful save to ensure we have the latest data
       // This is especially important for tabs/sections which are stored separately
@@ -770,7 +770,7 @@ const AppContent: React.FC = () => {
     const [tileId, queryString] = tilePath.split('?');
     const urlParams = new URLSearchParams(queryString || '');
     const sourceTab = urlParams.get('from') || null;
-    
+
     const tile = tiles.find((t) => t.id === tileId);
     if (tile) {
       content = (
@@ -893,146 +893,146 @@ const AppContent: React.FC = () => {
       {/* Hide footer on mobile view */}
       {!isMobile && (
         <footer className={`linknest-footer ${showFooterDetails ? 'py-8' : 'py-4'} text-sm relative border-t border-slate-200 dark:border-slate-800 transition-all duration-300`} style={{ zIndex: 0 }}>
-        <div className="container mx-auto max-w-6xl-plus px-4">
-          <div className="flex flex-col items-center gap-6">
-            {/* Quick Navigation Links */}
-            <div className={`flex flex-wrap justify-center items-center gap-x-8 gap-y-4 text-slate-500 dark:text-slate-400 ${!showFooterDetails ? 'mb-0' : ''}`}>
-              {!disabledTabs.has('public') && (
-                <button
-                  onClick={() => handleTabClick('public')}
-                  className="hover:text-brand-600 dark:hover:text-brand-400 transition-colors flex items-center gap-1.5 font-medium"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                    <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
-                    <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
-                  </svg>
-                  Public
-                </button>
-              )}
-
-              {!disabledTabs.has('favorites') && (
-                <button
-                  onClick={() => handleTabClick('favorites')}
-                  className="hover:text-amber-500 transition-colors flex items-center gap-1.5 font-medium"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                    <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
-                  </svg>
-                  Favorites
-                </button>
-              )}
-
-              {isAuthenticated && (
-                <>
-                  {!disabledTabs.has('private') && (
-                    <button
-                      onClick={() => handleTabClick('private')}
-                      className="hover:text-violet-500 transition-colors flex items-center gap-1.5 font-medium"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                        <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
-                      </svg>
-                      Private
-                    </button>
-                  )}
-
-                  {!disabledTabs.has('monitoring') && (
-                    <button
-                      onClick={() => handleTabClick('monitoring')}
-                      className="hover:text-emerald-500 transition-colors flex items-center gap-1.5 font-medium"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                        <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
-                      </svg>
-                      Monitoring
-                    </button>
-                  )}
-
-                  {!disabledTabs.has('scheduled') && (
-                    <button
-                      onClick={() => handleTabClick('scheduled')}
-                      className="hover:text-blue-500 transition-colors flex items-center gap-1.5 font-medium"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
-                      </svg>
-                      Scheduled
-                    </button>
-                  )}
-
-                  {!disabledTabs.has('expired') && (
-                    <button
-                      onClick={() => handleTabClick('expired')}
-                      className="hover:text-orange-500 transition-colors flex items-center gap-1.5 font-medium"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
-                      </svg>
-                      Expired
-                    </button>
-                  )}
-
-                  {!disabledTabs.has('archive') && (
-                    <button
-                      onClick={() => handleTabClick('archive')}
-                      className="hover:text-amber-600 transition-colors flex items-center gap-1.5 font-medium"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                        <path d="M2 3a1 1 0 00-1 1v1a1 1 0 001 1h16a1 1 0 001-1V4a1 1 0 00-1-1H2z" />
-                        <path fillRule="evenodd" d="M2 7.5h16l-.811 7.71a2 2 0 01-1.99 1.79H4.801a2 2 0 01-1.99-1.79L2 7.5zm5.22 1.22a.75.75 0 011.06 0L10 10.94l1.72-1.22a.75.75 0 111.06 1.06L11 12.06l1.72 1.22a.75.75 0 11-1.06 1.06L10 13.06l-1.72 1.22a.75.75 0 01-1.06-1.06L9 12.06l-1.72-1.22a.75.75 0 010-1.06z" clipRule="evenodd" />
-                      </svg>
-                      Archive
-                    </button>
-                  )}
-
-                  {!disabledTabs.has('recycle-bin') && (
-                    <button
-                      onClick={() => handleTabClick('recycle-bin')}
-                      className="hover:text-red-500 transition-colors flex items-center gap-1.5 font-medium"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                        <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-                      </svg>
-                      Recycle Bin
-                    </button>
-                  )}
-                </>
-              )}
-
-              {/* Toggle Footer Details Button */}
-              <button
-                onClick={() => setShowFooterDetails(!showFooterDetails)}
-                className={`p-1.5 rounded-full transition-all flex items-center justify-center ${showFooterDetails ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-brand-500' : 'bg-brand-50 dark:bg-brand-900/30 text-brand-500 hover:bg-brand-100 dark:hover:bg-brand-900/50'}`}
-                title={showFooterDetails ? "Hide footer details" : "Show footer details"}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 transition-transform duration-300 ${showFooterDetails ? 'rotate-180' : ''}`}>
-                  <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
-                </svg>
-              </button>
-            </div>
-
-            {showFooterDetails && (
-              <div className="flex-1 min-w-0 flex flex-col gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
-                <div className="text-center text-slate-500 dark:text-slate-400">
-                  <p
-                    className="font-medium"
-                    dangerouslySetInnerHTML={{ __html: settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}
-                  ></p>
-                </div>
-                {((user?.is_admin && databasePathAbsolute) || (databasePath && settings.show_database_path_in_footer !== '0')) && (
-                  <div className="text-center text-xs text-slate-400 dark:text-slate-500">
-                    <div className="inline-flex items-center gap-2 bg-slate-100 dark:bg-slate-800/50 px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700/50 shadow-sm">
-                      <span className="font-semibold text-[10px] uppercase tracking-wider opacity-70">Database</span>
-                      <span className="h-3 w-px bg-slate-300 dark:bg-slate-700"></span>
-                      <span className="font-mono">{user?.is_admin && databasePathAbsolute ? databasePathAbsolute : databasePath}</span>
-                    </div>
-                  </div>
+          <div className="container mx-auto max-w-6xl-plus px-4">
+            <div className="flex flex-col items-center gap-6">
+              {/* Quick Navigation Links */}
+              <div className={`flex flex-wrap justify-center items-center gap-x-8 gap-y-4 text-slate-500 dark:text-slate-400 ${!showFooterDetails ? 'mb-0' : ''}`}>
+                {!disabledTabs.has('public') && (
+                  <button
+                    onClick={() => handleTabClick('public')}
+                    className="hover:text-brand-600 dark:hover:text-brand-400 transition-colors flex items-center gap-1.5 font-medium"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                      <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
+                      <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
+                    </svg>
+                    Public
+                  </button>
                 )}
+
+                {!disabledTabs.has('favorites') && (
+                  <button
+                    onClick={() => handleTabClick('favorites')}
+                    className="hover:text-amber-500 transition-colors flex items-center gap-1.5 font-medium"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                      <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
+                    </svg>
+                    Favorites
+                  </button>
+                )}
+
+                {isAuthenticated && (
+                  <>
+                    {!disabledTabs.has('private') && (
+                      <button
+                        onClick={() => handleTabClick('private')}
+                        className="hover:text-violet-500 transition-colors flex items-center gap-1.5 font-medium"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
+                        </svg>
+                        Private
+                      </button>
+                    )}
+
+                    {!disabledTabs.has('monitoring') && (
+                      <button
+                        onClick={() => handleTabClick('monitoring')}
+                        className="hover:text-emerald-500 transition-colors flex items-center gap-1.5 font-medium"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
+                        </svg>
+                        Monitoring
+                      </button>
+                    )}
+
+                    {!disabledTabs.has('scheduled') && (
+                      <button
+                        onClick={() => handleTabClick('scheduled')}
+                        className="hover:text-blue-500 transition-colors flex items-center gap-1.5 font-medium"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
+                        </svg>
+                        Scheduled
+                      </button>
+                    )}
+
+                    {!disabledTabs.has('expired') && (
+                      <button
+                        onClick={() => handleTabClick('expired')}
+                        className="hover:text-orange-500 transition-colors flex items-center gap-1.5 font-medium"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                        </svg>
+                        Expired
+                      </button>
+                    )}
+
+                    {!disabledTabs.has('archive') && (
+                      <button
+                        onClick={() => handleTabClick('archive')}
+                        className="hover:text-amber-600 transition-colors flex items-center gap-1.5 font-medium"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path d="M2 3a1 1 0 00-1 1v1a1 1 0 001 1h16a1 1 0 001-1V4a1 1 0 00-1-1H2z" />
+                          <path fillRule="evenodd" d="M2 7.5h16l-.811 7.71a2 2 0 01-1.99 1.79H4.801a2 2 0 01-1.99-1.79L2 7.5zm5.22 1.22a.75.75 0 011.06 0L10 10.94l1.72-1.22a.75.75 0 111.06 1.06L11 12.06l1.72 1.22a.75.75 0 11-1.06 1.06L10 13.06l-1.72 1.22a.75.75 0 01-1.06-1.06L9 12.06l-1.72-1.22a.75.75 0 010-1.06z" clipRule="evenodd" />
+                        </svg>
+                        Archive
+                      </button>
+                    )}
+
+                    {!disabledTabs.has('recycle-bin') && (
+                      <button
+                        onClick={() => handleTabClick('recycle-bin')}
+                        className="hover:text-red-500 transition-colors flex items-center gap-1.5 font-medium"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                        </svg>
+                        Recycle Bin
+                      </button>
+                    )}
+                  </>
+                )}
+
+                {/* Toggle Footer Details Button */}
+                <button
+                  onClick={() => setShowFooterDetails(!showFooterDetails)}
+                  className={`p-1.5 rounded-full transition-all flex items-center justify-center ${showFooterDetails ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-brand-500' : 'bg-brand-50 dark:bg-brand-900/30 text-brand-500 hover:bg-brand-100 dark:hover:bg-brand-900/50'}`}
+                  title={showFooterDetails ? "Hide footer details" : "Show footer details"}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 transition-transform duration-300 ${showFooterDetails ? 'rotate-180' : ''}`}>
+                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                  </svg>
+                </button>
               </div>
-            )}
+
+              {showFooterDetails && (
+                <div className="flex-1 min-w-0 flex flex-col gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="text-center text-slate-500 dark:text-slate-400">
+                    <p
+                      className="font-medium"
+                      dangerouslySetInnerHTML={{ __html: settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}
+                    ></p>
+                  </div>
+                  {((user?.is_admin && databasePathAbsolute) || (databasePath && settings.show_database_path_in_footer !== '0')) && (
+                    <div className="text-center text-xs text-slate-400 dark:text-slate-500">
+                      <div className="inline-flex items-center gap-2 bg-slate-100 dark:bg-slate-800/50 px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700/50 shadow-sm">
+                        <span className="font-semibold text-[10px] uppercase tracking-wider opacity-70">Database</span>
+                        <span className="h-3 w-px bg-slate-300 dark:bg-slate-700"></span>
+                        <span className="font-mono">{user?.is_admin && databasePathAbsolute ? databasePathAbsolute : databasePath}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      </footer>
+        </footer>
       )}
       {/* Hide all widgets on mobile view */}
       {!isMobile && (
@@ -1095,7 +1095,7 @@ const AppContent: React.FC = () => {
                     await new Promise(resolve => setTimeout(resolve, 500));
                     const stored = await getTiles();
                     setTiles(stored);
-                    
+
                     // Switch to private tab to show the imported tile
                     // Ensure we're on the main grid page first
                     if (window.location.hash !== '#/' && window.location.hash !== '') {
@@ -1139,143 +1139,143 @@ const AppContent: React.FC = () => {
             onClose={() => setShowWidgetQuickAccess(false)}
             user={user}
             widgets={[
-          {
-            id: 'clock',
-            name: 'Clock',
-            icon: (
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                <circle cx="12" cy="12" r="10"></circle>
-                <polyline points="12 6 12 12 16 14"></polyline>
-              </svg>
-            ),
-            isVisible: showClock,
-            onToggle: toggleClock,
-          },
-          {
-            id: 'weather',
-            name: 'Weather',
-            icon: (
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
-                <path d="M22 10a3 3 0 0 0-3-3h-2.5a2.5 2.5 0 0 0-5 0H12a3 3 0 0 0 0 6h3a2.5 2.5 0 0 0 5 0H22Z"></path>
-              </svg>
-            ),
-            isVisible: showWeather,
-            onToggle: toggleWeather,
-          },
-          {
-            id: 'calculator',
-            name: 'Calculator',
-            icon: (
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                <rect x="4" y="2" width="16" height="20" rx="2"></rect>
-                <line x1="8" y1="6" x2="16" y2="6"></line>
-                <line x1="8" y1="10" x2="16" y2="10"></line>
-                <line x1="8" y1="14" x2="16" y2="14"></line>
-                <line x1="8" y1="18" x2="16" y2="18"></line>
-              </svg>
-            ),
-            isVisible: showCalculator,
-            onToggle: toggleCalculator,
-          },
-          {
-            id: 'notes',
-            name: 'Notes',
-            icon: (
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-                <line x1="16" y1="13" x2="8" y2="13"></line>
-                <line x1="16" y1="17" x2="8" y2="17"></line>
-                <polyline points="10 9 9 9 8 9"></polyline>
-              </svg>
-            ),
-            isVisible: showNotes,
-            onToggle: toggleNotes,
-            requiresAuth: true,
-          },
-          {
-            id: 'password-generator',
-            name: 'Password Generator',
-            icon: (
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                <rect x="5" y="11" width="14" height="10" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-              </svg>
-            ),
-            isVisible: showPasswordGenerator,
-            onToggle: togglePasswordGenerator,
-          },
-          {
-            id: 'phonetic-alphabet',
-            name: 'Phonetic Alphabet',
-            icon: (
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
-                <path d="M8 8h4M8 12h4M8 16h4"></path>
-              </svg>
-            ),
-            isVisible: showPhoneticAlphabet,
-            onToggle: togglePhoneticAlphabet,
-          },
-          {
-            id: 'zoom-control',
-            name: 'Zoom Control',
-            icon: (
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                <circle cx="11" cy="11" r="8"></circle>
-                <path d="m21 21-4.35-4.35"></path>
-                <line x1="11" y1="8" x2="11" y2="14"></line>
-                <line x1="8" y1="11" x2="14" y2="11"></line>
-              </svg>
-            ),
-            isVisible: showZoomControl,
-            onToggle: toggleZoomControl,
-          },
-          {
-            id: 'theme',
-            name: 'Theme',
-            icon: (
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                <circle cx="13.5" cy="6.5" r=".5"></circle>
-                <circle cx="17.5" cy="10.5" r=".5"></circle>
-                <circle cx="8.5" cy="7.5" r=".5"></circle>
-                <circle cx="6.5" cy="12.5" r=".5"></circle>
-                <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path>
-              </svg>
-            ),
-            isVisible: showTheme,
-            onToggle: toggleThemeWidget,
-          },
-          {
-            id: 'fav-organizer',
-            name: 'Favorite Organizer',
-            icon: (
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
-                <path d="M12 2v14"></path>
-                <path d="M8 6h8"></path>
-                <path d="M8 10h8"></path>
-                <path d="M8 14h6"></path>
-              </svg>
-            ),
-            isVisible: showFavOrganizer,
-            onToggle: toggleFavOrganizer,
-          },
-          {
-            id: 'chat',
-            name: 'Chat',
-            icon: (
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                <circle cx="12" cy="7" r="4"></circle>
-              </svg>
-            ),
-            isVisible: showChat,
-            onToggle: toggleChat,
-            requiresAuth: true,
-          },
-        ]}
+              {
+                id: 'clock',
+                name: 'Clock',
+                icon: (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                  </svg>
+                ),
+                isVisible: showClock,
+                onToggle: toggleClock,
+              },
+              {
+                id: 'weather',
+                name: 'Weather',
+                icon: (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
+                    <path d="M22 10a3 3 0 0 0-3-3h-2.5a2.5 2.5 0 0 0-5 0H12a3 3 0 0 0 0 6h3a2.5 2.5 0 0 0 5 0H22Z"></path>
+                  </svg>
+                ),
+                isVisible: showWeather,
+                onToggle: toggleWeather,
+              },
+              {
+                id: 'calculator',
+                name: 'Calculator',
+                icon: (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <rect x="4" y="2" width="16" height="20" rx="2"></rect>
+                    <line x1="8" y1="6" x2="16" y2="6"></line>
+                    <line x1="8" y1="10" x2="16" y2="10"></line>
+                    <line x1="8" y1="14" x2="16" y2="14"></line>
+                    <line x1="8" y1="18" x2="16" y2="18"></line>
+                  </svg>
+                ),
+                isVisible: showCalculator,
+                onToggle: toggleCalculator,
+              },
+              {
+                id: 'notes',
+                name: 'Notes',
+                icon: (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <polyline points="10 9 9 9 8 9"></polyline>
+                  </svg>
+                ),
+                isVisible: showNotes,
+                onToggle: toggleNotes,
+                requiresAuth: true,
+              },
+              {
+                id: 'password-generator',
+                name: 'Password Generator',
+                icon: (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <rect x="5" y="11" width="14" height="10" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                  </svg>
+                ),
+                isVisible: showPasswordGenerator,
+                onToggle: togglePasswordGenerator,
+              },
+              {
+                id: 'phonetic-alphabet',
+                name: 'Phonetic Alphabet',
+                icon: (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
+                    <path d="M8 8h4M8 12h4M8 16h4"></path>
+                  </svg>
+                ),
+                isVisible: showPhoneticAlphabet,
+                onToggle: togglePhoneticAlphabet,
+              },
+              {
+                id: 'zoom-control',
+                name: 'Zoom Control',
+                icon: (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <path d="m21 21-4.35-4.35"></path>
+                    <line x1="11" y1="8" x2="11" y2="14"></line>
+                    <line x1="8" y1="11" x2="14" y2="11"></line>
+                  </svg>
+                ),
+                isVisible: showZoomControl,
+                onToggle: toggleZoomControl,
+              },
+              {
+                id: 'theme',
+                name: 'Theme',
+                icon: (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <circle cx="13.5" cy="6.5" r=".5"></circle>
+                    <circle cx="17.5" cy="10.5" r=".5"></circle>
+                    <circle cx="8.5" cy="7.5" r=".5"></circle>
+                    <circle cx="6.5" cy="12.5" r=".5"></circle>
+                    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path>
+                  </svg>
+                ),
+                isVisible: showTheme,
+                onToggle: toggleThemeWidget,
+              },
+              {
+                id: 'fav-organizer',
+                name: 'Favorite Organizer',
+                icon: (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+                    <path d="M12 2v14"></path>
+                    <path d="M8 6h8"></path>
+                    <path d="M8 10h8"></path>
+                    <path d="M8 14h6"></path>
+                  </svg>
+                ),
+                isVisible: showFavOrganizer,
+                onToggle: toggleFavOrganizer,
+              },
+              {
+                id: 'chat',
+                name: 'Chat',
+                icon: (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                  </svg>
+                ),
+                isVisible: showChat,
+                onToggle: toggleChat,
+                requiresAuth: true,
+              },
+            ]}
           />
         </FloatingWidgetQuickAccess>
       )}

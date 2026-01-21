@@ -1399,7 +1399,7 @@ function handleUpdateTile($tileId) {
         // updateTileInternal has:
         // if (!canUserEditTile($user['id'], $tileId, $db)) throw new Exception(...)
         
-        updateTileInternal($tileId, $data, $db, $user);
+        updateTileInternal($tileId, $data, $db, $user, false, $data['is_final'] ?? false);
         sendJSON(['success' => true]);
     } catch (Exception $e) {
         $code = 500;
@@ -3794,17 +3794,20 @@ function saveVersion($tileId, $db, $userId, $summary = null, $isTemp = false) {
         $jsonData = json_encode($tileData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         
         // Check for duplicate: Compare with the most recent version (excluding temp versions)
-        $stmt = $db->prepare('SELECT tile_data FROM tile_versions WHERE tile_id = ? AND is_temp = 0 ORDER BY version_number DESC LIMIT 1');
-        $stmt->execute([$tileId]);
-        $latestVersion = $stmt->fetch();
-        
-        if ($latestVersion) {
-            $latestData = json_decode($latestVersion['tile_data'], true);
+        // SKIP duplicate check for temp versions - they should always be created as "before" snapshots
+        if (!$isTemp) {
+            $stmt = $db->prepare('SELECT tile_data FROM tile_versions WHERE tile_id = ? AND is_temp = 0 ORDER BY version_number DESC LIMIT 1');
+            $stmt->execute([$tileId]);
+            $latestVersion = $stmt->fetch();
             
-            // Compare the data - if identical, don't create duplicate
-            if (areTilesEqual($tileData, $latestData)) {
-                error_log("Prevented duplicate version creation for tile: $tileId");
-                return null; // Don't create duplicate
+            if ($latestVersion) {
+                $latestData = json_decode($latestVersion['tile_data'], true);
+                
+                // Compare the data - if identical, don't create duplicate
+                if (areTilesEqual($tileData, $latestData)) {
+                    error_log("Prevented duplicate version creation for tile: $tileId");
+                    return null; // Don't create duplicate
+                }
             }
         }
         
@@ -3839,7 +3842,7 @@ function saveVersion($tileId, $db, $userId, $summary = null, $isTemp = false) {
     }
 }
 
-function updateTileInternal($tileId, $data, $db, $user, $isRestore = false) {
+function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isFinal = true) {
     // Verify tile exists
     $checkStmt = $db->prepare('SELECT id FROM tiles WHERE id = ?');
     $checkStmt->execute([$tileId]);
@@ -3865,21 +3868,24 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false) {
         return;
     }
 
-    // Handle temp version conversion
-    // Check if there's a temp version for this tile
+    // Handle version creation strategy:
+    // 1. If temp version exists: Convert it to permanent (captures "before" state)
+    // 2. After tile update: Create NEW version (captures "after" state)
+    // This ensures each save creates a distinct version showing the state at that moment
+    
+    $hasTempVersion = false;
     $stmt = $db->prepare('SELECT id FROM tile_versions WHERE tile_id = ? AND is_temp = 1 LIMIT 1');
     $stmt->execute([$tileId]);
     $tempVersion = $stmt->fetch();
     
-    if ($tempVersion && !$isRestore) {
-        // Convert temp version to permanent
-        $summary = generateChangelogSummary($currentTileData, $data);
+    if ($tempVersion && !$isRestore && $isFinal) {
+        // Convert temp version to permanent - this captures the "before" state
         $stmt = $db->prepare('UPDATE tile_versions SET is_temp = 0, changelog_summary = ? WHERE id = ?');
-        $stmt->execute(["Pre-update: " . $summary, $tempVersion['id']]);
-    } elseif (!$isRestore) {
-        // No temp version exists, create a regular version (fallback for direct saves)
-        $summary = generateChangelogSummary($currentTileData, $data);
-        saveVersion($tileId, $db, $user['id'], "Pre-update: " . $summary, false);
+        $stmt->execute(["Snapshot before edit", $tempVersion['id']]);
+        $hasTempVersion = true;
+    } elseif (!$isRestore && $isFinal) {
+        // No temp version exists, create a "before" snapshot (fallback for direct saves)
+        saveVersion($tileId, $db, $user['id'], "Snapshot before edit", false);
     }
 
     // Begin transaction
@@ -4109,6 +4115,13 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false) {
         }
 
         $db->commit();
+        
+        // After successful update, create a NEW version to capture the "after" state
+    // This ensures each save creates a distinct version showing the current state
+    if (!$isRestore && $isFinal) {
+        $summary = generateChangelogSummary($currentTileData, $data);
+        saveVersion($tileId, $db, $user['id'], $summary, false);
+    }
     } catch (Exception $e) {
         if ($db->inTransaction()) {
             $db->rollBack();

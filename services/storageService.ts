@@ -61,12 +61,12 @@ export const getTiles = async (): Promise<Tile[]> => {
   return apiTiles.map(transformTile);
 };
 
-export const saveTiles = async (tiles: Tile[]): Promise<void> => {
+export const saveTiles = async (tiles: Tile[], isFinal: boolean = false): Promise<void> => {
   // For bulk operations, we'll update/create tiles individually
   // This is a simplified version - in production, you might want batch operations
   try {
     for (const tile of tiles) {
-      await saveTile(tile);
+      await saveTile(tile, isFinal);
     }
   } catch (e) {
     console.error("Failed to save tiles", e);
@@ -74,13 +74,13 @@ export const saveTiles = async (tiles: Tile[]): Promise<void> => {
   }
 };
 
-export const saveTile = async (tile: Tile): Promise<void> => {
+export const saveTile = async (tile: Tile, isFinal: boolean = false): Promise<void> => {
   try {
     const response = await fetch(`${API_BASE}/tiles/${tile.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify(tile)
+      body: JSON.stringify({ ...tile, is_final: isFinal })
     });
 
     if (!response.ok) {
@@ -617,6 +617,21 @@ export const permanentDeleteCategory = async (categoryName: string): Promise<{ s
   } catch (e) {
     console.error("Failed to permanently delete category", e);
     throw e;
+  }
+};
+
+export const createTempVersion = async (tileId: string): Promise<void> => {
+  try {
+    const response = await fetch(`${API_BASE}/tiles/${tileId}/create-temp-version`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      console.warn('Failed to create temp version');
+    }
+  } catch (e) {
+    console.error("Failed to create temp version", e);
   }
 };
 

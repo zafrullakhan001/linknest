@@ -27,7 +27,7 @@ import { MobileTileView } from './MobileTileView';
 
 interface TileGridProps {
   tiles: Tile[];
-  onUpdateTiles: (tiles: Tile[]) => void;
+  onUpdateTiles: (tiles: Tile[], skipReload?: boolean, isFinal?: boolean) => void;
   onCreateTile?: (tile: Tile) => Promise<void>;
   onDeleteTile?: (tileId: string) => Promise<void>;
   onCloneTile?: (tileId: string) => Promise<void>;
@@ -898,7 +898,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
   })();
 
   const activeMessages = (tile.messages?.filter(m => m.isActive && (!m.startDate || new Date(m.startDate) <= new Date()) && (!m.endDate || new Date(m.endDate) >= new Date()) && (m.displayLocation === 'tile' || m.displayLocation === 'both' || !m.displayLocation)) || []).sort((a, b) => (a.priority || 0) - (b.priority || 0));
-  
+
   // Helper function to get animation class based on animation type
   const getMessageAnimationClass = (animationType?: string) => {
     if (!animationType || animationType === 'rollover' || animationType === 'still') return '';
@@ -944,7 +944,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
     }
 
     const animationType = currentMsg.animationType || 'rollover';
-    
+
     // Calculate duration: animation duration + delay before next message
     const animationDuration = animationType === 'rollover' ? 0 : getAnimationDuration(animationType);
     const delayBefore = currentMsg.delayBefore || 0;
@@ -1419,7 +1419,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
             {(() => {
               // Check if all messages use rollover animation
               const allRollover = activeMessages.length > 0 && activeMessages.every(msg => !msg.animationType || msg.animationType === 'rollover');
-              
+
               if (allRollover) {
                 // Rollover animation - use marquee with seamless duplication
                 // Note: Delays are not applied in rollover mode to maintain seamless loop
@@ -1428,8 +1428,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
                     <div className="animate-rolling-tile flex items-center gap-10 text-[10px] sm:text-xs font-semibold">
                       {/* First set of messages */}
                       {activeMessages.map((msg, idx) => (
-                        <div 
-                          key={`${msg.id}-${idx}`} 
+                        <div
+                          key={`${msg.id}-${idx}`}
                           className="flex items-center gap-2 shrink-0"
                           style={{
                             ...(msg.textColor ? { '--message-text-color': msg.textColor, color: msg.textColor } : {}),
@@ -1443,8 +1443,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
                       ))}
                       {/* Duplicate set for seamless loop - no delays, exact copy */}
                       {activeMessages.map((msg, idx) => (
-                        <div 
-                          key={`${msg.id}-dup-${idx}`} 
+                        <div
+                          key={`${msg.id}-dup-${idx}`}
                           className="flex items-center gap-2 shrink-0"
                           style={{
                             ...(msg.textColor ? { '--message-text-color': msg.textColor, color: msg.textColor } : {}),
@@ -1462,7 +1462,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
               } else {
                 // Other animations - show one message at a time, cycle through them
                 const currentMsg = activeMessages[currentMessageIndex] || activeMessages[0];
-                
+
                 if (!currentMsg) {
                   return null;
                 }
@@ -1472,7 +1472,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
 
                 return (
                   <div className={`flex items-center gap-2 text-[10px] sm:text-xs font-semibold ${animationClass}`}>
-                    <div 
+                    <div
                       key={`${currentMsg.id}-current`}
                       style={{
                         ...(currentMsg.textColor ? { '--message-text-color': currentMsg.textColor, color: currentMsg.textColor } : {}),
@@ -1557,8 +1557,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
   isAuthenticated = false,
   onAuthRequired,
   darkMode = false,
-  toggleTheme = () => {},
-  onHelpClick = () => {}
+  toggleTheme = () => { },
+  onHelpClick = () => { }
 }) => {
   const { settings } = useSettings();
   const { user } = useAuth();
