@@ -7,19 +7,20 @@ interface SnakeGameWidgetProps {
 type Direction = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
 type Position = { x: number; y: number };
 
-const GRID_SIZE = 20;
-const CELL_SIZE = 15;
+const GRID_SIZE = 40;
+const CELL_SIZE = 25;
 const GAME_SPEED = 100;
 
 export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => {
     const widgetRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const [snake, setSnake] = useState<Position[]>([{ x: 10, y: 10 }]);
-    const [food, setFood] = useState<Position>({ x: 5, y: 5 });
+    const [snake, setSnake] = useState<Position[]>([{ x: 20, y: 20 }]);
+    const [food, setFood] = useState<Position>({ x: 10, y: 10 });
     const [direction, setDirection] = useState<Direction>('RIGHT');
     const [gameOver, setGameOver] = useState(false);
     const [score, setScore] = useState(0);
     const [isPaused, setIsPaused] = useState(false);
+    const [highContrast, setHighContrast] = useState(false);
 
     // Generate random food position
     const generateFood = useCallback((): Position => {
@@ -33,14 +34,15 @@ export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => 
         return snakeBody.some(segment => segment.x === pos.x && segment.y === pos.y);
     }, [snake]);
 
-    // Initialize food position
+    // Initialize food position only once on mount
     useEffect(() => {
         let newFood = generateFood();
-        while (isPositionOccupied(newFood)) {
+        while (isPositionOccupied(newFood, [{ x: 20, y: 20 }])) {
             newFood = generateFood();
         }
         setFood(newFood);
-    }, [generateFood, isPositionOccupied]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Handle keyboard controls
     useEffect(() => {
@@ -68,15 +70,19 @@ export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => 
 
             switch (e.key) {
                 case 'ArrowUp':
+                case 'w':
                     if (direction !== 'DOWN') setDirection('UP');
                     break;
                 case 'ArrowDown':
+                case 's':
                     if (direction !== 'UP') setDirection('DOWN');
                     break;
                 case 'ArrowLeft':
+                case 'a':
                     if (direction !== 'RIGHT') setDirection('LEFT');
                     break;
                 case 'ArrowRight':
+                case 'd':
                     if (direction !== 'LEFT') setDirection('RIGHT');
                     break;
             }
@@ -172,12 +178,14 @@ export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => 
         }
 
         // Draw food
-        ctx.fillStyle = '#ef4444';
+        ctx.fillStyle = highContrast ? '#ff0000' : '#ef4444';
         ctx.fillRect(food.x * CELL_SIZE, food.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
 
         // Draw snake
         snake.forEach((segment, index) => {
-            ctx.fillStyle = index === 0 ? '#10b981' : '#34d399';
+            ctx.fillStyle = highContrast
+                ? (index === 0 ? '#0000ff' : '#0000aa')
+                : (index === 0 ? '#10b981' : '#34d399');
             ctx.fillRect(segment.x * CELL_SIZE, segment.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
         });
 
@@ -192,22 +200,30 @@ export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => 
             ctx.fillText('Game Over!', canvas.width / 2, canvas.height / 2 - 20);
             ctx.fillText(`Score: ${score}`, canvas.width / 2, canvas.height / 2 + 20);
         }
-    }, [snake, food, gameOver, score]);
+    }, [snake, food, gameOver, score, highContrast]);
 
     const resetGame = () => {
-        setSnake([{ x: 10, y: 10 }]);
+        const initialSnake = [{ x: 20, y: 20 }];
+        setSnake(initialSnake);
         setDirection('RIGHT');
         setGameOver(false);
         setScore(0);
         setIsPaused(false);
-        const newFood = generateFood();
+        let newFood = generateFood();
+        while (isPositionOccupied(newFood, initialSnake)) {
+            newFood = generateFood();
+        }
         setFood(newFood);
+    };
+
+    const toggleHighContrast = () => {
+        setHighContrast(prev => !prev);
     };
 
     return (
         <div
             ref={widgetRef}
-            className="bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 p-4 min-w-[280px] max-w-[320px]"
+            className="bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 p-4"
         >
             <div className="mb-3">
                 <div className="flex items-center justify-between mb-2">
@@ -240,7 +256,15 @@ export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => 
                         width={GRID_SIZE * CELL_SIZE}
                         height={GRID_SIZE * CELL_SIZE}
                         className="w-full h-full"
+                        aria-label="Snake game grid"
+                        aria-describedby="snake-game-instructions"
+                        tabIndex={0}
                     />
+                    <div id="snake-game-instructions" className="sr-only">
+                        Use arrow keys to move the snake. Space bar to pause.
+                        Collect the red food squares to grow your snake and increase your score.
+                        Avoid hitting the walls or your own tail.
+                    </div>
                     {(gameOver || isPaused) && (
                         <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center">
                             <p className="text-white font-bold text-lg">
@@ -255,13 +279,20 @@ export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => 
                             >
                                 {gameOver ? 'Play Again' : 'Restart'}
                             </button>
+                            <button
+                                onClick={toggleHighContrast}
+                                className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded font-medium transition-colors ml-2"
+                                aria-label={`Toggle high contrast mode. Currently ${highContrast ? 'on' : 'off'}`}
+                            >
+                                High Contrast
+                            </button>
                         </div>
                     )}
                 </div>
 
                 {/* Controls */}
                 <div className="mt-3 text-xs text-slate-500 dark:text-slate-400 text-center">
-                    <p>Use arrow keys to move. Space to pause.</p>
+                    <p>Use arrow keys or WASD to move. Space to pause.</p>
                 </div>
             </div>
         </div>

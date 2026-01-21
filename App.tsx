@@ -32,6 +32,8 @@ import { FloatingFavOrganizerWidget } from './components/FloatingFavOrganizerWid
 import { FavOrganizerWidget } from './components/FavOrganizerWidget';
 import { FloatingChatWidget } from './components/FloatingChatWidget';
 import { ChatWidget } from './components/ChatWidget';
+import { FloatingSnakeGameWidget } from './components/FloatingSnakeGameWidget';
+import { SnakeGameWidget } from './components/SnakeGameWidget';
 import { themeService } from './services/themeService';
 import { getMessages, ChatMessage } from './services/chatService';
 import { WidgetQuickAccess } from './components/WidgetQuickAccess';
@@ -199,6 +201,16 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('linknest_show_chat_widget', showChat.toString());
   }, [showChat]);
+
+  // Snake Game Widget Visibility State
+  const [showSnakeGame, setShowSnakeGame] = useState(() => {
+    const saved = localStorage.getItem('linknest_show_snake_game_widget');
+    return saved !== null ? saved === 'true' : false; // Default to hidden
+  });
+
+  useEffect(() => {
+    localStorage.setItem('linknest_show_snake_game_widget', showSnakeGame.toString());
+  }, [showSnakeGame]);
 
   // Chat unread messages state
   const [hasUnreadChatMessages, setHasUnreadChatMessages] = useState(false);
@@ -440,6 +452,10 @@ const AppContent: React.FC = () => {
 
   const toggleChat = () => {
     setShowChat(!showChat);
+  };
+
+  const toggleSnakeGame = () => {
+    setShowSnakeGame(!showSnakeGame);
   };
 
   const handleTabClick = (tab: string) => {
@@ -836,6 +852,8 @@ const AppContent: React.FC = () => {
           toggleFavOrganizer={toggleFavOrganizer}
           showChat={showChat}
           toggleChat={toggleChat}
+          showSnakeGame={showSnakeGame}
+          toggleSnakeGame={toggleSnakeGame}
           hasUnreadChatMessages={hasUnreadChatMessages}
           user={user}
           onLoginClick={() => setAuthModalOpen(true)}
@@ -1113,6 +1131,11 @@ const AppContent: React.FC = () => {
               />
             </FloatingChatWidget>
           )}
+          {showSnakeGame && (
+            <FloatingSnakeGameWidget>
+              <SnakeGameWidget onClose={toggleSnakeGame} />
+            </FloatingSnakeGameWidget>
+          )}
         </>
       )}
       <AuthModal
@@ -1274,6 +1297,20 @@ const AppContent: React.FC = () => {
                 isVisible: showChat,
                 onToggle: toggleChat,
                 requiresAuth: true,
+              },
+              {
+                id: 'snake-game',
+                name: 'Snake Game',
+                icon: (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <path d="M2 12h20"></path>
+                    <path d="M12 2v20"></path>
+                    <path d="M8 8l-4 4 4 4"></path>
+                    <path d="M16 8l4 4-4 4"></path>
+                  </svg>
+                ),
+                isVisible: showSnakeGame,
+                onToggle: toggleSnakeGame,
               },
             ]}
           />
