@@ -26,13 +26,15 @@ interface NavigationProps {
   toggleFavOrganizer: () => void;
   showChat: boolean;
   toggleChat: () => void;
+  showSnakeGame: boolean;
+  toggleSnakeGame: () => void;
   hasUnreadChatMessages?: boolean;
   user: { id: number; username: string; email: string; is_admin?: boolean } | null;
   onLoginClick: () => void;
   onHelpClick: () => void;
 }
 
-export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: toggleDarkMode, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, showWeather, toggleWeather, showCalculator, toggleCalculator, showPasswordGenerator, togglePasswordGenerator, showZoomControl, toggleZoomControl, showTheme, toggleThemeWidget, showFavOrganizer, toggleFavOrganizer, showChat, toggleChat, hasUnreadChatMessages = false, user, onLoginClick, onHelpClick }) => {
+export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: toggleDarkMode, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, showWeather, toggleWeather, showCalculator, toggleCalculator, showPasswordGenerator, togglePasswordGenerator, showZoomControl, toggleZoomControl, showTheme, toggleThemeWidget, showFavOrganizer, toggleFavOrganizer, showChat, toggleChat, showSnakeGame, toggleSnakeGame, hasUnreadChatMessages = false, user, onLoginClick, onHelpClick }) => {
   const { logout } = useAuth();
   const { settings } = useSettings();
   const disabledTabs = getDisabledTabsFromSettings(settings);
@@ -244,6 +246,18 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
                 )}
               </button>
             )}
+            <button
+              onClick={toggleSnakeGame}
+              className={`p-2 rounded-full transition-all ${showSnakeGame ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+              title={showSnakeGame ? "Hide Snake Game Widget" : "Show Snake Game Widget"}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
+                <path d="M2 12h20"></path>
+                <path d="M12 2v20"></path>
+                <path d="M8 8l-4 4 4 4"></path>
+                <path d="M16 8l4 4-4 4"></path>
+              </svg>
+            </button>
           </div>
 
           {/* System Section */}
