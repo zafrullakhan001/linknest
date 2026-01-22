@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { createTile, getTiles } from '../services/storageService';
 import { parseSpaceExportObject, normalizeImportedTiles } from '../services/spaceTransferService';
 import { settingsService } from '../services/settingsService';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Bookmark {
   title: string;
@@ -56,6 +57,7 @@ interface ChunkProgress {
 }
 
 export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose }) => {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'manual'>('manual');
   const [apiKey, setApiKey] = useState<string>('');
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
@@ -101,6 +103,7 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
   const [createNewCategory, setCreateNewCategory] = useState<boolean>(false);
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
+  const [importCancelled, setImportCancelled] = useState<boolean>(false);
   const [importProgress, setImportProgress] = useState<{
     current: number;
     total: number;
@@ -1431,8 +1434,11 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
             }];
           }
 
-          // Ensure tile visibility is private
+          // Ensure tile visibility is private and set allowedUsers to include current user
           updatedTile.visibility = 'private';
+          if (user && user.id) {
+            updatedTile.allowedUsers = [user.id];
+          }
 
           return updatedTile;
         })
@@ -1461,12 +1467,28 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
         errors: []
       });
 
+      // Reset cancel flag
+      setImportCancelled(false);
+
       // Import tiles one by one
       let successCount = 0;
       let errorCount = 0;
       const errors: string[] = [];
 
       for (let i = 0; i < tilesToImport.length; i++) {
+        // Check if import was cancelled
+        if (importCancelled) {
+          setImportProgress({
+            current: i,
+            total: tilesToImport.length,
+            status: `⚠️ Import cancelled. ${successCount} tiles imported successfully.`,
+            errors: [...errors]
+          });
+          setError('Import was cancelled by user.');
+          setLoading(false);
+          return;
+        }
+
         const tile = tilesToImport[i];
         try {
           // Validate tile before sending
@@ -1517,33 +1539,36 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
         }
       }
 
-      // Final status
-      if (errorCount === 0) {
-        setImportProgress({
-          current: tilesToImport.length,
-          total: tilesToImport.length,
-          status: `✅ Successfully imported ${successCount} tiles into category "${finalCategoryName}"!`,
-          errors: []
-        });
-        setError(null);
+      // Final status (only if not cancelled)
+      if (!importCancelled) {
+        if (errorCount === 0) {
+          setImportProgress({
+            current: tilesToImport.length,
+            total: tilesToImport.length,
+            status: `✅ Successfully imported ${successCount} tiles into category "${finalCategoryName}"!`,
+            errors: []
+          });
+          setError(null);
 
-        // Clear the dialog after a delay
-        setTimeout(() => {
-          setShowImportDialog(false);
-          setCategoryName('');
-          setSelectedCategory('');
-          setCreateNewCategory(false);
-          setWizardStep(1);
-          setImportProgress(null);
-        }, 3000);
-      } else {
-        setImportProgress({
-          current: tilesToImport.length,
-          total: tilesToImport.length,
-          status: `⚠️ Imported ${successCount} tiles, ${errorCount} failed.`,
-          errors: errors
-        });
-        setError(`Import completed with ${errorCount} error(s). See details below.`);
+          // Clear the dialog after a delay
+          setTimeout(() => {
+            setShowImportDialog(false);
+            setCategoryName('');
+            setSelectedCategory('');
+            setCreateNewCategory(false);
+            setWizardStep(1);
+            setImportProgress(null);
+            setImportCancelled(false);
+          }, 3000);
+        } else {
+          setImportProgress({
+            current: tilesToImport.length,
+            total: tilesToImport.length,
+            status: `⚠️ Imported ${successCount} tiles, ${errorCount} failed.`,
+            errors: errors
+          });
+          setError(`Import completed with ${errorCount} error(s). See details below.`);
+        }
       }
     } catch (err: any) {
       setError(err.message || 'Failed to import JSON');
@@ -3311,15 +3336,21 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
                 </h3>
                 <button
                   onClick={() => {
-                    setShowImportDialog(false);
-                    setCategoryName('');
-                    setSelectedCategory('');
-                    setCreateNewCategory(false);
-                    setWizardStep(1);
-                    setImportProgress(null);
+                    if (loading && !importCancelled) {
+                      setImportCancelled(true);
+                      setLoading(false);
+                    } else {
+                      setShowImportDialog(false);
+                      setCategoryName('');
+                      setSelectedCategory('');
+                      setCreateNewCategory(false);
+                      setWizardStep(1);
+                      setImportProgress(null);
+                      setImportCancelled(false);
+                    }
                   }}
                   className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-                  disabled={loading}
+                  disabled={false}
                 >
                   ✕
                 </button>
@@ -3377,6 +3408,52 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
                   </div>
                 </div>
               </div>
+
+              {/* Step 1 Content - Upload Confirmation */}
+              {wizardStep === 1 && (
+                <div className="mb-4">
+                  <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-emerald-500 text-white flex items-center justify-center text-lg font-semibold">
+                        ✓
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
+                          Step 1 Complete: Upload
+                        </h4>
+                        <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-1">
+                          {bookmarks.length > 0 
+                            ? `${bookmarks.length} bookmarks uploaded successfully`
+                            : 'Bookmarks have been uploaded and processed'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 2 Content - Organize Confirmation */}
+              {wizardStep === 2 && (
+                <div className="mb-4">
+                  <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-emerald-500 text-white flex items-center justify-center text-lg font-semibold">
+                        ✓
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
+                          Step 2 Complete: Organize
+                        </h4>
+                        <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-1">
+                          {organizedJson 
+                            ? 'Bookmarks have been organized and JSON is ready for import'
+                            : 'Organization completed successfully'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Step 3 Content - Category Selection */}
               {wizardStep === 3 && (
@@ -3469,17 +3546,39 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
                   <div className="mb-2">
                     <div className="flex items-center justify-between text-sm text-slate-700 dark:text-slate-300 mb-1">
                       <span>{importProgress.status}</span>
-                      <span>{importProgress.current} / {importProgress.total}</span>
+                      <div className="flex items-center gap-2">
+                        <span>{importProgress.current} / {importProgress.total}</span>
+                        {loading && !importCancelled && (
+                          <button
+                            onClick={() => {
+                              setImportCancelled(true);
+                              setLoading(false);
+                            }}
+                            className="px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                            title="Cancel import"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </div>
                     </div>
                     {importProgress.total > 0 && (
                       <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-2">
                         <div
-                          className="bg-emerald-500 h-2 rounded-full transition-all duration-300"
+                          className={`h-2 rounded-full transition-all duration-300 ${
+                            importCancelled ? 'bg-amber-500' : 'bg-emerald-500'
+                          }`}
                           style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
                         />
                       </div>
                     )}
                   </div>
+
+                  {importCancelled && (
+                    <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded text-xs text-amber-800 dark:text-amber-300">
+                      ⚠️ Import cancelled. {importProgress.current} of {importProgress.total} tiles were processed.
+                    </div>
+                  )}
 
                   {importProgress.errors.length > 0 && (
                     <div className="mt-3 max-h-32 overflow-y-auto">
@@ -3501,39 +3600,55 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
 
               {/* Navigation Buttons */}
               <div className="flex gap-3">
-                {/* Previous button only shows for step 2, not step 3 (since steps 1 & 2 are already done) */}
-                {wizardStep === 2 && !importProgress && (
+                {/* Previous button */}
+                {wizardStep > 1 && !importProgress && (
                   <button
-                    onClick={() => setWizardStep(1)}
+                    onClick={() => setWizardStep((prev) => (prev - 1) as 1 | 2 | 3)}
                     disabled={loading}
                     className="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     Previous
                   </button>
                 )}
+                
+                {/* Cancel button - always visible */}
                 <button
                   onClick={() => {
-                    setShowImportDialog(false);
-                    setCategoryName('');
-                    setSelectedCategory('');
-                    setCreateNewCategory(false);
-                    setWizardStep(1);
-                    setImportProgress(null);
+                    if (loading && !importCancelled) {
+                      setImportCancelled(true);
+                      setLoading(false);
+                    } else {
+                      setShowImportDialog(false);
+                      setCategoryName('');
+                      setSelectedCategory('');
+                      setCreateNewCategory(false);
+                      setWizardStep(1);
+                      setImportProgress(null);
+                      setImportCancelled(false);
+                    }
                   }}
-                  disabled={loading}
-                  className="flex-1 px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  disabled={false}
+                  className={`flex-1 px-4 py-2 rounded transition-colors ${
+                    loading && !importCancelled
+                      ? 'bg-red-500 text-white hover:bg-red-600'
+                      : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'
+                  }`}
                 >
-                  Cancel
+                  {loading && !importCancelled ? 'Cancel Import' : 'Cancel'}
                 </button>
-                {wizardStep === 3 && (
+                
+                {/* Step 3: Import button or Next button */}
+                {wizardStep === 3 && !importProgress && (
                   <button
                     onClick={handleImportToCategory}
                     disabled={loading || (createNewCategory && !categoryName.trim()) || (!createNewCategory && (!selectedCategory || availableCategories.length === 0))}
                     className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
                   >
-                    {loading ? 'Importing...' : 'Import'}
+                    Import
                   </button>
                 )}
+                
+                {/* Next button for steps 1 and 2 */}
                 {wizardStep < 3 && !importProgress && (
                   <button
                     onClick={() => setWizardStep((prev) => (prev + 1) as 1 | 2 | 3)}
