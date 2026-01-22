@@ -7,13 +7,13 @@ interface SnakeGameWidgetProps {
 type Direction = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
 type Position = { x: number; y: number };
 
-const GRID_SIZE = 20;
-const DEFAULT_CELL_SIZE = 20;
+const CANVAS_SIZE = 600;
 const GAME_SPEED = 100;
 
 export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => {
     const widgetRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [gridSize, setGridSize] = useState(20);
     const [snake, setSnake] = useState<Position[]>([{ x: 10, y: 10 }]);
     const [food, setFood] = useState<Position>({ x: 5, y: 5 });
     const [direction, setDirection] = useState<Direction>('RIGHT');
@@ -21,27 +21,30 @@ export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => 
     const [score, setScore] = useState(0);
     const [isPaused, setIsPaused] = useState(false);
     const [highContrast, setHighContrast] = useState(false);
-    const [cellSize, setCellSize] = useState(DEFAULT_CELL_SIZE);
+
+    // Calculate dynamic cell size based on fixed canvas size
+    const cellSize = CANVAS_SIZE / gridSize;
 
     // Generate random food position
     const generateFood = useCallback((): Position => {
-        const x = Math.floor(Math.random() * GRID_SIZE);
-        const y = Math.floor(Math.random() * GRID_SIZE);
+        const x = Math.floor(Math.random() * gridSize);
+        const y = Math.floor(Math.random() * gridSize);
         return { x, y };
-    }, []);
+    }, [gridSize]);
 
     // Check if position is occupied by snake
     const isPositionOccupied = useCallback((pos: Position, snakeBody: Position[] = snake): boolean => {
         return snakeBody.some(segment => segment.x === pos.x && segment.y === pos.y);
     }, [snake]);
 
+    // Reset game when grid size changes
+    useEffect(() => {
+        resetGame();
+    }, [gridSize]);
+
     // Initialize food position only once on mount
     useEffect(() => {
-        let newFood = generateFood();
-        while (isPositionOccupied(newFood, [{ x: 10, y: 10 }])) {
-            newFood = generateFood();
-        }
-        setFood(newFood);
+        resetGame();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -121,8 +124,8 @@ export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => 
 
                 // Check for collisions
                 if (
-                    head.x < 0 || head.x >= GRID_SIZE ||
-                    head.y < 0 || head.y >= GRID_SIZE ||
+                    head.x < 0 || head.x >= gridSize ||
+                    head.y < 0 || head.y >= gridSize ||
                     prevSnake.some((segment, index) => index > 0 && segment.x === head.x && segment.y === head.y)
                 ) {
                     setGameOver(true);
@@ -150,7 +153,7 @@ export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => 
 
         const gameInterval = setInterval(moveSnake, GAME_SPEED);
         return () => clearInterval(gameInterval);
-    }, [direction, food, gameOver, isPaused, generateFood, isPositionOccupied]);
+    }, [direction, food, gameOver, isPaused, generateFood, isPositionOccupied, gridSize]);
 
     // Draw game
     useEffect(() => {
@@ -163,32 +166,57 @@ export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => 
         // Clear canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Draw grid
-        ctx.strokeStyle = '#e2e8f0';
+        // Draw grid (subtle)
+        ctx.strokeStyle = '#f1f5f9'; // lighter grid for cleaner look
         ctx.lineWidth = 0.5;
-        for (let i = 0; i <= GRID_SIZE; i++) {
-            ctx.beginPath();
-            ctx.moveTo(i * cellSize, 0);
-            ctx.lineTo(i * cellSize, GRID_SIZE * cellSize);
-            ctx.stroke();
+        if (!highContrast) {
+            for (let i = 0; i <= gridSize; i++) {
+                ctx.beginPath();
+                ctx.moveTo(i * cellSize, 0);
+                ctx.lineTo(i * cellSize, CANVAS_SIZE);
+                ctx.stroke();
 
-            ctx.beginPath();
-            ctx.moveTo(0, i * cellSize);
-            ctx.lineTo(GRID_SIZE * cellSize, i * cellSize);
-            ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(0, i * cellSize);
+                ctx.lineTo(CANVAS_SIZE, i * cellSize);
+                ctx.stroke();
+            }
         }
 
-        // Draw food
-        ctx.fillStyle = highContrast ? '#ff0000' : '#ef4444';
-        ctx.fillRect(food.x * cellSize, food.y * cellSize, cellSize, cellSize);
+        // Draw food (circle)
+        const foodRadius = cellSize * 0.35;
+        const foodCenterX = food.x * cellSize + cellSize / 2;
+        const foodCenterY = food.y * cellSize + cellSize / 2;
 
-        // Draw snake
-        snake.forEach((segment, index) => {
-            ctx.fillStyle = highContrast
-                ? (index === 0 ? '#0000ff' : '#0000aa')
-                : (index === 0 ? '#10b981' : '#34d399');
-            ctx.fillRect(segment.x * cellSize, segment.y * cellSize, cellSize, cellSize);
-        });
+        ctx.beginPath();
+        ctx.arc(foodCenterX, foodCenterY, foodRadius, 0, Math.PI * 2);
+        ctx.fillStyle = highContrast ? '#ff0000' : '#ef4444';
+        ctx.fill();
+        ctx.closePath();
+
+        // Draw snake (smooth line)
+        if (snake.length > 0) {
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.lineWidth = cellSize * 0.8;
+            ctx.strokeStyle = highContrast ? '#0000ff' : '#10b981';
+
+            ctx.beginPath();
+            // Start from center of head
+            ctx.moveTo(snake[0].x * cellSize + cellSize / 2, snake[0].y * cellSize + cellSize / 2);
+
+            // Draw lines to subsequent segments
+            for (let i = 1; i < snake.length; i++) {
+                ctx.lineTo(snake[i].x * cellSize + cellSize / 2, snake[i].y * cellSize + cellSize / 2);
+            }
+            ctx.stroke();
+
+            // Draw head specifically if we want to distinguish it (e.g. darker shade)
+            ctx.beginPath();
+            ctx.arc(snake[0].x * cellSize + cellSize / 2, snake[0].y * cellSize + cellSize / 2, cellSize * 0.4, 0, Math.PI * 2);
+            ctx.fillStyle = highContrast ? '#0000aa' : '#059669';
+            ctx.fill();
+        }
 
         // Draw game over message
         if (gameOver) {
@@ -201,17 +229,20 @@ export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => 
             ctx.fillText('Game Over!', canvas.width / 2, canvas.height / 2 - 20);
             ctx.fillText(`Score: ${score}`, canvas.width / 2, canvas.height / 2 + 20);
         }
-    }, [snake, food, gameOver, score, highContrast, cellSize]);
+    }, [snake, food, gameOver, score, highContrast, cellSize, gridSize]);
 
     const resetGame = () => {
-        const initialSnake = [{ x: 10, y: 10 }];
+        const startX = Math.floor(gridSize / 2);
+        const startY = Math.floor(gridSize / 2);
+        const initialSnake = [{ x: startX, y: startY }];
+
         setSnake(initialSnake);
         setDirection('RIGHT');
         setGameOver(false);
         setScore(0);
         setIsPaused(false);
         let newFood = generateFood();
-        while (isPositionOccupied(newFood, initialSnake)) {
+        while (initialSnake.some(s => s.x === newFood.x && s.y === newFood.y)) {
             newFood = generateFood();
         }
         setFood(newFood);
@@ -251,11 +282,11 @@ export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => 
                 </div>
 
                 {/* Game Area */}
-                <div className="w-full aspect-square bg-slate-100 dark:bg-slate-700 rounded overflow-hidden relative">
+                <div className="w-full aspect-square bg-slate-100 dark:bg-slate-700 rounded overflow-hidden relative" style={{ width: CANVAS_SIZE, height: CANVAS_SIZE }}>
                     <canvas
                         ref={canvasRef}
-                        width={GRID_SIZE * cellSize}
-                        height={GRID_SIZE * cellSize}
+                        width={CANVAS_SIZE}
+                        height={CANVAS_SIZE}
                         className="w-full h-full"
                         aria-label="Snake game grid"
                         aria-describedby="snake-game-instructions"
@@ -274,19 +305,21 @@ export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => 
                             <p className="text-white mb-4">
                                 {gameOver ? `Score: ${score}` : 'Press Space to resume'}
                             </p>
-                            <button
-                                onClick={resetGame}
-                                className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded font-medium transition-colors"
-                            >
-                                {gameOver ? 'Play Again' : 'Restart'}
-                            </button>
-                            <button
-                                onClick={toggleHighContrast}
-                                className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded font-medium transition-colors ml-2"
-                                aria-label={`Toggle high contrast mode. Currently ${highContrast ? 'on' : 'off'}`}
-                            >
-                                High Contrast
-                            </button>
+                            <div className="flex items-center">
+                                <button
+                                    onClick={() => resetGame()}
+                                    className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded font-medium transition-colors"
+                                >
+                                    {gameOver ? 'Play Again' : 'Restart'}
+                                </button>
+                                <button
+                                    onClick={toggleHighContrast}
+                                    className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded font-medium transition-colors ml-2"
+                                    aria-label={`Toggle high contrast mode. Currently ${highContrast ? 'on' : 'off'}`}
+                                >
+                                    High Contrast
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -294,21 +327,21 @@ export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => 
                 {/* Controls */}
                 <div className="mt-3 space-y-2">
                     <div className="flex items-center gap-3">
-                        <label htmlFor="cell-size" className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                            Size:
+                        <label htmlFor="grid-size" className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                            Grid Size:
                         </label>
                         <input
-                            id="cell-size"
+                            id="grid-size"
                             type="range"
                             min="10"
                             max="50"
-                            value={cellSize}
-                            onChange={(e) => setCellSize(Number(e.target.value))}
+                            value={gridSize}
+                            onChange={(e) => setGridSize(Number(e.target.value))}
                             className="flex-1 h-2 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer accent-brand-500"
-                            title="Adjust game screen size"
+                            title="Adjust grid size (number of squares)"
                         />
                         <span className="text-xs text-slate-500 dark:text-slate-400 w-12 text-right">
-                            {cellSize}px
+                            {gridSize}x
                         </span>
                     </div>
                     <div className="text-xs text-slate-500 dark:text-slate-400 text-center">

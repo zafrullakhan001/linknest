@@ -23,7 +23,7 @@ function getVisualViewportSize() {
     };
 }
 
-function getCenteredPosition(containerWidth: number = 320, containerHeight: number = 400): Point {
+function getCenteredPosition(containerWidth: number = 640, containerHeight: number = 750): Point {
     const zoom = getCssZoom();
     const { width: vvW, height: vvH } = getVisualViewportSize();
     const layoutViewportWidth = vvW / zoom;
@@ -57,8 +57,8 @@ export const FloatingSnakeGameWidget: React.FC<{
 
     const clampToViewport = (p: Point): Point => {
         const el = containerRef.current;
-        const width = el?.offsetWidth ?? 320;
-        const height = el?.offsetHeight ?? 400;
+        const width = el?.offsetWidth ?? 640;
+        const height = el?.offsetHeight ?? 750;
 
         const zoom = getCssZoom();
         const { width: vvW, height: vvH } = getVisualViewportSize();
@@ -94,8 +94,8 @@ export const FloatingSnakeGameWidget: React.FC<{
     useEffect(() => {
         requestAnimationFrame(() => {
             const el = containerRef.current;
-            const width = el?.offsetWidth ?? 320;
-            const height = el?.offsetHeight ?? 400;
+            const width = el?.offsetWidth ?? 640;
+            const height = el?.offsetHeight ?? 750;
             setPos(clampToViewport(getCenteredPosition(width, height)));
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
