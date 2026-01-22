@@ -41,16 +41,67 @@ interface ChildDiffResult<T> {
 }
 
 
-// Helper to compare primitive values
+// Normalize data for comparison (matches backend normalization)
+// This preserves structure but normalizes values for consistent comparison
+const normalizeForComparison = (data: any): any => {
+    if (data === null || data === undefined) {
+        return '';
+    }
+    
+    if (Array.isArray(data)) {
+        return data.map(item => normalizeForComparison(item));
+    }
+    
+    if (typeof data === 'object' && !Array.isArray(data)) {
+        // Exclude metadata fields (same as backend)
+        const excludeKeys = [
+            'createdAt', 'created_at',
+            'updatedAt', 'updated_at',
+            'deletedAt', 'deleted_at',
+            'archivedAt', 'archived_at',
+            'user_id', 'userId',
+            'canView', 'can_view',
+            'canEdit', 'can_edit',
+            'canDelete', 'can_delete',
+            'hasRoleAccess', 'has_role_access',
+            'isFavorite', 'is_favorite',
+            'health' // Transient link health data
+        ];
+        
+        const result: any = {};
+        for (const [key, value] of Object.entries(data)) {
+            if (excludeKeys.includes(key)) continue;
+            result[key] = normalizeForComparison(value);
+        }
+        return result;
+    }
+    
+    // Normalize booleans to strings (matches backend)
+    if (typeof data === 'boolean') {
+        return data ? '1' : '0';
+    }
+    
+    // Keep other types as-is for comparison (numbers, strings, etc.)
+    return data;
+};
+
+// Helper to compare primitive values (assumes data is already normalized)
 const compareValues = (a: any, b: any): 'unchanged' | 'modified' => {
-    // Treat null and undefined as equal for our purposes, or empty strings
-    const valA = a === null || a === undefined ? '' : a;
-    const valB = b === null || b === undefined ? '' : b;
+    // Handle null/undefined/empty string equivalence
+    const valA = a === null || a === undefined || a === '' ? '' : a;
+    const valB = b === null || b === undefined || b === '' ? '' : b;
+    
     if (Array.isArray(valA) || Array.isArray(valB)) {
         const arrA = Array.isArray(valA) ? valA : [];
         const arrB = Array.isArray(valB) ? valB : [];
         return JSON.stringify(arrA) === JSON.stringify(arrB) ? 'unchanged' : 'modified';
     }
+    
+    // Deep comparison for objects
+    if (typeof valA === 'object' && typeof valB === 'object' && valA !== null && valB !== null) {
+        return JSON.stringify(valA) === JSON.stringify(valB) ? 'unchanged' : 'modified';
+    }
+    
     return valA === valB ? 'unchanged' : 'modified';
 };
 
@@ -156,6 +207,9 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
 
     // Main comparison logic
     const diffTree = useMemo(() => {
+        // Normalize both datasets before comparison to ensure consistent structure
+        const normalizedOriginal = normalizeForComparison(originalData);
+        const normalizedModified = normalizeForComparison(modifiedData);
 
         // Root fields
         const rootFields = [
@@ -165,14 +219,14 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
             'tileBackgroundColor', 'tileGradientEnabled', 'tileGradientColors', 'tileGradientColorPositions',
             'tileGradientDirection', 'tileGradientType', 'tileBorderRadius', 'tileTextColor'
         ];
-        const rootDiffs = diffObjects(originalData, modifiedData, rootFields);
+        const rootDiffs = diffObjects(normalizedOriginal, normalizedModified, rootFields);
 
         // Normalize Tabs/Sections (handle legacy sections structure if needed, but assuming normalized here)
         // Note: The logic in backend might return just sections if no tabs.
         // We will try to normalize to tabs structure for comparison if possible.
 
-        const tabsA = originalData.tabs || [];
-        const tabsB = modifiedData.tabs || [];
+        const tabsA = normalizedOriginal.tabs || [];
+        const tabsB = normalizedModified.tabs || [];
 
         // Recursive comparison function for Tabs
         const compareTabs = (tabA: Tab, tabB: Tab): DiffResult<Tab> => {
@@ -210,8 +264,8 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
         const tabsDiff = diffArray(tabsA, tabsB, ['title', 'position', 'textColor', 'visibility', 'allowedUsers', 'visibleFrom', 'expiresAt'], compareTabs, 'tab');
 
         const messagesDiff = diffArray(
-            originalData.messages || [],
-            modifiedData.messages || [],
+            normalizedOriginal.messages || [],
+            normalizedModified.messages || [],
             ['content', 'type', 'startDate', 'endDate', 'isActive', 'priority', 'textColor', 'fontStyle', 'displayLocation', 'animationType', 'delayBefore'],
             undefined,
             'message'
@@ -678,18 +732,35 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
                                 </>
                             )}
                         </div>
-                    ) : Object.keys(diffTree.root).length === 0 ? (
-                        <div className="text-center py-10 text-slate-500 dark:text-slate-400">
-                            <div className="mb-4">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-12 h-12 mx-auto text-slate-400">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                            </div>
-                            <p className="font-medium">No differences found between these versions.</p>
-                            <p className="text-xs mt-2">The versions are identical in all tracked fields.</p>
-                            <p className="text-xs mt-1 text-slate-400">(Only internal IDs or hidden metadata might differ)</p>
-                        </div>
-                    ) : null}
+                    ) : (() => {
+                        // Check if there are any differences at all
+                        const hasRootChanges = Object.keys(diffTree.root).length > 0;
+                        const hasTabChanges = diffTree.tabs.some(t => t.status !== 'unchanged');
+                        const hasMessageChanges = diffTree.messages.some(m => m.status !== 'unchanged');
+                        const hasAnyChanges = hasRootChanges || hasTabChanges || hasMessageChanges;
+                        
+                        if (!hasAnyChanges) {
+                            return (
+                                <div className="text-center py-10 text-slate-500 dark:text-slate-400">
+                                    <div className="mb-4">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-12 h-12 mx-auto text-slate-400">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    </div>
+                                    <p className="font-medium">No differences found between these versions.</p>
+                                    <p className="text-xs mt-2">The versions are identical in all tracked fields.</p>
+                                    <p className="text-xs mt-1 text-slate-400">(Only internal IDs or hidden metadata might differ)</p>
+                                    {originalVersionMeta?.changelogSummary && (
+                                        <p className="text-xs mt-3 text-amber-600 dark:text-amber-400">
+                                            Note: The changelog summary indicates changes were made when this version was created, 
+                                            but the current state matches this version exactly.
+                                        </p>
+                                    )}
+                                </div>
+                            );
+                        }
+                        return null;
+                    })()}
 
                 </div>
 
