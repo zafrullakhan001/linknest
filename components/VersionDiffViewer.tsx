@@ -7,6 +7,18 @@ interface VersionDiffViewerProps {
     originalTitle: string;
     modifiedTitle: string;
     onClose: () => void;
+    originalVersionMeta?: {
+        versionNumber: number;
+        createdAt: number;
+        username: string;
+        changelogSummary?: string | null;
+    };
+    modifiedVersionMeta?: {
+        versionNumber?: number;
+        createdAt?: number;
+        username?: string;
+        changelogSummary?: string | null;
+    };
 }
 
 interface DiffResult<T> {
@@ -23,6 +35,7 @@ interface ChildDiffResult<T> {
     item: T; // The item itself (or the modified version if modified)
     original?: T;
     details?: DiffResult<T>; // Deep diff details
+    kind?: 'tab' | 'section' | 'link' | 'richText' | 'message';
 }
 
 
@@ -31,6 +44,11 @@ const compareValues = (a: any, b: any): 'unchanged' | 'modified' => {
     // Treat null and undefined as equal for our purposes, or empty strings
     const valA = a === null || a === undefined ? '' : a;
     const valB = b === null || b === undefined ? '' : b;
+    if (Array.isArray(valA) || Array.isArray(valB)) {
+        const arrA = Array.isArray(valA) ? valA : [];
+        const arrB = Array.isArray(valB) ? valB : [];
+        return JSON.stringify(arrA) === JSON.stringify(arrB) ? 'unchanged' : 'modified';
+    }
     return valA === valB ? 'unchanged' : 'modified';
 };
 
@@ -55,7 +73,8 @@ const diffArray = <T extends { id: string }>(
     arrA: T[],
     arrB: T[],
     fieldsToCompare: string[],
-    deepCompare?: (a: T, b: T) => DiffResult<any> // recursive diff
+    deepCompare?: (a: T, b: T) => DiffResult<any>, // recursive diff
+    kind?: ChildDiffResult<T>['kind']
 ): ChildDiffResult<T>[] => {
     const mapA = new Map(arrA.map(item => [item.id, item]));
     const mapB = new Map(arrB.map(item => [item.id, item]));
@@ -68,9 +87,9 @@ const diffArray = <T extends { id: string }>(
         const itemB = mapB.get(id);
 
         if (!itemA && itemB) {
-            results.push({ key: id, status: 'added', item: itemB });
+            results.push({ key: id, status: 'added', item: itemB, kind });
         } else if (itemA && !itemB) {
-            results.push({ key: id, status: 'removed', item: itemA, original: itemA });
+            results.push({ key: id, status: 'removed', item: itemA, original: itemA, kind });
         } else if (itemA && itemB) {
             // Check for shallow changes
             const fieldDiffs = diffObjects(itemA, itemB, fieldsToCompare);
@@ -88,6 +107,7 @@ const diffArray = <T extends { id: string }>(
                     status: 'modified',
                     item: itemB,
                     original: itemA,
+                    kind,
                     details: {
                         status: 'modified',
                         original: itemA,
@@ -97,7 +117,7 @@ const diffArray = <T extends { id: string }>(
                     }
                 });
             } else {
-                results.push({ key: id, status: 'unchanged', item: itemB });
+                results.push({ key: id, status: 'unchanged', item: itemB, kind });
             }
         }
     });
@@ -111,7 +131,9 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
     modifiedData,
     originalTitle,
     modifiedTitle,
-    onClose
+    onClose,
+    originalVersionMeta,
+    modifiedVersionMeta
 }) => {
 
     // Handle ESC key to close
@@ -132,7 +154,13 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
     const diffTree = useMemo(() => {
 
         // Root fields
-        const rootFields = ['title', 'description', 'emoji', 'group', 'visibility', 'browser'];
+        const rootFields = [
+            'title', 'description', 'htmlContent', 'emoji', 'group', 'visibility', 'browser',
+            'themeColor', 'isHyperlink', 'hyperlinkUrl', 'openInNewTab',
+            'allowedUsers', 'visibleFrom', 'expiresAt',
+            'tileBackgroundColor', 'tileGradientEnabled', 'tileGradientColors', 'tileGradientColorPositions',
+            'tileGradientDirection', 'tileGradientType', 'tileBorderRadius', 'tileTextColor'
+        ];
         const rootDiffs = diffObjects(originalData, modifiedData, rootFields);
 
         // Normalize Tabs/Sections (handle legacy sections structure if needed, but assuming normalized here)
@@ -144,14 +172,29 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
 
         // Recursive comparison function for Tabs
         const compareTabs = (tabA: Tab, tabB: Tab): DiffResult<Tab> => {
-            const fieldDiffs = diffObjects(tabA, tabB, ['title', 'position', 'textColor', 'visibility']);
+            const fieldDiffs = diffObjects(tabA, tabB, ['title', 'position', 'textColor', 'visibility', 'allowedUsers', 'visibleFrom', 'expiresAt']);
 
             // Compare Sections
-            const sectionsDiff = diffArray(tabA.sections || [], tabB.sections || [], ['title', 'position', 'textColor'], (secA, secB) => {
+            const sectionsDiff = diffArray(tabA.sections || [], tabB.sections || [], ['title', 'position', 'textColor', 'visibility', 'allowedUsers', 'visibleFrom', 'expiresAt', 'forceStackedView'], (secA, secB) => {
                 // Compare Links
-                const linksDiff = diffArray(secA.links || [], secB.links || [], ['label', 'url', 'icon', 'visibility', 'browser'], undefined); // Links are leaf nodes mostly
-                return { status: 'modified', children: linksDiff };
-            });
+                const linksDiff = diffArray(
+                    secA.links || [],
+                    secB.links || [],
+                    ['label', 'url', 'icon', 'visibility', 'browser', 'textColor', 'notes', 'tooltip', 'visibleFrom', 'expiresAt', 'position', 'richTextContent', 'allowedUsers'],
+                    undefined,
+                    'link'
+                );
+
+                const richTextDiff = diffArray(
+                    secA.richTextContent || [],
+                    secB.richTextContent || [],
+                    ['content', 'position', 'visibility', 'allowedUsers', 'visibleFrom', 'expiresAt'],
+                    undefined,
+                    'richText'
+                );
+
+                return { status: 'modified', children: [...linksDiff, ...richTextDiff] };
+            }, 'section');
 
             return {
                 status: 'modified',
@@ -160,19 +203,39 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
             };
         };
 
-        const tabsDiff = diffArray(tabsA, tabsB, ['title', 'position'], compareTabs);
+        const tabsDiff = diffArray(tabsA, tabsB, ['title', 'position', 'textColor', 'visibility', 'allowedUsers', 'visibleFrom', 'expiresAt'], compareTabs, 'tab');
+
+        const messagesDiff = diffArray(
+            originalData.messages || [],
+            modifiedData.messages || [],
+            ['content', 'type', 'startDate', 'endDate', 'isActive', 'priority', 'textColor', 'fontStyle', 'displayLocation', 'animationType', 'delayBefore'],
+            undefined,
+            'message'
+        );
 
         return {
             root: rootDiffs,
-            tabs: tabsDiff
+            tabs: tabsDiff,
+            messages: messagesDiff
         };
 
     }, [originalData, modifiedData]);
 
     const renderChangedValue = (val: any) => {
         if (val === null || val === undefined) return <em className="text-slate-400">empty</em>;
+        if (Array.isArray(val)) return val.length ? val.join(', ') : <em className="text-slate-400">empty</em>;
         if (typeof val === 'boolean') return val ? 'True' : 'False';
         return String(val);
+    };
+
+    const isRichTextItem = (item: any): item is RichTextContent => {
+        return item && typeof item === 'object' && 'content' in item && !('url' in item);
+    };
+
+    const renderRichTextPreview = (content: string) => {
+        const text = content.replace(/<[^>]*>/g, '').trim();
+        if (!text) return <em className="text-slate-400">empty</em>;
+        return text.length > 120 ? `${text.slice(0, 120)}...` : text;
     };
 
     const renderDiffItem = (label: string, diff: DiffResult<any> | undefined) => {
@@ -194,19 +257,65 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
             <div className="bg-white dark:bg-slate-900 w-full max-w-6xl h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
-                    <div>
+                    <div className="flex-1">
                         <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-brand-500">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
                             </svg>
                             Version Comparison
                         </h2>
-                        <div className="text-xs text-slate-500 flex gap-4 mt-1">
-                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-100 border border-red-500"></span> Old: {originalTitle}</span>
-                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-100 border border-green-500"></span> New: {modifiedTitle}</span>
+                        <div className="text-xs text-slate-500 flex flex-wrap gap-4 mt-2">
+                            <div className="flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full bg-red-100 border border-red-500"></span>
+                                <span className="font-medium">Old:</span> {originalTitle}
+                                {originalVersionMeta && (
+                                    <>
+                                        <span className="mx-1">•</span>
+                                        <span>v{originalVersionMeta.versionNumber}</span>
+                                        <span className="mx-1">•</span>
+                                        <span>{new Date(originalVersionMeta.createdAt * 1000).toLocaleString()}</span>
+                                        <span className="mx-1">•</span>
+                                        <span>by {originalVersionMeta.username}</span>
+                                    </>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full bg-green-100 border border-green-500"></span>
+                                <span className="font-medium">New:</span> {modifiedTitle}
+                                {modifiedVersionMeta && (
+                                    <>
+                                        {modifiedVersionMeta.versionNumber && (
+                                            <>
+                                                <span className="mx-1">•</span>
+                                                <span>v{modifiedVersionMeta.versionNumber}</span>
+                                            </>
+                                        )}
+                                        {modifiedVersionMeta.createdAt && (
+                                            <>
+                                                <span className="mx-1">•</span>
+                                                <span>{new Date(modifiedVersionMeta.createdAt * 1000).toLocaleString()}</span>
+                                            </>
+                                        )}
+                                        {modifiedVersionMeta.username && (
+                                            <>
+                                                <span className="mx-1">•</span>
+                                                <span>by {modifiedVersionMeta.username}</span>
+                                            </>
+                                        )}
+                                    </>
+                                )}
+                            </div>
                         </div>
+                        {(originalVersionMeta?.changelogSummary || modifiedVersionMeta?.changelogSummary) && (
+                            <div className="mt-2 text-xs">
+                                <span className="text-slate-600 dark:text-slate-400 font-medium">Changes:</span>
+                                <span className="text-slate-500 dark:text-slate-500 ml-1">
+                                    {modifiedVersionMeta?.changelogSummary || originalVersionMeta?.changelogSummary || 'No summary available'}
+                                </span>
+                            </div>
+                        )}
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors">
+                    <button onClick={onClose} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors ml-4">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-slate-500">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                         </svg>
@@ -280,36 +389,43 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
                                             {/* Links */}
                                             <div className="space-y-1 mt-2">
                                                 <div className="space-y-1 mt-2">
-                                                    {sectionDiff.details?.children?.filter(l => l.status !== 'unchanged').map(linkDiff => (
-                                                        <div key={linkDiff.key} className={`p-2 rounded text-sm ${linkDiff.status === 'added' ? 'bg-green-100/50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' :
-                                                            linkDiff.status === 'removed' ? 'bg-red-100/50 dark:bg-red-900/20 border border-red-200 dark:border-red-800' :
-                                                                'bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800'
-                                                            }`}>
-                                                            <div className="flex items-center justify-between mb-1">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="text-lg">{linkDiff.item.icon || '🔗'}</span>
-                                                                    <div className="flex flex-col">
-                                                                        <span className={`font-medium ${linkDiff.status === 'removed' ? 'line-through opacity-70' : ''}`}>{linkDiff.item.label}</span>
-                                                                        <span className={`text-xs opacity-70 ${linkDiff.status === 'removed' ? 'line-through' : ''}`}>{linkDiff.item.url}</span>
+                                                    {sectionDiff.details?.children?.filter(l => l.status !== 'unchanged').map(linkDiff => {
+                                                        const isRichText = linkDiff.kind === 'richText' || isRichTextItem(linkDiff.item);
+                                                        return (
+                                                            <div key={linkDiff.key} className={`p-2 rounded text-sm ${linkDiff.status === 'added' ? 'bg-green-100/50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' :
+                                                                linkDiff.status === 'removed' ? 'bg-red-100/50 dark:bg-red-900/20 border border-red-200 dark:border-red-800' :
+                                                                    'bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800'
+                                                                }`}>
+                                                                <div className="flex items-center justify-between mb-1">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-lg">{isRichText ? '📝' : (linkDiff.item as Link).icon || '🔗'}</span>
+                                                                        <div className="flex flex-col">
+                                                                            <span className={`font-medium ${linkDiff.status === 'removed' ? 'line-through opacity-70' : ''}`}>
+                                                                                {isRichText ? 'Rich Text Block' : (linkDiff.item as Link).label}
+                                                                            </span>
+                                                                            <span className={`text-xs opacity-70 ${linkDiff.status === 'removed' ? 'line-through' : ''}`}>
+                                                                                {isRichText ? renderRichTextPreview((linkDiff.item as RichTextContent).content || '') : (linkDiff.item as Link).url}
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className={`text-[10px] font-bold uppercase tracking-wider opacity-80 ${linkDiff.status === 'added' ? 'text-green-700' :
+                                                                        linkDiff.status === 'removed' ? 'text-red-700' : 'text-amber-700'
+                                                                        }`}>
+                                                                        {linkDiff.status}
                                                                     </div>
                                                                 </div>
-                                                                <div className={`text-[10px] font-bold uppercase tracking-wider opacity-80 ${linkDiff.status === 'added' ? 'text-green-700' :
-                                                                    linkDiff.status === 'removed' ? 'text-red-700' : 'text-amber-700'
-                                                                    }`}>
-                                                                    {linkDiff.status}
-                                                                </div>
-                                                            </div>
 
-                                                            {/* Detailed Field Diffs for Modified Links */}
-                                                            {linkDiff.status === 'modified' && linkDiff.details?.diffs && (
-                                                                <div className="mt-2 pl-2 border-l-2 border-amber-300 dark:border-amber-700 space-y-1">
-                                                                    {Object.keys(linkDiff.details.diffs).map(fieldKey => {
-                                                                        return renderDiffItem(fieldKey, linkDiff.details?.diffs?.[fieldKey]);
-                                                                    })}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    ))}
+                                                                {/* Detailed Field Diffs for Modified Items */}
+                                                                {linkDiff.status === 'modified' && linkDiff.details?.diffs && (
+                                                                    <div className="mt-2 pl-2 border-l-2 border-amber-300 dark:border-amber-700 space-y-1">
+                                                                        {Object.keys(linkDiff.details.diffs).map(fieldKey => {
+                                                                            return renderDiffItem(fieldKey, linkDiff.details?.diffs?.[fieldKey]);
+                                                                        })}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
                                                 </div>
                                             </div>
                                         </div>
@@ -318,8 +434,46 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
                             </div>
                         ))}
 
+                        {/* Messages */}
+                        {diffTree.messages.some(m => m.status !== 'unchanged') && (
+                            <div className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-700">
+                                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-400 mb-3 border-b border-slate-100 dark:border-slate-700 pb-2">Message Changes</h3>
+                                <div className="space-y-2">
+                                    {diffTree.messages.filter(m => m.status !== 'unchanged').map(messageDiff => (
+                                        <div key={messageDiff.key} className={`p-3 rounded text-sm ${messageDiff.status === 'added' ? 'bg-green-100/50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' :
+                                            messageDiff.status === 'removed' ? 'bg-red-100/50 dark:bg-red-900/20 border border-red-200 dark:border-red-800' :
+                                                'bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800'
+                                            }`}>
+                                            <div className="flex items-center justify-between mb-1">
+                                                <div className="flex flex-col">
+                                                    <span className={`font-medium ${messageDiff.status === 'removed' ? 'line-through opacity-70' : ''}`}>
+                                                        {(messageDiff.item as any).content || '(Empty message)'}
+                                                    </span>
+                                                    <span className={`text-xs opacity-70 ${messageDiff.status === 'removed' ? 'line-through' : ''}`}>
+                                                        Type: {(messageDiff.item as any).type || 'info'}
+                                                    </span>
+                                                </div>
+                                                <div className={`text-[10px] font-bold uppercase tracking-wider opacity-80 ${messageDiff.status === 'added' ? 'text-green-700' :
+                                                    messageDiff.status === 'removed' ? 'text-red-700' : 'text-amber-700'
+                                                    }`}>
+                                                    {messageDiff.status}
+                                                </div>
+                                            </div>
+                                            {messageDiff.status === 'modified' && messageDiff.details?.diffs && (
+                                                <div className="mt-2 pl-2 border-l-2 border-amber-300 dark:border-amber-700 space-y-1">
+                                                    {Object.keys(messageDiff.details.diffs).map(fieldKey => {
+                                                        return renderDiffItem(fieldKey, messageDiff.details?.diffs?.[fieldKey]);
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         {/* Show message if no changes found in tabs but root had changes */}
-                        {diffTree.tabs.every(t => t.status === 'unchanged') && Object.keys(diffTree.root).length === 0 && (
+                        {diffTree.tabs.every(t => t.status === 'unchanged') && Object.keys(diffTree.root).length === 0 && diffTree.messages.every(m => m.status === 'unchanged') && (
                             <div className="text-center py-10 text-slate-500 dark:text-slate-400">
                                 <p>No visual differences found in content.</p>
                                 <p className="text-xs mt-1">(Only internal IDs or hidden metadata might have changed)</p>

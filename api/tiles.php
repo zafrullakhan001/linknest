@@ -3877,6 +3877,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
     // This ensures each save creates a distinct version showing the state at that moment
     
     $hasTempVersion = false;
+    $beforeVersionId = null;
     $stmt = $db->prepare('SELECT id FROM tile_versions WHERE tile_id = ? AND is_temp = 1 LIMIT 1');
     $stmt->execute([$tileId]);
     $tempVersion = $stmt->fetch();
@@ -3886,9 +3887,10 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         $stmt = $db->prepare('UPDATE tile_versions SET is_temp = 0, changelog_summary = ? WHERE id = ?');
         $stmt->execute(["Snapshot before edit", $tempVersion['id']]);
         $hasTempVersion = true;
+        $beforeVersionId = (int)$tempVersion['id'];
     } elseif (!$isRestore && $isFinal) {
         // No temp version exists, create a "before" snapshot (fallback for direct saves)
-        saveVersion($tileId, $db, $user['id'], "Snapshot before edit", false);
+        $beforeVersionId = saveVersion($tileId, $db, $user['id'], "Snapshot before edit", false);
     }
 
     // Begin transaction
@@ -4118,13 +4120,22 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         }
 
         $db->commit();
+
+        $afterTileData = getTileForVersion($tileId, $db);
+        if ($afterTileData && $currentTileData && areTilesEqual($currentTileData, $afterTileData)) {
+            if ($beforeVersionId) {
+                $deleteStmt = $db->prepare('DELETE FROM tile_versions WHERE id = ? AND is_locked = 0');
+                $deleteStmt->execute([$beforeVersionId]);
+            }
+            return;
+        }
         
         // After successful update, create a NEW version to capture the "after" state
-    // This ensures each save creates a distinct version showing the current state
-    if (!$isRestore && $isFinal) {
-        $summary = generateChangelogSummary($currentTileData, $data);
-        saveVersion($tileId, $db, $user['id'], $summary, false);
-    }
+        // This ensures each save creates a distinct version showing the current state
+        if (!$isRestore && $isFinal) {
+            $summary = generateChangelogSummary($currentTileData, $data);
+            saveVersion($tileId, $db, $user['id'], $summary, false);
+        }
     } catch (Exception $e) {
         if ($db->inTransaction()) {
             $db->rollBack();
@@ -4160,18 +4171,16 @@ function normalizeForComparison($data) {
         foreach ($data as $k => $v) {
             if (in_array($k, $excludeKeys)) continue;
 
-            // Filter nulls and empty strings for cleaner comparison
             if (is_array($v)) {
                 $child = normalizeForComparison($v);
                 $result[$k] = $child;
-            } elseif (!is_null($v) && $v !== '') {
-                // Determine if we should include this key
+            } else {
                 // Convert to string for loose comparison (DB sometimes returns string for int)
                 // Normalize booleans to strings "0" or "1" to ensure match
                 if (is_bool($v)) {
                     $result[$k] = $v ? "1" : "0";
                 } else {
-                    $result[$k] = (string)$v;
+                    $result[$k] = is_null($v) ? "" : (string)$v;
                 }
             }
         }
@@ -4228,31 +4237,232 @@ function generateChangelogSummary($old, $new) {
     if (!$old || !$new) return "Update";
     
     $changes = [];
-    $rootFields = ['title', 'description', 'group', 'emoji', 'visibility'];
+    
+    // Root level fields
+    $rootFields = ['title', 'description', 'htmlContent', 'group', 'emoji', 'visibility', 'browser', 'themeColor', 'isHyperlink', 'hyperlinkUrl'];
     foreach ($rootFields as $f) {
         $oldVal = is_array($old) ? ($old[$f] ?? null) : null;
         $newVal = is_array($new) ? ($new[$f] ?? null) : null;
         if ((string)$oldVal !== (string)$newVal) {
-            $changes[] = ucfirst($f);
+            if ($f === 'htmlContent') {
+                $changes[] = "HTML Content";
+            } elseif ($f === 'isHyperlink') {
+                $changes[] = "Hyperlink";
+            } elseif ($f === 'hyperlinkUrl') {
+                $changes[] = "Hyperlink URL";
+            } else {
+                $changes[] = ucfirst($f);
+            }
         }
     }
     
-    // Check tabs/content
+    // Check browser changes at tile level
+    if (isset($old['browser']) && isset($new['browser']) && $old['browser'] !== $new['browser']) {
+        $changes[] = "Browser";
+    }
+    
+    // Check tile decoration changes
+    $decorationFields = ['tileBackgroundColor', 'tileGradientEnabled', 'tileGradientColors', 'tileBorderRadius', 'tileTextColor'];
+    foreach ($decorationFields as $f) {
+        $oldVal = is_array($old) ? ($old[$f] ?? null) : null;
+        $newVal = is_array($new) ? ($new[$f] ?? null) : null;
+        if ($oldVal !== $newVal) {
+            $changes[] = "Tile Style";
+            break; // Group all decoration changes as one
+        }
+    }
+    
+    // Check messages
+    $oldMessages = $old['messages'] ?? [];
+    $newMessages = $new['messages'] ?? [];
+    if (count($oldMessages) !== count($newMessages)) {
+        $changes[] = "Messages";
+    } elseif (json_encode($oldMessages) !== json_encode($newMessages)) {
+        $changes[] = "Messages";
+    }
+    
+    // Check tabs structure
     $oldTabs = $old['tabs'] ?? [];
     $newTabs = $new['tabs'] ?? [];
     
     if (count($oldTabs) !== count($newTabs)) {
-        $changes[] = "Structure";
-    } else {
-        // Quick check for content changes
-        // Using json_encode is a rough way but works for summary
-        if (json_encode($oldTabs) !== json_encode($newTabs)) {
-             $changes[] = "Content";
+        $changes[] = "Tabs (" . (count($newTabs) > count($oldTabs) ? "Added" : "Removed") . ")";
+    }
+    
+    // Detailed content analysis
+    $linkChanges = 0;
+    $richTextChanges = 0;
+    $tabChanges = 0;
+    $sectionChanges = 0;
+    
+    // Create maps for comparison
+    $oldTabMap = [];
+    $newTabMap = [];
+    foreach ($oldTabs as $tab) {
+        $oldTabMap[$tab['id']] = $tab;
+    }
+    foreach ($newTabs as $tab) {
+        $newTabMap[$tab['id']] = $tab;
+    }
+    
+    // Check for tab changes
+    foreach ($newTabMap as $tabId => $newTab) {
+        if (!isset($oldTabMap[$tabId])) {
+            $tabChanges++;
+        } else {
+            $oldTab = $oldTabMap[$tabId];
+            // Check tab fields
+            if (($oldTab['title'] ?? '') !== ($newTab['title'] ?? '')) {
+                $tabChanges++;
+            }
+            if (($oldTab['textColor'] ?? null) !== ($newTab['textColor'] ?? null)) {
+                $tabChanges++;
+            }
+            
+            // Check sections
+            $oldSections = $oldTab['sections'] ?? [];
+            $newSections = $newTab['sections'] ?? [];
+            
+            if (count($oldSections) !== count($newSections)) {
+                $sectionChanges++;
+            }
+            
+            // Create section maps
+            $oldSectionMap = [];
+            $newSectionMap = [];
+            foreach ($oldSections as $sec) {
+                $oldSectionMap[$sec['id']] = $sec;
+            }
+            foreach ($newSections as $sec) {
+                $newSectionMap[$sec['id']] = $sec;
+            }
+            
+            // Check for section changes
+            foreach ($newSectionMap as $secId => $newSec) {
+                if (!isset($oldSectionMap[$secId])) {
+                    $sectionChanges++;
+                } else {
+                    $oldSec = $oldSectionMap[$secId];
+                    if (($oldSec['title'] ?? '') !== ($newSec['title'] ?? '')) {
+                        $sectionChanges++;
+                    }
+                }
+            }
+            
+            // Check for removed sections
+            foreach ($oldSectionMap as $secId => $oldSec) {
+                if (!isset($newSectionMap[$secId])) {
+                    $sectionChanges++;
+                }
+            }
+            
+            // Check links
+            foreach ($newSectionMap as $secId => $newSec) {
+                $oldSec = $oldSectionMap[$secId] ?? ['links' => [], 'richTextContent' => []];
+                $oldLinks = $oldSec['links'] ?? [];
+                $newLinks = $newSec['links'] ?? [];
+                
+                if (count($oldLinks) !== count($newLinks)) {
+                    $linkChanges++;
+                } else {
+                    // Check for link field changes
+                    $oldLinkMap = [];
+                    $newLinkMap = [];
+                    foreach ($oldLinks as $link) {
+                        $oldLinkMap[$link['id']] = $link;
+                    }
+                    foreach ($newLinks as $link) {
+                        $newLinkMap[$link['id']] = $link;
+                    }
+                    
+                    foreach ($newLinkMap as $linkId => $newLink) {
+                        $oldLink = $oldLinkMap[$linkId] ?? null;
+                        if (!$oldLink) {
+                            $linkChanges++;
+                        } else {
+                            // Check key link fields
+                            if (($oldLink['label'] ?? '') !== ($newLink['label'] ?? '') ||
+                                ($oldLink['url'] ?? '') !== ($newLink['url'] ?? '') ||
+                                ($oldLink['browser'] ?? null) !== ($newLink['browser'] ?? null) ||
+                                ($oldLink['icon'] ?? null) !== ($newLink['icon'] ?? null) ||
+                                ($oldLink['notes'] ?? null) !== ($newLink['notes'] ?? null) ||
+                                ($oldLink['tooltip'] ?? null) !== ($newLink['tooltip'] ?? null)) {
+                                $linkChanges++;
+                            }
+                        }
+                    }
+                    
+                    foreach ($oldLinkMap as $linkId => $oldLink) {
+                        if (!isset($newLinkMap[$linkId])) {
+                            $linkChanges++;
+                        }
+                    }
+                }
+                
+                // Check rich text
+                $oldRichText = $oldSec['richTextContent'] ?? [];
+                $newRichText = $newSec['richTextContent'] ?? [];
+                
+                if (count($oldRichText) !== count($newRichText)) {
+                    $richTextChanges++;
+                } else {
+                    $oldRtMap = [];
+                    $newRtMap = [];
+                    foreach ($oldRichText as $rt) {
+                        $oldRtMap[$rt['id']] = $rt;
+                    }
+                    foreach ($newRichText as $rt) {
+                        $newRtMap[$rt['id']] = $rt;
+                    }
+                    
+                    foreach ($newRtMap as $rtId => $newRt) {
+                        $oldRt = $oldRtMap[$rtId] ?? null;
+                        if (!$oldRt || ($oldRt['content'] ?? '') !== ($newRt['content'] ?? '')) {
+                            $richTextChanges++;
+                        }
+                    }
+                    
+                    foreach ($oldRtMap as $rtId => $oldRt) {
+                        if (!isset($newRtMap[$rtId])) {
+                            $richTextChanges++;
+                        }
+                    }
+                }
+            }
         }
     }
     
+    // Check for removed tabs
+    foreach ($oldTabMap as $tabId => $oldTab) {
+        if (!isset($newTabMap[$tabId])) {
+            $tabChanges++;
+        }
+    }
+    
+    // Add detailed changes
+    if ($linkChanges > 0) {
+        $changes[] = "Links (" . ($linkChanges > 1 ? "$linkChanges changes" : "1 change") . ")";
+    }
+    if ($richTextChanges > 0) {
+        $changes[] = "Rich Text (" . ($richTextChanges > 1 ? "$richTextChanges changes" : "1 change") . ")";
+    }
+    if ($tabChanges > 0 && count($oldTabs) === count($newTabs)) {
+        $changes[] = "Tabs";
+    }
+    if ($sectionChanges > 0) {
+        $changes[] = "Sections (" . ($sectionChanges > 1 ? "$sectionChanges changes" : "1 change") . ")";
+    }
+    
     if (empty($changes)) return "Minor update";
-    return implode(", ", array_unique($changes));
+    
+    // Limit to first 5 changes to keep summary concise
+    $displayChanges = array_slice(array_unique($changes), 0, 5);
+    $summary = implode(", ", $displayChanges);
+    if (count(array_unique($changes)) > 5) {
+        $summary .= " + more";
+    }
+    
+    return $summary;
 }
 
 function handleCreateTempVersion($tileId) {

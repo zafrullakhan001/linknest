@@ -178,6 +178,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 }) => {
     const [isEditing, setIsEditing] = useState(false);
     const autoSavingRef = useRef(false);
+    const tempVersionCreatedRef = useRef<{ tileId: string | null; active: boolean }>({ tileId: null, active: false });
 
     // Edit State
     const [editTitle, setEditTitle] = useState(tile.title);
@@ -333,6 +334,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [diffOriginalTile, setDiffOriginalTile] = useState<any | null>(null);
     const [diffModifiedTile, setDiffModifiedTile] = useState<any | null>(null);
     const [diffTitle, setDiffTitle] = useState('');
+    const [diffOriginalVersionMeta, setDiffOriginalVersionMeta] = useState<{
+        versionNumber: number;
+        createdAt: number;
+        username: string;
+        changelogSummary?: string | null;
+    } | null>(null);
+    const [diffModifiedVersionMeta, setDiffModifiedVersionMeta] = useState<{
+        versionNumber?: number;
+        createdAt?: number;
+        username?: string;
+        changelogSummary?: string | null;
+    } | null>(null);
     const [isDiffLoading, setIsDiffLoading] = useState(false);
 
 
@@ -621,24 +634,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     }, [isEditing]);
 
     // Refresh editTabs when entering edit mode to ensure we have the latest data
-    // AND create a temp version snapshot
+    // AND create a temp version snapshot once per edit session
     useEffect(() => {
         if (isEditing && tile.canEdit) {
-            // Create temp version snapshot
-            const createTempVersion = async () => {
-                try {
-                    const API_BASE = (import.meta as any).env?.VITE_API_BASE || '/api';
-                    await fetch(`${API_BASE}/tiles/${tile.id}/create-temp-version`, {
-                        method: 'POST',
-                        credentials: 'include',
-                    });
-                    console.log('Temp version created for tile:', tile.id);
-                } catch (error) {
-                    console.error('Failed to create temp version:', error);
-                }
-            };
-
-            createTempVersion();
+            if (!tempVersionCreatedRef.current.active || tempVersionCreatedRef.current.tileId !== tile.id) {
+                tempVersionCreatedRef.current = { tileId: tile.id, active: true };
+                createTempVersion(tile.id);
+            }
 
             if (tile.tabs && tile.tabs.length > 0) {
                 const clonedTabs = tile.tabs.map(tab => ({
@@ -666,7 +668,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 setEditSections(clonedSections);
             }
         }
-    }, [isEditing, tile.id, tile.tabs, tile.sections]); // Run when isEditing becomes true, tile.id changes, OR tile data changes
+
+        if (!isEditing && !autoSavingRef.current && tempVersionCreatedRef.current.active) {
+            tempVersionCreatedRef.current = { tileId: null, active: false };
+        }
+    }, [isEditing, tile.id, tile.canEdit]); // Run when isEditing becomes true or tile changes
 
     // Load fresh health data on mount
     useEffect(() => {
@@ -882,6 +888,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 setDiffOriginalTile(versionParams);
                 setDiffModifiedTile(tile); // Current state
                 setDiffTitle(`Comparing Version ${version.version_number} vs Current`);
+                
+                // Set version metadata for display
+                setDiffOriginalVersionMeta({
+                    versionNumber: version.version_number,
+                    createdAt: version.created_at,
+                    username: version.username,
+                    changelogSummary: version.changelog_summary
+                });
+                
+                // For current state, we don't have version metadata, but we can show it's current
+                setDiffModifiedVersionMeta({
+                    changelogSummary: null // Current state doesn't have a changelog summary
+                });
+                
                 setDiffViewerOpen(true);
             }
         } catch (error) {
@@ -3014,8 +3034,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     alert('You do not have permission to edit this tile.');
                                                     return;
                                                 }
-                                                // Create a temporary snapshot before editing starts
-                                                await createTempVersion(tile.id);
                                                 setIsEditing(true);
                                             }}
                                             className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 backdrop-blur-sm"
@@ -4421,6 +4439,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     <div className="text-xs text-slate-500">
                                                                         by <span className="font-medium text-slate-700 dark:text-slate-300">{version.username}</span>
                                                                     </div>
+                                                                    {version.changelog_summary && (
+                                                                        <div className="text-xs text-slate-600 dark:text-slate-400 mt-1 italic">
+                                                                            {version.changelog_summary}
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                                 <div className="flex flex-col gap-1">
                                                                     <button
@@ -7044,9 +7067,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     <VersionDiffViewer
                         originalData={diffOriginalTile}
                         modifiedData={diffModifiedTile}
-                        originalTitle={`Old Version`}
+                        originalTitle={`Version ${diffOriginalVersionMeta?.versionNumber || 'N/A'}`}
                         modifiedTitle={`Current State`}
-                        onClose={() => setDiffViewerOpen(false)}
+                        onClose={() => {
+                            setDiffViewerOpen(false);
+                            setDiffOriginalVersionMeta(null);
+                            setDiffModifiedVersionMeta(null);
+                        }}
+                        originalVersionMeta={diffOriginalVersionMeta || undefined}
+                        modifiedVersionMeta={diffModifiedVersionMeta || undefined}
                     />
                 )}
             </>
