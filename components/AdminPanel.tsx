@@ -16,6 +16,7 @@ import { broadcastService, BroadcastMessage } from '../services/broadcastService
 import { rolesService, Role } from '../services/rolesService';
 import SamlConfigModal from './SamlConfigModal';
 import { useMobile } from '../hooks/useMobile';
+import { getCustomWidgets, createWidget, updateWidget, deleteWidget, CustomWidget, CreateWidgetRequest, UpdateWidgetRequest } from '../services/widgetService';
 
 // Resolve API base dynamically based on current location
 // This ensures API calls work in both dev mode and runtime mode with any base path
@@ -56,9 +57,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const { refreshSettings } = useSettings();
   const isMobile = useMobile();
   // Initialize activeTab from localStorage or default to 'pending'
-  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenance'>(() => {
+  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenance' | 'widgets'>(() => {
     const savedTab = localStorage.getItem('adminPanelActiveTab');
-    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenance'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer', 'tabVisibility', 'access', 'clone', 'browser', 'broadcast', 'maintenance'];
+    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenance' | 'widgets'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer', 'tabVisibility', 'access', 'clone', 'browser', 'broadcast', 'maintenance', 'widgets'];
     return (savedTab && validTabs.includes(savedTab as any)) ? savedTab as any : 'pending';
   });
   // Initialize tab layout from localStorage or default to 'horizontal'
@@ -214,6 +215,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [selectedTabIds, setSelectedTabIds] = useState<Set<string>>(new Set());
   const [selectedWidgetIds, setSelectedWidgetIds] = useState<Set<string>>(new Set());
   const [roleWidgetsLoading, setRoleWidgetsLoading] = useState(false);
+  const [availableWidgets, setAvailableWidgets] = useState<Array<{ id: string; label: string; description: string; isCustom?: boolean }>>([]);
+  const [widgetsLoading, setWidgetsLoading] = useState(false);
+  
+  // Custom Widgets Management state
+  const [customWidgets, setCustomWidgets] = useState<CustomWidget[]>([]);
+  const [customWidgetsLoading, setCustomWidgetsLoading] = useState(false);
+  const [showAddWidgetModal, setShowAddWidgetModal] = useState(false);
+  const [editingWidget, setEditingWidget] = useState<CustomWidget | null>(null);
+  const [widgetForm, setWidgetForm] = useState<CreateWidgetRequest>({
+    widgetId: '',
+    name: '',
+    description: '',
+    componentPath: '',
+    floatingComponentPath: '',
+    iconSvg: '',
+    requiresAuth: false,
+    enabled: true
+  });
+  const [widgetFormLoading, setWidgetFormLoading] = useState(false);
+  const [widgetSuccessMessage, setWidgetSuccessMessage] = useState('');
   const [tileSearchTerm, setTileSearchTerm] = useState('');
   const [linkSearchTerm, setLinkSearchTerm] = useState('');
   const [expandedTiles, setExpandedTiles] = useState<Set<string>>(new Set());
@@ -423,6 +444,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
     if (activeTab === 'maintenance') {
       loadSettings();
+    }
+    if (activeTab === 'widgets') {
+      loadCustomWidgets();
     }
   }, [activeTab]);
 
@@ -800,6 +824,117 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     } finally {
       setPermissionsLoading(false);
     }
+  };
+
+  const loadCustomWidgets = async () => {
+    try {
+      setCustomWidgetsLoading(true);
+      setError('');
+      const widgets = await getCustomWidgets();
+      setCustomWidgets(widgets);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load custom widgets');
+    } finally {
+      setCustomWidgetsLoading(false);
+    }
+  };
+
+  const handleCreateWidget = async () => {
+    if (!widgetForm.widgetId || !widgetForm.name || !widgetForm.componentPath) {
+      setError('Widget ID, Name, and Component Path are required');
+      return;
+    }
+
+    try {
+      setWidgetFormLoading(true);
+      setError('');
+      await createWidget(widgetForm);
+      setWidgetSuccessMessage(`Widget "${widgetForm.name}" has been successfully created!`);
+      setShowAddWidgetModal(false);
+      setWidgetForm({
+        widgetId: '',
+        name: '',
+        description: '',
+        componentPath: '',
+        floatingComponentPath: '',
+        iconSvg: '',
+        requiresAuth: false,
+        enabled: true
+      });
+      await loadCustomWidgets();
+      // Clear success message after 5 seconds
+      setTimeout(() => setWidgetSuccessMessage(''), 5000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to create widget');
+    } finally {
+      setWidgetFormLoading(false);
+    }
+  };
+
+  const handleUpdateWidget = async () => {
+    if (!editingWidget) return;
+
+    try {
+      setWidgetFormLoading(true);
+      setError('');
+      const updateData: UpdateWidgetRequest = {
+        widgetId: editingWidget.widgetId,
+        ...widgetForm
+      };
+      await updateWidget(updateData);
+      setWidgetSuccessMessage(`Widget "${widgetForm.name}" has been successfully updated!`);
+      setEditingWidget(null);
+      setShowAddWidgetModal(false);
+      setWidgetForm({
+        widgetId: '',
+        name: '',
+        description: '',
+        componentPath: '',
+        floatingComponentPath: '',
+        iconSvg: '',
+        requiresAuth: false,
+        enabled: true
+      });
+      await loadCustomWidgets();
+      // Clear success message after 5 seconds
+      setTimeout(() => setWidgetSuccessMessage(''), 5000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to update widget');
+    } finally {
+      setWidgetFormLoading(false);
+    }
+  };
+
+  const handleDeleteWidget = async (widgetId: string) => {
+    if (!confirm(`Are you sure you want to delete the widget "${widgetId}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setError('');
+      await deleteWidget({ widgetId });
+      setWidgetSuccessMessage(`Widget "${widgetId}" has been successfully deleted!`);
+      await loadCustomWidgets();
+      // Clear success message after 5 seconds
+      setTimeout(() => setWidgetSuccessMessage(''), 5000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete widget');
+    }
+  };
+
+  const handleEditWidget = (widget: CustomWidget) => {
+    setEditingWidget(widget);
+    setWidgetForm({
+      widgetId: widget.widgetId,
+      name: widget.name,
+      description: widget.description || '',
+      componentPath: widget.componentPath,
+      floatingComponentPath: widget.floatingComponentPath || '',
+      iconSvg: widget.iconSvg || '',
+      requiresAuth: widget.requiresAuth,
+      enabled: widget.enabled
+    });
+    setShowAddWidgetModal(true);
   };
 
   const loadRoles = async () => {
@@ -1304,8 +1439,50 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const handleManageRoleWidgets = async (role: Role) => {
     setSelectedRole(role);
     setRoleWidgetsLoading(true);
+    setWidgetsLoading(true);
     setSelectedWidgetIds(new Set());
     try {
+      // Load available widgets (built-in + custom)
+      try {
+        const response = await fetch(`${resolveApiBase()}/widgets.php?action=all`, {
+          credentials: 'include'
+        });
+        if (response.ok) {
+          const widgets = await response.json();
+          setAvailableWidgets(widgets);
+        } else {
+          // Fallback to built-in widgets if API fails
+          setAvailableWidgets([
+            { id: 'clock', label: 'Clock', description: 'Time and timezone display widget' },
+            { id: 'weather', label: 'Weather', description: 'Weather information widget' },
+            { id: 'calculator', label: 'Calculator', description: 'Calculator widget' },
+            { id: 'notes', label: 'Notes', description: 'Personal notes widget (requires authentication)' },
+            { id: 'password-generator', label: 'Password Generator', description: 'Generate secure passwords' },
+            { id: 'phonetic-alphabet', label: 'Phonetic Alphabet', description: 'Phonetic alphabet reference' },
+            { id: 'zoom-control', label: 'Zoom Control', description: 'Page zoom control widget' },
+            { id: 'theme', label: 'Theme', description: 'Theme switcher widget' },
+            { id: 'fav-organizer', label: 'Favorite Organizer', description: 'Organize favorite links' },
+            { id: 'chat', label: 'Chat', description: 'Chat widget (requires authentication)' },
+            { id: 'snake-game', label: 'Snake Game', description: 'Snake game widget' }
+          ]);
+        }
+      } catch (err) {
+        // Fallback to built-in widgets
+        setAvailableWidgets([
+          { id: 'clock', label: 'Clock', description: 'Time and timezone display widget' },
+          { id: 'weather', label: 'Weather', description: 'Weather information widget' },
+          { id: 'calculator', label: 'Calculator', description: 'Calculator widget' },
+          { id: 'notes', label: 'Notes', description: 'Personal notes widget (requires authentication)' },
+          { id: 'password-generator', label: 'Password Generator', description: 'Generate secure passwords' },
+          { id: 'phonetic-alphabet', label: 'Phonetic Alphabet', description: 'Phonetic alphabet reference' },
+          { id: 'zoom-control', label: 'Zoom Control', description: 'Page zoom control widget' },
+          { id: 'theme', label: 'Theme', description: 'Theme switcher widget' },
+          { id: 'fav-organizer', label: 'Favorite Organizer', description: 'Organize favorite links' },
+          { id: 'chat', label: 'Chat', description: 'Chat widget (requires authentication)' },
+          { id: 'snake-game', label: 'Snake Game', description: 'Snake game widget' }
+        ]);
+      }
+      
       // Load existing widget assignments for this role
       try {
         const roleWidgets = await rolesService.getRoleWidgets(role.id);
@@ -1319,6 +1496,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setError(err.message || 'Failed to load widgets');
     } finally {
       setRoleWidgetsLoading(false);
+      setWidgetsLoading(false);
     }
   };
 
@@ -2236,6 +2414,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 >
                   Maintenance
                 </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('widgets');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'widgets'
+                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                  }`}
+                  style={{ minHeight: '44px' }}
+                >
+                  Custom Widgets
+                </button>
               </div>
             </div>
           </>
@@ -2459,6 +2650,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               }
             >
               Maintenance
+            </button>
+            <button
+              onClick={() => setActiveTab('widgets')}
+              className={tabLayout === 'horizontal'
+                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'widgets'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`
+                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'widgets'
+                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                }`
+              }
+            >
+              Custom Widgets
             </button>
           </div>
         )}
@@ -8345,6 +8551,148 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
                 </div>
               )}
+
+              {/* Custom Widgets Tab */}
+              {activeTab === 'widgets' && (
+                <div className="space-y-6 mt-6">
+                  {widgetSuccessMessage && (
+                    <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 px-4 py-3 rounded-lg text-sm">
+                      {widgetSuccessMessage}
+                    </div>
+                  )}
+                  
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                    <div className="flex items-center justify-between mb-6">
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Custom Widgets</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">
+                          Manage custom widgets that can be assigned to roles. After creating a widget here, integrate it into App.tsx following the documentation.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setEditingWidget(null);
+                          setWidgetForm({
+                            widgetId: '',
+                            name: '',
+                            description: '',
+                            componentPath: '',
+                            floatingComponentPath: '',
+                            iconSvg: '',
+                            requiresAuth: false,
+                            enabled: true
+                          });
+                          setShowAddWidgetModal(true);
+                          setError('');
+                          setWidgetSuccessMessage('');
+                        }}
+                        className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                        </svg>
+                        Add Widget
+                      </button>
+                    </div>
+
+                    {customWidgetsLoading ? (
+                      <div className="flex items-center justify-center py-12">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                      </div>
+                    ) : customWidgets.length === 0 ? (
+                      <div className="text-center py-12">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-slate-400 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                        </svg>
+                        <p className="text-slate-500 dark:text-slate-400 mb-4">No custom widgets yet</p>
+                        <button
+                          onClick={() => {
+                            setEditingWidget(null);
+                            setWidgetForm({
+                              widgetId: '',
+                              name: '',
+                              description: '',
+                              componentPath: '',
+                              floatingComponentPath: '',
+                              iconSvg: '',
+                              requiresAuth: false,
+                              enabled: true
+                            });
+                            setShowAddWidgetModal(true);
+                          }}
+                          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
+                        >
+                          Create Your First Widget
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {customWidgets.map((widget) => (
+                          <div
+                            key={widget.id}
+                            className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-3 mb-1">
+                                <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
+                                  {widget.name}
+                                </h4>
+                                <span className="px-2 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded">
+                                  Custom
+                                </span>
+                                {widget.enabled ? (
+                                  <span className="px-2 py-0.5 text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded">
+                                    Enabled
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 rounded">
+                                    Disabled
+                                  </span>
+                                )}
+                              </div>
+                              {widget.description && (
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                                  {widget.description}
+                                </p>
+                              )}
+                              <div className="flex flex-wrap gap-4 text-xs text-slate-500 dark:text-slate-400">
+                                <span><strong>ID:</strong> {widget.widgetId}</span>
+                                <span><strong>Component:</strong> {widget.componentPath}</span>
+                                {widget.floatingComponentPath && (
+                                  <span><strong>Floating:</strong> {widget.floatingComponentPath}</span>
+                                )}
+                                {widget.requiresAuth && (
+                                  <span className="text-orange-600 dark:text-orange-400">Requires Auth</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 ml-4">
+                              <button
+                                onClick={() => handleEditWidget(widget)}
+                                className="p-2 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                                title="Edit widget"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                  <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => handleDeleteWidget(widget.widgetId)}
+                                className="p-2 text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                                title="Delete widget"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                  <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -10015,19 +10363,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </p>
                   
                   <div className="space-y-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30 p-4">
-                    {[
-                      { id: 'clock', label: 'Clock', description: 'Time and timezone display widget' },
-                      { id: 'weather', label: 'Weather', description: 'Weather information widget' },
-                      { id: 'calculator', label: 'Calculator', description: 'Calculator widget' },
-                      { id: 'notes', label: 'Notes', description: 'Personal notes widget (requires authentication)' },
-                      { id: 'password-generator', label: 'Password Generator', description: 'Generate secure passwords' },
-                      { id: 'phonetic-alphabet', label: 'Phonetic Alphabet', description: 'Phonetic alphabet reference' },
-                      { id: 'zoom-control', label: 'Zoom Control', description: 'Page zoom control widget' },
-                      { id: 'theme', label: 'Theme', description: 'Theme switcher widget' },
-                      { id: 'fav-organizer', label: 'Favorite Organizer', description: 'Organize favorite links' },
-                      { id: 'chat', label: 'Chat', description: 'Chat widget (requires authentication)' },
-                      { id: 'snake-game', label: 'Snake Game', description: 'Snake game widget' }
-                    ].map((widget) => (
+                    {widgetsLoading ? (
+                      <div className="flex items-center justify-center py-4">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-brand-500"></div>
+                      </div>
+                    ) : availableWidgets.length === 0 ? (
+                      <div className="text-center text-slate-500 dark:text-slate-400 py-4 text-sm">
+                        No widgets available
+                      </div>
+                    ) : (
+                      availableWidgets.map((widget) => (
                       <label
                         key={widget.id}
                         className="flex items-start gap-3 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-lg cursor-pointer"
@@ -10047,15 +10392,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           className="mt-1 h-4 w-4 text-brand-600 focus:ring-brand-500 border-slate-300 rounded"
                         />
                         <div className="flex-1">
-                          <div className="text-sm font-medium text-slate-900 dark:text-white">
-                            {widget.label}
+                          <div className="flex items-center gap-2">
+                            <div className="text-sm font-medium text-slate-900 dark:text-white">
+                              {widget.label}
+                            </div>
+                            {widget.isCustom && (
+                              <span className="px-1.5 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded">
+                                Custom
+                              </span>
+                            )}
                           </div>
                           <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                             {widget.description}
                           </div>
                         </div>
                       </label>
-                    ))}
+                      ))
+                    )}
                   </div>
 
                   <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-700">
@@ -10064,11 +10417,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     </div>
                     <button
                       onClick={() => {
-                        const allWidgetIds = [
-                          'clock', 'weather', 'calculator', 'notes', 'password-generator',
-                          'phonetic-alphabet', 'zoom-control', 'theme', 'fav-organizer',
-                          'chat', 'snake-game'
-                        ];
+                        const allWidgetIds = availableWidgets.map(w => w.id);
                         if (selectedWidgetIds.size === allWidgetIds.length) {
                           setSelectedWidgetIds(new Set());
                         } else {
@@ -10077,7 +10426,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       }}
                       className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
                     >
-                      {selectedWidgetIds.size === 11 ? 'Deselect All' : 'Select All'}
+                      {selectedWidgetIds.size === availableWidgets.length ? 'Deselect All' : 'Select All'}
                     </button>
                   </div>
                 </>
@@ -10847,6 +11196,193 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           refreshSettings();
         }}
       />
+
+      {/* Add/Edit Widget Modal */}
+      {showAddWidgetModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                  {editingWidget ? 'Edit Widget' : 'Add Custom Widget'}
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowAddWidgetModal(false);
+                    setEditingWidget(null);
+                    setWidgetForm({
+                      widgetId: '',
+                      name: '',
+                      description: '',
+                      componentPath: '',
+                      floatingComponentPath: '',
+                      iconSvg: '',
+                      requiresAuth: false,
+                      enabled: true
+                    });
+                    setError('');
+                  }}
+                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                    <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Widget ID <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={widgetForm.widgetId}
+                  onChange={(e) => setWidgetForm({ ...widgetForm, widgetId: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '') })}
+                  placeholder="my-custom-widget"
+                  disabled={!!editingWidget}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Unique identifier (lowercase letters, numbers, hyphens, underscores only). Cannot be changed after creation.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={widgetForm.name}
+                  onChange={(e) => setWidgetForm({ ...widgetForm, name: e.target.value })}
+                  placeholder="My Custom Widget"
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Description
+                </label>
+                <textarea
+                  value={widgetForm.description}
+                  onChange={(e) => setWidgetForm({ ...widgetForm, description: e.target.value })}
+                  placeholder="A brief description of what this widget does"
+                  rows={3}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Component Path <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={widgetForm.componentPath}
+                  onChange={(e) => setWidgetForm({ ...widgetForm, componentPath: e.target.value })}
+                  placeholder="components/MyWidget"
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                />
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Path to your widget component file (relative to components directory, without .tsx extension)
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Floating Component Path (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={widgetForm.floatingComponentPath}
+                  onChange={(e) => setWidgetForm({ ...widgetForm, floatingComponentPath: e.target.value })}
+                  placeholder="components/FloatingMyWidget"
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                />
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Path to floating wrapper component (if your widget should appear as a floating overlay)
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Icon SVG (Optional)
+                </label>
+                <textarea
+                  value={widgetForm.iconSvg}
+                  onChange={(e) => setWidgetForm({ ...widgetForm, iconSvg: e.target.value })}
+                  placeholder="<svg>...</svg>"
+                  rows={4}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                />
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  SVG code for the widget icon (will be used in widget quick access menu)
+                </p>
+              </div>
+
+              <div className="flex items-center gap-6">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={widgetForm.requiresAuth}
+                    onChange={(e) => setWidgetForm({ ...widgetForm, requiresAuth: e.target.checked })}
+                    className="w-4 h-4 text-brand-600 focus:ring-brand-500 border-slate-300 rounded"
+                  />
+                  <span className="text-sm text-slate-700 dark:text-slate-300">Requires Authentication</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={widgetForm.enabled}
+                    onChange={(e) => setWidgetForm({ ...widgetForm, enabled: e.target.checked })}
+                    className="w-4 h-4 text-brand-600 focus:ring-brand-500 border-slate-300 rounded"
+                  />
+                  <span className="text-sm text-slate-700 dark:text-slate-300">Enabled</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="flex gap-3 p-6 border-t border-slate-200 dark:border-slate-700">
+              <button
+                onClick={() => {
+                  setShowAddWidgetModal(false);
+                  setEditingWidget(null);
+                  setWidgetForm({
+                    widgetId: '',
+                    name: '',
+                    description: '',
+                    componentPath: '',
+                    floatingComponentPath: '',
+                    iconSvg: '',
+                    requiresAuth: false,
+                    enabled: true
+                  });
+                  setError('');
+                }}
+                className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={editingWidget ? handleUpdateWidget : handleCreateWidget}
+                disabled={widgetFormLoading || !widgetForm.widgetId || !widgetForm.name || !widgetForm.componentPath}
+                className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                {widgetFormLoading ? 'Saving...' : editingWidget ? 'Update Widget' : 'Create Widget'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

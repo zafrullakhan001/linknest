@@ -582,8 +582,8 @@ function handleAssignWidgetsToRole($roleId) {
         sendJSON(['error' => 'Role not found'], 404);
     }
     
-    // Valid widget IDs
-    $validWidgetIds = [
+    // Get valid widget IDs from built-in widgets and custom widgets
+    $builtInWidgetIds = [
         'clock',
         'weather',
         'calculator',
@@ -596,6 +596,16 @@ function handleAssignWidgetsToRole($roleId) {
         'chat',
         'snake-game'
     ];
+    
+    // Get custom widget IDs from database
+    $customWidgetsStmt = $db->query('SELECT widget_id FROM custom_widgets WHERE enabled = 1');
+    $customWidgetIds = [];
+    while ($row = $customWidgetsStmt->fetch(PDO::FETCH_ASSOC)) {
+        $customWidgetIds[] = $row['widget_id'];
+    }
+    
+    // Combine built-in and custom widget IDs
+    $validWidgetIds = array_merge($builtInWidgetIds, $customWidgetIds);
     
     $currentTime = time();
     $canView = isset($data['canView']) ? (int)(bool)$data['canView'] : 1;

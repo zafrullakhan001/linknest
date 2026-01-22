@@ -1710,6 +1710,21 @@ function initDatabase() {
             FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
         )');
         
+        // Create custom_widgets table for custom widget metadata
+        $db->exec('CREATE TABLE IF NOT EXISTS custom_widgets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            widget_id TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            component_path TEXT NOT NULL,
+            floating_component_path TEXT,
+            icon_svg TEXT,
+            requires_auth INTEGER DEFAULT 0,
+            enabled INTEGER DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )');
+        
         // Initialize default settings if they don't exist
         $defaultSettings = [
             ['app_name', 'LinkNest', time()],
