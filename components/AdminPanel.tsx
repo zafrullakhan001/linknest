@@ -49,6 +49,13 @@ function resolveApiBase(): string {
   return '/api';
 }
 
+// Resolve base path for docs and other static resources
+function resolveDocsBase(): string {
+  // Use the same logic as API base but without /api suffix
+  const apiBase = resolveApiBase();
+  return apiBase.replace('/api', '');
+}
+
 interface AdminPanelProps {
   onUserApproved?: () => void;
 }
@@ -8560,13 +8567,97 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       {widgetSuccessMessage}
                     </div>
                   )}
+
+                  {/* Documentation Section */}
+                  <div className="bg-gradient-to-r from-brand-50 to-purple-50 dark:from-brand-900/20 dark:to-purple-900/20 border border-brand-200 dark:border-brand-800 rounded-xl p-6">
+                    <div className="flex items-start gap-4">
+                      <div className="flex-shrink-0 w-10 h-10 bg-brand-500 rounded-lg flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-6 h-6 text-white">
+                          <path d="M10.75 16.82A7.462 7.462 0 0115 15.5c.71 0 1.396.098 2.046.282A.75.75 0 0018 15.06v-11a.75.75 0 00-.546-.721A9.006 9.006 0 0015 3a8.963 8.963 0 00-4.25 1.065V16.82zM9.25 4.065A8.963 8.963 0 005 3c-.85 0-1.673.118-2.454.339A.75.75 0 002 4.06v11a.75.75 0 00.954.721A7.506 7.506 0 015 15.5c1.579 0 3.042.487 4.25 1.32V4.065z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Widget Development Guide</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                          Learn how to create and integrate custom widgets into LinkNest. Follow the step-by-step guide to build your own widgets.
+                        </p>
+                        <div className="space-y-3">
+                          <div className="bg-white dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
+                            <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Quick Start</h4>
+                            <ol className="text-xs text-slate-600 dark:text-slate-400 space-y-1 list-decimal list-inside">
+                              <li>Create your widget component in <code className="bg-slate-100 dark:bg-slate-700 px-1 rounded">components/YourWidget.tsx</code></li>
+                              <li>Create a floating wrapper (optional) in <code className="bg-slate-100 dark:bg-slate-700 px-1 rounded">components/FloatingYourWidget.tsx</code></li>
+                              <li>Register the widget using the form below</li>
+                              <li>Integrate it into <code className="bg-slate-100 dark:bg-slate-700 px-1 rounded">App.tsx</code> (see full documentation)</li>
+                              <li>Assign the widget to roles via Access Manager</li>
+                            </ol>
+                          </div>
+                          <div className="bg-white dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
+                            <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Widget Requirements</h4>
+                            <ul className="text-xs text-slate-600 dark:text-slate-400 space-y-1 list-disc list-inside">
+                              <li>Accept <code className="bg-slate-100 dark:bg-slate-700 px-1 rounded">onClose</code> prop for closing</li>
+                              <li>Handle Escape key to close (unless user is typing)</li>
+                              <li>Support dark mode with Tailwind classes</li>
+                              <li>Follow the application's design system</li>
+                              <li>Be responsive for different screen sizes</li>
+                            </ul>
+                          </div>
+                          <div className="bg-white dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
+                            <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Example Widget Structure</h4>
+                            <pre className="text-xs bg-slate-900 dark:bg-slate-950 text-slate-100 p-3 rounded overflow-x-auto">
+{`interface YourWidgetProps {
+  onClose?: () => void;
+}
+
+export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
+  return (
+    <div className="bg-white dark:bg-slate-800 
+                    rounded-lg shadow-lg border 
+                    border-slate-200 dark:border-slate-700 p-4">
+      {/* Your widget content */}
+    </div>
+  );
+};`}
+                            </pre>
+                          </div>
+                          <div className="flex gap-2 pt-2">
+                            <a
+                              href={`${resolveDocsBase()}/docs/CUSTOM_WIDGETS_DEVELOPMENT.md`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.5h-8.5a.75.75 0 000 1.5h8.5v8.5a.75.75 0 001.5 0v-8.5h8.5a.75.75 0 000-1.5h-8.5v-8.5z" />
+                              </svg>
+                              View Full Documentation
+                            </a>
+                            <button
+                              onClick={() => {
+                                // Copy documentation path to clipboard
+                                navigator.clipboard.writeText('docs/CUSTOM_WIDGETS_DEVELOPMENT.md');
+                                setWidgetSuccessMessage('Documentation path copied to clipboard!');
+                                setTimeout(() => setWidgetSuccessMessage(''), 3000);
+                              }}
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                <path fillRule="evenodd" d="M13.887 3.182c.396.037.79.08 1.183.128C16.907 3.372 18 4.513 18 5.818v8.364c0 1.305-1.093 2.446-2.93 2.508a39.979 39.979 0 01-1.183-.128c-1.936-.18-3.387-1.295-3.387-2.68V5.818c0-1.385 1.451-2.5 3.387-2.68zM9.5 4.18c-1.936.18-3.387 1.295-3.387 2.68v8.364c0 1.385 1.451 2.5 3.387 2.68.396.037.79.08 1.183.128C4.093 18.628 3 17.487 3 16.182V7.818c0-1.305 1.093-2.446 2.93-2.508a39.979 39.979 0 011.183.128z" clipRule="evenodd" />
+                              </svg>
+                              Copy Doc Path
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                   
                   <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
                     <div className="flex items-center justify-between mb-6">
                       <div>
                         <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Custom Widgets</h3>
                         <p className="text-sm text-slate-600 dark:text-slate-400">
-                          Manage custom widgets that can be assigned to roles. After creating a widget here, integrate it into App.tsx following the documentation.
+                          Manage custom widgets that can be assigned to roles. After creating a widget here, integrate it into App.tsx following the documentation above.
                         </p>
                       </div>
                       <button
