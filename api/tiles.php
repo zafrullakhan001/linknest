@@ -71,6 +71,8 @@ switch ($method) {
             handleDeleteAllVersions($matches[1]);
         } elseif (preg_match('#^/([^/]+)/versions/delete-empty$#', $path, $matches)) {
             handleDeleteEmptyVersions($matches[1]);
+        } elseif (preg_match('#^/([^/]+)/versions/delete-duplicate$#', $path, $matches)) {
+            handleDeleteDuplicateVersions($matches[1]);
         } elseif (preg_match('#^/([^/]+)/versions/cleanup-empty$#', $path, $matches)) {
             handleCleanupEmptyVersions($matches[1]);
         } elseif (preg_match('#^/([^/]+)/update-links-browser$#', $path, $matches)) {
@@ -4173,14 +4175,20 @@ function normalizeForComparison($data) {
 
             if (is_array($v)) {
                 $child = normalizeForComparison($v);
-                $result[$k] = $child;
+                // Only include non-empty arrays or arrays that exist in both versions
+                if (!empty($child) || array_key_exists($k, $data)) {
+                    $result[$k] = $child;
+                }
             } else {
                 // Convert to string for loose comparison (DB sometimes returns string for int)
                 // Normalize booleans to strings "0" or "1" to ensure match
+                // Include empty strings and null values as they represent meaningful differences
                 if (is_bool($v)) {
                     $result[$k] = $v ? "1" : "0";
+                } elseif (is_null($v)) {
+                    $result[$k] = ""; // Normalize null to empty string
                 } else {
-                    $result[$k] = is_null($v) ? "" : (string)$v;
+                    $result[$k] = (string)$v;
                 }
             }
         }
@@ -4547,6 +4555,7 @@ function deleteEmptyDiffVersions($tileId, $db) {
     $versionsToDelete = [];
     
     // Compare each version with the next one (going from newest to oldest)
+    // Keep the older version, delete the newer one if they're identical
     for ($i = 0; $i < count($versions) - 1; $i++) {
         $currentVersion = $versions[$i];
         $previousVersion = $versions[$i + 1];
@@ -4555,8 +4564,9 @@ function deleteEmptyDiffVersions($tileId, $db) {
         $previousData = json_decode($previousVersion['tile_data'], true);
         
         // Check if they are equal (no diff)
-        if (areTilesEqual($currentData, $previousData)) {
+        if ($currentData && $previousData && areTilesEqual($currentData, $previousData)) {
             // This version has no changes from the previous one - mark for deletion
+            // Delete the newer version (current), keep the older one (previous)
             $versionsToDelete[] = $currentVersion['id'];
         }
     }
@@ -4570,6 +4580,69 @@ function deleteEmptyDiffVersions($tileId, $db) {
     }
     
     return $deleted;
+}
+
+function deleteDuplicateVersions($tileId, $db) {
+    // Get all versions for this tile (excluding temp and locked)
+    $stmt = $db->prepare('SELECT id, version_number, tile_data FROM tile_versions WHERE tile_id = ? AND is_temp = 0 AND is_locked = 0 ORDER BY version_number ASC');
+    $stmt->execute([$tileId]);
+    $versions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    if (count($versions) < 2) {
+        return 0; // Need at least 2 versions to compare
+    }
+    
+    $deleted = 0;
+    $versionsToDelete = [];
+    $seenDataHashes = [];
+    
+    // Compare each version with all previous versions to find duplicates
+    // Keep the first occurrence, mark subsequent duplicates for deletion
+    foreach ($versions as $version) {
+        $versionData = json_decode($version['tile_data'], true);
+        
+        if (!$versionData) {
+            // Invalid data, mark for deletion
+            $versionsToDelete[] = $version['id'];
+            continue;
+        }
+        
+        // Normalize and hash the data for comparison
+        $normalized = normalizeForComparison($versionData);
+        $dataHash = md5(serialize($normalized));
+        
+        if (isset($seenDataHashes[$dataHash])) {
+            // This is a duplicate - mark for deletion
+            $versionsToDelete[] = $version['id'];
+        } else {
+            // First occurrence - keep it
+            $seenDataHashes[$dataHash] = true;
+        }
+    }
+    
+    // Delete the duplicate versions
+    if (!empty($versionsToDelete)) {
+        $placeholders = implode(',', array_fill(0, count($versionsToDelete), '?'));
+        $delStmt = $db->prepare("DELETE FROM tile_versions WHERE id IN ($placeholders)");
+        $delStmt->execute($versionsToDelete);
+        $deleted = $delStmt->rowCount();
+    }
+    
+    return $deleted;
+}
+
+function handleDeleteDuplicateVersions($tileId) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Check edit permission
+    if (!canUserEditTile($user['id'], $tileId, $db)) {
+        sendJSON(['error' => 'Permission denied'], 403);
+    }
+    
+    $deleted = deleteDuplicateVersions($tileId, $db);
+    
+    sendJSON(['success' => true, 'deleted' => $deleted]);
 }
 
 function handleGetTileInfo($tileId) {

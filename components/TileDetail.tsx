@@ -963,7 +963,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     const handleDeleteEmptyVersions = async () => {
-        if (!window.confirm('Delete all versions with no differences? This cannot be undone!')) return;
+        if (!window.confirm('Delete all versions with no differences from the previous version? This cannot be undone!')) return;
 
         try {
             setLoadingVersions(true);
@@ -987,6 +987,36 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         } catch (err) {
             console.error('Error deleting empty versions:', err);
             alert('Error deleting empty versions.');
+        } finally {
+            setLoadingVersions(false);
+        }
+    };
+
+    const handleDeleteDuplicateVersions = async () => {
+        if (!window.confirm('Delete all duplicate versions (identical to any previous version)? This cannot be undone!')) return;
+
+        try {
+            setLoadingVersions(true);
+            const API_BASE = (import.meta as any).env?.VITE_API_BASE || '/api';
+            const response = await fetch(`${API_BASE}/tiles/${tile.id}/versions/delete-duplicate`, {
+                method: 'POST',
+                credentials: 'include',
+            });
+            if (response.ok) {
+                const data = await response.json();
+                if (data.deleted > 0) {
+                    alert(`Successfully deleted ${data.deleted} duplicate version(s).`);
+                    fetchVersions(); // Refresh the list
+                } else {
+                    alert('No duplicate versions found.');
+                }
+            } else {
+                const data = await response.json();
+                alert(data.error || 'Failed to delete duplicate versions.');
+            }
+        } catch (err) {
+            console.error('Error deleting duplicate versions:', err);
+            alert('Error deleting duplicate versions.');
         } finally {
             setLoadingVersions(false);
         }
@@ -4385,9 +4415,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         onClick={handleDeleteEmptyVersions}
                                                         disabled={loadingVersions}
                                                         className="text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300 text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                                                        title="Delete versions with no differences"
+                                                        title="Delete versions with no differences from previous version"
                                                     >
                                                         Delete Empty
+                                                    </button>
+                                                    <button
+                                                        onClick={handleDeleteDuplicateVersions}
+                                                        disabled={loadingVersions}
+                                                        className="text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300 text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        title="Delete duplicate versions (identical to any previous version)"
+                                                    >
+                                                        Delete Duplicate
                                                     </button>
                                                     <button
                                                         onClick={handleDeleteAllVersions}

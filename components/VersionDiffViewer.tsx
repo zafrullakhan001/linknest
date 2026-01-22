@@ -472,11 +472,19 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
                             </div>
                         )}
 
-                        {/* Show message if no changes found in tabs but root had changes */}
-                        {diffTree.tabs.every(t => t.status === 'unchanged') && Object.keys(diffTree.root).length === 0 && diffTree.messages.every(m => m.status === 'unchanged') && (
+                        {/* Show message if no changes found */}
+                        {diffTree.tabs.every(t => t.status === 'unchanged') && 
+                         Object.keys(diffTree.root).length === 0 && 
+                         diffTree.messages.every(m => m.status === 'unchanged') && (
                             <div className="text-center py-10 text-slate-500 dark:text-slate-400">
-                                <p>No visual differences found in content.</p>
-                                <p className="text-xs mt-1">(Only internal IDs or hidden metadata might have changed)</p>
+                                <div className="mb-4">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-12 h-12 mx-auto text-slate-400">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                </div>
+                                <p className="font-medium">No differences found between these versions.</p>
+                                <p className="text-xs mt-2">The versions are identical in all tracked fields.</p>
+                                <p className="text-xs mt-1 text-slate-400">(Only internal IDs or hidden metadata might differ)</p>
                             </div>
                         )}
                     </div>
