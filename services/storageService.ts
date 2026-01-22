@@ -138,13 +138,18 @@ export const initializeTiles = (): Tile[] => {
   return [];
 };
 
-export const saveTileArrangement = async (arrangement: Array<{ tileId: string; position: number; groupName?: string }>): Promise<void> => {
+export const saveTileArrangement = async (
+  arrangement: Array<{ tileId: string; position: number; groupName?: string }>,
+  scope?: 'global' | 'private'
+): Promise<void> => {
   try {
+    const body: { arrangement: typeof arrangement; scope?: 'global' | 'private' } = { arrangement };
+    if (scope) body.scope = scope;
     const response = await fetch(`${API_BASE}/arrangements`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ arrangement })
+      body: JSON.stringify(body)
     });
 
     if (!response.ok) {

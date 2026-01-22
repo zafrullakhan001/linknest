@@ -51,14 +51,21 @@ function handleGetArrangement() {
 }
 
 function handleSaveArrangement() {
-    // Require admin access to save global arrangement
-    requireAdmin();
     $data = getJSONInput();
     
     if (!isset($data['arrangement']) || !is_array($data['arrangement'])) {
         sendJSON(['error' => 'Invalid arrangement data'], 400);
     }
     
+    $scope = isset($data['scope']) && $data['scope'] === 'private' ? 'private' : 'global';
+    
+    if ($scope === 'private') {
+        handleSavePrivateArrangement($data['arrangement']);
+        return;
+    }
+    
+    // Global arrangement: require admin access
+    requireAdmin();
     $db = getDB();
     
     // Ensure the table exists with correct schema
@@ -191,6 +198,80 @@ function handleSaveArrangement() {
     } catch (Exception $e) {
         $db->rollBack();
         error_log('Tile arrangement save error (non-PDO): ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to save tile arrangement: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Save arrangement for private tab: only tiles owned by the current user.
+ * Requires authentication (not admin). Updates only those tiles' group/position.
+ */
+function handleSavePrivateArrangement(array $arrangement) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Ensure the table exists with correct schema
+    try {
+        $db->exec('CREATE TABLE IF NOT EXISTS tile_arrangements (
+            user_id INTEGER NOT NULL DEFAULT 0,
+            tile_id TEXT NOT NULL,
+            position INTEGER NOT NULL,
+            group_name TEXT,
+            PRIMARY KEY (user_id, tile_id),
+            FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
+        )');
+    } catch (PDOException $e) {
+        error_log('Table creation check: ' . $e->getMessage());
+    }
+    
+    $userId = (int) $user['id'];
+    $checkStmt = $db->prepare('SELECT id, user_id FROM tiles WHERE id = ? AND deleted_at IS NULL AND archived_at IS NULL');
+    $updateTileStmt = $db->prepare('UPDATE tiles SET "group" = ?, position = ? WHERE id = ? AND user_id = ?');
+    
+    $owned = [];
+    foreach ($arrangement as $item) {
+        if (!isset($item['tileId']) || !isset($item['position'])) {
+            continue;
+        }
+        $tileId = $item['tileId'];
+        $checkStmt->execute([$tileId]);
+        $row = $checkStmt->fetch();
+        if (!$row) {
+            error_log('Private arrangement: tile not found or deleted/archived: ' . $tileId);
+            continue;
+        }
+        if (!isset($row['user_id']) || (int) $row['user_id'] !== $userId) {
+            sendJSON(['error' => 'Only your own private tiles can be reordered within the Private tab.'], 403);
+            return;
+        }
+        $owned[] = [
+            'tileId' => $tileId,
+            'position' => (int) $item['position'],
+            'groupName' => $item['groupName'] ?? 'General',
+        ];
+    }
+    
+    $db->beginTransaction();
+    try {
+        $deleteStmt = $db->prepare('DELETE FROM tile_arrangements WHERE user_id = ?');
+        $deleteStmt->execute([$userId]);
+        
+        $insertStmt = $db->prepare('INSERT OR REPLACE INTO tile_arrangements (user_id, tile_id, position, group_name) VALUES (?, ?, ?, ?)');
+        $count = 0;
+        foreach ($owned as $idx => $item) {
+            $insertStmt->execute([$userId, $item['tileId'], $idx, $item['groupName']]);
+            $updateTileStmt->execute([$item['groupName'], $idx, $item['tileId'], $userId]);
+            $count++;
+        }
+        $db->commit();
+        sendJSON(['success' => true, 'count' => $count]);
+    } catch (PDOException $e) {
+        $db->rollBack();
+        error_log('Private arrangement save error: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to save tile arrangement', 'details' => $e->getMessage()], 500);
+    } catch (Exception $e) {
+        $db->rollBack();
+        error_log('Private arrangement save error (non-PDO): ' . $e->getMessage());
         sendJSON(['error' => 'Failed to save tile arrangement: ' . $e->getMessage()], 500);
     }
 }

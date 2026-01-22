@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, POPULAR_EMOJIS, LINK_EMOJIS, ALL_LINK_EMOJIS, TileMessage } from '../types';
 import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
-import { authService, UserListItem } from '../services/authService';
+import { authService, UserListItem, User } from '../services/authService';
 import { exportTileToFile } from '../services/spaceTransferService';
 import { cloneTile, getTiles, saveTile, toggleLinkFavorite, createTempVersion } from '../services/storageService';
 import { useSettings } from '../contexts/SettingsContext';
@@ -32,6 +32,7 @@ interface TileDetailProps {
     isAuthenticated?: boolean;
     onAuthRequired?: () => void;
     sourceTab?: 'public' | 'your-apps' | 'private' | 'favorites' | 'public-favorites' | null;
+    user?: User | null;
 }
 // Enhanced emoji categories with more emojis
 const EMOJI_CATEGORIES = {
@@ -172,7 +173,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     onUpdateTiles,
     isAuthenticated = false,
     onAuthRequired,
-    sourceTab = null
+    sourceTab = null,
+    user
 }) => {
     const [isEditing, setIsEditing] = useState(false);
     const autoSavingRef = useRef(false);
@@ -3923,6 +3925,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     setShowTileUserSelector={setShowTileUserSelector}
                     settings={settings}
                     availableBrowsers={availableBrowsers}
+                    user={user}
                 />
             );
         }
@@ -4107,56 +4110,60 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 <div>
                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-3">Visibility</label>
                                     <div className="space-y-2.5">
-                                        <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border-2 transition-all ${editVisibility === 'public'
-                                            ? 'border-brand-500 dark:border-brand-400 bg-brand-50 dark:bg-brand-900/20'
-                                            : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-900/50'
-                                            }`}>
-                                            <input
-                                                type="radio"
-                                                name="tileVisibility"
-                                                value="public"
-                                                checked={editVisibility === 'public'}
-                                                onChange={(e) => {
-                                                    setEditVisibility(e.target.value as TileVisibility);
-                                                    setShowTileUserSelector(false);
-                                                }}
-                                                className="mt-0.5 w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                                            />
-                                            <div className="flex-1">
-                                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-0.5">Public</div>
-                                                <div className="text-xs text-slate-600 dark:text-slate-400">Available for everyone (guests and logged in users)</div>
-                                            </div>
-                                            {editVisibility === 'public' && (
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
-                                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                                                </svg>
-                                            )}
-                                        </label>
-                                        <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border-2 transition-all ${editVisibility === 'authenticated'
-                                            ? 'border-brand-500 dark:border-brand-400 bg-brand-50 dark:bg-brand-900/20'
-                                            : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-900/50'
-                                            }`}>
-                                            <input
-                                                type="radio"
-                                                name="tileVisibility"
-                                                value="authenticated"
-                                                checked={editVisibility === 'authenticated'}
-                                                onChange={(e) => {
-                                                    setEditVisibility(e.target.value as TileVisibility);
-                                                    setShowTileUserSelector(false);
-                                                }}
-                                                className="mt-0.5 w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
-                                            />
-                                            <div className="flex-1">
-                                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-0.5">Authenticated</div>
-                                                <div className="text-xs text-slate-600 dark:text-slate-400">Available for logged in users only</div>
-                                            </div>
-                                            {editVisibility === 'authenticated' && (
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
-                                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                                                </svg>
-                                            )}
-                                        </label>
+                                        {user?.is_admin && (
+                                            <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border-2 transition-all ${editVisibility === 'public'
+                                                ? 'border-brand-500 dark:border-brand-400 bg-brand-50 dark:bg-brand-900/20'
+                                                : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-900/50'
+                                                }`}>
+                                                <input
+                                                    type="radio"
+                                                    name="tileVisibility"
+                                                    value="public"
+                                                    checked={editVisibility === 'public'}
+                                                    onChange={(e) => {
+                                                        setEditVisibility(e.target.value as TileVisibility);
+                                                        setShowTileUserSelector(false);
+                                                    }}
+                                                    className="mt-0.5 w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                                                />
+                                                <div className="flex-1">
+                                                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-0.5">Public</div>
+                                                    <div className="text-xs text-slate-600 dark:text-slate-400">Available for everyone (guests and logged in users)</div>
+                                                </div>
+                                                {editVisibility === 'public' && (
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                                                    </svg>
+                                                )}
+                                            </label>
+                                        )}
+                                        {user?.is_admin && (
+                                            <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border-2 transition-all ${editVisibility === 'authenticated'
+                                                ? 'border-brand-500 dark:border-brand-400 bg-brand-50 dark:bg-brand-900/20'
+                                                : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-900/50'
+                                                }`}>
+                                                <input
+                                                    type="radio"
+                                                    name="tileVisibility"
+                                                    value="authenticated"
+                                                    checked={editVisibility === 'authenticated'}
+                                                    onChange={(e) => {
+                                                        setEditVisibility(e.target.value as TileVisibility);
+                                                        setShowTileUserSelector(false);
+                                                    }}
+                                                    className="mt-0.5 w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                                                />
+                                                <div className="flex-1">
+                                                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-0.5">Authenticated</div>
+                                                    <div className="text-xs text-slate-600 dark:text-slate-400">Available for logged in users only</div>
+                                                </div>
+                                                {editVisibility === 'authenticated' && (
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                                                    </svg>
+                                                )}
+                                            </label>
+                                        )}
                                         <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border-2 transition-all ${editVisibility === 'private'
                                             ? 'border-brand-500 dark:border-brand-400 bg-brand-50 dark:bg-brand-900/20'
                                             : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-900/50'
@@ -5207,8 +5214,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     onChange={(e) => updateEditLinkState(link.id, 'visibility', e.target.value as LinkVisibility)}
                                                                                                     className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-medium"
                                                                                                 >
-                                                                                                    <option value="public">Public (visible to everyone)</option>
-                                                                                                    <option value="authenticated">Authenticated (logged-in users only)</option>
+                                                                                                    {user?.is_admin && <option value="public">Public (visible to everyone)</option>}
+                                                                                                    {user?.is_admin && <option value="authenticated">Authenticated (logged-in users only)</option>}
                                                                                                     <option value="private">Private (specific users only)</option>
                                                                                                 </select>
                                                                                             </div>
@@ -5715,8 +5722,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         onChange={(e) => updateNewLinkState(section.id, 'visibility', e.target.value as LinkVisibility)}
                                                                                         className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-medium"
                                                                                     >
-                                                                                        <option value="public">Public (visible to everyone)</option>
-                                                                                        <option value="authenticated">Authenticated (logged-in users only)</option>
+                                                                                        {user?.is_admin && <option value="public">Public (visible to everyone)</option>}
+                                                                                        {user?.is_admin && <option value="authenticated">Authenticated (logged-in users only)</option>}
                                                                                         <option value="private">Private (specific users only)</option>
                                                                                     </select>
                                                                                 </div>
@@ -6127,33 +6134,37 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         </div>
 
                                         <div className="space-y-3 mb-6">
-                                            <label className="flex items-center gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 cursor-pointer transition-colors">
-                                                <input
-                                                    type="radio"
-                                                    name="tabVisibility"
-                                                    checked={!tab.visibility || tab.visibility === 'public'}
-                                                    onChange={() => handleUpdateTabVisibility(tab.id, 'public')}
-                                                    className="w-4 h-4"
-                                                />
-                                                <div>
-                                                    <div className="font-semibold text-slate-900 dark:text-white">🌐 Public</div>
-                                                    <div className="text-xs text-slate-500">Available for everyone</div>
-                                                </div>
-                                            </label>
+                                            {user?.is_admin && (
+                                                <label className="flex items-center gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 cursor-pointer transition-colors">
+                                                    <input
+                                                        type="radio"
+                                                        name="tabVisibility"
+                                                        checked={!tab.visibility || tab.visibility === 'public'}
+                                                        onChange={() => handleUpdateTabVisibility(tab.id, 'public')}
+                                                        className="w-4 h-4"
+                                                    />
+                                                    <div>
+                                                        <div className="font-semibold text-slate-900 dark:text-white">🌐 Public</div>
+                                                        <div className="text-xs text-slate-500">Available for everyone</div>
+                                                    </div>
+                                                </label>
+                                            )}
 
-                                            <label className="flex items-center gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 cursor-pointer transition-colors">
-                                                <input
-                                                    type="radio"
-                                                    name="tabVisibility"
-                                                    checked={tab.visibility === 'authenticated'}
-                                                    onChange={() => handleUpdateTabVisibility(tab.id, 'authenticated')}
-                                                    className="w-4 h-4"
-                                                />
-                                                <div>
-                                                    <div className="font-semibold text-slate-900 dark:text-white">🔒 Authenticated</div>
-                                                    <div className="text-xs text-slate-500">Logged in users only</div>
-                                                </div>
-                                            </label>
+                                            {user?.is_admin && (
+                                                <label className="flex items-center gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 cursor-pointer transition-colors">
+                                                    <input
+                                                        type="radio"
+                                                        name="tabVisibility"
+                                                        checked={tab.visibility === 'authenticated'}
+                                                        onChange={() => handleUpdateTabVisibility(tab.id, 'authenticated')}
+                                                        className="w-4 h-4"
+                                                    />
+                                                    <div>
+                                                        <div className="font-semibold text-slate-900 dark:text-white">🔒 Authenticated</div>
+                                                        <div className="text-xs text-slate-500">Logged in users only</div>
+                                                    </div>
+                                                </label>
+                                            )}
 
                                             <label className="flex items-center gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 cursor-pointer transition-colors">
                                                 <input
@@ -6229,33 +6240,37 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         </div>
 
                                         <div className="space-y-3 mb-6">
-                                            <label className="flex items-center gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 cursor-pointer transition-colors">
-                                                <input
-                                                    type="radio"
-                                                    name="sectionVisibility"
-                                                    checked={!section.visibility || section.visibility === 'public'}
-                                                    onChange={() => handleUpdateSectionVisibility(visibilityDialogSection.tabId, section.id, 'public')}
-                                                    className="w-4 h-4"
-                                                />
-                                                <div>
-                                                    <div className="font-semibold text-slate-900 dark:text-white">🌐 Public</div>
-                                                    <div className="text-xs text-slate-500">Available for everyone</div>
-                                                </div>
-                                            </label>
+                                            {user?.is_admin && (
+                                                <label className="flex items-center gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 cursor-pointer transition-colors">
+                                                    <input
+                                                        type="radio"
+                                                        name="sectionVisibility"
+                                                        checked={!section.visibility || section.visibility === 'public'}
+                                                        onChange={() => handleUpdateSectionVisibility(visibilityDialogSection.tabId, section.id, 'public')}
+                                                        className="w-4 h-4"
+                                                    />
+                                                    <div>
+                                                        <div className="font-semibold text-slate-900 dark:text-white">🌐 Public</div>
+                                                        <div className="text-xs text-slate-500">Available for everyone</div>
+                                                    </div>
+                                                </label>
+                                            )}
 
-                                            <label className="flex items-center gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 cursor-pointer transition-colors">
-                                                <input
-                                                    type="radio"
-                                                    name="sectionVisibility"
-                                                    checked={section.visibility === 'authenticated'}
-                                                    onChange={() => handleUpdateSectionVisibility(visibilityDialogSection.tabId, section.id, 'authenticated')}
-                                                    className="w-4 h-4"
-                                                />
-                                                <div>
-                                                    <div className="font-semibold text-slate-900 dark:text-white">🔒 Authenticated</div>
-                                                    <div className="text-xs text-slate-500">Logged in users only</div>
-                                                </div>
-                                            </label>
+                                            {user?.is_admin && (
+                                                <label className="flex items-center gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 cursor-pointer transition-colors">
+                                                    <input
+                                                        type="radio"
+                                                        name="sectionVisibility"
+                                                        checked={section.visibility === 'authenticated'}
+                                                        onChange={() => handleUpdateSectionVisibility(visibilityDialogSection.tabId, section.id, 'authenticated')}
+                                                        className="w-4 h-4"
+                                                    />
+                                                    <div>
+                                                        <div className="font-semibold text-slate-900 dark:text-white">🔒 Authenticated</div>
+                                                        <div className="text-xs text-slate-500">Logged in users only</div>
+                                                    </div>
+                                                </label>
+                                            )}
 
                                             <label className="flex items-center gap-3 p-3 rounded-lg border-2 border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 cursor-pointer transition-colors">
                                                 <input

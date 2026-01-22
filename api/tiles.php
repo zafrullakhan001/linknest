@@ -26,6 +26,8 @@ switch ($method) {
             handleGetTileVersions($matches[1]);
         } elseif (preg_match('#^/([^/]+)/versions/([^/]+)$#', $path, $matches)) {
             handleGetVersionDetails($matches[1], $matches[2]);
+        } elseif (preg_match('#^/([^/]+)/info$#', $path, $matches)) {
+            handleGetTileInfo($matches[1]);
         } elseif (preg_match('#^/([^/]+)$#', $path, $matches)) {
             handleGetTile($matches[1]);
         } else {
@@ -284,6 +286,7 @@ function handleGetTiles() {
         
         $tile = [
             'id' => $row['id'],
+            'userId' => isset($row['user_id']) ? (int)$row['user_id'] : null,
             'title' => $row['title'],
             'description' => $row['description'],
             'htmlContent' => $row['html_content'],
@@ -1560,8 +1563,8 @@ function handleCloneTile($tileId) {
         
         // Create new tile with "Copy of" prefix
         $newTitle = 'Copy of ' . $originalTile['title'];
-        $newVisibility = 'public'; // Cloned tiles default to public
-        $newAllowedUsers = null;
+        $newVisibility = $originalTile['visibility'];
+        $newAllowedUsers = $originalTile['allowed_users'];
         
         // Prepare tile decoration properties
         $tileBackgroundColor = !empty($originalTile['tile_background_color']) ? $originalTile['tile_background_color'] : null;
@@ -1922,8 +1925,8 @@ function handleCloneCategory($categoryName) {
             
             // Create new tile with "Copy of" prefix in title
             $newTitle = 'Copy of ' . $originalTile['title'];
-            $newVisibility = 'public'; // Cloned tiles default to public
-            $newAllowedUsers = null;
+            $newVisibility = $originalTile['visibility'];
+            $newAllowedUsers = $originalTile['allowed_users'];
             
             // Prepare tile decoration properties
             $tileBackgroundColor = !empty($originalTile['tile_background_color']) ? $originalTile['tile_background_color'] : null;
@@ -4357,4 +4360,116 @@ function deleteEmptyDiffVersions($tileId, $db) {
     }
     
     return $deleted;
+}
+
+function handleGetTileInfo($tileId) {
+    $user = getAuthenticatedUser();
+    $db = getDB();
+    
+    // Get tile with owner info
+    $stmt = $db->prepare('
+        SELECT 
+            t.id,
+            t.title,
+            t.user_id,
+            t.created_at,
+            t.archived_at,
+            t.deleted_at,
+            t.visibility,
+            t.allowed_users,
+            u.username as owner_username,
+            u.email as owner_email,
+            (SELECT MAX(created_at) FROM tile_versions WHERE tile_id = t.id AND is_temp = 0) as last_version_updated
+        FROM tiles t
+        LEFT JOIN users u ON t.user_id = u.id
+        WHERE t.id = ?
+    ');
+    $stmt->execute([$tileId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$row) {
+        sendJSON(['error' => 'Tile not found'], 404);
+    }
+    
+    // Check visibility
+    $tileVisibility = $row['visibility'] ?? 'public';
+    $tileAllowedUsers = $row['allowed_users'] ? json_decode($row['allowed_users'], true) : [];
+    
+    $isTileVisible = false;
+    if ($user && $user['is_admin']) {
+        $isTileVisible = true;
+    } elseif ($tileVisibility === 'public') {
+        $isTileVisible = true;
+    } elseif ($tileVisibility === 'authenticated' && $user) {
+        $isTileVisible = true;
+    } elseif ($tileVisibility === 'private' && $user) {
+        $isTileVisible = in_array($user['id'], $tileAllowedUsers);
+    }
+    
+    if (!$isTileVisible) {
+        sendJSON(['error' => 'Tile not found'], 404);
+    }
+    
+    // Get user permissions
+    $canView = true;
+    $canEdit = false;
+    $canDelete = false;
+    
+    if ($user) {
+        if ($user['is_admin']) {
+            $canView = true;
+            $canEdit = true;
+            $canDelete = true;
+        } else {
+            $isCreator = isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id'];
+            if ($isCreator) {
+                $canView = true;
+                $canEdit = true;
+                $canDelete = true;
+            } else {
+                $permStmt = $db->prepare('SELECT can_view, can_edit, can_delete FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+                $permStmt->execute([$user['id'], $tileId]);
+                $permission = $permStmt->fetch();
+                if ($permission) {
+                    $canView = (bool)$permission['can_view'];
+                    $canEdit = (bool)$permission['can_edit'];
+                    $canDelete = (bool)$permission['can_delete'];
+                }
+            }
+        }
+    }
+    
+    // Get latest version update time if available (use created_at from latest version)
+    $lastModified = $row['last_version_updated'] ? (int)$row['last_version_updated'] : (int)$row['created_at'];
+    
+    // If no versions exist, use tile created_at as last modified
+    if (!$row['last_version_updated']) {
+        // Check if there are any versions
+        $versionCheckStmt = $db->prepare('SELECT MAX(created_at) as last_version FROM tile_versions WHERE tile_id = ? AND is_temp = 0');
+        $versionCheckStmt->execute([$tileId]);
+        $versionRow = $versionCheckStmt->fetch();
+        if ($versionRow && $versionRow['last_version']) {
+            $lastModified = (int)$versionRow['last_version'];
+        }
+    }
+    
+    sendJSON([
+        'tileId' => $row['id'],
+        'title' => $row['title'],
+        'owner' => [
+            'userId' => $row['user_id'] ? (int)$row['user_id'] : null,
+            'username' => $row['owner_username'],
+            'email' => $row['owner_email']
+        ],
+        'createdAt' => (int)$row['created_at'],
+        'lastModified' => $lastModified,
+        'archivedAt' => $row['archived_at'] ? (int)$row['archived_at'] : null,
+        'deletedAt' => $row['deleted_at'] ? (int)$row['deleted_at'] : null,
+        'visibility' => $tileVisibility,
+        'permissions' => [
+            'canView' => $canView,
+            'canEdit' => $canEdit,
+            'canDelete' => $canDelete
+        ]
+    ]);
 }

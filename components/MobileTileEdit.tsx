@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Tile, Tab, LinkSection, Link, LinkVisibility, TileVisibility, ThemeColor, THEME_COLORS, COLOR_STYLES } from '../types';
+import { User } from '../services/authService';
 import { MobileRichTextEditor } from './MobileRichTextEditor';
 
 interface MobileTileEditProps {
@@ -31,6 +32,7 @@ interface MobileTileEditProps {
     setShowTileUserSelector: (show: boolean) => void;
     settings?: any;
     availableBrowsers?: string[];
+    user?: User | null;
 }
 
 /**
@@ -70,7 +72,8 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
     showTileUserSelector,
     setShowTileUserSelector,
     settings = {},
-    availableBrowsers = []
+    availableBrowsers = [],
+    user
 }) => {
     const [activeSection, setActiveSection] = useState<string | null>(null);
     const [expandedTabs, setExpandedTabs] = useState<Set<string>>(new Set());
@@ -183,13 +186,13 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         const updatedTabs = editTabs.map(tab =>
             tab.id === tabId
                 ? {
-                      ...tab,
-                      sections: tab.sections?.map(section =>
-                          section.id === sectionId
-                              ? { ...section, links: [...(section.links || []), newLink] }
-                              : section
-                      )
-                  }
+                    ...tab,
+                    sections: tab.sections?.map(section =>
+                        section.id === sectionId
+                            ? { ...section, links: [...(section.links || []), newLink] }
+                            : section
+                    )
+                }
                 : tab
         );
         onTabsChange(updatedTabs);
@@ -215,7 +218,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         const tab = editTabs.find(t => t.id === tabId);
         const section = tab?.sections?.find(s => s.id === sectionId);
         const link = section?.links?.find(l => l.id === linkId);
-        
+
         if (link) {
             setEditingLink({ tabId, sectionId, linkId });
             setEditLinkState({
@@ -247,32 +250,32 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         const updatedTabs = editTabs.map(tab =>
             tab.id === tabId
                 ? {
-                      ...tab,
-                      sections: tab.sections?.map(section =>
-                          section.id === sectionId
-                              ? {
-                                    ...section,
-                                    links: section.links?.map(link =>
-                                        link.id === linkId
-                                            ? {
-                                                  ...link,
-                                                  label: state.label || 'New Link',
-                                                  url: state.url,
-                                                  icon: state.icon || '🔗',
-                                                  textColor: state.textColor || undefined,
-                                                  visibility: state.visibility || 'public',
-                                                  allowedUsers: state.allowedUsers || [],
-                                                  notes: state.notes || undefined,
-                                                  tooltip: state.tooltip || undefined,
-                                                  browser: state.browser || 'default',
-                                                  richTextContent: state.richTextContent || undefined
-                                              }
-                                            : link
-                                    ) || []
-                                }
-                              : section
-                      )
-                  }
+                    ...tab,
+                    sections: tab.sections?.map(section =>
+                        section.id === sectionId
+                            ? {
+                                ...section,
+                                links: section.links?.map(link =>
+                                    link.id === linkId
+                                        ? {
+                                            ...link,
+                                            label: state.label || 'New Link',
+                                            url: state.url,
+                                            icon: state.icon || '🔗',
+                                            textColor: state.textColor || undefined,
+                                            visibility: state.visibility || 'public',
+                                            allowedUsers: state.allowedUsers || [],
+                                            notes: state.notes || undefined,
+                                            tooltip: state.tooltip || undefined,
+                                            browser: state.browser || 'default',
+                                            richTextContent: state.richTextContent || undefined
+                                        }
+                                        : link
+                                ) || []
+                            }
+                            : section
+                    )
+                }
                 : tab
         );
         onTabsChange(updatedTabs);
@@ -300,20 +303,20 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         const updatedTabs = editTabs.map(tab =>
             tab.id === tabId
                 ? {
-                      ...tab,
-                      sections: tab.sections?.map(section => {
-                          if (section.id !== sectionId) return section;
-                          const clonedLinks = (section.links || []).flatMap(link => {
-                              if (link.id !== linkId) return [link];
-                              const newLink: Link = {
-                                  ...link,
-                                  id: `link_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-                              };
-                              return [link, newLink];
-                          });
-                          return { ...section, links: clonedLinks };
-                      }) || []
-                  }
+                    ...tab,
+                    sections: tab.sections?.map(section => {
+                        if (section.id !== sectionId) return section;
+                        const clonedLinks = (section.links || []).flatMap(link => {
+                            if (link.id !== linkId) return [link];
+                            const newLink: Link = {
+                                ...link,
+                                id: `link_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+                            };
+                            return [link, newLink];
+                        });
+                        return { ...section, links: clonedLinks };
+                    }) || []
+                }
                 : tab
         );
         onTabsChange(updatedTabs);
@@ -325,13 +328,13 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         const updatedTabs = editTabs.map(tab =>
             tab.id === tabId
                 ? {
-                      ...tab,
-                      sections: tab.sections?.map(section =>
-                          section.id === sectionId
-                              ? { ...section, links: section.links?.filter(link => link.id !== linkId) || [] }
-                              : section
-                      )
-                  }
+                    ...tab,
+                    sections: tab.sections?.map(section =>
+                        section.id === sectionId
+                            ? { ...section, links: section.links?.filter(link => link.id !== linkId) || [] }
+                            : section
+                    )
+                }
                 : tab
         );
         onTabsChange(updatedTabs);
@@ -386,15 +389,15 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
     // Filter links based on search
     const filteredTabs = linkSearchTerm
         ? editTabs.map(tab => ({
-              ...tab,
-              sections: tab.sections?.map(section => ({
-                  ...section,
-                  links: section.links?.filter(link =>
-                      link.label.toLowerCase().includes(linkSearchTerm.toLowerCase()) ||
-                      link.url.toLowerCase().includes(linkSearchTerm.toLowerCase())
-                  ) || []
-              })) || []
-          }))
+            ...tab,
+            sections: tab.sections?.map(section => ({
+                ...section,
+                links: section.links?.filter(link =>
+                    link.label.toLowerCase().includes(linkSearchTerm.toLowerCase()) ||
+                    link.url.toLowerCase().includes(linkSearchTerm.toLowerCase())
+                ) || []
+            })) || []
+        }))
         : editTabs;
 
     return (
@@ -491,11 +494,10 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                         <button
                                             key={color}
                                             onClick={() => onColorChange(color)}
-                                            className={`w-12 h-12 rounded-full border-3 transition-all relative overflow-hidden ${
-                                                editColor === color
-                                                    ? 'border-brand-500 dark:border-brand-400 scale-110 ring-2 ring-brand-200 dark:ring-brand-900/50'
-                                                    : 'border-slate-300 dark:border-slate-600 active:scale-105'
-                                            } touch-manipulation`}
+                                            className={`w-12 h-12 rounded-full border-3 transition-all relative overflow-hidden ${editColor === color
+                                                ? 'border-brand-500 dark:border-brand-400 scale-110 ring-2 ring-brand-200 dark:ring-brand-900/50'
+                                                : 'border-slate-300 dark:border-slate-600 active:scale-105'
+                                                } touch-manipulation`}
                                             title={color.charAt(0).toUpperCase() + color.slice(1)}
                                         >
                                             <div className={`absolute inset-0 ${COLOR_STYLES[color].base}`}></div>
@@ -544,14 +546,13 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                     Visibility
                                 </label>
                                 <div className="space-y-2">
-                                    {(['public', 'authenticated', 'private'] as TileVisibility[]).map(visibility => (
+                                    {(['public', 'authenticated', 'private'] as TileVisibility[]).filter(v => user?.is_admin || v === 'private').map(visibility => (
                                         <label
                                             key={visibility}
-                                            className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border-2 transition-all touch-manipulation ${
-                                                editVisibility === visibility
-                                                    ? 'border-brand-500 dark:border-brand-400 bg-brand-50 dark:bg-brand-900/20'
-                                                    : 'border-slate-200 dark:border-slate-700 active:border-slate-300 dark:active:border-slate-600'
-                                            }`}
+                                            className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border-2 transition-all touch-manipulation ${editVisibility === visibility
+                                                ? 'border-brand-500 dark:border-brand-400 bg-brand-50 dark:bg-brand-900/20'
+                                                : 'border-slate-200 dark:border-slate-700 active:border-slate-300 dark:active:border-slate-600'
+                                                }`}
                                             style={{ minHeight: '44px' }}
                                         >
                                             <input
@@ -853,8 +854,8 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                         className="w-full bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
                                                                         style={{ minHeight: '44px' }}
                                                                     >
-                                                                        <option value="public">Public (visible to everyone)</option>
-                                                                        <option value="authenticated">Authenticated (logged-in users only)</option>
+                                                                        {user?.is_admin && <option value="public">Public (visible to everyone)</option>}
+                                                                        {user?.is_admin && <option value="authenticated">Authenticated (logged-in users only)</option>}
                                                                         <option value="private">Private (specific users only)</option>
                                                                     </select>
                                                                 </div>
@@ -1088,8 +1089,8 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                                             className="w-full bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
                                                                                             style={{ minHeight: '44px' }}
                                                                                         >
-                                                                                            <option value="public">Public (visible to everyone)</option>
-                                                                                            <option value="authenticated">Authenticated (logged-in users only)</option>
+                                                                                            {user?.is_admin && <option value="public">Public (visible to everyone)</option>}
+                                                                                            {user?.is_admin && <option value="authenticated">Authenticated (logged-in users only)</option>}
                                                                                             <option value="private">Private (specific users only)</option>
                                                                                         </select>
                                                                                     </div>

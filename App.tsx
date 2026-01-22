@@ -798,6 +798,7 @@ const AppContent: React.FC = () => {
             isAuthenticated={isAuthenticated}
             onAuthRequired={() => setAuthModalOpen(true)}
             sourceTab={sourceTab as 'public' | 'your-apps' | 'private' | 'favorites' | 'public-favorites' | null}
+            user={user}
           />
         </Suspense>
       );

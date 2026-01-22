@@ -66,6 +66,7 @@ export interface Tab {
 
 export interface Tile {
   id: string;
+  userId?: number | null;
   title: string;
   description: string; // Short description for the dashboard card
   htmlContent?: string; // Rich HTML content for the landing page

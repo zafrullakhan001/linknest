@@ -71,6 +71,8 @@ switch ($method) {
             handleGetAllUsers();
         } elseif ($path === '/users') {
             handleGetUsers();
+        } elseif (preg_match('#^/user/(\d+)$#', $path, $matches)) {
+            handleGetUserInfo((int)$matches[1]);
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -3070,4 +3072,29 @@ function handleAutoDetectAuthSources() {
         error_log('Auto-detect auth sources throwable error: ' . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString());
         sendJSON(['error' => 'Auto-detection failed: An unexpected error occurred'], 500);
     }
+}
+
+function handleGetUserInfo($userId) {
+    $user = getAuthenticatedUser();
+    $db = getDB();
+    
+    // Allow any authenticated user to view basic user info (for category ownership display)
+    if (!$user) {
+        sendJSON(['error' => 'Authentication required'], 401);
+    }
+    
+    $stmt = $db->prepare('SELECT id, username, email, is_admin FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $userInfo = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$userInfo) {
+        sendJSON(['error' => 'User not found'], 404);
+    }
+    
+    sendJSON([
+        'userId' => (int)$userInfo['id'],
+        'username' => $userInfo['username'],
+        'email' => $userInfo['email'],
+        'isAdmin' => (bool)$userInfo['is_admin']
+    ]);
 }

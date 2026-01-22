@@ -23,6 +23,7 @@ import { FaTimes } from 'react-icons/fa';
 import { LinkInfoDialog } from './LinkInfoDialog';
 import { useMobile } from '../hooks/useMobile';
 import { MobileTileView } from './MobileTileView';
+import { TileInfoDialog } from './TileInfoDialog';
 
 
 interface TileGridProps {
@@ -397,6 +398,8 @@ interface CategoryProps {
   onScheduleCategory?: (categoryName: string) => void;
   onUnarchiveCategory?: (categoryName: string) => void;
   onManageVisibility?: (categoryName: string) => void;
+  onShowCategoryInfo?: (categoryName: string, tiles: Tile[]) => void;
+  categoryTiles?: Tile[];
   animationClass?: string;
 }
 
@@ -425,6 +428,8 @@ const Category: React.FC<CategoryProps> = ({
   onScheduleCategory,
   onUnarchiveCategory,
   onManageVisibility,
+  onShowCategoryInfo,
+  categoryTiles = [],
   animationClass
 }) => {
   const { user } = useAuth();
@@ -572,6 +577,21 @@ const Category: React.FC<CategoryProps> = ({
         <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-500 dark:text-slate-400">
           {tileCount}
         </span>
+        {onShowCategoryInfo && categoryTiles.length > 0 && (
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onShowCategoryInfo(categoryName, categoryTiles);
+            }}
+            className="opacity-0 group-hover/category:opacity-100 transition-opacity p-1 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 rounded transition-all ml-1"
+            title="Show category information"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
+            </svg>
+          </button>
+        )}
         <div className="h-px bg-slate-200 dark:border-slate-700 flex-1"></div>
 
         {/* Save Order Button (only visible for authenticated users) */}
@@ -786,6 +806,7 @@ interface SortableTileProps {
   onPermanentDeleteTile?: (e: React.MouseEvent, tileId: string) => void;
   onArchiveTile?: (e: React.MouseEvent, tileId: string) => void;
   onUnarchiveTile?: (e: React.MouseEvent, tileId: string) => void;
+  onShowTileInfo?: (tile: Tile) => void;
   isRecycleBin?: boolean;
   isArchive?: boolean;
   canMoveLeft?: boolean;
@@ -812,6 +833,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
   onPermanentDeleteTile,
   onArchiveTile,
   onUnarchiveTile,
+  onShowTileInfo,
   isRecycleBin = false,
   isArchive = false,
   canMoveLeft = false,
@@ -1094,7 +1116,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
           {isAuthenticated && (
             <>
               {/* Category Selector */}
-              {onMoveToCategory && (
+              {onMoveToCategory && (user?.is_admin || tile.visibility === 'private') && (
                 <>
                   <button
                     onClick={(e) => {
@@ -1219,6 +1241,23 @@ const SortableTile: React.FC<SortableTileProps> = ({
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill={isPublicFavorite(tile.id) ? 'currentColor' : 'none'} stroke="currentColor" className="w-3.5 h-3.5">
                 <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
+              </svg>
+            </button>
+          )}
+
+          {/* Info Button - Show tile information */}
+          {onShowTileInfo && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onShowTileInfo(tile);
+              }}
+              className="p-1 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded transition-all"
+              title="Show tile information"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
               </svg>
             </button>
           )}
@@ -1643,6 +1682,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [editingTile, setEditingTile] = useState<Tile | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [linkInfoDialog, setLinkInfoDialog] = useState<{ link: Link } | null>(null);
+  const [tileInfoDialog, setTileInfoDialog] = useState<{ tile?: Tile; categoryInfo?: { categoryName: string; tiles: Tile[] } } | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     try {
       const saved = localStorage.getItem('linknest_active_tab');
@@ -1813,6 +1853,24 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
   // Emoji Picker State
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
+  // View Mode State
+  const [viewMode, setViewMode] = useState<'grid' | 'categories'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('viewMode');
+      return (saved === 'grid' || saved === 'categories') ? saved : 'grid';
+    }
+    return 'grid';
+  });
+
+  // Persist viewMode to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('viewMode', viewMode);
+    }
+  }, [viewMode]);
+
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(null);
 
   // Edit Modal Tab State
   const [editModalActiveTab, setEditModalActiveTab] = useState<'general' | 'decoration' | 'messages'>('general');
@@ -2203,6 +2261,30 @@ export const TileGrid: React.FC<TileGridProps> = ({
     return result;
   }, [tiles, categoryOrder, isAuthenticated]);
 
+  // Get categories that belong to the current user (user owns at least one tile in that category)
+  const userOwnedCategories = useMemo(() => {
+    if (!isAuthenticated || !user) {
+      return allCategories; // For non-authenticated users, return all categories
+    }
+    
+    // If user is admin, return all categories
+    if (user.is_admin) {
+      return allCategories;
+    }
+    
+    // Filter to only categories where user owns at least one tile
+    const userOwnedCategorySet = new Set<string>();
+    tiles.forEach(t => {
+      const tileUserId = t.userId ?? (t as { user_id?: number }).user_id;
+      if (tileUserId === user.id) {
+        userOwnedCategorySet.add(t.group || 'General');
+      }
+    });
+    
+    // Return categories in the same order as allCategories, but filtered
+    return allCategories.filter(cat => userOwnedCategorySet.has(cat));
+  }, [allCategories, tiles, isAuthenticated, user]);
+
   // Load recycle bin count on mount and when authenticated
   useEffect(() => {
     if (isAuthenticated) {
@@ -2570,7 +2652,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   }, [tiles]);
 
   // Filter and Group Tiles - Global search across all content
-  const groupedTiles = useMemo(() => {
+  const baseGroupedTiles = useMemo(() => {
     // First, filter tiles based on active tab
     let filteredTiles = tiles;
 
@@ -3008,6 +3090,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
     return groups;
   }, [tiles, searchTerm, categoryOrder, categoryMetadata, activeTab, isAuthenticated, user, recycleBinTiles, archiveTiles, publicFavorites]);
+
+  // Apply selected category filter to the grouped tiles
+  const groupedTiles = useMemo(() => {
+    if (selectedCategoryFilter && baseGroupedTiles[selectedCategoryFilter]) {
+      return { [selectedCategoryFilter]: baseGroupedTiles[selectedCategoryFilter] };
+    }
+    return baseGroupedTiles;
+  }, [baseGroupedTiles, selectedCategoryFilter]);
 
   // Helper function to format browser name for display
   const formatBrowserName = (browserId: string | null | undefined): string => {
@@ -3594,6 +3684,54 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
   };
 
+  const isPrivateScopeSave = activeTab === 'private' && !!user;
+  const buildArrangementAndScope = useCallback(
+    (sourceTiles: Tile[]): { arrangement: Array<{ tileId: string; position: number; groupName: string }>; scope?: 'global' | 'private' } => {
+      const owned = (t: Tile) => {
+        const uid = t.userId ?? (t as { user_id?: number }).user_id;
+        return uid != null && user && uid === user.id;
+      };
+      if (isPrivateScopeSave && user) {
+        const filtered = sourceTiles.filter(owned);
+        const grouped: Record<string, Tile[]> = {};
+        filtered.forEach((t) => {
+          const g = t.group || 'General';
+          if (!grouped[g]) grouped[g] = [];
+          grouped[g].push(t);
+        });
+        const orderedCats: string[] = [];
+        const seen = new Set<string>();
+        if (categoryOrder.length > 0) {
+          categoryOrder.forEach((c) => {
+            if (grouped[c] && !seen.has(c)) {
+              orderedCats.push(c);
+              seen.add(c);
+            }
+          });
+        }
+        Object.keys(grouped).forEach((c) => {
+          if (!seen.has(c)) orderedCats.push(c);
+        });
+        const arrangement: Array<{ tileId: string; position: number; groupName: string }> = [];
+        orderedCats.forEach((cat) => {
+          (grouped[cat] || []).forEach((t) =>
+            arrangement.push({ tileId: t.id, position: arrangement.length, groupName: cat })
+          );
+        });
+        return { arrangement, scope: 'private' };
+      }
+      return {
+        arrangement: sourceTiles.map((t, i) => ({
+          tileId: t.id,
+          position: i,
+          groupName: t.group || 'General',
+        })),
+        scope: undefined,
+      };
+    },
+    [isPrivateScopeSave, user, categoryOrder]
+  );
+
   const handleMoveTileToCategory = useCallback(async (tileId: string, categoryName: string) => {
     if (!isAuthenticated) return;
 
@@ -3619,43 +3757,23 @@ export const TileGrid: React.FC<TileGridProps> = ({
           grouped[group].push(tile);
         });
 
-        // Build arrangement preserving order within each category
-        const arrangement: Array<{ tileId: string; position: number; groupName: string }> = [];
-        let globalPosition = 0;
-
-        // Use categoryOrder if available, otherwise use order from tiles
         const orderedCategories: string[] = [];
         const seenCats = new Set<string>();
-
         if (categoryOrder.length > 0) {
-          // Add categories from saved order first
-          categoryOrder.forEach(cat => {
-            if (grouped[cat] && !seenCats.has(cat)) {
-              orderedCategories.push(cat);
-              seenCats.add(cat);
+          categoryOrder.forEach((c) => {
+            if (grouped[c] && !seenCats.has(c)) {
+              orderedCategories.push(c);
+              seenCats.add(c);
             }
           });
         }
-
-        // Add any remaining categories in their order of appearance
-        Object.keys(grouped).forEach(cat => {
-          if (!seenCats.has(cat)) {
-            orderedCategories.push(cat);
-          }
+        Object.keys(grouped).forEach((c) => {
+          if (!seenCats.has(c)) orderedCategories.push(c);
         });
-
-        orderedCategories.forEach(categoryName => {
-          const categoryTiles = grouped[categoryName] || [];
-          categoryTiles.forEach(tile => {
-            arrangement.push({
-              tileId: tile.id,
-              position: globalPosition++,
-              groupName: categoryName
-            });
-          });
-        });
-
-        await saveTileArrangement(arrangement);
+        const flat: Tile[] = [];
+        orderedCategories.forEach((cat) => flat.push(...(grouped[cat] || [])));
+        const { arrangement, scope } = buildArrangementAndScope(flat);
+        await saveTileArrangement(arrangement, scope);
       } catch (error) {
         console.error('Failed to save tile arrangement:', error);
         // Revert on error
@@ -3667,7 +3785,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       console.error('Failed to move tile to category:', error);
       alert('Failed to move tile. Please try again.');
     }
-  }, [tiles, isAuthenticated, onUpdateTiles]);
+  }, [tiles, isAuthenticated, onUpdateTiles, categoryOrder, buildArrangementAndScope]);
 
   const handleMoveCategory = useCallback(async (categoryName: string, direction: 'up' | 'down') => {
     if (!isAuthenticated) return;
@@ -4114,12 +4232,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
       // Save updated arrangements
       try {
         // Save tile arrangement with updated category names
-        const arrangement = updatedTiles.map((tile, index) => ({
-          tileId: tile.id,
-          position: index,
-          groupName: tile.group || 'General'
-        }));
-        await saveTileArrangement(arrangement);
+        const { arrangement, scope } = buildArrangementAndScope(updatedTiles);
+        await saveTileArrangement(arrangement, scope);
 
         // Save category arrangement with renamed category
         if (newCategoryOrder.length > 0) {
@@ -4142,7 +4256,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       console.error('Failed to rename category:', error);
       alert('Failed to rename category. Please try again.');
     }
-  }, [tiles, isAuthenticated, onUpdateTiles, categoryOrder, categoryMetadata]);
+  }, [tiles, isAuthenticated, onUpdateTiles, categoryOrder, categoryMetadata, buildArrangementAndScope]);
 
   const handleArchiveCategory = useCallback(async (categoryName: string) => {
     if (!isAuthenticated) return;
@@ -4407,33 +4521,32 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
     // Auto-save is kept for convenience, but manual save button provides reassurance
     try {
-      const arrangement: Array<{ tileId: string; position: number; groupName: string }> =
-        reorderedTiles.map((tile, index) => ({
-          tileId: tile.id,
-          position: index,
-          groupName: tile.group || 'General',
-        }));
-
-      await saveTileArrangement(arrangement);
+      const { arrangement, scope } = buildArrangementAndScope(reorderedTiles);
+      await saveTileArrangement(arrangement, scope);
     } catch (error) {
       console.error('Failed to save tile arrangement:', error);
-      // Don't alert on auto-save failure to avoid annoying popups, 
+      // Don't alert on auto-save failure to avoid annoying popups,
       // let the user use the manual save button if needed.
     }
-  }, [tiles, isAuthenticated, onUpdateTiles]);
+  }, [tiles, isAuthenticated, onUpdateTiles, buildArrangementAndScope]);
 
   const handleManualSave = useCallback(async () => {
     if (isSaving) return;
     setIsSaving(true);
     try {
-      const arrangement: Array<{ tileId: string; position: number; groupName: string }> =
-        tiles.map((tile, index) => ({
-          tileId: tile.id,
-          position: index,
-          groupName: tile.group || 'General',
-        }));
-
-      await saveTileArrangement(arrangement);
+      let sourceTiles: Tile[];
+      if (isPrivateScopeSave && Object.keys(groupedTiles).length > 0) {
+        const flat: Tile[] = [];
+        const ordered = categoryOrder.length > 0
+          ? categoryOrder.filter((c) => groupedTiles[c]).concat(Object.keys(groupedTiles).filter((c) => !categoryOrder.includes(c)))
+          : Object.keys(groupedTiles);
+        ordered.forEach((cat) => flat.push(...(groupedTiles[cat] || [])));
+        sourceTiles = flat;
+      } else {
+        sourceTiles = tiles;
+      }
+      const { arrangement, scope } = buildArrangementAndScope(sourceTiles);
+      await saveTileArrangement(arrangement, scope);
       alert('Tile order saved successfully!');
     } catch (error) {
       console.error('Failed to save tile arrangement:', error);
@@ -4441,7 +4554,73 @@ export const TileGrid: React.FC<TileGridProps> = ({
     } finally {
       setIsSaving(false);
     }
-  }, [tiles, isSaving]);
+  }, [tiles, isSaving, isPrivateScopeSave, groupedTiles, categoryOrder, buildArrangementAndScope]);
+
+  const handleShowTileInfo = useCallback((tile: Tile) => {
+    setTileInfoDialog({ tile });
+  }, []);
+
+  const handleShowCategoryInfo = useCallback(async (categoryName: string, categoryTiles: Tile[]) => {
+    // Determine category owner from oldest tile (first created in category)
+    let categoryOwner: { userId: number | null; username: string | null; email: string | null; isAdmin: boolean } | undefined;
+    
+    if (categoryTiles.length > 0) {
+      // Find oldest tile (first created)
+      const oldestTile = categoryTiles.reduce((oldest, current) => 
+        (!oldest || current.createdAt < oldest.createdAt) ? current : oldest
+      );
+      
+      if (oldestTile.userId) {
+        try {
+          // Fetch owner info
+          const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+          const response = await fetch(`${API_BASE}/auth/user/${oldestTile.userId}`, {
+            credentials: 'include'
+          });
+          
+          if (response.ok) {
+            const userInfo = await response.json();
+            categoryOwner = {
+              userId: userInfo.userId,
+              username: userInfo.username,
+              email: userInfo.email,
+              isAdmin: userInfo.isAdmin || false
+            };
+          }
+        } catch (err) {
+          console.error('Failed to fetch category owner info:', err);
+          // Fallback: just use userId
+          categoryOwner = {
+            userId: oldestTile.userId,
+            username: null,
+            email: null,
+            isAdmin: false
+          };
+        }
+      }
+    }
+    
+    setTileInfoDialog({
+      categoryInfo: {
+        categoryName,
+        tileCount: categoryTiles.length,
+        tiles: categoryTiles.map(t => ({
+          id: t.id,
+          title: t.title,
+          userId: t.userId,
+          createdAt: t.createdAt,
+          canView: t.canView ?? false,
+          canEdit: t.canEdit ?? false,
+          canDelete: t.canDelete ?? false
+        })),
+        owner: categoryOwner
+      }
+    });
+  }, []);
+
+  const handleCloseTileInfoDialog = useCallback(() => {
+    setTileInfoDialog(null);
+  }, []);
 
   const handleToggleFavorite = useCallback(async (tileId: string) => {
     if (!isAuthenticated) {
@@ -4642,6 +4821,39 @@ export const TileGrid: React.FC<TileGridProps> = ({
             </div>
 
             <div className="flex gap-2 justify-end">
+              {/* View Mode Toggle */}
+              <div className="flex bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm border border-white/50 dark:border-slate-700/50 rounded-xl p-1 shadow-sm gap-1">
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={`p-2 rounded-lg transition-all ${viewMode === 'grid'
+                    ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                    }`}
+                  title="Grid View"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                    <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
+                    <path d="M3 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM3 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM4.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
+                    <path d="M17 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM17 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM18.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedCategoryFilter(null);
+                    setViewMode('categories');
+                  }}
+                  className={`p-2 rounded-lg transition-all ${viewMode === 'categories'
+                    ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                    }`}
+                  title="Categories View"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                    <path fillRule="evenodd" d="M2 3.75A.75.75 0 012.75 3h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 3.75zm0 4.167a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75zm0 4.166a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75zm0 4.167a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+
               {/* Tile Animation Selector - Available for all users */}
               <TileAnimationSelector
                 onAnimationChange={(animation) => setCurrentAnimation(animation)}
@@ -4650,7 +4862,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
               {isAuthenticated && (
                 <button
-                  onClick={() => setIsModalOpen(true)}
+                  onClick={() => {
+                    setIsModalOpen(true);
+                    if (user && !user.is_admin) {
+                      setNewVisibility('private');
+                      setNewAllowedUsers([user.id]);
+                      setShowUserSelector(true);
+                    }
+                  }}
                   className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white px-6 py-3 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-brand-500/30 hover:shadow-xl hover:shadow-brand-500/40 flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] whitespace-nowrap"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5">
@@ -4999,6 +5218,25 @@ export const TileGrid: React.FC<TileGridProps> = ({
         </div>
       )}
 
+      {/* Show All Categories Button - appears when a category filter is active */}
+      {selectedCategoryFilter && viewMode === 'grid' && (
+        <div className="mb-4">
+          <button
+            onClick={() => setSelectedCategoryFilter(null)}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors border border-slate-200 dark:border-slate-700"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path fillRule="evenodd" d="M7.793 2.232a.75.75 0 01-.025 1.06L3.622 7.25h10.003a5.375 5.375 0 010 10.75H10.75a.75.75 0 010-1.5h2.875a3.875 3.875 0 000-7.75H3.622l4.146 3.957a.75.75 0 01-1.036 1.085l-5.5-5.25a.75.75 0 010-1.085l5.5-5.25a.75.75 0 011.06.025z" clipRule="evenodd" />
+            </svg>
+            Show All Categories
+            <span className="px-2 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
+              Filtering: {selectedCategoryFilter}
+            </span>
+          </button>
+        </div>
+      )}
+
+
       {/* Favorite Links Section - Component */}
       {(() => {
         const favoriteLinksSection = (activeTab === 'favorites' || activeTab === 'public-favorites') && (
@@ -5269,8 +5507,74 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
       {activeTab === 'monitoring' && <MonitoringDashboard />}
 
+      {/* Categories View */}
+      {viewMode === 'categories' && activeTab !== 'monitoring' && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-20 mt-6">
+          {Object.keys(groupedTiles).map((groupName) => {
+            const groupTiles = groupedTiles[groupName];
+            const activeTabNameMap: Record<string, string> = {
+              'your-apps': 'Your Apps',
+              'public': 'Public',
+              'favorites': 'Favorites',
+              'private': 'Private',
+              'scheduled': 'Scheduled',
+              'expired': 'Expired',
+              'archive': 'Archive',
+              'recycle-bin': 'Recycle Bin',
+              'monitoring': 'Monitoring',
+              'public-favorites': 'Favorites'
+            };
+
+            const tabSuffix = activeTabNameMap[activeTab] || activeTab.charAt(0).toUpperCase() + activeTab.slice(1);
+
+            return (
+              <div key={groupName} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between h-40 relative overflow-hidden group cursor-pointer" onClick={() => {
+                // Set the category filter and switch to grid view to show only this category
+                setSelectedCategoryFilter(groupName);
+                setViewMode('grid');
+              }}>
+                <div className="absolute top-0 right-0 w-32 h-32 bg-brand-50 dark:bg-brand-900/10 rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2 group-hover:bg-brand-100 dark:group-hover:bg-brand-900/20 transition-colors"></div>
+
+                <div className="relative z-10">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="p-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-500 dark:text-slate-400">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-6 h-6">
+                        <path d="M2 3.75A.75.75 0 012.75 3h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 3.75zm0 4.167a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75zm0 4.166a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75zm0 4.167a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white truncate flex-1" title={groupName}>{groupName}</h3>
+                    {isAuthenticated && (
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleShowCategoryInfo(groupName, groupTiles);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded transition-all opacity-0 group-hover:opacity-100"
+                        title="Show category information"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 pl-1">{groupTiles.length} {groupTiles.length === 1 ? 'Space' : 'Spaces'}</p>
+                </div>
+
+                <div className="relative z-10 flex justify-end mt-auto">
+                  <span className="text-xs font-medium text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-700/50 px-2.5 py-1.5 rounded-md border border-slate-100 dark:border-slate-700">
+                    {tabSuffix}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Tiles Grid - Full Width with More Columns */}
-      <div className={activeTab === 'monitoring' ? 'hidden' : ''}>
+      <div className={activeTab === 'monitoring' || viewMode === 'categories' ? 'hidden' : ''}>
         {Object.keys(groupedTiles).map((groupName, groupIndex) => {
           const groupTiles = groupedTiles[groupName];
           // Use the actual display order (which respects categoryOrder)
@@ -5304,6 +5608,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
               isCategoryFavorited={isCategoryFavorited(groupName)}
               onScheduleCategory={handleOpenCategorySchedule}
               onManageVisibility={handleOpenManageVisibility}
+              onShowCategoryInfo={handleShowCategoryInfo}
+              categoryTiles={groupTiles}
               animationClass={`${getTileAnimationClass(currentAnimation)} ${getTileDecorationClass(currentDecoration)}`.trim()}
             >
               {/* Grid with wider tiles */}
@@ -5335,7 +5641,11 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         isArchive={activeTab === 'archive'}
                         canMoveLeft={canMoveLeft}
                         canMoveRight={canMoveRight}
-                        availableCategories={allCategories}
+                        availableCategories={isAuthenticated && !user?.is_admin && activeTab === 'private'
+                          ? allCategories.filter(cat => tiles.some(t => (t.group || 'General') === cat && (t.visibility === 'authenticated' || (t.visibility === 'private' && t.allowedUsers?.includes(user?.id || 0)))))
+                          : allCategories
+                        }
+                        onShowTileInfo={handleShowTileInfo}
                         groupIndex={groupIndex}
                         tileIndex={tileIndex}
                         animationClass={`${getTileAnimationClass(currentAnimation)} ${getTileDecorationClass(currentDecoration)}`.trim()}
@@ -6094,7 +6404,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                           className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
                         />
                         <datalist id="category-suggestions-hyperlink">
-                          {allCategories.map(cat => <option key={cat} value={cat} />)}
+                          {userOwnedCategories.map(cat => <option key={cat} value={cat} />)}
                         </datalist>
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Select an existing category or type a new name to create one</p>
                       </div>
@@ -6193,7 +6503,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
                       />
                       <datalist id="category-suggestions-space">
-                        {allCategories.map(cat => <option key={cat} value={cat} />)}
+                        {userOwnedCategories.map(cat => <option key={cat} value={cat} />)}
                       </datalist>
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Select an existing category or type a new name to create one</p>
                     </div>
@@ -6204,12 +6514,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Visibility</label>
                       <div className="space-y-2">
-                        <label className="flex items-center gap-2 cursor-pointer">
+                        <label className={`flex items-center gap-2 cursor-pointer ${user && !user.is_admin ? 'opacity-50 cursor-not-allowed' : ''}`}>
                           <input
                             type="radio"
                             name="visibility"
                             value="public"
                             checked={newVisibility === 'public'}
+                            disabled={!!(user && !user.is_admin)}
                             onChange={(e) => {
                               setNewVisibility(e.target.value as TileVisibility);
                               setShowUserSelector(false);
@@ -6218,12 +6529,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
                           />
                           <span className="text-sm text-slate-700 dark:text-slate-300">Public - Available for everyone (guests and logged in users)</span>
                         </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
+                        <label className={`flex items-center gap-2 cursor-pointer ${user && !user.is_admin ? 'opacity-50 cursor-not-allowed' : ''}`}>
                           <input
                             type="radio"
                             name="visibility"
                             value="authenticated"
                             checked={newVisibility === 'authenticated'}
+                            disabled={!!(user && !user.is_admin)}
                             onChange={(e) => {
                               setNewVisibility(e.target.value as TileVisibility);
                               setShowUserSelector(false);
@@ -6260,23 +6572,24 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                 <div className="text-sm text-slate-500 dark:text-slate-400">No users available</div>
                               ) : (
                                 <div className="space-y-1.5">
-                                  {availableUsers.map(user => (
-                                    <label key={user.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 p-1.5 rounded">
+                                  {availableUsers.map(u => (
+                                    <label key={u.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 p-1.5 rounded">
                                       <input
                                         type="checkbox"
-                                        checked={newAllowedUsers.includes(user.id)}
+                                        checked={newAllowedUsers.includes(u.id)}
+                                        disabled={user && !user.is_admin && u.id === user.id}
                                         onChange={(e) => {
                                           if (e.target.checked) {
-                                            setNewAllowedUsers([...newAllowedUsers, user.id]);
+                                            setNewAllowedUsers([...newAllowedUsers, u.id]);
                                           } else {
-                                            setNewAllowedUsers(newAllowedUsers.filter(id => id !== user.id));
+                                            setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
                                           }
                                         }}
                                         className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
                                       />
-                                      <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
-                                      {user.auth_source && user.auth_source !== 'local' && (
-                                        <span className="text-xs text-slate-500 dark:text-slate-400">({user.auth_source})</span>
+                                      <span className="text-sm text-slate-700 dark:text-slate-300">{u.username}</span>
+                                      {u.auth_source && u.auth_source !== 'local' && (
+                                        <span className="text-xs text-slate-500 dark:text-slate-400">({u.auth_source})</span>
                                       )}
                                     </label>
                                   ))}
@@ -7080,12 +7393,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Visibility</label>
                         <div className="space-y-2">
-                          <label className="flex items-center gap-2 cursor-pointer">
+                          <label className={`flex items-center gap-2 cursor-pointer ${user && !user.is_admin ? 'opacity-50 cursor-not-allowed' : ''}`}>
                             <input
                               type="radio"
                               name="editVisibility"
                               value="public"
                               checked={newVisibility === 'public'}
+                              disabled={!!(user && !user.is_admin)}
                               onChange={(e) => {
                                 setNewVisibility(e.target.value as TileVisibility);
                                 setShowUserSelector(false);
@@ -7094,12 +7408,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
                             />
                             <span className="text-sm text-slate-700 dark:text-slate-300">Public - Available for everyone (guests and logged in users)</span>
                           </label>
-                          <label className="flex items-center gap-2 cursor-pointer">
+                          <label className={`flex items-center gap-2 cursor-pointer ${user && !user.is_admin ? 'opacity-50 cursor-not-allowed' : ''}`}>
                             <input
                               type="radio"
                               name="editVisibility"
                               value="authenticated"
                               checked={newVisibility === 'authenticated'}
+                              disabled={!!(user && !user.is_admin)}
                               onChange={(e) => {
                                 setNewVisibility(e.target.value as TileVisibility);
                                 setShowUserSelector(false);
@@ -7136,23 +7451,24 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                   <div className="text-sm text-slate-500 dark:text-slate-400">No users available</div>
                                 ) : (
                                   <div className="space-y-1.5">
-                                    {availableUsers.map(user => (
-                                      <label key={user.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 p-1.5 rounded">
+                                    {availableUsers.map(u => (
+                                      <label key={u.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 p-1.5 rounded">
                                         <input
                                           type="checkbox"
-                                          checked={newAllowedUsers.includes(user.id)}
+                                          checked={newAllowedUsers.includes(u.id)}
+                                          disabled={user && !user.is_admin && u.id === user.id}
                                           onChange={(e) => {
                                             if (e.target.checked) {
-                                              setNewAllowedUsers([...newAllowedUsers, user.id]);
+                                              setNewAllowedUsers([...newAllowedUsers, u.id]);
                                             } else {
-                                              setNewAllowedUsers(newAllowedUsers.filter(id => id !== user.id));
+                                              setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
                                             }
                                           }}
                                           className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
                                         />
-                                        <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
-                                        {user.auth_source && user.auth_source !== 'local' && (
-                                          <span className="text-xs text-slate-500 dark:text-slate-400">({user.auth_source})</span>
+                                        <span className="text-sm text-slate-700 dark:text-slate-300">{u.username}</span>
+                                        {u.auth_source && u.auth_source !== 'local' && (
+                                          <span className="text-xs text-slate-500 dark:text-slate-400">({u.auth_source})</span>
                                         )}
                                       </label>
                                     ))}
@@ -7243,7 +7559,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
                       />
                       <datalist id="category-suggestions-edit">
-                        {allCategories.map(cat => <option key={cat} value={cat} />)}
+                        {userOwnedCategories.map(cat => <option key={cat} value={cat} />)}
                       </datalist>
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Select an existing category or type a new name to create one</p>
                     </div>
@@ -7994,6 +8310,16 @@ export const TileGrid: React.FC<TileGridProps> = ({
           richTextContent={linkInfoDialog.link.richTextContent || ''}
           linkUrl={linkInfoDialog.link.url}
           browser={linkInfoDialog.link.browser}
+        />
+      )}
+
+      {/* Tile/Category Info Dialog */}
+      {tileInfoDialog && (
+        <TileInfoDialog
+          isOpen={!!tileInfoDialog}
+          onClose={handleCloseTileInfoDialog}
+          tile={tileInfoDialog.tile}
+          categoryInfo={tileInfoDialog.categoryInfo}
         />
       )}
     </div >
