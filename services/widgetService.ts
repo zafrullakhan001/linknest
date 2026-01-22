@@ -191,15 +191,86 @@ export async function deleteWidget(data: DeleteWidgetRequest): Promise<{ success
 
 /**
  * Dynamically load a widget component
+ * Uses Vite's import.meta.glob for proper dynamic imports
  */
 export async function loadWidgetComponent(componentPath: string): Promise<any> {
   try {
     // Remove leading './' or '/' if present
-    const cleanPath = componentPath.replace(/^\.?\//, '');
+    let cleanPath = componentPath.replace(/^\.?\//, '');
     
-    // Try to dynamically import the component
-    const module = await import(`./${cleanPath}`);
-    return module;
+    // Remove file extension if present (we'll add it back)
+    cleanPath = cleanPath.replace(/\.(tsx?|jsx?)$/, '');
+    
+    // Use Vite's import.meta.glob to preload all possible widget components
+    // This allows Vite to statically analyze and bundle them
+    // Exclude known non-widget components that are statically imported elsewhere
+    const allModules = import.meta.glob('../components/**/*.{tsx,ts,jsx,js}', { eager: false });
+    
+    // Filter out known non-widget components to avoid warnings
+    const excludedComponents = [
+      'AdminPanel',
+      'AuthModal',
+      'SecurePasswordInput',
+      'SamlConfigModal',
+      'GranularPermissionsModal',
+      'TileDetail',
+      'TileGrid',
+      'TileInfoDialog',
+      'Navigation',
+      'MobileTileEdit',
+      'MobileTileView',
+      'MobileRichTextEditor',
+      'RichTextEditor',
+      'RichTextContentItem',
+      'LinkInfoDialog',
+      'VersionDiffViewer',
+      'TileAnimationSelector',
+      'MonitoringTileStyleModal',
+      'MonitorForm',
+      'MonitoringDashboard',
+      'EmailLogsTab',
+      'EmailNotificationsTab',
+      'SMTPSettingsModal',
+      'HelpAboutDialog',
+      'MaintenancePage',
+      'StyleManager',
+      'ThemeEditor',
+      'WidgetQuickAccess',
+      'FloatingWidgetQuickAccess',
+      'BroadcastBanner'
+    ];
+    
+    const widgetModules: Record<string, () => Promise<any>> = {};
+    for (const [path, moduleLoader] of Object.entries(allModules)) {
+      const isExcluded = excludedComponents.some(comp => 
+        path.includes(`/${comp}.tsx`) || 
+        path.includes(`/${comp}.ts`) || 
+        path.includes(`/${comp}.jsx`) || 
+        path.includes(`/${comp}.js`)
+      );
+      if (!isExcluded) {
+        widgetModules[path] = moduleLoader;
+      }
+    }
+    
+    // Try to find the matching module by constructing possible paths
+    const possiblePaths = [
+      `../components/${cleanPath}.tsx`,
+      `../components/${cleanPath}.ts`,
+      `../components/${cleanPath}.jsx`,
+      `../components/${cleanPath}.js`
+    ];
+    
+    // Try each possible path
+    for (const path of possiblePaths) {
+      if (widgetModules[path]) {
+        const module = await widgetModules[path]();
+        return module;
+      }
+    }
+    
+    // If not found in glob, throw an error
+    throw new Error(`Widget component not found: ${componentPath}. Make sure the component exists in the components directory.`);
   } catch (error) {
     console.error(`Failed to load widget component from ${componentPath}:`, error);
     throw error;

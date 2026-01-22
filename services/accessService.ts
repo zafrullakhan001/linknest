@@ -6,6 +6,16 @@ export interface TilePermission {
   canView: boolean;
   canEdit: boolean;
   canDelete: boolean;
+  canAddLinks?: boolean;
+  canAddSections?: boolean;
+  canAddTabs?: boolean;
+  canEditLinks?: boolean;
+  canDeleteLinks?: boolean;
+  canDeleteSections?: boolean;
+  canDeleteTabs?: boolean;
+  canChangeVisibility?: boolean;
+  canChangeBrowser?: boolean;
+  canCloneTile?: boolean;
   createdAt: number;
   updatedAt: number;
   username?: string;
@@ -49,6 +59,16 @@ export interface SetPermissionRequest {
   canView?: boolean;
   canEdit?: boolean;
   canDelete?: boolean;
+  canAddLinks?: boolean;
+  canAddSections?: boolean;
+  canAddTabs?: boolean;
+  canEditLinks?: boolean;
+  canDeleteLinks?: boolean;
+  canDeleteSections?: boolean;
+  canDeleteTabs?: boolean;
+  canChangeVisibility?: boolean;
+  canChangeBrowser?: boolean;
+  canCloneTile?: boolean;
 }
 
 export interface BatchTilePermissionsResponse {
@@ -142,14 +162,31 @@ export const accessService = {
     tileId: string,
     canView: boolean,
     canEdit: boolean,
-    canDelete: boolean
+    canDelete: boolean,
+    granularPermissions?: {
+      canAddLinks?: boolean;
+      canAddSections?: boolean;
+      canAddTabs?: boolean;
+      canEditLinks?: boolean;
+      canDeleteLinks?: boolean;
+      canDeleteSections?: boolean;
+      canDeleteTabs?: boolean;
+      canChangeVisibility?: boolean;
+      canChangeBrowser?: boolean;
+      canCloneTile?: boolean;
+    }
   ): Promise<void> {
     const permissionId = `${userId}_${tileId}`;
     const response = await fetch(`${API_BASE}/access/${permissionId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ canView, canEdit, canDelete }),
+      body: JSON.stringify({ 
+        canView, 
+        canEdit, 
+        canDelete,
+        ...granularPermissions
+      }),
     });
 
     if (!response.ok) {

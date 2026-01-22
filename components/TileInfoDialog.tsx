@@ -2,6 +2,27 @@ import React, { useState, useEffect } from 'react';
 import { Tile } from '../types';
 import { FaTimes } from 'react-icons/fa';
 
+interface TileAdmin {
+  userId: number;
+  username: string;
+  email: string;
+  permissions: {
+    canView: boolean;
+    canEdit: boolean;
+    canDelete: boolean;
+    canAddLinks?: boolean;
+    canAddSections?: boolean;
+    canAddTabs?: boolean;
+    canEditLinks?: boolean;
+    canDeleteLinks?: boolean;
+    canDeleteSections?: boolean;
+    canDeleteTabs?: boolean;
+    canChangeVisibility?: boolean;
+    canChangeBrowser?: boolean;
+    canCloneTile?: boolean;
+  };
+}
+
 interface TileInfo {
   tileId: string;
   title: string;
@@ -19,6 +40,19 @@ interface TileInfo {
     canView: boolean;
     canEdit: boolean;
     canDelete: boolean;
+  };
+  tileAdmins?: TileAdmin[];
+  granularPermissions?: {
+    canAddLinks: boolean;
+    canAddSections: boolean;
+    canAddTabs: boolean;
+    canEditLinks: boolean;
+    canDeleteLinks: boolean;
+    canDeleteSections: boolean;
+    canDeleteTabs: boolean;
+    canChangeVisibility: boolean;
+    canChangeBrowser: boolean;
+    canCloneTile: boolean;
   };
 }
 
@@ -319,8 +353,204 @@ const TileInfoView: React.FC<{
               {tileInfo.permissions.canDelete ? 'Allowed' : 'Denied'}
             </span>
           </div>
+          
+          {/* Show granular permissions if user is a tile admin */}
+          {tileInfo.granularPermissions && (
+            <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+              <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wider">
+                Your Granular Permissions
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-400">Add Links:</span>
+                  <span className={tileInfo.granularPermissions.canAddLinks ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                    {tileInfo.granularPermissions.canAddLinks ? '✓' : '✗'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-400">Add Sections:</span>
+                  <span className={tileInfo.granularPermissions.canAddSections ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                    {tileInfo.granularPermissions.canAddSections ? '✓' : '✗'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-400">Add Tabs:</span>
+                  <span className={tileInfo.granularPermissions.canAddTabs ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                    {tileInfo.granularPermissions.canAddTabs ? '✓' : '✗'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-400">Edit Links:</span>
+                  <span className={tileInfo.granularPermissions.canEditLinks ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                    {tileInfo.granularPermissions.canEditLinks ? '✓' : '✗'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-400">Delete Links:</span>
+                  <span className={tileInfo.granularPermissions.canDeleteLinks ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                    {tileInfo.granularPermissions.canDeleteLinks ? '✓' : '✗'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-400">Delete Sections:</span>
+                  <span className={tileInfo.granularPermissions.canDeleteSections ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                    {tileInfo.granularPermissions.canDeleteSections ? '✓' : '✗'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-400">Delete Tabs:</span>
+                  <span className={tileInfo.granularPermissions.canDeleteTabs ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                    {tileInfo.granularPermissions.canDeleteTabs ? '✓' : '✗'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-400">Change Visibility:</span>
+                  <span className={tileInfo.granularPermissions.canChangeVisibility ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                    {tileInfo.granularPermissions.canChangeVisibility ? '✓' : '✗'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-400">Change Browser:</span>
+                  <span className={tileInfo.granularPermissions.canChangeBrowser ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                    {tileInfo.granularPermissions.canChangeBrowser ? '✓' : '✗'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-400">Clone Tile:</span>
+                  <span className={tileInfo.granularPermissions.canCloneTile ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                    {tileInfo.granularPermissions.canCloneTile ? '✓' : '✗'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </section>
+
+      {/* Tile Admins */}
+      {tileInfo.tileAdmins && tileInfo.tileAdmins.length > 0 && (
+        <section>
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+            <span className="w-1 h-6 bg-brand-600 rounded"></span>
+            Tile Administrators ({tileInfo.tileAdmins.length})
+          </h3>
+          <div className="space-y-3">
+            {tileInfo.tileAdmins.map((admin) => (
+              <div key={admin.userId} className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <div className="text-sm font-medium text-slate-900 dark:text-white">
+                      {admin.username}
+                    </div>
+                    {admin.email && (
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        {admin.email}
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-xs px-2 py-1 bg-brand-100 dark:bg-brand-500/20 text-brand-700 dark:text-brand-300 rounded">
+                    Tile Admin
+                  </div>
+                </div>
+                
+                {/* Basic Permissions */}
+                <div className="mb-3 pb-3 border-b border-slate-200 dark:border-slate-700">
+                  <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">Basic Permissions</div>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 dark:text-slate-400">View:</span>
+                      <span className={admin.permissions.canView ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                        {admin.permissions.canView ? '✓' : '✗'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 dark:text-slate-400">Edit:</span>
+                      <span className={admin.permissions.canEdit ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                        {admin.permissions.canEdit ? '✓' : '✗'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 dark:text-slate-400">Delete:</span>
+                      <span className={admin.permissions.canDelete ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                        {admin.permissions.canDelete ? '✓' : '✗'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Granular Permissions */}
+                {admin.permissions.canAddLinks !== undefined && (
+                  <div>
+                    <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">Granular Permissions</div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-slate-600 dark:text-slate-400">Add Links:</span>
+                        <span className={admin.permissions.canAddLinks ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                          {admin.permissions.canAddLinks ? '✓' : '✗'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600 dark:text-slate-400">Add Sections:</span>
+                        <span className={admin.permissions.canAddSections ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                          {admin.permissions.canAddSections ? '✓' : '✗'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600 dark:text-slate-400">Add Tabs:</span>
+                        <span className={admin.permissions.canAddTabs ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                          {admin.permissions.canAddTabs ? '✓' : '✗'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600 dark:text-slate-400">Edit Links:</span>
+                        <span className={admin.permissions.canEditLinks ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                          {admin.permissions.canEditLinks ? '✓' : '✗'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600 dark:text-slate-400">Delete Links:</span>
+                        <span className={admin.permissions.canDeleteLinks ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                          {admin.permissions.canDeleteLinks ? '✓' : '✗'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600 dark:text-slate-400">Delete Sections:</span>
+                        <span className={admin.permissions.canDeleteSections ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                          {admin.permissions.canDeleteSections ? '✓' : '✗'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600 dark:text-slate-400">Delete Tabs:</span>
+                        <span className={admin.permissions.canDeleteTabs ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                          {admin.permissions.canDeleteTabs ? '✓' : '✗'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600 dark:text-slate-400">Change Visibility:</span>
+                        <span className={admin.permissions.canChangeVisibility ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                          {admin.permissions.canChangeVisibility ? '✓' : '✗'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600 dark:text-slate-400">Change Browser:</span>
+                        <span className={admin.permissions.canChangeBrowser ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                          {admin.permissions.canChangeBrowser ? '✓' : '✗'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600 dark:text-slate-400">Clone Tile:</span>
+                        <span className={admin.permissions.canCloneTile ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                          {admin.permissions.canCloneTile ? '✓' : '✗'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 };

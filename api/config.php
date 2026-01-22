@@ -1024,6 +1024,42 @@ function initDatabase() {
             FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
         )');
         
+        // Migrate user_tile_permissions table to add granular permission columns
+        try {
+            $columns = $db->query("PRAGMA table_info(user_tile_permissions)")->fetchAll();
+            $columnNames = array_column($columns, 'name');
+            
+            // Granular permissions for tile admins
+            $granularPermissions = [
+                'can_add_links' => 'INTEGER DEFAULT 1',
+                'can_add_sections' => 'INTEGER DEFAULT 1',
+                'can_add_tabs' => 'INTEGER DEFAULT 1',
+                'can_edit_links' => 'INTEGER DEFAULT 1',
+                'can_delete_links' => 'INTEGER DEFAULT 0',
+                'can_delete_sections' => 'INTEGER DEFAULT 0',
+                'can_delete_tabs' => 'INTEGER DEFAULT 0',
+                'can_change_visibility' => 'INTEGER DEFAULT 0',
+                'can_change_browser' => 'INTEGER DEFAULT 0',
+                'can_clone_tile' => 'INTEGER DEFAULT 0'
+            ];
+            
+            foreach ($granularPermissions as $columnName => $columnDef) {
+                if (!in_array($columnName, $columnNames)) {
+                    $db->exec("ALTER TABLE user_tile_permissions ADD COLUMN {$columnName} {$columnDef}");
+                    error_log("Added {$columnName} column to user_tile_permissions table");
+                }
+            }
+            
+            // Set default values for existing tile admins (can_edit = 1)
+            // These should have add permissions enabled by default
+            $db->exec("UPDATE user_tile_permissions 
+                       SET can_add_links = 1, can_add_sections = 1, can_add_tabs = 1, can_edit_links = 1
+                       WHERE can_edit = 1 
+                       AND (can_add_links IS NULL OR can_add_sections IS NULL OR can_add_tabs IS NULL OR can_edit_links IS NULL)");
+        } catch (PDOException $e) {
+            error_log('User tile permissions granular migration warning: ' . $e->getMessage());
+        }
+        
         // Create clones table for tracking cloned instances
         $db->exec('CREATE TABLE IF NOT EXISTS clones (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1974,6 +2010,86 @@ function canUserViewTileByRole($userId, $tileId, $db) {
     $stmt->execute($params);
     
     return (int)$stmt->fetchColumn() > 0;
+}
+
+// Helper function to get granular tile admin permissions
+function getTileAdminPermissions($userId, $tileId, $db) {
+    if (!$userId || !$tileId) {
+        return null;
+    }
+    
+    $stmt = $db->prepare('
+        SELECT 
+            can_add_links, can_add_sections, can_add_tabs,
+            can_edit_links, can_delete_links, can_delete_sections, can_delete_tabs,
+            can_change_visibility, can_change_browser, can_clone_tile
+        FROM user_tile_permissions 
+        WHERE user_id = ? AND tile_id = ? AND can_edit = 1
+    ');
+    $stmt->execute([$userId, $tileId]);
+    $result = $stmt->fetch();
+    
+    if (!$result) {
+        return null; // Not a tile admin
+    }
+    
+    return [
+        'canAddLinks' => (bool)($result['can_add_links'] ?? true),
+        'canAddSections' => (bool)($result['can_add_sections'] ?? true),
+        'canAddTabs' => (bool)($result['can_add_tabs'] ?? true),
+        'canEditLinks' => (bool)($result['can_edit_links'] ?? true),
+        'canDeleteLinks' => (bool)($result['can_delete_links'] ?? false),
+        'canDeleteSections' => (bool)($result['can_delete_sections'] ?? false),
+        'canDeleteTabs' => (bool)($result['can_delete_tabs'] ?? false),
+        'canChangeVisibility' => (bool)($result['can_change_visibility'] ?? false),
+        'canChangeBrowser' => (bool)($result['can_change_browser'] ?? false),
+        'canCloneTile' => (bool)($result['can_clone_tile'] ?? false)
+    ];
+}
+
+// Helper function to check if user is tile admin with specific permission
+// This respects tile admin restrictions even if user has role-based permissions
+function canTileAdminPerformAction($userId, $tileId, $action, $db) {
+    // Admins and tile creators bypass all restrictions
+    $user = getAuthenticatedUser();
+    if ($user && $user['is_admin']) {
+        return true;
+    }
+    
+    // Check if user is the creator
+    $tileStmt = $db->prepare('SELECT user_id FROM tiles WHERE id = ?');
+    $tileStmt->execute([$tileId]);
+    $tile = $tileStmt->fetch();
+    if ($tile && isset($tile['user_id']) && (int)$tile['user_id'] === (int)$userId) {
+        return true; // Creator has full access
+    }
+    
+    // Get tile admin permissions
+    $perms = getTileAdminPermissions($userId, $tileId, $db);
+    if ($perms === null) {
+        // Not a tile admin, check role-based permissions or default behavior
+        return null; // Let caller decide based on other permissions
+    }
+    
+    // Map action names to permission fields
+    $actionMap = [
+        'add_link' => 'canAddLinks',
+        'add_section' => 'canAddSections',
+        'add_tab' => 'canAddTabs',
+        'edit_link' => 'canEditLinks',
+        'delete_link' => 'canDeleteLinks',
+        'delete_section' => 'canDeleteSections',
+        'delete_tab' => 'canDeleteTabs',
+        'change_visibility' => 'canChangeVisibility',
+        'change_browser' => 'canChangeBrowser',
+        'clone_tile' => 'canCloneTile'
+    ];
+    
+    if (!isset($actionMap[$action])) {
+        return null; // Unknown action
+    }
+    
+    return $perms[$actionMap[$action]];
 }
 
 // Helper function to check if user can view a link based on roles

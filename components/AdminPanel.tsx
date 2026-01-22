@@ -17,6 +17,7 @@ import { rolesService, Role } from '../services/rolesService';
 import SamlConfigModal from './SamlConfigModal';
 import { useMobile } from '../hooks/useMobile';
 import { getCustomWidgets, createWidget, updateWidget, deleteWidget, CustomWidget, CreateWidgetRequest, UpdateWidgetRequest } from '../services/widgetService';
+import { GranularPermissionsModal } from './GranularPermissionsModal';
 
 // Resolve API base dynamically based on current location
 // This ensures API calls work in both dev mode and runtime mode with any base path
@@ -189,6 +190,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [tileAdminTileSearchTerm, setTileAdminTileSearchTerm] = useState('');
   const [tileAdminUserSearchTerm, setTileAdminUserSearchTerm] = useState('');
   const [tileAdminsUsersLoaded, setTileAdminsUsersLoaded] = useState(false);
+  const [showGranularPermissionsModal, setShowGranularPermissionsModal] = useState(false);
+  const [selectedPermissionForEdit, setSelectedPermissionForEdit] = useState<TilePermission | null>(null);
 
   // Roles management state
   const [roles, setRoles] = useState<Role[]>([]);
@@ -1044,16 +1047,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   };
 
-  const handleAddTileAdmin = async (userId: number, tileId: string) => {
+  const handleAddTileAdmin = async (userId: number, tileId: string, granularPerms?: {
+    canAddLinks?: boolean;
+    canAddSections?: boolean;
+    canAddTabs?: boolean;
+    canEditLinks?: boolean;
+    canDeleteLinks?: boolean;
+    canDeleteSections?: boolean;
+    canDeleteTabs?: boolean;
+    canChangeVisibility?: boolean;
+    canChangeBrowser?: boolean;
+    canCloneTile?: boolean;
+  }) => {
     try {
       setError('');
-      // Set user as tile admin (can view, edit, and delete)
+      // Set user as tile admin with granular permissions
+      // Default: allow add/edit, restrict delete, visibility, browser, clone
       await accessService.setPermission({
         userId,
         tileId,
         canView: true,
         canEdit: true,
-        canDelete: true
+        canDelete: false, // Tile admins don't get delete by default
+        canAddLinks: granularPerms?.canAddLinks ?? true,
+        canAddSections: granularPerms?.canAddSections ?? true,
+        canAddTabs: granularPerms?.canAddTabs ?? true,
+        canEditLinks: granularPerms?.canEditLinks ?? true,
+        canDeleteLinks: granularPerms?.canDeleteLinks ?? false,
+        canDeleteSections: granularPerms?.canDeleteSections ?? false,
+        canDeleteTabs: granularPerms?.canDeleteTabs ?? false,
+        canChangeVisibility: granularPerms?.canChangeVisibility ?? false,
+        canChangeBrowser: granularPerms?.canChangeBrowser ?? false,
+        canCloneTile: granularPerms?.canCloneTile ?? false
       });
       
       // Reload admins for this tile
@@ -1095,6 +1120,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           canView: perm.canView,
           canEdit: perm.canEdit,
           canDelete: perm.canDelete,
+          canAddLinks: perm.canAddLinks,
+          canAddSections: perm.canAddSections,
+          canAddTabs: perm.canAddTabs,
+          canEditLinks: perm.canEditLinks,
+          canDeleteLinks: perm.canDeleteLinks,
+          canDeleteSections: perm.canDeleteSections,
+          canDeleteTabs: perm.canDeleteTabs,
+          canChangeVisibility: perm.canChangeVisibility,
+          canChangeBrowser: perm.canChangeBrowser,
+          canCloneTile: perm.canCloneTile,
           createdAt: perm.createdAt,
           updatedAt: perm.updatedAt,
           username: perm.username,
@@ -1106,6 +1141,68 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       await loadPermissions();
     } catch (err: any) {
       setError(err.message || 'Failed to remove tile admin');
+    }
+  };
+
+  const handleUpdateGranularPermissions = async (permissions: {
+    canAddLinks: boolean;
+    canAddSections: boolean;
+    canAddTabs: boolean;
+    canEditLinks: boolean;
+    canDeleteLinks: boolean;
+    canDeleteSections: boolean;
+    canDeleteTabs: boolean;
+    canChangeVisibility: boolean;
+    canChangeBrowser: boolean;
+    canCloneTile: boolean;
+  }) => {
+    if (!selectedPermissionForEdit) return;
+    
+    try {
+      setError('');
+      await accessService.updatePermission(
+        selectedPermissionForEdit.userId,
+        selectedPermissionForEdit.tileId,
+        selectedPermissionForEdit.canView,
+        selectedPermissionForEdit.canEdit,
+        selectedPermissionForEdit.canDelete,
+        permissions
+      );
+      
+      // Reload admins for this tile
+      const tilePerms = await accessService.getTilePermissions(selectedPermissionForEdit.tileId);
+      const admins = tilePerms.permissions
+        .filter(perm => perm.canEdit)
+        .map(perm => ({
+          userId: perm.userId,
+          tileId: selectedPermissionForEdit.tileId,
+          canView: perm.canView,
+          canEdit: perm.canEdit,
+          canDelete: perm.canDelete,
+          canAddLinks: perm.canAddLinks,
+          canAddSections: perm.canAddSections,
+          canAddTabs: perm.canAddTabs,
+          canEditLinks: perm.canEditLinks,
+          canDeleteLinks: perm.canDeleteLinks,
+          canDeleteSections: perm.canDeleteSections,
+          canDeleteTabs: perm.canDeleteTabs,
+          canChangeVisibility: perm.canChangeVisibility,
+          canChangeBrowser: perm.canChangeBrowser,
+          canCloneTile: perm.canCloneTile,
+          createdAt: perm.createdAt,
+          updatedAt: perm.updatedAt,
+          username: perm.username,
+          email: perm.email,
+          tileTitle: allTiles.find(t => t.id === selectedPermissionForEdit.tileId)?.title || selectedPermissionForEdit.tileId
+        }));
+      
+      setTileAdminsMap(prev => ({ ...prev, [selectedPermissionForEdit.tileId]: admins }));
+      await loadPermissions();
+      setShowGranularPermissionsModal(false);
+      setSelectedPermissionForEdit(null);
+    } catch (err: any) {
+      setError(err.message || 'Failed to update permissions');
+      throw err;
     }
   };
 
@@ -6967,17 +7064,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                               Tile Admins ({tileAdminPerms.length}):
                                             </div>
                                             <div className="flex flex-wrap gap-2">
-                                              {tileAdminPerms.map((perm) => (
-                                                <div
-                                                  key={`${perm.userId}_${perm.tileId}`}
-                                                  className="inline-flex items-center gap-1.5 px-2 py-1 bg-brand-50 dark:bg-brand-500/20 border border-brand-200 dark:border-brand-500/30 rounded text-xs text-brand-700 dark:text-brand-300"
-                                                >
-                                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                                    <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                                                  </svg>
-                                                  <span>{perm.username || perm.email}</span>
-                                                </div>
-                                              ))}
+                                              {tileAdminPerms.map((perm) => {
+                                                const fullPerm = permissions.find(p => p.userId === perm.userId && p.tileId === perm.tileId);
+                                                return (
+                                                  <div
+                                                    key={`${perm.userId}_${perm.tileId}`}
+                                                    className="inline-flex items-center gap-1.5 px-2 py-1 bg-brand-50 dark:bg-brand-500/20 border border-brand-200 dark:border-brand-500/30 rounded text-xs text-brand-700 dark:text-brand-300 group"
+                                                  >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                      <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                                                    </svg>
+                                                    <span>{perm.username || perm.email}</span>
+                                                    <button
+                                                      onClick={() => {
+                                                        setSelectedPermissionForEdit(fullPerm || perm);
+                                                        setShowGranularPermissionsModal(true);
+                                                      }}
+                                                      className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300"
+                                                      title="Configure permissions"
+                                                    >
+                                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                        <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                                                      </svg>
+                                                    </button>
+                                                  </div>
+                                                );
+                                              })}
                                             </div>
                                           </div>
                                         ) : (
@@ -9533,7 +9645,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     Manage Tile Admins
                   </h2>
                   <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                    Select tiles on the left and users on the right to assign tile admin privileges. Tile admins can add, edit, and delete links for their assigned tiles.
+                    Select tiles on the left and users on the right to assign tile admin privileges. Tile admins can add and edit links, sections, and tabs by default. Delete, visibility, browser, and clone actions are restricted.
                   </p>
                 </div>
                 <button
@@ -11474,6 +11586,19 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
           </div>
         </div>
       )}
+
+      {/* Granular Permissions Modal */}
+      <GranularPermissionsModal
+        isOpen={showGranularPermissionsModal}
+        onClose={() => {
+          setShowGranularPermissionsModal(false);
+          setSelectedPermissionForEdit(null);
+        }}
+        permission={selectedPermissionForEdit}
+        onSave={handleUpdateGranularPermissions}
+        userName={selectedPermissionForEdit?.username || selectedPermissionForEdit?.email}
+        tileTitle={selectedPermissionForEdit?.tileTitle || allTiles.find(t => t.id === selectedPermissionForEdit?.tileId)?.title}
+      />
     </div>
   );
 };

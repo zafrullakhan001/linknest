@@ -86,6 +86,17 @@ export interface Tile {
   canEdit?: boolean; // Whether the current user can edit this tile (based on tile access permissions)
   canDelete?: boolean; // Whether the current user can delete this tile (based on tile access permissions)
   hasRoleAccess?: boolean; // Whether this tile is accessible via user roles
+  // Granular permissions for tile admins
+  canAddLinks?: boolean;
+  canAddSections?: boolean;
+  canAddTabs?: boolean;
+  canEditLinks?: boolean;
+  canDeleteLinks?: boolean;
+  canDeleteSections?: boolean;
+  canDeleteTabs?: boolean;
+  canChangeVisibility?: boolean;
+  canChangeBrowser?: boolean;
+  canCloneTile?: boolean;
   deletedAt?: number; // Timestamp when tile was deleted (for recycle bin)
   visibleFrom?: string; // ISO date string - tile becomes visible from this date/time
   expiresAt?: string; // ISO date string - tile expires at this date/time
