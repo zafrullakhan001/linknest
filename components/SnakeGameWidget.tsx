@@ -7,20 +7,21 @@ interface SnakeGameWidgetProps {
 type Direction = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
 type Position = { x: number; y: number };
 
-const GRID_SIZE = 40;
-const CELL_SIZE = 25;
+const GRID_SIZE = 20;
+const DEFAULT_CELL_SIZE = 20;
 const GAME_SPEED = 100;
 
 export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => {
     const widgetRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const [snake, setSnake] = useState<Position[]>([{ x: 20, y: 20 }]);
-    const [food, setFood] = useState<Position>({ x: 10, y: 10 });
+    const [snake, setSnake] = useState<Position[]>([{ x: 10, y: 10 }]);
+    const [food, setFood] = useState<Position>({ x: 5, y: 5 });
     const [direction, setDirection] = useState<Direction>('RIGHT');
     const [gameOver, setGameOver] = useState(false);
     const [score, setScore] = useState(0);
     const [isPaused, setIsPaused] = useState(false);
     const [highContrast, setHighContrast] = useState(false);
+    const [cellSize, setCellSize] = useState(DEFAULT_CELL_SIZE);
 
     // Generate random food position
     const generateFood = useCallback((): Position => {
@@ -37,7 +38,7 @@ export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => 
     // Initialize food position only once on mount
     useEffect(() => {
         let newFood = generateFood();
-        while (isPositionOccupied(newFood, [{ x: 20, y: 20 }])) {
+        while (isPositionOccupied(newFood, [{ x: 10, y: 10 }])) {
             newFood = generateFood();
         }
         setFood(newFood);
@@ -167,26 +168,26 @@ export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => 
         ctx.lineWidth = 0.5;
         for (let i = 0; i <= GRID_SIZE; i++) {
             ctx.beginPath();
-            ctx.moveTo(i * CELL_SIZE, 0);
-            ctx.lineTo(i * CELL_SIZE, GRID_SIZE * CELL_SIZE);
+            ctx.moveTo(i * cellSize, 0);
+            ctx.lineTo(i * cellSize, GRID_SIZE * cellSize);
             ctx.stroke();
 
             ctx.beginPath();
-            ctx.moveTo(0, i * CELL_SIZE);
-            ctx.lineTo(GRID_SIZE * CELL_SIZE, i * CELL_SIZE);
+            ctx.moveTo(0, i * cellSize);
+            ctx.lineTo(GRID_SIZE * cellSize, i * cellSize);
             ctx.stroke();
         }
 
         // Draw food
         ctx.fillStyle = highContrast ? '#ff0000' : '#ef4444';
-        ctx.fillRect(food.x * CELL_SIZE, food.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        ctx.fillRect(food.x * cellSize, food.y * cellSize, cellSize, cellSize);
 
         // Draw snake
         snake.forEach((segment, index) => {
             ctx.fillStyle = highContrast
                 ? (index === 0 ? '#0000ff' : '#0000aa')
                 : (index === 0 ? '#10b981' : '#34d399');
-            ctx.fillRect(segment.x * CELL_SIZE, segment.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            ctx.fillRect(segment.x * cellSize, segment.y * cellSize, cellSize, cellSize);
         });
 
         // Draw game over message
@@ -200,10 +201,10 @@ export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => 
             ctx.fillText('Game Over!', canvas.width / 2, canvas.height / 2 - 20);
             ctx.fillText(`Score: ${score}`, canvas.width / 2, canvas.height / 2 + 20);
         }
-    }, [snake, food, gameOver, score, highContrast]);
+    }, [snake, food, gameOver, score, highContrast, cellSize]);
 
     const resetGame = () => {
-        const initialSnake = [{ x: 20, y: 20 }];
+        const initialSnake = [{ x: 10, y: 10 }];
         setSnake(initialSnake);
         setDirection('RIGHT');
         setGameOver(false);
@@ -253,8 +254,8 @@ export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => 
                 <div className="w-full aspect-square bg-slate-100 dark:bg-slate-700 rounded overflow-hidden relative">
                     <canvas
                         ref={canvasRef}
-                        width={GRID_SIZE * CELL_SIZE}
-                        height={GRID_SIZE * CELL_SIZE}
+                        width={GRID_SIZE * cellSize}
+                        height={GRID_SIZE * cellSize}
                         className="w-full h-full"
                         aria-label="Snake game grid"
                         aria-describedby="snake-game-instructions"
@@ -291,8 +292,28 @@ export const SnakeGameWidget: React.FC<SnakeGameWidgetProps> = ({ onClose }) => 
                 </div>
 
                 {/* Controls */}
-                <div className="mt-3 text-xs text-slate-500 dark:text-slate-400 text-center">
-                    <p>Use arrow keys or WASD to move. Space to pause.</p>
+                <div className="mt-3 space-y-2">
+                    <div className="flex items-center gap-3">
+                        <label htmlFor="cell-size" className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                            Size:
+                        </label>
+                        <input
+                            id="cell-size"
+                            type="range"
+                            min="10"
+                            max="50"
+                            value={cellSize}
+                            onChange={(e) => setCellSize(Number(e.target.value))}
+                            className="flex-1 h-2 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer accent-brand-500"
+                            title="Adjust game screen size"
+                        />
+                        <span className="text-xs text-slate-500 dark:text-slate-400 w-12 text-right">
+                            {cellSize}px
+                        </span>
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 text-center">
+                        <p>Use arrow keys or WASD to move. Space to pause.</p>
+                    </div>
                 </div>
             </div>
         </div>

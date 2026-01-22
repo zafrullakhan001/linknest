@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 type Point = { x: number; y: number };
 
-const STORAGE_KEY = 'linknest.floatingThemeWidget.position.v1';
 const MIN_VISIBLE = 48; // keep at least this many pixels visible on-screen
 
 function clamp(n: number, min: number, max: number) {
@@ -24,24 +23,16 @@ function getVisualViewportSize() {
   };
 }
 
-function safeParsePoint(raw: string | null): Point | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    if (
-      typeof parsed === 'object' &&
-      parsed &&
-      typeof parsed.x === 'number' &&
-      typeof parsed.y === 'number' &&
-      Number.isFinite(parsed.x) &&
-      Number.isFinite(parsed.y)
-    ) {
-      return { x: parsed.x, y: parsed.y };
-    }
-  } catch {
-    // ignore
-  }
-  return null;
+function getCenteredPosition(containerWidth: number = 420, containerHeight: number = 600): Point {
+  const zoom = getCssZoom();
+  const { width: vvW, height: vvH } = getVisualViewportSize();
+  const layoutViewportWidth = vvW / zoom;
+  const layoutViewportHeight = vvH / zoom;
+
+  return {
+    x: (layoutViewportWidth - containerWidth) / 2,
+    y: (layoutViewportHeight - containerHeight) / 2,
+  };
 }
 
 export const FloatingThemeWidget: React.FC<{
@@ -52,9 +43,9 @@ export const FloatingThemeWidget: React.FC<{
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const initialPos = useMemo<Point>(() => {
-    // default is near top-right to avoid overlap with other widgets
+    // Always center on screen
     if (defaultPosition) return defaultPosition;
-    return { x: 24, y: 100 };
+    return getCenteredPosition();
   }, [defaultPosition]);
 
   const [pos, setPos] = useState<Point>(initialPos);
@@ -99,23 +90,13 @@ export const FloatingThemeWidget: React.FC<{
     });
   };
 
-  // Load last position once
+  // Center widget on mount
   useEffect(() => {
-    const stored = safeParsePoint(localStorage.getItem(STORAGE_KEY));
-    if (stored) {
-      requestAnimationFrame(() => setPos(clampToViewport(stored)));
-      return;
-    }
-
     requestAnimationFrame(() => {
       const el = containerRef.current;
       const width = el?.offsetWidth ?? 420;
       const height = el?.offsetHeight ?? 600;
-      const zoom = getCssZoom();
-      const { width: vvW, height: vvH } = getVisualViewportSize();
-      const layoutViewportWidth = vvW / zoom;
-      const layoutViewportHeight = vvH / zoom;
-      setPos(clampToViewport({ x: layoutViewportWidth - width - 12, y: 100 }));
+      setPos(clampToViewport(getCenteredPosition(width, height)));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -168,11 +149,6 @@ export const FloatingThemeWidget: React.FC<{
       dragCleanupRef.current = null;
       dragStartRef.current = null;
       setIsDragging(false);
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(latestPosRef.current));
-      } catch {
-        // ignore storage failures
-      }
     };
 
     window.addEventListener('pointermove', onMove);
@@ -201,9 +177,8 @@ export const FloatingThemeWidget: React.FC<{
         {/* Drag handle */}
         <button
           type="button"
-          className={`absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-7 rounded-full shadow-md border border-purple-300/70 dark:border-purple-600/60 bg-purple-500/90 dark:bg-purple-600/90 backdrop-blur flex items-center justify-center text-white z-50 ${
-            isDragging ? 'cursor-grabbing' : 'cursor-grab'
-          }`}
+          className={`absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-7 rounded-full shadow-md border border-purple-300/70 dark:border-purple-600/60 bg-purple-500/90 dark:bg-purple-600/90 backdrop-blur flex items-center justify-center text-white z-50 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'
+            }`}
           style={{ zIndex: 50 }}
           onPointerDown={startDrag}
           title="Drag theme widget"
@@ -211,21 +186,6 @@ export const FloatingThemeWidget: React.FC<{
         >
           <span className="text-[16px] leading-none tracking-widest flex items-center">⋮⋮⋮</span>
         </button>
-
-        {/* Close button */}
-        {onClose && (
-          <button
-            type="button"
-            onClick={onClose}
-            className="absolute -top-3 -right-3 w-6 h-6 rounded-full shadow-md border border-red-300/70 dark:border-red-600/60 bg-red-500/90 dark:bg-red-600/90 backdrop-blur flex items-center justify-center text-white z-50 hover:bg-red-600 dark:hover:bg-red-700 transition-colors"
-            title="Close theme widget"
-            aria-label="Close theme widget"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-            </svg>
-          </button>
-        )}
 
         <div className="pt-4">
           {children}

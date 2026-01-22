@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 type Point = { x: number; y: number };
 
-const STORAGE_KEY = 'linknest.floatingSnakeGameWidget.position.v1';
 const MIN_VISIBLE = 48; // keep at least this many pixels visible on-screen
 
 function clamp(n: number, min: number, max: number) {
@@ -24,24 +23,16 @@ function getVisualViewportSize() {
     };
 }
 
-function safeParsePoint(raw: string | null): Point | null {
-    if (!raw) return null;
-    try {
-        const parsed = JSON.parse(raw);
-        if (
-            typeof parsed === 'object' &&
-            parsed &&
-            typeof parsed.x === 'number' &&
-            typeof parsed.y === 'number' &&
-            Number.isFinite(parsed.x) &&
-            Number.isFinite(parsed.y)
-        ) {
-            return { x: parsed.x, y: parsed.y };
-        }
-    } catch {
-        // ignore
-    }
-    return null;
+function getCenteredPosition(containerWidth: number = 320, containerHeight: number = 400): Point {
+    const zoom = getCssZoom();
+    const { width: vvW, height: vvH } = getVisualViewportSize();
+    const layoutViewportWidth = vvW / zoom;
+    const layoutViewportHeight = vvH / zoom;
+
+    return {
+        x: (layoutViewportWidth - containerWidth) / 2,
+        y: (layoutViewportHeight - containerHeight) / 2,
+    };
 }
 
 export const FloatingSnakeGameWidget: React.FC<{
@@ -51,9 +42,9 @@ export const FloatingSnakeGameWidget: React.FC<{
     const containerRef = useRef<HTMLDivElement | null>(null);
 
     const initialPos = useMemo<Point>(() => {
-        // default is near bottom-right to avoid overlap with other widgets
+        // Always center on screen
         if (defaultPosition) return defaultPosition;
-        return { x: 24, y: 100 };
+        return getCenteredPosition();
     }, [defaultPosition]);
 
     const [pos, setPos] = useState<Point>(initialPos);
@@ -99,25 +90,13 @@ export const FloatingSnakeGameWidget: React.FC<{
         });
     };
 
-    // Load last position once
+    // Center widget on mount
     useEffect(() => {
-        const stored = safeParsePoint(localStorage.getItem(STORAGE_KEY));
-        if (stored) {
-            // Defer clamping until after first paint so we can measure size accurately
-            requestAnimationFrame(() => setPos(clampToViewport(stored)));
-            return;
-        }
-
-        // First-time default: bottom-right-ish (zoom-aware) to avoid overlap with other widgets
         requestAnimationFrame(() => {
             const el = containerRef.current;
             const width = el?.offsetWidth ?? 320;
             const height = el?.offsetHeight ?? 400;
-            const zoom = getCssZoom();
-            const { width: vvW, height: vvH } = getVisualViewportSize();
-            const layoutViewportWidth = vvW / zoom;
-            const layoutViewportHeight = vvH / zoom;
-            setPos(clampToViewport({ x: layoutViewportWidth - width - 24, y: layoutViewportHeight - height - 24 }));
+            setPos(clampToViewport(getCenteredPosition(width, height)));
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -174,11 +153,6 @@ export const FloatingSnakeGameWidget: React.FC<{
             dragCleanupRef.current = null;
             dragStartRef.current = null;
             setIsDragging(false);
-            try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(latestPosRef.current));
-            } catch {
-                // ignore storage failures
-            }
         };
 
         window.addEventListener('pointermove', onMove);
