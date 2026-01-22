@@ -23,6 +23,8 @@ interface TileVersion {
     username: string;
     changelog_summary: string | null;
     is_locked: boolean;
+    tags?: string[] | null;
+    comments?: string | null;
 }
 
 interface TileDetailProps {
@@ -328,6 +330,26 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [tileVersions, setTileVersions] = useState<TileVersion[]>([]);
     const [loadingVersions, setLoadingVersions] = useState(false);
     const [versionActionLoading, setVersionActionLoading] = useState<number | null>(null);
+    
+    // Version Filter/Search State
+    const [versionSearchTerm, setVersionSearchTerm] = useState('');
+    const [versionFilterUser, setVersionFilterUser] = useState<string>('');
+    const [versionFilterDateFrom, setVersionFilterDateFrom] = useState<string>('');
+    const [versionFilterDateTo, setVersionFilterDateTo] = useState<string>('');
+    const [versionFilterTag, setVersionFilterTag] = useState<string>('');
+    
+    // Version Compare State
+    const [selectedVersionsForCompare, setSelectedVersionsForCompare] = useState<number[]>([]);
+    const [isDiffLoading, setIsDiffLoading] = useState(false);
+    
+    // Version Edit State (tags/comments)
+    const [editingVersionId, setEditingVersionId] = useState<number | null>(null);
+    const [editingVersionTags, setEditingVersionTags] = useState<string[]>([]);
+    const [editingVersionComments, setEditingVersionComments] = useState<string>('');
+    const [newTagInput, setNewTagInput] = useState('');
+    
+    // Restore Preview State
+    const [restorePreviewVersion, setRestorePreviewVersion] = useState<number | null>(null);
 
     // Diff Viewer State
     const [diffViewerOpen, setDiffViewerOpen] = useState(false);
@@ -346,7 +368,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         username?: string;
         changelogSummary?: string | null;
     } | null>(null);
-    const [isDiffLoading, setIsDiffLoading] = useState(false);
 
 
     // Handle ESC key to close notes dialog
@@ -1021,6 +1042,247 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             setLoadingVersions(false);
         }
     };
+
+    // Compare any two versions
+    const handleCompareTwoVersions = async (versionId1: number, versionId2: number) => {
+        try {
+            setIsDiffLoading(true);
+            const API_BASE = (import.meta as any).env?.VITE_API_BASE || '/api';
+            const res = await fetch(`${API_BASE}/tiles/${tile.id}/versions/compare`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ versionId1, versionId2 }),
+                credentials: 'include'
+            });
+
+            if (!res.ok) throw new Error('Failed to compare versions');
+            const data = await res.json();
+
+            if (data.version1 && data.version2) {
+                setDiffOriginalTile(data.version1.data);
+                setDiffModifiedTile(data.version2.data);
+                setDiffTitle(`Comparing Version ${data.version1.version_number} vs Version ${data.version2.version_number}`);
+                
+                setDiffOriginalVersionMeta({
+                    versionNumber: data.version1.version_number,
+                    createdAt: data.version1.created_at,
+                    username: tileVersions.find(v => v.id === versionId1)?.username || 'Unknown',
+                    changelogSummary: data.version1.changelog_summary
+                });
+                
+                setDiffModifiedVersionMeta({
+                    versionNumber: data.version2.version_number,
+                    createdAt: data.version2.created_at,
+                    username: tileVersions.find(v => v.id === versionId2)?.username || 'Unknown',
+                    changelogSummary: data.version2.changelog_summary
+                });
+                
+                setDiffViewerOpen(true);
+                setSelectedVersionsForCompare([]);
+            }
+        } catch (error) {
+            console.error('Error comparing versions:', error);
+            alert('Failed to compare versions.');
+        } finally {
+            setIsDiffLoading(false);
+        }
+    };
+
+    // Toggle version selection for comparison
+    const handleToggleVersionSelect = (versionId: number) => {
+        setSelectedVersionsForCompare(prev => {
+            if (prev.includes(versionId)) {
+                return prev.filter(id => id !== versionId);
+            } else if (prev.length < 2) {
+                return [...prev, versionId];
+            } else {
+                return [prev[1], versionId]; // Replace oldest selection
+            }
+        });
+    };
+
+    // Update version tags
+    const handleUpdateVersionTags = async (versionId: number) => {
+        try {
+            setVersionActionLoading(versionId);
+            const API_BASE = (import.meta as any).env?.VITE_API_BASE || '/api';
+            const response = await fetch(`${API_BASE}/tiles/${tile.id}/versions/${versionId}/tags`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tags: editingVersionTags }),
+                credentials: 'include',
+            });
+            if (response.ok) {
+                setTileVersions(prev => prev.map(v =>
+                    v.id === versionId ? { ...v, tags: editingVersionTags } : v
+                ));
+                setEditingVersionId(null);
+                setEditingVersionTags([]);
+                setNewTagInput('');
+            } else {
+                const data = await response.json();
+                alert(data.error || 'Failed to update tags.');
+            }
+        } catch (err) {
+            console.error('Error updating tags:', err);
+            alert('Error updating tags.');
+        } finally {
+            setVersionActionLoading(null);
+        }
+    };
+
+    // Update version comments
+    const handleUpdateVersionComments = async (versionId: number) => {
+        try {
+            setVersionActionLoading(versionId);
+            const API_BASE = (import.meta as any).env?.VITE_API_BASE || '/api';
+            const response = await fetch(`${API_BASE}/tiles/${tile.id}/versions/${versionId}/comments`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comments: editingVersionComments }),
+                credentials: 'include',
+            });
+            if (response.ok) {
+                setTileVersions(prev => prev.map(v =>
+                    v.id === versionId ? { ...v, comments: editingVersionComments } : v
+                ));
+                setEditingVersionId(null);
+                setEditingVersionComments('');
+            } else {
+                const data = await response.json();
+                alert(data.error || 'Failed to update comments.');
+            }
+        } catch (err) {
+            console.error('Error updating comments:', err);
+            alert('Error updating comments.');
+        } finally {
+            setVersionActionLoading(null);
+        }
+    };
+
+    // Start editing version tags/comments
+    const handleStartEditVersion = (version: TileVersion) => {
+        setEditingVersionId(version.id);
+        setEditingVersionTags(version.tags || []);
+        setEditingVersionComments(version.comments || '');
+    };
+
+    // Cancel editing
+    const handleCancelEditVersion = () => {
+        setEditingVersionId(null);
+        setEditingVersionTags([]);
+        setEditingVersionComments('');
+        setNewTagInput('');
+    };
+
+    // Add tag to editing list
+    const handleAddTag = () => {
+        if (newTagInput.trim() && !editingVersionTags.includes(newTagInput.trim())) {
+            setEditingVersionTags([...editingVersionTags, newTagInput.trim()]);
+            setNewTagInput('');
+        }
+    };
+
+    // Remove tag from editing list
+    const handleRemoveTag = (tag: string) => {
+        setEditingVersionTags(editingVersionTags.filter(t => t !== tag));
+    };
+
+    // Restore with preview
+    const handleRestoreWithPreview = async (versionId: number) => {
+        setRestorePreviewVersion(versionId);
+        // Load version data and show diff
+        try {
+            setIsDiffLoading(true);
+            const API_BASE = (import.meta as any).env?.VITE_API_BASE || '/api';
+            const res = await fetch(`${API_BASE}/tiles/${tile.id}/versions/${versionId}`, {
+                credentials: 'include'
+            });
+
+            if (!res.ok) throw new Error('Failed to fetch version details');
+            const data = await res.json();
+
+            if (data.version && data.version.tile_data) {
+                const versionParams = JSON.parse(data.version.tile_data);
+                const version = tileVersions.find(v => v.id === versionId);
+
+                setDiffOriginalTile(tile); // Current state
+                setDiffModifiedTile(versionParams); // Version to restore
+                setDiffTitle(`Restore Preview: Version ${version?.version_number || versionId}`);
+                
+                setDiffOriginalVersionMeta({
+                    versionNumber: 0, // Current
+                    createdAt: Date.now() / 1000,
+                    username: 'Current State',
+                    changelogSummary: null
+                });
+                
+                setDiffModifiedVersionMeta({
+                    versionNumber: version?.version_number || 0,
+                    createdAt: version?.created_at || 0,
+                    username: version?.username || 'Unknown',
+                    changelogSummary: version?.changelog_summary || null
+                });
+                
+                setDiffViewerOpen(true);
+            }
+        } catch (error) {
+            console.error('Error loading restore preview:', error);
+            alert('Failed to load restore preview.');
+        } finally {
+            setIsDiffLoading(false);
+        }
+    };
+
+    // Confirm restore after preview
+    const handleConfirmRestore = async () => {
+        if (restorePreviewVersion) {
+            setDiffViewerOpen(false);
+            await handleRestoreVersion(restorePreviewVersion);
+            setRestorePreviewVersion(null);
+        }
+    };
+
+    // Filter versions
+    const filteredVersions = tileVersions.filter(version => {
+        // Search term filter
+        if (versionSearchTerm) {
+            const searchLower = versionSearchTerm.toLowerCase();
+            const matchesSearch = 
+                version.changelog_summary?.toLowerCase().includes(searchLower) ||
+                version.username?.toLowerCase().includes(searchLower) ||
+                version.comments?.toLowerCase().includes(searchLower) ||
+                version.tags?.some(tag => tag.toLowerCase().includes(searchLower)) ||
+                `v${version.version_number}`.includes(searchLower);
+            if (!matchesSearch) return false;
+        }
+
+        // User filter
+        if (versionFilterUser && version.username !== versionFilterUser) {
+            return false;
+        }
+
+        // Date range filter
+        if (versionFilterDateFrom) {
+            const fromDate = new Date(versionFilterDateFrom).getTime() / 1000;
+            if (version.created_at < fromDate) return false;
+        }
+        if (versionFilterDateTo) {
+            const toDate = new Date(versionFilterDateTo).getTime() / 1000 + 86400; // Add 1 day
+            if (version.created_at > toDate) return false;
+        }
+
+        // Tag filter
+        if (versionFilterTag && (!version.tags || !version.tags.includes(versionFilterTag))) {
+            return false;
+        }
+
+        return true;
+    });
+
+    // Get all unique tags and users for filters
+    const allTags = Array.from(new Set(tileVersions.flatMap(v => v.tags || []))).sort();
+    const allUsers = Array.from(new Set(tileVersions.map(v => v.username))).sort();
 
     const cleanupEmptyVersions = async () => {
         try {
@@ -4448,20 +4710,95 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                                     {showVersions && (
                                         <div className="space-y-3">
+                                            {/* Search and Filter Controls */}
+                                            {tileVersions.length > 0 && (
+                                                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3 space-y-2 border border-slate-200 dark:border-slate-700">
+                                                    <div className="flex items-center gap-2">
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Search versions..."
+                                                            value={versionSearchTerm}
+                                                            onChange={(e) => setVersionSearchTerm(e.target.value)}
+                                                            className="flex-1 px-3 py-1.5 text-xs border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+                                                        />
+                                                        {selectedVersionsForCompare.length === 2 && (
+                                                            <button
+                                                                onClick={() => handleCompareTwoVersions(selectedVersionsForCompare[0], selectedVersionsForCompare[1])}
+                                                                disabled={isDiffLoading}
+                                                                className="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                                                            >
+                                                                Compare Selected
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                                        <select
+                                                            value={versionFilterUser}
+                                                            onChange={(e) => setVersionFilterUser(e.target.value)}
+                                                            className="px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+                                                        >
+                                                            <option value="">All Users</option>
+                                                            {allUsers.map(user => (
+                                                                <option key={user} value={user}>{user}</option>
+                                                            ))}
+                                                        </select>
+                                                        <input
+                                                            type="date"
+                                                            value={versionFilterDateFrom}
+                                                            onChange={(e) => setVersionFilterDateFrom(e.target.value)}
+                                                            placeholder="From Date"
+                                                            className="px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+                                                        />
+                                                        <input
+                                                            type="date"
+                                                            value={versionFilterDateTo}
+                                                            onChange={(e) => setVersionFilterDateTo(e.target.value)}
+                                                            placeholder="To Date"
+                                                            className="px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+                                                        />
+                                                    </div>
+                                                    {allTags.length > 0 && (
+                                                        <select
+                                                            value={versionFilterTag}
+                                                            onChange={(e) => setVersionFilterTag(e.target.value)}
+                                                            className="w-full px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+                                                        >
+                                                            <option value="">All Tags</option>
+                                                            {allTags.map(tag => (
+                                                                <option key={tag} value={tag}>{tag}</option>
+                                                            ))}
+                                                        </select>
+                                                    )}
+                                                </div>
+                                            )}
+                                            
                                             {loadingVersions ? (
                                                 <div className="text-center py-4 text-slate-500 text-sm">Loading versions...</div>
                                             ) : tileVersions.length === 0 ? (
                                                 <div className="text-center py-4 text-slate-500 text-sm bg-slate-50 dark:bg-slate-900 rounded-lg border border-dashed border-slate-300 dark:border-slate-700">
                                                     No previous versions saved.
                                                 </div>
+                                            ) : filteredVersions.length === 0 ? (
+                                                <div className="text-center py-4 text-slate-500 text-sm bg-slate-50 dark:bg-slate-900 rounded-lg border border-dashed border-slate-300 dark:border-slate-700">
+                                                    No versions match your filters.
+                                                </div>
                                             ) : (
                                                 <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1 custom-scrollbar">
-                                                    {tileVersions.map((version) => (
-                                                        <div key={version.id} className={`bg-slate-50 dark:bg-slate-900 rounded-lg p-3 border ${version.is_locked ? 'border-amber-400 dark:border-amber-600' : 'border-slate-200 dark:border-slate-700'} relative group`}>
+                                                    {filteredVersions.map((version) => (
+                                                        <div key={version.id} className={`bg-slate-50 dark:bg-slate-900 rounded-lg p-3 border ${version.is_locked ? 'border-amber-400 dark:border-amber-600' : selectedVersionsForCompare.includes(version.id) ? 'border-brand-500 dark:border-brand-400 ring-2 ring-brand-500/20' : 'border-slate-200 dark:border-slate-700'} relative group`}>
                                                             <div className="flex items-start justify-between mb-2">
-                                                                <div>
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="font-bold text-sm text-slate-700 dark:text-slate-200">v{version.version_number}</span>
+                                                                <div className="flex-1">
+                                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                                        <label className="flex items-center gap-1.5 cursor-pointer">
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={selectedVersionsForCompare.includes(version.id)}
+                                                                                onChange={() => handleToggleVersionSelect(version.id)}
+                                                                                className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500"
+                                                                                title="Select for comparison"
+                                                                            />
+                                                                            <span className="font-bold text-sm text-slate-700 dark:text-slate-200">v{version.version_number}</span>
+                                                                        </label>
                                                                         {version.is_locked && (
                                                                             <span className="text-[10px] bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-medium flex items-center gap-0.5">
                                                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
@@ -4482,6 +4819,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             {version.changelog_summary}
                                                                         </div>
                                                                     )}
+                                                                    {/* Tags */}
+                                                                    {version.tags && version.tags.length > 0 && (
+                                                                        <div className="flex flex-wrap gap-1 mt-2">
+                                                                            {version.tags.map((tag, idx) => (
+                                                                                <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-[10px] font-medium">
+                                                                                    {tag}
+                                                                                </span>
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
+                                                                    {/* Comments */}
+                                                                    {version.comments && (
+                                                                        <div className="mt-2 p-2 bg-slate-100 dark:bg-slate-800 rounded text-xs text-slate-600 dark:text-slate-400 italic border-l-2 border-slate-300 dark:border-slate-600">
+                                                                            {version.comments}
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                                 <div className="flex flex-col gap-1">
                                                                     <button
@@ -4500,8 +4853,91 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             </svg>
                                                                         )}
                                                                     </button>
+                                                                    <button
+                                                                        onClick={() => handleStartEditVersion(version)}
+                                                                        disabled={versionActionLoading === version.id}
+                                                                        className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors text-slate-400"
+                                                                        title="Edit Tags/Comments"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                                                                        </svg>
+                                                                    </button>
                                                                 </div>
                                                             </div>
+                                                            
+                                                            {/* Edit Tags/Comments UI */}
+                                                            {editingVersionId === version.id && (
+                                                                <div className="mt-3 p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-300 dark:border-slate-600 space-y-3">
+                                                                    <div>
+                                                                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Tags</label>
+                                                                        <div className="flex flex-wrap gap-1 mb-2">
+                                                                            {editingVersionTags.map((tag, idx) => (
+                                                                                <span key={idx} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs">
+                                                                                    {tag}
+                                                                                    <button
+                                                                                        onClick={() => handleRemoveTag(tag)}
+                                                                                        className="hover:text-red-600"
+                                                                                    >
+                                                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                                                            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                                                                        </svg>
+                                                                                    </button>
+                                                                                </span>
+                                                                            ))}
+                                                                        </div>
+                                                                        <div className="flex gap-2">
+                                                                            <input
+                                                                                type="text"
+                                                                                value={newTagInput}
+                                                                                onChange={(e) => setNewTagInput(e.target.value)}
+                                                                                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
+                                                                                placeholder="Add tag..."
+                                                                                className="flex-1 px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200"
+                                                                            />
+                                                                            <button
+                                                                                onClick={handleAddTag}
+                                                                                className="px-3 py-1 bg-brand-600 hover:bg-brand-500 text-white text-xs rounded"
+                                                                            >
+                                                                                Add
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Comments</label>
+                                                                        <textarea
+                                                                            value={editingVersionComments}
+                                                                            onChange={(e) => setEditingVersionComments(e.target.value)}
+                                                                            placeholder="Add notes about this version..."
+                                                                            rows={3}
+                                                                            className="w-full px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200"
+                                                                        />
+                                                                    </div>
+                                                                    <div className="flex gap-2">
+                                                                        <button
+                                                                            onClick={() => handleUpdateVersionTags(version.id)}
+                                                                            disabled={versionActionLoading === version.id}
+                                                                            className="flex-1 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded"
+                                                                        >
+                                                                            Save Tags
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handleUpdateVersionComments(version.id)}
+                                                                            disabled={versionActionLoading === version.id}
+                                                                            className="flex-1 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded"
+                                                                        >
+                                                                            Save Comments
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={handleCancelEditVersion}
+                                                                            className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded"
+                                                                        >
+                                                                            Cancel
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            
                                                             <div className="flex gap-2 mt-3 pt-3 border-t border-slate-200 dark:border-slate-800">
                                                                 <button
                                                                     onClick={() => handleCompareWithCurrent(version)}
@@ -4515,14 +4951,16 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     Diff
                                                                 </button>
                                                                 <button
-                                                                    onClick={() => handleRestoreVersion(version.id)}
-                                                                    disabled={versionActionLoading === version.id}
+                                                                    onClick={() => handleRestoreWithPreview(version.id)}
+                                                                    disabled={versionActionLoading === version.id || isDiffLoading}
                                                                     className="flex-1 py-1.5 bg-brand-50 hover:bg-brand-100 dark:bg-brand-900/20 dark:hover:bg-brand-900/30 text-brand-700 dark:text-brand-400 text-xs font-semibold rounded transition-colors flex items-center justify-center gap-1"
+                                                                    title="Preview restore before confirming"
                                                                 >
                                                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                                                     </svg>
-                                                                    Restore
+                                                                    Preview
                                                                 </button>
                                                                 {!version.is_locked && (
                                                                     <button
@@ -7105,15 +7543,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     <VersionDiffViewer
                         originalData={diffOriginalTile}
                         modifiedData={diffModifiedTile}
-                        originalTitle={`Version ${diffOriginalVersionMeta?.versionNumber || 'N/A'}`}
-                        modifiedTitle={`Current State`}
+                        originalTitle={restorePreviewVersion ? `Current State` : `Version ${diffOriginalVersionMeta?.versionNumber || 'N/A'}`}
+                        modifiedTitle={restorePreviewVersion ? `Version ${diffModifiedVersionMeta?.versionNumber || 'N/A'}` : `Current State`}
                         onClose={() => {
                             setDiffViewerOpen(false);
                             setDiffOriginalVersionMeta(null);
                             setDiffModifiedVersionMeta(null);
+                            setRestorePreviewVersion(null);
                         }}
-                        originalVersionMeta={diffOriginalVersionMeta || undefined}
-                        modifiedVersionMeta={diffModifiedVersionMeta || undefined}
+                        originalVersionMeta={restorePreviewVersion ? diffModifiedVersionMeta || undefined : diffOriginalVersionMeta || undefined}
+                        modifiedVersionMeta={restorePreviewVersion ? diffOriginalVersionMeta || undefined : diffModifiedVersionMeta || undefined}
+                        isRestorePreview={!!restorePreviewVersion}
+                        onConfirmRestore={restorePreviewVersion ? handleConfirmRestore : undefined}
                     />
                 )}
             </>

@@ -75,6 +75,12 @@ switch ($method) {
             handleDeleteDuplicateVersions($matches[1]);
         } elseif (preg_match('#^/([^/]+)/versions/cleanup-empty$#', $path, $matches)) {
             handleCleanupEmptyVersions($matches[1]);
+        } elseif (preg_match('#^/([^/]+)/versions/compare$#', $path, $matches)) {
+            handleCompareVersions($matches[1]);
+        } elseif (preg_match('#^/([^/]+)/versions/([^/]+)/tags$#', $path, $matches)) {
+            handleUpdateVersionTags($matches[1], $matches[2]);
+        } elseif (preg_match('#^/([^/]+)/versions/([^/]+)/comments$#', $path, $matches)) {
+            handleUpdateVersionComments($matches[1], $matches[2]);
         } elseif (preg_match('#^/([^/]+)/update-links-browser$#', $path, $matches)) {
             handleUpdateLinksBrowser($matches[1]);
         } else {
@@ -3542,11 +3548,11 @@ function handleGetTileVersions($tileId) {
         sendJSON(['error' => 'Permission denied'], 403);
     }
 
-    $stmt = $db->prepare('SELECT id, version_number, created_at, user_id, changelog_summary, is_locked FROM tile_versions WHERE tile_id = ? AND is_temp = 0 ORDER BY version_number DESC');
+    $stmt = $db->prepare('SELECT id, version_number, created_at, user_id, changelog_summary, is_locked, tags, comments FROM tile_versions WHERE tile_id = ? AND is_temp = 0 ORDER BY version_number DESC');
     $stmt->execute([$tileId]);
     $versions = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Get usernames
+    // Get usernames and parse tags/comments
     foreach ($versions as &$v) {
         if ($v['user_id']) {
             $uStmt = $db->prepare('SELECT username FROM users WHERE id = ?');
@@ -3557,6 +3563,10 @@ function handleGetTileVersions($tileId) {
             $v['username'] = 'System';
         }
         $v['is_locked'] = (bool)$v['is_locked'];
+        // Parse tags (stored as JSON array)
+        $v['tags'] = $v['tags'] ? json_decode($v['tags'], true) : null;
+        // Comments are plain text
+        $v['comments'] = $v['comments'] ?: null;
     }
 
     sendJSON(['versions' => $versions]);
@@ -4643,6 +4653,134 @@ function handleDeleteDuplicateVersions($tileId) {
     $deleted = deleteDuplicateVersions($tileId, $db);
     
     sendJSON(['success' => true, 'deleted' => $deleted]);
+}
+
+function handleCompareVersions($tileId) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Check view permission
+    if (!canUserViewTile($user['id'], $tileId, $db)) {
+        sendJSON(['error' => 'Permission denied'], 403);
+    }
+    
+    $data = getJSONInput();
+    $versionId1 = $data['versionId1'] ?? null;
+    $versionId2 = $data['versionId2'] ?? null;
+    
+    if (!$versionId1 || !$versionId2) {
+        sendJSON(['error' => 'Both version IDs are required'], 400);
+    }
+    
+    // Get both versions
+    $stmt = $db->prepare('SELECT id, tile_data, created_at, version_number, changelog_summary FROM tile_versions WHERE id IN (?, ?) AND tile_id = ? AND is_temp = 0');
+    $stmt->execute([$versionId1, $versionId2, $tileId]);
+    $versions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    if (count($versions) !== 2) {
+        sendJSON(['error' => 'One or both versions not found'], 404);
+    }
+    
+    $version1 = null;
+    $version2 = null;
+    foreach ($versions as $v) {
+        if ($v['id'] == $versionId1) {
+            $version1 = $v;
+        } elseif ($v['id'] == $versionId2) {
+            $version2 = $v;
+        }
+    }
+    
+    if (!$version1 || !$version2) {
+        sendJSON(['error' => 'Version mismatch'], 400);
+    }
+    
+    $data1 = json_decode($version1['tile_data'], true);
+    $data2 = json_decode($version2['tile_data'], true);
+    
+    if (!$data1 || !$data2) {
+        sendJSON(['error' => 'Corrupt version data'], 500);
+    }
+    
+    sendJSON([
+        'version1' => [
+            'id' => $version1['id'],
+            'version_number' => $version1['version_number'],
+            'created_at' => $version1['created_at'],
+            'changelog_summary' => $version1['changelog_summary'],
+            'data' => $data1
+        ],
+        'version2' => [
+            'id' => $version2['id'],
+            'version_number' => $version2['version_number'],
+            'created_at' => $version2['created_at'],
+            'changelog_summary' => $version2['changelog_summary'],
+            'data' => $data2
+        ]
+    ]);
+}
+
+function handleUpdateVersionTags($tileId, $versionId) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Check edit permission
+    if (!canUserEditTile($user['id'], $tileId, $db)) {
+        sendJSON(['error' => 'Permission denied'], 403);
+    }
+    
+    $data = getJSONInput();
+    $tags = $data['tags'] ?? null;
+    
+    // Validate tags is an array
+    if ($tags !== null && !is_array($tags)) {
+        sendJSON(['error' => 'Tags must be an array'], 400);
+    }
+    
+    // Verify version exists and belongs to tile
+    $stmt = $db->prepare('SELECT id FROM tile_versions WHERE id = ? AND tile_id = ? AND is_temp = 0');
+    $stmt->execute([$versionId, $tileId]);
+    if (!$stmt->fetch()) {
+        sendJSON(['error' => 'Version not found'], 404);
+    }
+    
+    // Update tags (store as JSON)
+    $tagsJson = $tags ? json_encode($tags, JSON_UNESCAPED_UNICODE) : null;
+    $updateStmt = $db->prepare('UPDATE tile_versions SET tags = ? WHERE id = ? AND tile_id = ?');
+    $updateStmt->execute([$tagsJson, $versionId, $tileId]);
+    
+    sendJSON(['success' => true, 'tags' => $tags]);
+}
+
+function handleUpdateVersionComments($tileId, $versionId) {
+    $user = requireAuth();
+    $db = getDB();
+    
+    // Check edit permission
+    if (!canUserEditTile($user['id'], $tileId, $db)) {
+        sendJSON(['error' => 'Permission denied'], 403);
+    }
+    
+    $data = getJSONInput();
+    $comments = $data['comments'] ?? null;
+    
+    // Validate comments is a string
+    if ($comments !== null && !is_string($comments)) {
+        sendJSON(['error' => 'Comments must be a string'], 400);
+    }
+    
+    // Verify version exists and belongs to tile
+    $stmt = $db->prepare('SELECT id FROM tile_versions WHERE id = ? AND tile_id = ? AND is_temp = 0');
+    $stmt->execute([$versionId, $tileId]);
+    if (!$stmt->fetch()) {
+        sendJSON(['error' => 'Version not found'], 404);
+    }
+    
+    // Update comments
+    $updateStmt = $db->prepare('UPDATE tile_versions SET comments = ? WHERE id = ? AND tile_id = ?');
+    $updateStmt->execute([$comments ?: null, $versionId, $tileId]);
+    
+    sendJSON(['success' => true, 'comments' => $comments]);
 }
 
 function handleGetTileInfo($tileId) {

@@ -19,6 +19,8 @@ interface VersionDiffViewerProps {
         username?: string;
         changelogSummary?: string | null;
     };
+    isRestorePreview?: boolean;
+    onConfirmRestore?: () => void;
 }
 
 interface DiffResult<T> {
@@ -133,7 +135,9 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
     modifiedTitle,
     onClose,
     originalVersionMeta,
-    modifiedVersionMeta
+    modifiedVersionMeta,
+    isRestorePreview = false,
+    onConfirmRestore
 }) => {
 
     // Handle ESC key to close
@@ -238,15 +242,28 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
         return text.length > 120 ? `${text.slice(0, 120)}...` : text;
     };
 
-    const renderDiffItem = (label: string, diff: DiffResult<any> | undefined) => {
-        if (!diff || diff.status !== 'modified') return null;
+    // Helper to render a field value in a panel
+    const renderFieldValue = (label: string, value: any, isChanged: boolean, isRemoved: boolean = false) => {
         return (
-            <div className="flex flex-col border-l-2 border-amber-400 pl-3 py-1 my-1 bg-amber-50 dark:bg-amber-900/10 rounded-r">
-                <span className="text-xs font-semibold text-slate-500 uppercase">{label}</span>
-                <div className="flex items-center gap-2 text-sm">
-                    <div className="line-through text-red-500 opacity-70">{renderChangedValue(diff.original)}</div>
-                    <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
-                    <div className="text-green-600 font-medium">{renderChangedValue(diff.modified)}</div>
+            <div className={`p-2 rounded ${isRemoved ? 'bg-red-50 dark:bg-red-900/10 border-l-4 border-red-500' : isChanged ? 'bg-green-50 dark:bg-green-900/10 border-l-4 border-green-500' : 'bg-slate-50 dark:bg-slate-800/50 border-l-4 border-slate-300 dark:border-slate-600'}`}>
+                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">{label}</div>
+                <div className={`text-sm ${isRemoved ? 'line-through text-red-600 dark:text-red-400' : isChanged ? 'text-green-700 dark:text-green-300 font-medium' : 'text-slate-700 dark:text-slate-300'}`}>
+                    {renderChangedValue(value)}
+                </div>
+            </div>
+        );
+    };
+
+    // Render side-by-side field comparison
+    const renderSideBySideField = (label: string, originalVal: any, modifiedVal: any) => {
+        const isChanged = originalVal !== modifiedVal;
+        return (
+            <div className="grid grid-cols-2 gap-2 border-b border-slate-200 dark:border-slate-700 last:border-0">
+                <div className="p-2">
+                    {renderFieldValue(label, originalVal, false, isChanged && originalVal !== null && originalVal !== undefined)}
+                </div>
+                <div className="p-2">
+                    {renderFieldValue(label, modifiedVal, isChanged, false)}
                 </div>
             </div>
         );
@@ -322,183 +339,386 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
                     </button>
                 </div>
 
-                {/* Content */}
-                <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50 dark:bg-slate-950/50">
-
-                    {/* Root Changes */}
+                {/* Content - Two Panel Layout */}
+                <div className="flex-1 overflow-y-auto bg-slate-50/50 dark:bg-slate-950/50">
+                    {/* Root Fields - Side by Side */}
                     {Object.keys(diffTree.root).length > 0 && (
-                        <div className="mb-8 bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-700">
-                            <h3 className="text-sm font-bold uppercase tracking-wide text-slate-400 mb-3 border-b border-slate-100 dark:border-slate-700 pb-2">General Settings Changes</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {Object.keys(diffTree.root).map(key => renderDiffItem(key, diffTree.root[key]))}
+                        <div className="mb-4 bg-white dark:bg-slate-800 border-b-2 border-slate-300 dark:border-slate-600">
+                            <div className="sticky top-0 bg-slate-100 dark:bg-slate-800 px-4 py-3 border-b-2 border-slate-300 dark:border-slate-600 z-10">
+                                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700 dark:text-slate-200">General Settings</h3>
+                            </div>
+                            <div className="grid grid-cols-2 divide-x-2 divide-slate-300 dark:divide-slate-600">
+                                <div className="bg-red-50/50 dark:bg-red-900/10 px-4 py-2 text-xs font-bold text-red-700 dark:text-red-400 uppercase border-b border-slate-200 dark:border-slate-700 sticky top-[41px] z-10">
+                                    {originalTitle}
+                                </div>
+                                <div className="bg-green-50/50 dark:bg-green-900/10 px-4 py-2 text-xs font-bold text-green-700 dark:text-green-400 uppercase border-b border-slate-200 dark:border-slate-700 sticky top-[41px] z-10">
+                                    {modifiedTitle}
+                                </div>
+                            </div>
+                            <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                                {Object.keys(diffTree.root).map(key => {
+                                    const diff = diffTree.root[key];
+                                    const originalVal = diff?.original ?? originalData[key];
+                                    const modifiedVal = diff?.modified ?? modifiedData[key];
+                                    const isChanged = diff && diff.status === 'modified';
+                                    return (
+                                        <div key={key} className={`grid grid-cols-2 divide-x divide-slate-200 dark:divide-slate-700 ${isChanged ? 'bg-amber-50/30 dark:bg-amber-900/5' : ''}`}>
+                                            <div className={`p-3 ${isChanged ? 'bg-red-50/50 dark:bg-red-900/10' : 'bg-white dark:bg-slate-800'}`}>
+                                                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">{key}</div>
+                                                <div className={`text-sm ${isChanged ? 'line-through text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                                                    {renderChangedValue(originalVal)}
+                                                </div>
+                                            </div>
+                                            <div className={`p-3 ${isChanged ? 'bg-green-50/50 dark:bg-green-900/10' : 'bg-white dark:bg-slate-800'}`}>
+                                                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">{key}</div>
+                                                <div className={`text-sm ${isChanged ? 'text-green-600 dark:text-green-400 font-medium' : 'text-slate-700 dark:text-slate-300'}`}>
+                                                    {renderChangedValue(modifiedVal)}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
                     )}
 
-                    {/* Tabs & Content Changes */}
-                    <div className="space-y-6">
-                        {diffTree.tabs.filter(t => t.status !== 'unchanged').map(tabDiff => (
-                            <div key={tabDiff.key} className={`rounded-xl border shadow-sm overflow-hidden ${tabDiff.status === 'added' ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-800' :
-                                tabDiff.status === 'removed' ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800' :
-                                    'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'
-                                }`}>
-                                <div className="p-3 border-b border-inherit/50 flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                        <span className={`text-xs font-bold px-2 py-0.5 rounded uppercase ${tabDiff.status === 'added' ? 'bg-green-200 text-green-800' :
-                                            tabDiff.status === 'removed' ? 'bg-red-200 text-red-800' :
-                                                'bg-yellow-200 text-yellow-800'
-                                            }`}>{tabDiff.status}</span>
-                                        <h4 className="font-bold text-slate-800 dark:text-slate-200">
-                                            Tab: {tabDiff.item.title || '(Untitled)'}
-                                        </h4>
-                                    </div>
-                                    {tabDiff.status === 'modified' && (
-                                        <div className="text-xs text-slate-500">ID: {tabDiff.key}</div>
-                                    )}
+                    {/* Two Panel Layout for Tabs/Content */}
+                    {diffTree.tabs.some(t => t.status !== 'unchanged') || diffTree.messages.some(m => m.status !== 'unchanged') ? (
+                        <div className="bg-white dark:bg-slate-800 border-b-2 border-slate-300 dark:border-slate-600">
+                            {/* Header for tabs/content */}
+                            <div className="sticky top-0 bg-slate-100 dark:bg-slate-800 px-4 py-3 border-b-2 border-slate-300 dark:border-slate-600 z-10">
+                                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700 dark:text-slate-200">Tabs & Content</h3>
+                            </div>
+                            <div className="grid grid-cols-2 divide-x-2 divide-slate-300 dark:divide-slate-600">
+                                <div className="bg-red-50/50 dark:bg-red-900/10 px-4 py-2 text-xs font-bold text-red-700 dark:text-red-400 uppercase border-b border-slate-200 dark:border-slate-700 sticky top-[41px] z-10">
+                                    {originalTitle}
                                 </div>
+                                <div className="bg-green-50/50 dark:bg-green-900/10 px-4 py-2 text-xs font-bold text-green-700 dark:text-green-400 uppercase border-b border-slate-200 dark:border-slate-700 sticky top-[41px] z-10">
+                                    {modifiedTitle}
+                                </div>
+                            </div>
 
-                                <div className="p-4 space-y-3">
-                                    {/* Tab Field Changes */}
-                                    {tabDiff.status === 'modified' && tabDiff.details && tabDiff.details.diffs && (
-                                        <div className="space-y-1">
-                                            {Object.keys(tabDiff.details.diffs).map(key => renderDiffItem(key, tabDiff.details?.diffs?.[key]))}
-                                        </div>
-                                    )}
+                            {/* Render tabs side by side */}
+                            <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                                {(() => {
+                                    const originalTabs = originalData.tabs || [];
+                                    const modifiedTabs = modifiedData.tabs || [];
+                                    const allTabIds = new Set([...originalTabs.map(t => t.id), ...modifiedTabs.map(t => t.id)]);
+                                    const tabMapA = new Map(originalTabs.map(t => [t.id, t]));
+                                    const tabMapB = new Map(modifiedTabs.map(t => [t.id, t]));
 
-                                    {/* Sections */}
-                                    {tabDiff.details?.children?.filter(c => c.status !== 'unchanged').map(sectionDiff => (
-                                        <div key={sectionDiff.key} className={`ml-4 pl-4 border-l-2 ${sectionDiff.status === 'added' ? 'border-green-400' :
-                                            sectionDiff.status === 'removed' ? 'border-red-400' :
-                                                'border-slate-300 dark:border-slate-600'
-                                            }`}>
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <span className={`text-[10px] uppercase font-bold ${sectionDiff.status === 'added' ? 'text-green-600' :
-                                                    sectionDiff.status === 'removed' ? 'text-red-600' :
-                                                        'text-amber-500'
-                                                    }`}>[{sectionDiff.status} Section]</span>
-                                                <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">{sectionDiff.item.title || '(Untitled Section)'}</span>
-                                            </div>
-
-                                            {/* Section Field Changes */}
-                                            {sectionDiff.status === 'modified' && sectionDiff.details?.diffs && (
-                                                <div className="mb-2">
-                                                    {Object.keys(sectionDiff.details.diffs).map(key => renderDiffItem(key, sectionDiff.details?.diffs?.[key]))}
+                                    return Array.from(allTabIds).map(tabId => {
+                                        const tabA = tabMapA.get(tabId);
+                                        const tabB = tabMapB.get(tabId);
+                                        const tabDiff = diffTree.tabs.find(t => t.key === tabId);
+                                        const isUnchanged = !tabDiff || tabDiff.status === 'unchanged';
+                                        
+                                        if (isUnchanged && tabA && tabB) {
+                                            // Show unchanged tab (dimmed)
+                                            return (
+                                                <div key={tabId} className="grid grid-cols-2 divide-x divide-slate-200 dark:divide-slate-700 opacity-60">
+                                                    <div className="p-3 bg-white dark:bg-slate-800">
+                                                        <div className="text-sm font-medium text-slate-500 dark:text-slate-400">{tabA.title || '(Untitled)'}</div>
+                                                    </div>
+                                                    <div className="p-3 bg-white dark:bg-slate-800">
+                                                        <div className="text-sm font-medium text-slate-500 dark:text-slate-400">{tabB.title || '(Untitled)'}</div>
+                                                    </div>
                                                 </div>
-                                            )}
+                                            );
+                                        }
 
-                                            {/* Links */}
-                                            <div className="space-y-1 mt-2">
-                                                <div className="space-y-1 mt-2">
-                                                    {sectionDiff.details?.children?.filter(l => l.status !== 'unchanged').map(linkDiff => {
-                                                        const isRichText = linkDiff.kind === 'richText' || isRichTextItem(linkDiff.item);
-                                                        return (
-                                                            <div key={linkDiff.key} className={`p-2 rounded text-sm ${linkDiff.status === 'added' ? 'bg-green-100/50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' :
-                                                                linkDiff.status === 'removed' ? 'bg-red-100/50 dark:bg-red-900/20 border border-red-200 dark:border-red-800' :
-                                                                    'bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800'
-                                                                }`}>
-                                                                <div className="flex items-center justify-between mb-1">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="text-lg">{isRichText ? '📝' : (linkDiff.item as Link).icon || '🔗'}</span>
-                                                                        <div className="flex flex-col">
-                                                                            <span className={`font-medium ${linkDiff.status === 'removed' ? 'line-through opacity-70' : ''}`}>
-                                                                                {isRichText ? 'Rich Text Block' : (linkDiff.item as Link).label}
-                                                                            </span>
-                                                                            <span className={`text-xs opacity-70 ${linkDiff.status === 'removed' ? 'line-through' : ''}`}>
-                                                                                {isRichText ? renderRichTextPreview((linkDiff.item as RichTextContent).content || '') : (linkDiff.item as Link).url}
-                                                                            </span>
+                                        // Show changed tab
+                                        return (
+                                            <div key={tabId} className="grid grid-cols-2 divide-x divide-slate-200 dark:divide-slate-700">
+                                                <div className={`p-3 ${tabDiff.status === 'removed' || (tabDiff.status === 'modified' && !tabA) ? 'bg-red-50 dark:bg-red-900/10' : 'bg-slate-50 dark:bg-slate-800/50'}`}>
+                                                    {tabA ? (
+                                                        <>
+                                                            <div className="flex items-center gap-2 mb-2">
+                                                                <span className="text-xs font-semibold text-slate-500">Tab</span>
+                                                                <div className={`text-sm font-medium ${tabDiff.status === 'removed' ? 'line-through text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                                                                    {tabA.title || '(Untitled)'}
+                                                                </div>
+                                                            </div>
+                                                            {tabDiff.status === 'modified' && tabDiff.details?.diffs && (
+                                                                <div className="space-y-1 mt-2">
+                                                                    {Object.keys(tabDiff.details.diffs).map(key => (
+                                                                        <div key={key} className="text-xs">
+                                                                            <span className="text-slate-500">{key}:</span>{' '}
+                                                                            <span className="text-red-600 dark:text-red-400 line-through">{renderChangedValue(tabDiff.details?.diffs?.[key]?.original)}</span>
                                                                         </div>
-                                                                    </div>
-                                                                    <div className={`text-[10px] font-bold uppercase tracking-wider opacity-80 ${linkDiff.status === 'added' ? 'text-green-700' :
-                                                                        linkDiff.status === 'removed' ? 'text-red-700' : 'text-amber-700'
-                                                                        }`}>
-                                                                        {linkDiff.status}
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                            {/* Render sections for this tab */}
+                                                            {tabA.sections && tabA.sections.length > 0 && (
+                                                                <div className="mt-3 space-y-2">
+                                                                    {tabA.sections.map(section => {
+                                                                        const sectionDiff = tabDiff.details?.children?.find(c => c.key === section.id);
+                                                                        if (sectionDiff && sectionDiff.status === 'unchanged') return null;
+                                                                        return (
+                                                                            <div key={section.id} className={`ml-2 pl-2 border-l-2 ${sectionDiff?.status === 'removed' ? 'border-red-400' : 'border-slate-300 dark:border-slate-600'}`}>
+                                                                                <div className="text-xs font-medium text-slate-600 dark:text-slate-400">{section.title || '(Untitled Section)'}</div>
+                                                                                {section.links && section.links.length > 0 && (
+                                                                                    <div className="mt-1 space-y-1">
+                                                                                        {section.links.map(link => {
+                                                                                            const linkDiff = sectionDiff?.details?.children?.find(l => l.key === link.id);
+                                                                                            if (linkDiff && linkDiff.status === 'unchanged') return null;
+                                                                                            return (
+                                                                                                <div key={link.id} className={`text-xs p-1 rounded ${linkDiff?.status === 'removed' ? 'bg-red-100 dark:bg-red-900/20' : 'bg-slate-100 dark:bg-slate-700/50'}`}>
+                                                                                                    <span className="font-medium">{link.label}</span>
+                                                                                                    {linkDiff?.status === 'removed' && <span className="ml-1 text-red-600 line-through">{link.url}</span>}
+                                                                                                </div>
+                                                                                            );
+                                                                                        })}
+                                                                                    </div>
+                                                                                )}
+                                                                                {section.richTextContent && section.richTextContent.length > 0 && (
+                                                                                    <div className="mt-1 space-y-1">
+                                                                                        {section.richTextContent.map(rt => {
+                                                                                            const rtDiff = sectionDiff?.details?.children?.find(l => l.key === rt.id && l.kind === 'richText');
+                                                                                            if (rtDiff && rtDiff.status === 'unchanged') return null;
+                                                                                            return (
+                                                                                                <div key={rt.id} className={`text-xs p-1 rounded ${rtDiff?.status === 'removed' ? 'bg-red-100 dark:bg-red-900/20' : 'bg-slate-100 dark:bg-slate-700/50'}`}>
+                                                                                                    <span>📝 Rich Text</span>
+                                                                                                    {rtDiff?.status === 'removed' && <span className="ml-1 text-red-600 line-through">(removed)</span>}
+                                                                                                </div>
+                                                                                            );
+                                                                                        })}
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            )}
+                                                        </>
+                                                    ) : (
+                                                        <div className="text-sm text-slate-400 italic">—</div>
+                                                    )}
+                                                </div>
+                                                <div className={`p-3 ${tabDiff.status === 'added' || (tabDiff.status === 'modified' && !tabB) ? 'bg-green-50 dark:bg-green-900/10' : 'bg-slate-50 dark:bg-slate-800/50'}`}>
+                                                    {tabB ? (
+                                                        <>
+                                                                <div className="flex items-center gap-2 mb-2">
+                                                                    <span className="text-xs font-semibold text-slate-500">Tab</span>
+                                                                    <div className={`text-sm font-medium ${tabDiff.status === 'added' ? 'text-green-600 dark:text-green-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                                                                        {tabB.title || '(Untitled)'}
                                                                     </div>
                                                                 </div>
-
-                                                                {/* Detailed Field Diffs for Modified Items */}
-                                                                {linkDiff.status === 'modified' && linkDiff.details?.diffs && (
-                                                                    <div className="mt-2 pl-2 border-l-2 border-amber-300 dark:border-amber-700 space-y-1">
-                                                                        {Object.keys(linkDiff.details.diffs).map(fieldKey => {
-                                                                            return renderDiffItem(fieldKey, linkDiff.details?.diffs?.[fieldKey]);
+                                                                {tabDiff.status === 'modified' && tabDiff.details?.diffs && (
+                                                                    <div className="space-y-1 mt-2">
+                                                                        {Object.keys(tabDiff.details.diffs).map(key => (
+                                                                            <div key={key} className="text-xs">
+                                                                                <span className="text-slate-500">{key}:</span>{' '}
+                                                                                <span className="text-green-600 dark:text-green-400 font-medium">{renderChangedValue(tabDiff.details?.diffs?.[key]?.modified)}</span>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                                {/* Render sections for this tab */}
+                                                                {tabB.sections && tabB.sections.length > 0 && (
+                                                                    <div className="mt-3 space-y-2">
+                                                                        {tabB.sections.map(section => {
+                                                                            const sectionDiff = tabDiff.details?.children?.find(c => c.key === section.id);
+                                                                            if (sectionDiff && sectionDiff.status === 'unchanged') return null;
+                                                                            return (
+                                                                                <div key={section.id} className={`ml-2 pl-2 border-l-2 ${sectionDiff?.status === 'added' ? 'border-green-400' : 'border-slate-300 dark:border-slate-600'}`}>
+                                                                                    <div className="text-xs font-medium text-slate-600 dark:text-slate-400">{section.title || '(Untitled Section)'}</div>
+                                                                                    {section.links && section.links.length > 0 && (
+                                                                                        <div className="mt-1 space-y-1">
+                                                                                            {section.links.map(link => {
+                                                                                                const linkDiff = sectionDiff?.details?.children?.find(l => l.key === link.id);
+                                                                                                if (linkDiff && linkDiff.status === 'unchanged') return null;
+                                                                                                return (
+                                                                                                    <div key={link.id} className={`text-xs p-1 rounded ${linkDiff?.status === 'added' ? 'bg-green-100 dark:bg-green-900/20' : linkDiff?.status === 'modified' ? 'bg-amber-100 dark:bg-amber-900/20' : 'bg-slate-100 dark:bg-slate-700/50'}`}>
+                                                                                                        <span className="font-medium">{link.label}</span>
+                                                                                                        {linkDiff?.status === 'added' && <span className="ml-1 text-green-600">{link.url}</span>}
+                                                                                                        {linkDiff?.status === 'modified' && linkDiff.details?.diffs && (
+                                                                                                            <div className="mt-1 pl-2 space-y-0.5">
+                                                                                                                {Object.keys(linkDiff.details.diffs).map(fieldKey => (
+                                                                                                                    <div key={fieldKey} className="text-[10px]">
+                                                                                                                        <span className="text-slate-500">{fieldKey}:</span>{' '}
+                                                                                                                        <span className="text-red-600 line-through">{renderChangedValue(linkDiff.details?.diffs?.[fieldKey]?.original)}</span>
+                                                                                                                        {' → '}
+                                                                                                                        <span className="text-green-600">{renderChangedValue(linkDiff.details?.diffs?.[fieldKey]?.modified)}</span>
+                                                                                                                    </div>
+                                                                                                                ))}
+                                                                                                            </div>
+                                                                                                        )}
+                                                                                                    </div>
+                                                                                                );
+                                                                                            })}
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {section.richTextContent && section.richTextContent.length > 0 && (
+                                                                                        <div className="mt-1 space-y-1">
+                                                                                            {section.richTextContent.map(rt => {
+                                                                                                const rtDiff = sectionDiff?.details?.children?.find(l => l.key === rt.id && l.kind === 'richText');
+                                                                                                if (rtDiff && rtDiff.status === 'unchanged') return null;
+                                                                                                return (
+                                                                                                    <div key={rt.id} className={`text-xs p-1 rounded ${rtDiff?.status === 'added' ? 'bg-green-100 dark:bg-green-900/20' : rtDiff?.status === 'modified' ? 'bg-amber-100 dark:bg-amber-900/20' : 'bg-slate-100 dark:bg-slate-700/50'}`}>
+                                                                                                        <span>📝 Rich Text</span>
+                                                                                                        {rtDiff?.status === 'added' && <span className="ml-1 text-green-600">(added)</span>}
+                                                                                                        {rtDiff?.status === 'modified' && (
+                                                                                                            <div className="mt-1 text-[10px] text-slate-500">
+                                                                                                                Content modified
+                                                                                                            </div>
+                                                                                                        )}
+                                                                                                    </div>
+                                                                                                );
+                                                                                            })}
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                            );
                                                                         })}
                                                                     </div>
                                                                 )}
+                                                        </>
+                                                    ) : (
+                                                        <div className="text-sm text-slate-400 italic">—</div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    }).filter(Boolean);
+                                })()}
+                            </div>
+
+                            {/* Messages Side by Side */}
+                            {diffTree.messages.some(m => m.status !== 'unchanged') && (
+                                <>
+                                    <div className="sticky top-0 bg-slate-100 dark:bg-slate-800 px-4 py-3 border-y-2 border-slate-300 dark:border-slate-600 z-10">
+                                        <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700 dark:text-slate-200">Messages</h3>
+                                    </div>
+                                    <div className="grid grid-cols-2 divide-x-2 divide-slate-300 dark:divide-slate-600">
+                                        <div className="bg-red-50/50 dark:bg-red-900/10 px-4 py-2 text-xs font-bold text-red-700 dark:text-red-400 uppercase border-b border-slate-200 dark:border-slate-700 sticky top-[41px] z-10">
+                                            {originalTitle}
+                                        </div>
+                                        <div className="bg-green-50/50 dark:bg-green-900/10 px-4 py-2 text-xs font-bold text-green-700 dark:text-green-400 uppercase border-b border-slate-200 dark:border-slate-700 sticky top-[41px] z-10">
+                                            {modifiedTitle}
+                                        </div>
+                                    </div>
+                                    <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                                        {(() => {
+                                            const originalMessages = originalData.messages || [];
+                                            const modifiedMessages = modifiedData.messages || [];
+                                            const allMsgIds = new Set([...originalMessages.map(m => m.id), ...modifiedMessages.map(m => m.id)]);
+                                            const msgMapA = new Map(originalMessages.map(m => [m.id, m]));
+                                            const msgMapB = new Map(modifiedMessages.map(m => [m.id, m]));
+
+                                            return Array.from(allMsgIds).map(msgId => {
+                                                const msgA = msgMapA.get(msgId);
+                                                const msgB = msgMapB.get(msgId);
+                                                const msgDiff = diffTree.messages.find(m => m.key === msgId);
+                                                const isUnchanged = !msgDiff || msgDiff.status === 'unchanged';
+                                                
+                                                if (isUnchanged && msgA && msgB) {
+                                                    return (
+                                                        <div key={msgId} className="grid grid-cols-2 divide-x divide-slate-200 dark:divide-slate-700 opacity-60">
+                                                            <div className="p-3 bg-white dark:bg-slate-800">
+                                                                <div className="text-xs text-slate-500 dark:text-slate-400">{(msgA as any).content}</div>
                                                             </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
+                                                            <div className="p-3 bg-white dark:bg-slate-800">
+                                                                <div className="text-xs text-slate-500 dark:text-slate-400">{(msgB as any).content}</div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                }
 
-                        {/* Messages */}
-                        {diffTree.messages.some(m => m.status !== 'unchanged') && (
-                            <div className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-700">
-                                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-400 mb-3 border-b border-slate-100 dark:border-slate-700 pb-2">Message Changes</h3>
-                                <div className="space-y-2">
-                                    {diffTree.messages.filter(m => m.status !== 'unchanged').map(messageDiff => (
-                                        <div key={messageDiff.key} className={`p-3 rounded text-sm ${messageDiff.status === 'added' ? 'bg-green-100/50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' :
-                                            messageDiff.status === 'removed' ? 'bg-red-100/50 dark:bg-red-900/20 border border-red-200 dark:border-red-800' :
-                                                'bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800'
-                                            }`}>
-                                            <div className="flex items-center justify-between mb-1">
-                                                <div className="flex flex-col">
-                                                    <span className={`font-medium ${messageDiff.status === 'removed' ? 'line-through opacity-70' : ''}`}>
-                                                        {(messageDiff.item as any).content || '(Empty message)'}
-                                                    </span>
-                                                    <span className={`text-xs opacity-70 ${messageDiff.status === 'removed' ? 'line-through' : ''}`}>
-                                                        Type: {(messageDiff.item as any).type || 'info'}
-                                                    </span>
-                                                </div>
-                                                <div className={`text-[10px] font-bold uppercase tracking-wider opacity-80 ${messageDiff.status === 'added' ? 'text-green-700' :
-                                                    messageDiff.status === 'removed' ? 'text-red-700' : 'text-amber-700'
-                                                    }`}>
-                                                    {messageDiff.status}
-                                                </div>
-                                            </div>
-                                            {messageDiff.status === 'modified' && messageDiff.details?.diffs && (
-                                                <div className="mt-2 pl-2 border-l-2 border-amber-300 dark:border-amber-700 space-y-1">
-                                                    {Object.keys(messageDiff.details.diffs).map(fieldKey => {
-                                                        return renderDiffItem(fieldKey, messageDiff.details?.diffs?.[fieldKey]);
-                                                    })}
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
+                                                return (
+                                                    <div key={msgId} className={`grid grid-cols-2 divide-x divide-slate-200 dark:divide-slate-700 ${msgDiff?.status === 'modified' ? 'bg-amber-50/30 dark:bg-amber-900/5' : ''}`}>
+                                                        <div className={`p-3 ${msgDiff?.status === 'removed' ? 'bg-red-50 dark:bg-red-900/10' : msgDiff?.status === 'modified' ? 'bg-red-50/50 dark:bg-red-900/10' : 'bg-white dark:bg-slate-800'}`}>
+                                                            {msgA ? (
+                                                                <>
+                                                                    <div className={`text-sm ${msgDiff?.status === 'removed' ? 'line-through text-red-600 dark:text-red-400' : msgDiff?.status === 'modified' ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                                                                        {(msgA as any).content}
+                                                                    </div>
+                                                                    {msgDiff?.status === 'modified' && msgDiff.details?.diffs && (
+                                                                        <div className="mt-2 space-y-1">
+                                                                            {Object.keys(msgDiff.details.diffs).map(fieldKey => (
+                                                                                <div key={fieldKey} className="text-xs p-1.5 bg-red-100 dark:bg-red-900/20 rounded border-l-2 border-red-500">
+                                                                                    <span className="text-slate-600 dark:text-slate-400">{fieldKey}:</span>{' '}
+                                                                                    <span className="text-red-600 line-through">{renderChangedValue(msgDiff.details?.diffs?.[fieldKey]?.original)}</span>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
+                                                                </>
+                                                            ) : (
+                                                                <div className="text-sm text-slate-400 italic">—</div>
+                                                            )}
+                                                        </div>
+                                                        <div className={`p-3 ${msgDiff?.status === 'added' ? 'bg-green-50 dark:bg-green-900/10' : msgDiff?.status === 'modified' ? 'bg-green-50/50 dark:bg-green-900/10' : 'bg-white dark:bg-slate-800'}`}>
+                                                            {msgB ? (
+                                                                <>
+                                                                    <div className={`text-sm ${msgDiff?.status === 'added' ? 'text-green-600 dark:text-green-400 font-medium' : msgDiff?.status === 'modified' ? 'text-green-600 dark:text-green-400 font-medium' : 'text-slate-700 dark:text-slate-300'}`}>
+                                                                        {(msgB as any).content}
+                                                                    </div>
+                                                                    {msgDiff?.status === 'modified' && msgDiff.details?.diffs && (
+                                                                        <div className="mt-2 space-y-1">
+                                                                            {Object.keys(msgDiff.details.diffs).map(fieldKey => (
+                                                                                <div key={fieldKey} className="text-xs p-1.5 bg-green-100 dark:bg-green-900/20 rounded border-l-2 border-green-500">
+                                                                                    <span className="text-slate-600 dark:text-slate-400">{fieldKey}:</span>{' '}
+                                                                                    <span className="text-green-600 font-medium">{renderChangedValue(msgDiff.details?.diffs?.[fieldKey]?.modified)}</span>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
+                                                                </>
+                                                            ) : (
+                                                                <div className="text-sm text-slate-400 italic">—</div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            }).filter(Boolean);
+                                        })()}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    ) : Object.keys(diffTree.root).length === 0 ? (
+                        <div className="text-center py-10 text-slate-500 dark:text-slate-400">
+                            <div className="mb-4">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-12 h-12 mx-auto text-slate-400">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
                             </div>
-                        )}
-
-                        {/* Show message if no changes found */}
-                        {diffTree.tabs.every(t => t.status === 'unchanged') && 
-                         Object.keys(diffTree.root).length === 0 && 
-                         diffTree.messages.every(m => m.status === 'unchanged') && (
-                            <div className="text-center py-10 text-slate-500 dark:text-slate-400">
-                                <div className="mb-4">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-12 h-12 mx-auto text-slate-400">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                </div>
-                                <p className="font-medium">No differences found between these versions.</p>
-                                <p className="text-xs mt-2">The versions are identical in all tracked fields.</p>
-                                <p className="text-xs mt-1 text-slate-400">(Only internal IDs or hidden metadata might differ)</p>
-                            </div>
-                        )}
-                    </div>
+                            <p className="font-medium">No differences found between these versions.</p>
+                            <p className="text-xs mt-2">The versions are identical in all tracked fields.</p>
+                            <p className="text-xs mt-1 text-slate-400">(Only internal IDs or hidden metadata might differ)</p>
+                        </div>
+                    ) : null}
 
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex justify-end">
-                    <button
-                        onClick={onClose}
-                        className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-medium transition-colors"
-                    >
-                        Close Comparison
-                    </button>
+                <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center">
+                    {isRestorePreview && (
+                        <div className="text-sm text-slate-600 dark:text-slate-400">
+                            <span className="font-semibold">⚠️ Restore Preview:</span> Review changes before confirming restore
+                        </div>
+                    )}
+                    <div className="flex gap-2 ml-auto">
+                        {isRestorePreview && onConfirmRestore && (
+                            <button
+                                onClick={onConfirmRestore}
+                                className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                Confirm Restore
+                            </button>
+                        )}
+                        <button
+                            onClick={onClose}
+                            className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-medium transition-colors"
+                        >
+                            {isRestorePreview ? 'Cancel' : 'Close Comparison'}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

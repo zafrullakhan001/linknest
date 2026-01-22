@@ -298,6 +298,31 @@ function initDatabase() {
         // Indexes for tile_versions
         $db->exec('CREATE INDEX IF NOT EXISTS idx_tile_versions_tile_id ON tile_versions(tile_id)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_tile_versions_created_at ON tile_versions(created_at DESC)');
+        
+        // Migrate tile_versions table to add tags and comments columns if they don't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(tile_versions)")->fetchAll();
+            $hasTags = false;
+            $hasComments = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'tags') {
+                    $hasTags = true;
+                }
+                if ($column['name'] === 'comments') {
+                    $hasComments = true;
+                }
+            }
+            if (!$hasTags) {
+                $db->exec('ALTER TABLE tile_versions ADD COLUMN tags TEXT');
+                error_log('Added tags column to tile_versions table');
+            }
+            if (!$hasComments) {
+                $db->exec('ALTER TABLE tile_versions ADD COLUMN comments TEXT');
+                error_log('Added comments column to tile_versions table');
+            }
+        } catch (PDOException $e) {
+            error_log('Tile versions tags/comments migration warning: ' . $e->getMessage());
+        }
 
         
         // Migrate existing tiles table to add position column if it doesn't exist
