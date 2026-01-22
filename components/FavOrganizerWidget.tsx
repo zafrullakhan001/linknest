@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { createTile } from '../services/storageService';
 import { parseSpaceExportObject, normalizeImportedTiles } from '../services/spaceTransferService';
+import { settingsService } from '../services/settingsService';
 
 interface Bookmark {
   title: string;
@@ -54,247 +55,8 @@ interface ChunkProgress {
   totalCost?: number;
 }
 
-interface BrowserExtensionTabContentProps {
-  bookmarks: Bookmark[];
-  setBookmarks: (bookmarks: Bookmark[]) => void;
-  setUniqueBookmarks: (bookmarks: Bookmark[]) => void;
-  setDuplicateCount: (count: number) => void;
-  loading: boolean;
-  setLoading: (loading: boolean) => void;
-  error: string | null;
-  setError: (error: string | null) => void;
-  autoGenerateTilesByDomain: (bookmarks: Bookmark[]) => void;
-}
-
-// Browser Extension Tab Content Component
-const BrowserExtensionTabContent: React.FC<BrowserExtensionTabContentProps> = ({
-  bookmarks,
-  setBookmarks,
-  setUniqueBookmarks,
-  setDuplicateCount,
-  loading,
-  setLoading,
-  error,
-  setError,
-  autoGenerateTilesByDomain
-}) => {
-  const [extensionId, setExtensionId] = useState<string>('');
-  const [extensionStatus, setExtensionStatus] = useState<'checking' | 'found' | 'not-found' | 'error'>('checking');
-
-  // Detect Browser Launcher Pro extension
-  useEffect(() => {
-    const detectExtension = () => {
-      setExtensionStatus('checking');
-      let extensionFound = false;
-
-      // Check if extension is available via postMessage
-      const timestamp = Date.now();
-      const checkMessage = {
-        type: 'BROWSER_LAUNCHER_CHECK',
-        timestamp: timestamp
-      };
-
-      const responseListener = (event: MessageEvent) => {
-        if (event.data &&
-          event.data.type === 'BROWSER_LAUNCHER_CHECK_RESPONSE' &&
-          event.data.timestamp === timestamp) {
-          window.removeEventListener('message', responseListener);
-          extensionFound = true;
-
-          if (event.data.available) {
-            setExtensionStatus('found');
-            // Extension ID is not needed when using postMessage
-            setExtensionId('postMessage');
-          } else {
-            setExtensionStatus('not-found');
-          }
-        }
-      };
-
-      window.addEventListener('message', responseListener);
-      window.postMessage(checkMessage, '*');
-
-      // Timeout after 3 seconds
-      setTimeout(() => {
-        window.removeEventListener('message', responseListener);
-        if (!extensionFound) {
-          setExtensionStatus('not-found');
-        }
-      }, 3000);
-    };
-
-    detectExtension();
-  }, []);
-
-  // Fetch bookmarks from browser extension
-  const fetchBookmarksFromExtension = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const timestamp = Date.now();
-      const message = {
-        type: 'BROWSER_LAUNCHER_GET_BOOKMARKS',
-        timestamp: timestamp
-      };
-
-      const responseListener = (event: MessageEvent) => {
-        if (event.data &&
-          event.data.type === 'BROWSER_LAUNCHER_BOOKMARKS_LIST' &&
-          event.data.timestamp === timestamp) {
-          window.removeEventListener('message', responseListener);
-
-          if (event.data.success && event.data.bookmarks) {
-            // Deduplicate bookmarks
-            const { unique, duplicateCount } = deduplicateBookmarks(event.data.bookmarks);
-
-            setBookmarks(unique);
-            setUniqueBookmarks(unique);
-            setDuplicateCount(duplicateCount);
-
-            // Auto-generate tiles
-            autoGenerateTilesByDomain(unique);
-
-            if (unique.length === 0) {
-              setError('No bookmarks found in browser extension.');
-            } else {
-              setError(null);
-              if (duplicateCount > 0) {
-                console.log(`Filtered ${duplicateCount} duplicate bookmark(s). Processing ${unique.length} unique links.`);
-              }
-            }
-          } else {
-            setError(event.data?.error || 'Failed to fetch bookmarks from extension.');
-          }
-
-          setLoading(false);
-        }
-      };
-
-      window.addEventListener('message', responseListener);
-      window.postMessage(message, '*');
-
-      // Timeout after 15 seconds
-      setTimeout(() => {
-        window.removeEventListener('message', responseListener);
-        if (loading) {
-          setError('Timeout waiting for extension response. Make sure Browser Launcher Pro extension is installed and enabled.');
-          setLoading(false);
-        }
-      }, 15000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch bookmarks from extension.');
-      setLoading(false);
-    }
-  };
-
-  // Helper function to deduplicate (same as in main component)
-  const deduplicateBookmarks = (bookmarks: Bookmark[]): { unique: Bookmark[]; duplicateCount: number } => {
-    const seenUrls = new Map<string, Bookmark>();
-    const unique: Bookmark[] = [];
-    let duplicates = 0;
-
-    for (const bookmark of bookmarks) {
-      const normalizedUrl = bookmark.url
-        .toLowerCase()
-        .replace(/\/$/, '')
-        .split('#')[0]
-        .trim();
-
-      if (!seenUrls.has(normalizedUrl)) {
-        seenUrls.set(normalizedUrl, bookmark);
-        unique.push(bookmark);
-      } else {
-        duplicates++;
-        const existing = seenUrls.get(normalizedUrl)!;
-        if (bookmark.title.length > existing.title.length && bookmark.title !== bookmark.url) {
-          const index = unique.findIndex(b => {
-            const norm = b.url.toLowerCase().replace(/\/$/, '').split('#')[0].trim();
-            return norm === normalizedUrl;
-          });
-          if (index !== -1) {
-            unique[index] = bookmark;
-            seenUrls.set(normalizedUrl, bookmark);
-          }
-        }
-      }
-    }
-
-    return { unique, duplicateCount: duplicates };
-  };
-
-  return (
-    <>
-      <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded text-sm text-blue-800 dark:text-blue-300">
-        <p className="text-xs">
-          Pull favorites directly from Browser Launcher Pro extension. Make sure the extension is installed and enabled.
-        </p>
-      </div>
-
-      {/* Extension Status */}
-      <div className="mb-4">
-        <div className={`p-3 rounded text-sm ${extensionStatus === 'found'
-          ? 'bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
-          : extensionStatus === 'checking'
-            ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300'
-            : 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
-          }`}>
-          {extensionStatus === 'checking' && '🔍 Detecting Browser Launcher Pro extension...'}
-          {extensionStatus === 'found' && '✅ Extension detected! You can fetch bookmarks now.'}
-          {extensionStatus === 'not-found' && '⚠️ Extension not detected. Please make sure Browser Launcher Pro extension is installed and enabled. You can find it in chrome://extensions'}
-          {extensionStatus === 'error' && '❌ Error detecting extension. Please refresh the page and try again.'}
-        </div>
-      </div>
-
-      {/* Fetch Button */}
-      <div className="mb-4">
-        <button
-          onClick={fetchBookmarksFromExtension}
-          disabled={loading || extensionStatus === 'checking' || extensionStatus === 'not-found'}
-          className="w-full px-4 py-3 bg-brand-500 text-white rounded hover:bg-brand-600 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors"
-        >
-          {loading ? 'Fetching Bookmarks...' : '📥 Fetch Bookmarks from Extension'}
-        </button>
-      </div>
-
-      {/* Error Display */}
-      {error && (
-        <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-sm text-red-800 dark:text-red-300">
-          {error}
-        </div>
-      )}
-
-      {/* Bookmarks Count */}
-      {bookmarks.length > 0 && (
-        <>
-          <div className="mb-4 p-2 bg-slate-50 dark:bg-slate-700/50 rounded text-sm text-slate-600 dark:text-slate-400">
-            <span>
-              Found {bookmarks.length} bookmark{bookmarks.length !== 1 ? 's' : ''}
-            </span>
-          </div>
-
-          {/* Next Steps Message */}
-          <div className="mb-4 p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded">
-            <h4 className="text-sm font-semibold text-emerald-800 dark:text-emerald-300 mb-2">
-              ✅ Bookmarks Fetched Successfully!
-            </h4>
-            <p className="text-xs text-emerald-700 dark:text-emerald-400 mb-3">
-              Your bookmarks have been automatically organized by domain. You can now:
-            </p>
-            <ul className="text-xs text-emerald-700 dark:text-emerald-400 space-y-1 list-disc list-inside">
-              <li>View and edit auto-generated categories</li>
-              <li>Customize titles, descriptions, and colors</li>
-              <li>Generate JSON for import</li>
-            </ul>
-          </div>
-        </>
-      )}
-    </>
-  );
-};
-
 export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose }) => {
-  const [activeTab, setActiveTab] = useState<'manual' | 'browser'>('browser');
+  const [activeTab, setActiveTab] = useState<'manual'>('manual');
   const [apiKey, setApiKey] = useState<string>('');
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [loading, setLoading] = useState(false);
@@ -314,7 +76,8 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
   const [chunkCosts, setChunkCosts] = useState<number[]>([]);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [isCancelled, setIsCancelled] = useState<boolean>(false);
-
+  const [browserExtensionEnabled, setBrowserExtensionEnabled] = useState<boolean>(false);
+  const [extensionStatus, setExtensionStatus] = useState<'checking' | 'found' | 'not-found' | 'error'>('checking');
 
   // Manual organization state
   const [manualTiles, setManualTiles] = useState<Array<{
@@ -414,6 +177,127 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
       }
     }
   }, []);
+
+  // Fetch browser extension enabled setting
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const settings = await settingsService.getSettings();
+        setBrowserExtensionEnabled(settings.browser_specific_links_enabled === '1');
+      } catch (err) {
+        console.error('Failed to fetch settings:', err);
+      }
+    };
+    fetchSettings();
+  }, []);
+
+  // Detect Browser Launcher Pro extension
+  const detectExtension = useCallback(() => {
+    setExtensionStatus('checking');
+    let extensionFound = false;
+
+    // Check if extension is available via postMessage
+    const timestamp = Date.now();
+    const checkMessage = {
+      type: 'BROWSER_LAUNCHER_CHECK',
+      timestamp: timestamp
+    };
+
+    const responseListener = (event: MessageEvent) => {
+      if (event.data &&
+        event.data.type === 'BROWSER_LAUNCHER_CHECK_RESPONSE' &&
+        event.data.timestamp === timestamp) {
+        window.removeEventListener('message', responseListener);
+        extensionFound = true;
+
+        if (event.data.available) {
+          setExtensionStatus('found');
+        } else {
+          setExtensionStatus('not-found');
+        }
+      }
+    };
+
+    window.addEventListener('message', responseListener);
+    window.postMessage(checkMessage, '*');
+
+    // Timeout after 3 seconds
+    setTimeout(() => {
+      window.removeEventListener('message', responseListener);
+      if (!extensionFound) {
+        setExtensionStatus('not-found');
+      }
+    }, 3000);
+  }, []);
+
+  // Detect extension when browser extension is enabled
+  useEffect(() => {
+    if (browserExtensionEnabled) {
+      detectExtension();
+    }
+  }, [browserExtensionEnabled, detectExtension]);
+
+  // Fetch bookmarks from browser extension (shared function)
+  const fetchBookmarksFromExtension = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const timestamp = Date.now();
+      const message = {
+        type: 'BROWSER_LAUNCHER_GET_BOOKMARKS',
+        timestamp: timestamp
+      };
+
+      const responseListener = (event: MessageEvent) => {
+        if (event.data &&
+          event.data.type === 'BROWSER_LAUNCHER_BOOKMARKS_LIST' &&
+          event.data.timestamp === timestamp) {
+          window.removeEventListener('message', responseListener);
+
+          if (event.data.success && event.data.bookmarks) {
+            // Deduplicate bookmarks
+            const { unique, duplicateCount } = deduplicateBookmarks(event.data.bookmarks);
+
+            setBookmarks(unique);
+            setUniqueBookmarks(unique);
+            setDuplicateCount(duplicateCount);
+
+            // Auto-generate tiles
+            autoGenerateTilesByDomain(unique);
+
+            if (unique.length === 0) {
+              setError('No bookmarks found in browser extension.');
+            } else {
+              setError(null);
+              if (duplicateCount > 0) {
+                console.log(`Filtered ${duplicateCount} duplicate bookmark(s). Processing ${unique.length} unique links.`);
+              }
+            }
+          } else {
+            setError(event.data?.error || 'Failed to fetch bookmarks from extension.');
+          }
+
+          setLoading(false);
+        }
+      };
+
+      window.addEventListener('message', responseListener);
+      window.postMessage(message, '*');
+
+      // Timeout after 15 seconds
+      setTimeout(() => {
+        window.removeEventListener('message', responseListener);
+        if (loading) {
+          setError('Timeout waiting for extension response. Make sure Browser Launcher Pro extension is installed and enabled.');
+          setLoading(false);
+        }
+      }, 15000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch bookmarks from extension.');
+      setLoading(false);
+    }
+  };
 
   // Auto-generate tiles when bookmarks are loaded in manual organization tab
   useEffect(() => {
@@ -2415,43 +2299,9 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
           Extract browser favorites and organize them into tiles, sections, and links
         </p>
 
-        {/* Tab Navigation */}
-        <div className="flex gap-2 mb-4 border-b border-slate-200 dark:border-slate-700">
-          <button
-            onClick={() => setActiveTab('manual')}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'manual'
-              ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-              }`}
-          >
-            Manual
-          </button>
-          <button
-            onClick={() => setActiveTab('browser')}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'browser'
-              ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-              }`}
-          >
-            Browser Extension
-          </button>
-        </div>
       </div>
 
-      {/* Browser Extension Tab */}
-      {activeTab === 'browser' ? (
-        <BrowserExtensionTabContent
-          bookmarks={bookmarks}
-          setBookmarks={setBookmarks}
-          setUniqueBookmarks={setUniqueBookmarks}
-          setDuplicateCount={setDuplicateCount}
-          loading={loading}
-          setLoading={setLoading}
-          error={error}
-          setError={setError}
-          autoGenerateTilesByDomain={autoGenerateTilesByDomain}
-        />
-      ) : activeTab === 'ai' ? (
+      {activeTab === 'ai' ? (
         <>
           {/* AI Organization tab content - hidden */}
           {false ? (
@@ -2880,6 +2730,36 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
                 className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 rows={6}
               />
+            </div>
+          )}
+
+          {/* Browser Extension Button for Manual Tab */}
+          {browserExtensionEnabled && (
+            <div className="mb-4">
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded text-sm text-blue-800 dark:text-blue-300 mb-3">
+                <p className="text-xs mb-2">
+                  Pull favorites directly from Browser Launcher Pro extension.
+                </p>
+                {extensionStatus === 'checking' && (
+                  <p className="text-xs">🔍 Detecting Browser Launcher Pro extension...</p>
+                )}
+                {extensionStatus === 'found' && (
+                  <p className="text-xs">✅ Extension detected! You can fetch bookmarks now.</p>
+                )}
+                {extensionStatus === 'not-found' && (
+                  <p className="text-xs">⚠️ Extension not detected. Please make sure Browser Launcher Pro extension is installed and enabled. You can find it in chrome://extensions</p>
+                )}
+                {extensionStatus === 'error' && (
+                  <p className="text-xs">❌ Error detecting extension. Please refresh the page and try again.</p>
+                )}
+              </div>
+              <button
+                onClick={fetchBookmarksFromExtension}
+                disabled={loading || extensionStatus === 'checking' || extensionStatus === 'not-found'}
+                className="w-full px-4 py-3 bg-brand-500 text-white rounded hover:bg-brand-600 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors"
+              >
+                {loading ? 'Fetching Bookmarks...' : '📥 Fetch Bookmarks from Extension'}
+              </button>
             </div>
           )}
 
