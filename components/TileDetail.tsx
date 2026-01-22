@@ -3318,11 +3318,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     )}
                                 </button>
 
-                                {isAuthenticated && tile.canEdit && (
+                                {isAuthenticated && tile.canEdit === true && (
                                     <>
                                         <button
                                             onClick={async () => {
-                                                if (!tile.canEdit) {
+                                                if (tile.canEdit !== true) {
                                                     alert('You do not have permission to edit this tile.');
                                                     return;
                                                 }
@@ -3336,6 +3336,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             </svg>
                                             <span>Edit</span>
                                         </button>
+                                        {tile.canCloneTile === true && (
                                         <button
                                             onClick={async () => {
                                                 if (!isAuthenticated) {
@@ -3366,6 +3367,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             </svg>
                                             <span>Clone</span>
                                         </button>
+                                        )}
                                     </>
                                 )}
                                 <button
@@ -3889,8 +3891,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         No browsers available
                                                                                     </div>
                                                                                 )}
-                                                                                {/* Admin controls */}
-                                                                                {isAuthenticated && tile.canEdit && (
+                                                                                {/* Admin controls - only show when user has canChangeBrowser */}
+                                                                                {isAuthenticated && tile.canEdit && tile.canChangeBrowser === true && (
                                                                                     <>
                                                                                         <div className="border-t border-slate-200 dark:border-slate-700 my-1"></div>
                                                                                         <label className="flex items-center gap-2 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-300 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded">
@@ -4029,8 +4031,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         )}
                                                                     </button>
 
-                                                                    {/* Browser selection button - only show when extension is enabled and user is authenticated */}
-                                                                    {settings.browser_specific_links_enabled === '1' && isAuthenticated && typeof window !== 'undefined' && (window as any).BrowserLauncher && (
+                                                                    {/* Browser selection button - only show when extension is enabled, user is authenticated, and has canChangeBrowser */}
+                                                                    {settings.browser_specific_links_enabled === '1' && isAuthenticated && tile.canChangeBrowser === true && typeof window !== 'undefined' && (window as any).BrowserLauncher && (
                                                                         <button
                                                                             onClick={(e) => {
                                                                                 e.preventDefault();
@@ -4606,8 +4608,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     )}
                                 </div>
 
-                                {/* Browser Selection - Only show if feature is enabled */}
-                                {settings.browser_specific_links_enabled === '1' && (
+                                {/* Browser Selection - Only show if feature is enabled and user has canChangeBrowser */}
+                                {settings.browser_specific_links_enabled === '1' && tile.canChangeBrowser === true && (
                                     <div>
                                         <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-3">Default Browser for All Links</label>
                                         <select
@@ -5803,8 +5805,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             />
                                                                                         </div>
 
-                                                                                        {/* Browser Selection - Only show if feature is enabled */}
-                                                                                        {settings.browser_specific_links_enabled === '1' && (
+                                                                                        {/* Browser Selection - Only show if feature is enabled and user has canChangeBrowser */}
+                                                                                        {settings.browser_specific_links_enabled === '1' && tile.canChangeBrowser === true && (
                                                                                             <div>
                                                                                                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Open link in</label>
                                                                                                 <select
@@ -6278,8 +6280,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 />
                                                                             </div>
 
-                                                                            {/* Browser Selection - Only show if feature is enabled */}
-                                                                            {settings.browser_specific_links_enabled === '1' && (
+                                                                            {/* Browser Selection - Only show if feature is enabled and user has canChangeBrowser */}
+                                                                            {settings.browser_specific_links_enabled === '1' && tile.canChangeBrowser === true && (
                                                                                 <div>
                                                                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Open link in</label>
                                                                                     <select

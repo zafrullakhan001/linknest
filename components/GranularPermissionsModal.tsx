@@ -16,6 +16,9 @@ interface GranularPermissionsModalProps {
     canChangeVisibility: boolean;
     canChangeBrowser: boolean;
     canCloneTile: boolean;
+    canViewTileInfo: boolean;
+    canDelete: boolean;
+    canEditTile: boolean;
   }) => Promise<void>;
   userName?: string;
   tileTitle?: string;
@@ -39,7 +42,10 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
     canDeleteTabs: false,
     canChangeVisibility: false,
     canChangeBrowser: false,
-    canCloneTile: false
+    canCloneTile: false,
+    canViewTileInfo: true,
+    canDelete: false,
+    canEditTile: true
   });
   const [isSaving, setIsSaving] = useState(false);
 
@@ -55,7 +61,10 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
         canDeleteTabs: permission.canDeleteTabs ?? false,
         canChangeVisibility: permission.canChangeVisibility ?? false,
         canChangeBrowser: permission.canChangeBrowser ?? false,
-        canCloneTile: permission.canCloneTile ?? false
+        canCloneTile: permission.canCloneTile ?? false,
+        canViewTileInfo: permission.canViewTileInfo ?? true,
+        canDelete: permission.canDelete ?? false,
+        canEditTile: permission.canEditTile ?? true
       });
     }
   }, [permission]);
@@ -240,6 +249,27 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
                 onChange={(checked) => setPermissions(prev => ({ ...prev, canCloneTile: checked }))}
                 category="restricted"
               />
+              <PermissionToggle
+                label="Tile Card Info"
+                description="Show the info button on tile cards"
+                checked={permissions.canViewTileInfo}
+                onChange={(checked) => setPermissions(prev => ({ ...prev, canViewTileInfo: checked }))}
+                category="restricted"
+              />
+              <PermissionToggle
+                label="Edit Tile Settings"
+                description="Edit tile properties (title, emoji, theme, decoration)"
+                checked={permissions.canEditTile}
+                onChange={(checked) => setPermissions(prev => ({ ...prev, canEditTile: checked }))}
+                category="restricted"
+              />
+              <PermissionToggle
+                label="Delete/Archive Tile"
+                description="Delete or archive the entire tile (not just content)"
+                checked={permissions.canDelete}
+                onChange={(checked) => setPermissions(prev => ({ ...prev, canDelete: checked }))}
+                category="restricted"
+              />
             </div>
           </div>
 
@@ -260,7 +290,10 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
                   canDeleteTabs: false,
                   canChangeVisibility: false,
                   canChangeBrowser: false,
-                  canCloneTile: false
+                  canCloneTile: false,
+                  canViewTileInfo: true,
+                  canDelete: false,
+                  canEditTile: true
                 })}
                 className="px-3 py-1.5 text-xs font-medium bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg transition-colors"
               >
@@ -277,7 +310,10 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
                   canDeleteTabs: true,
                   canChangeVisibility: false,
                   canChangeBrowser: false,
-                  canCloneTile: false
+                  canCloneTile: false,
+                  canViewTileInfo: true,
+                  canDelete: false,
+                  canEditTile: true
                 })}
                 className="px-3 py-1.5 text-xs font-medium bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg transition-colors"
               >
@@ -294,7 +330,10 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
                   canDeleteTabs: false,
                   canChangeVisibility: false,
                   canChangeBrowser: false,
-                  canCloneTile: false
+                  canCloneTile: false,
+                  canViewTileInfo: true,
+                  canDelete: false,
+                  canEditTile: true
                 })}
                 className="px-3 py-1.5 text-xs font-medium bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg transition-colors"
               >

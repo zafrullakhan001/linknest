@@ -20,6 +20,8 @@ interface TileAdmin {
     canChangeVisibility?: boolean;
     canChangeBrowser?: boolean;
     canCloneTile?: boolean;
+    canViewTileInfo?: boolean;
+    canEditTile?: boolean;
   };
 }
 
@@ -53,6 +55,8 @@ interface TileInfo {
     canChangeVisibility: boolean;
     canChangeBrowser: boolean;
     canCloneTile: boolean;
+    canViewTileInfo: boolean;
+    canEditTile: boolean;
   };
 }
 
@@ -421,6 +425,18 @@ const TileInfoView: React.FC<{
                     {tileInfo.granularPermissions.canCloneTile ? '✓' : '✗'}
                   </span>
                 </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-400">Tile Card Info:</span>
+                  <span className={tileInfo.granularPermissions.canViewTileInfo ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                    {tileInfo.granularPermissions.canViewTileInfo ? '✓' : '✗'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-400">Edit Tile Settings:</span>
+                  <span className={tileInfo.granularPermissions.canEditTile ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                    {tileInfo.granularPermissions.canEditTile ? '✓' : '✗'}
+                  </span>
+                </div>
               </div>
             </div>
           )}
@@ -541,6 +557,18 @@ const TileInfoView: React.FC<{
                         <span className="text-slate-600 dark:text-slate-400">Clone Tile:</span>
                         <span className={admin.permissions.canCloneTile ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
                           {admin.permissions.canCloneTile ? '✓' : '✗'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600 dark:text-slate-400">Tile Card Info:</span>
+                        <span className={admin.permissions.canViewTileInfo ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                          {admin.permissions.canViewTileInfo ? '✓' : '✗'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600 dark:text-slate-400">Edit Tile Settings:</span>
+                        <span className={admin.permissions.canEditTile ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                          {admin.permissions.canEditTile ? '✓' : '✗'}
                         </span>
                       </div>
                     </div>

@@ -54,13 +54,142 @@ try {
     
     $currentTime = time();
     
+    // Define decoration presets with gradient configurations
+    $decorationPresets = [
+        'gold' => [
+            'colors' => ['#FFD700', '#FFA500', '#FF8C00'],
+            'direction' => 135,
+            'textColor' => '#fff'
+        ],
+        'silver' => [
+            'colors' => ['#C0C0C0', '#A8A8A8', '#808080'],
+            'direction' => 135,
+            'textColor' => '#000'
+        ],
+        'bronze' => [
+            'colors' => ['#CD7F32', '#A0522D', '#8B4513'],
+            'direction' => 135,
+            'textColor' => '#fff'
+        ],
+        'ocean-blue' => [
+            'colors' => ['#0077BE', '#00A8E8', '#005F8C'],
+            'direction' => 135,
+            'textColor' => '#fff'
+        ],
+        'sunset' => [
+            'colors' => ['#FF6B6B', '#FF8E53', '#FFA07A'],
+            'direction' => 90,
+            'textColor' => '#fff'
+        ],
+        'forest' => [
+            'colors' => ['#2D5016', '#3D6B2A', '#4A7C3A'],
+            'direction' => 180,
+            'textColor' => '#fff'
+        ],
+        'purple-dream' => [
+            'colors' => ['#6C5CE7', '#A29BFE', '#FD79A8'],
+            'direction' => 135,
+            'textColor' => '#fff'
+        ],
+        'orange-fire' => [
+            'colors' => ['#FF5722', '#FF6D00', '#FF8F00'],
+            'direction' => 90,
+            'textColor' => '#fff'
+        ],
+        'mint-fresh' => [
+            'colors' => ['#00E676', '#1DE9B6', '#00BFA5'],
+            'direction' => 135,
+            'textColor' => '#000'
+        ],
+        'cherry-blossom' => [
+            'colors' => ['#FFB3BA', '#FFDFBA', '#FFFFBA'],
+            'direction' => 90,
+            'textColor' => '#333'
+        ],
+        'midnight' => [
+            'colors' => ['#2C3E50', '#34495E', '#1A252F'],
+            'direction' => 135,
+            'textColor' => '#fff'
+        ],
+        'lavender' => [
+            'colors' => ['#E1BEE7', '#CE93D8', '#BA68C8'],
+            'direction' => 180,
+            'textColor' => '#fff'
+        ],
+        'emerald' => [
+            'colors' => ['#00C853', '#00E676', '#00B248'],
+            'direction' => 135,
+            'textColor' => '#fff'
+        ],
+        'coral-reef' => [
+            'colors' => ['#FF6F61', '#FF8E80', '#FFAB91'],
+            'direction' => 90,
+            'textColor' => '#fff'
+        ],
+        'sky-blue' => [
+            'colors' => ['#42A5F5', '#64B5F6', '#90CAF9'],
+            'direction' => 180,
+            'textColor' => '#fff'
+        ],
+        'raspberry' => [
+            'colors' => ['#D81B60', '#E91E63', '#F06292'],
+            'direction' => 135,
+            'textColor' => '#fff'
+        ],
+        'teal-wave' => [
+            'colors' => ['#00897B', '#00ACC1', '#26A69A'],
+            'direction' => 90,
+            'textColor' => '#fff'
+        ],
+        'amber-glow' => [
+            'colors' => ['#FFC107', '#FFD54F', '#FFECB3'],
+            'direction' => 135,
+            'textColor' => '#000'
+        ],
+        'deep-purple' => [
+            'colors' => ['#673AB7', '#7E57C2', '#9575CD'],
+            'direction' => 135,
+            'textColor' => '#fff'
+        ],
+        'turquoise' => [
+            'colors' => ['#009688', '#00BCD4', '#4DD0E1'],
+            'direction' => 90,
+            'textColor' => '#fff'
+        ],
+        'peachy' => [
+            'colors' => ['#FF9800', '#FFB74D', '#FFCC80'],
+            'direction' => 180,
+            'textColor' => '#fff'
+        ],
+        'navy' => [
+            'colors' => ['#1565C0', '#1976D2', '#1E88E5'],
+            'direction' => 135,
+            'textColor' => '#fff'
+        ],
+        'rose-pink' => [
+            'colors' => ['#E91E63', '#F06292', '#F48FB1'],
+            'direction' => 90,
+            'textColor' => '#fff'
+        ],
+        'chrome' => [
+            'colors' => ['#E8E8E8', '#C0C0C0', '#A0A0A0'],
+            'direction' => 135,
+            'textColor' => '#000'
+        ],
+        'rose-gold' => [
+            'colors' => ['#E8B4B8', '#D4A5A9', '#C8969A'],
+            'direction' => 135,
+            'textColor' => '#fff'
+        ]
+    ];
+    
     // ============================================
     // TILES
     // ============================================
     echo "Creating tiles...\n";
     
     $tiles = [
-        // Main group (5 tiles)
+        // Main group (5 tiles) - Business operations with premium gradients
         [
             'id' => 'tile_dashboard',
             'title' => 'Company Dashboard',
@@ -68,7 +197,8 @@ try {
             'emoji' => '📊',
             'theme_color' => '#3B82F6',
             'group' => 'Main',
-            'position' => 0
+            'position' => 0,
+            'preset' => 'ocean-blue'
         ],
         [
             'id' => 'tile_analytics',
@@ -77,7 +207,8 @@ try {
             'emoji' => '📈',
             'theme_color' => '#06B6D4',
             'group' => 'Main',
-            'position' => 1
+            'position' => 1,
+            'preset' => 'teal-wave'
         ],
         [
             'id' => 'tile_hr_portal',
@@ -86,7 +217,8 @@ try {
             'emoji' => '👥',
             'theme_color' => '#14B8A6',
             'group' => 'Main',
-            'position' => 2
+            'position' => 2,
+            'preset' => 'emerald'
         ],
         [
             'id' => 'tile_finance',
@@ -95,7 +227,8 @@ try {
             'emoji' => '💰',
             'theme_color' => '#10B981',
             'group' => 'Main',
-            'position' => 3
+            'position' => 3,
+            'preset' => 'gold'
         ],
         [
             'id' => 'tile_customer_portal',
@@ -104,10 +237,11 @@ try {
             'emoji' => '🎯',
             'theme_color' => '#F59E0B',
             'group' => 'Main',
-            'position' => 4
+            'position' => 4,
+            'preset' => 'sunset'
         ],
         
-        // Development group (5 tiles)
+        // Development group (5 tiles) - Tech/vibrant gradients
         [
             'id' => 'tile_dev_tools',
             'title' => 'Development Tools',
@@ -115,7 +249,8 @@ try {
             'emoji' => '⚙️',
             'theme_color' => '#10B981',
             'group' => 'Development',
-            'position' => 0
+            'position' => 0,
+            'preset' => 'mint-fresh'
         ],
         [
             'id' => 'tile_code_repos',
@@ -124,7 +259,8 @@ try {
             'emoji' => '💻',
             'theme_color' => '#6366F1',
             'group' => 'Development',
-            'position' => 1
+            'position' => 1,
+            'preset' => 'midnight'
         ],
         [
             'id' => 'tile_cicd',
@@ -133,7 +269,8 @@ try {
             'emoji' => '🚀',
             'theme_color' => '#8B5CF6',
             'group' => 'Development',
-            'position' => 2
+            'position' => 2,
+            'preset' => 'purple-dream'
         ],
         [
             'id' => 'tile_testing',
@@ -142,7 +279,8 @@ try {
             'emoji' => '🧪',
             'theme_color' => '#EC4899',
             'group' => 'Development',
-            'position' => 3
+            'position' => 3,
+            'preset' => 'raspberry'
         ],
         [
             'id' => 'tile_api_gateway',
@@ -151,10 +289,11 @@ try {
             'emoji' => '🔌',
             'theme_color' => '#EF4444',
             'group' => 'Development',
-            'position' => 4
+            'position' => 4,
+            'preset' => 'coral-reef'
         ],
         
-        // Infrastructure group (5 tiles)
+        // Infrastructure group (5 tiles) - Premium metallic gradients
         [
             'id' => 'tile_cloud_services',
             'title' => 'Cloud Services',
@@ -162,7 +301,8 @@ try {
             'emoji' => '☁️',
             'theme_color' => '#8B5CF6',
             'group' => 'Infrastructure',
-            'position' => 0
+            'position' => 0,
+            'preset' => 'deep-purple'
         ],
         [
             'id' => 'tile_servers',
@@ -171,7 +311,8 @@ try {
             'emoji' => '🖥️',
             'theme_color' => '#06B6D4',
             'group' => 'Infrastructure',
-            'position' => 1
+            'position' => 1,
+            'preset' => 'chrome'
         ],
         [
             'id' => 'tile_databases',
@@ -180,7 +321,8 @@ try {
             'emoji' => '🗄️',
             'theme_color' => '#14B8A6',
             'group' => 'Infrastructure',
-            'position' => 2
+            'position' => 2,
+            'preset' => 'turquoise'
         ],
         [
             'id' => 'tile_networking',
@@ -189,7 +331,8 @@ try {
             'emoji' => '🌐',
             'theme_color' => '#3B82F6',
             'group' => 'Infrastructure',
-            'position' => 3
+            'position' => 3,
+            'preset' => 'sky-blue'
         ],
         [
             'id' => 'tile_security',
@@ -198,10 +341,11 @@ try {
             'emoji' => '🔒',
             'theme_color' => '#EF4444',
             'group' => 'Infrastructure',
-            'position' => 4
+            'position' => 4,
+            'preset' => 'bronze'
         ],
         
-        // Collaboration group (5 tiles)
+        // Collaboration group (5 tiles) - Soft, friendly gradients
         [
             'id' => 'tile_communication',
             'title' => 'Communication Hub',
@@ -209,7 +353,8 @@ try {
             'emoji' => '💬',
             'theme_color' => '#EC4899',
             'group' => 'Collaboration',
-            'position' => 0
+            'position' => 0,
+            'preset' => 'rose-pink'
         ],
         [
             'id' => 'tile_project_mgmt',
@@ -218,7 +363,8 @@ try {
             'emoji' => '📋',
             'theme_color' => '#6366F1',
             'group' => 'Collaboration',
-            'position' => 1
+            'position' => 1,
+            'preset' => 'navy'
         ],
         [
             'id' => 'tile_file_sharing',
@@ -227,7 +373,8 @@ try {
             'emoji' => '📁',
             'theme_color' => '#10B981',
             'group' => 'Collaboration',
-            'position' => 2
+            'position' => 2,
+            'preset' => 'forest'
         ],
         [
             'id' => 'tile_whiteboard',
@@ -236,7 +383,8 @@ try {
             'emoji' => '🖼️',
             'theme_color' => '#F59E0B',
             'group' => 'Collaboration',
-            'position' => 3
+            'position' => 3,
+            'preset' => 'peachy'
         ],
         [
             'id' => 'tile_calendar',
@@ -245,10 +393,11 @@ try {
             'emoji' => '📅',
             'theme_color' => '#8B5CF6',
             'group' => 'Collaboration',
-            'position' => 4
+            'position' => 4,
+            'preset' => 'lavender'
         ],
         
-        // Resources group (5 tiles)
+        // Resources group (5 tiles) - Warm, inviting gradients
         [
             'id' => 'tile_documentation',
             'title' => 'Documentation Center',
@@ -256,7 +405,8 @@ try {
             'emoji' => '📚',
             'theme_color' => '#F59E0B',
             'group' => 'Resources',
-            'position' => 0
+            'position' => 0,
+            'preset' => 'amber-glow'
         ],
         [
             'id' => 'tile_training',
@@ -265,7 +415,8 @@ try {
             'emoji' => '🎓',
             'theme_color' => '#06B6D4',
             'group' => 'Resources',
-            'position' => 1
+            'position' => 1,
+            'preset' => 'silver'
         ],
         [
             'id' => 'tile_library',
@@ -274,7 +425,8 @@ try {
             'emoji' => '📖',
             'theme_color' => '#14B8A6',
             'group' => 'Resources',
-            'position' => 2
+            'position' => 2,
+            'preset' => 'cherry-blossom'
         ],
         [
             'id' => 'tile_forms',
@@ -283,7 +435,8 @@ try {
             'emoji' => '📝',
             'theme_color' => '#6366F1',
             'group' => 'Resources',
-            'position' => 3
+            'position' => 3,
+            'preset' => 'rose-gold'
         ],
         [
             'id' => 'tile_support',
@@ -292,16 +445,45 @@ try {
             'emoji' => '🆘',
             'theme_color' => '#EF4444',
             'group' => 'Resources',
-            'position' => 4
+            'position' => 4,
+            'preset' => 'orange-fire'
         ]
     ];
     
     $tileStmt = $db->prepare('
-        INSERT INTO tiles (id, user_id, title, description, emoji, theme_color, "group", position, created_at, visibility)
-        VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, "public")
+        INSERT INTO tiles (
+            id, user_id, title, description, emoji, theme_color, "group", position, created_at, visibility,
+            tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, 
+            tile_gradient_direction, tile_gradient_type, tile_text_color, tile_border_radius
+        )
+        VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, "public", ?, ?, ?, ?, ?, ?, ?)
     ');
     
     foreach ($tiles as $tile) {
+        // Get preset decoration if specified
+        $preset = null;
+        if (isset($tile['preset']) && isset($decorationPresets[$tile['preset']])) {
+            $preset = $decorationPresets[$tile['preset']];
+        }
+        
+        // Prepare gradient data
+        $gradientEnabled = $preset ? 1 : 0;
+        $gradientColors = $preset ? json_encode($preset['colors']) : null;
+        $gradientColorPositions = null;
+        if ($preset) {
+            // Generate evenly spaced positions for the colors
+            $numColors = count($preset['colors']);
+            $positions = [];
+            for ($i = 0; $i < $numColors; $i++) {
+                $positions[] = $numColors > 1 ? ($i / ($numColors - 1)) * 100 : 0;
+            }
+            $gradientColorPositions = json_encode($positions);
+        }
+        $gradientDirection = $preset ? $preset['direction'] : null;
+        $gradientType = $preset ? 'linear' : null;
+        $textColor = $preset ? $preset['textColor'] : null;
+        $borderRadius = 16; // Default rounded corners
+        
         $tileStmt->execute([
             $tile['id'],
             $tile['title'],
@@ -310,7 +492,14 @@ try {
             $tile['theme_color'],
             $tile['group'],
             $tile['position'],
-            $currentTime
+            $currentTime,
+            $gradientEnabled,
+            $gradientColors,
+            $gradientColorPositions,
+            $gradientDirection,
+            $gradientType,
+            $textColor,
+            $borderRadius
         ]);
     }
     

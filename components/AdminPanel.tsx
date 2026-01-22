@@ -177,6 +177,108 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [bulkImportLoading, setBulkImportLoading] = useState(false);
   const [bulkImportResults, setBulkImportResults] = useState<{ results: any; summary: any; message: string } | null>(null);
 
+  // Database Cleanup state
+  const [cleanupChecking, setCleanupChecking] = useState(false);
+  const [cleanupCleaning, setCleanupCleaning] = useState(false);
+  const [cleanupResults, setCleanupResults] = useState<{ 
+    orphaned_found?: number; 
+    details?: Array<{ type: string; label: string; count: number; description: string }>; 
+    total_cleaned?: number;
+    cleaned?: Record<string, number>;
+    success: boolean; 
+    errors?: string[];
+  } | null>(null);
+
+  // Duplicate Tiles Cleanup state
+  const [dupTilesFinding, setDupTilesFinding] = useState(false);
+  const [dupTilesCleaning, setDupTilesCleaning] = useState(false);
+  const [dupTilesAggressiveCleaning, setDupTilesAggressiveCleaning] = useState(false);
+
+  // Invisible Tiles Diagnosis state
+  const [invisibleTilesDiagnosing, setInvisibleTilesDiagnosing] = useState(false);
+  const [invisibleTilesRemoving, setInvisibleTilesRemoving] = useState(false);
+  const [invisibleTilesResults, setInvisibleTilesResults] = useState<{
+    total_tiles?: number;
+    invisible_tiles?: Array<{
+      id: string;
+      title: string;
+      emoji: string;
+      group: string;
+      user_id: number;
+      owner_username: string;
+      created_at: string;
+      sections_count: number;
+      links_count: number;
+      permissions_count: number;
+      has_arrangement: boolean;
+      owner_exists: boolean;
+      issues: string[];
+    }>;
+    issues_found?: string[];
+    deleted?: number;
+    deleted_tiles?: Array<{
+      id: string;
+      title: string;
+      owner: string;
+      links: number;
+      reason: string;
+    }>;
+    success: boolean;
+    errors?: string[];
+  } | null>(null);
+  const [dupTilesResults, setDupTilesResults] = useState<{
+    duplicates_found?: number;
+    duplicate_groups?: Array<{
+      title: string;
+      group: string;
+      count: number;
+      tiles: Array<{
+        id: string;
+        title: string;
+        emoji: string;
+        group: string;
+        user_id: number;
+        owner_username: string;
+        section_count: number;
+        link_count: number;
+        permission_count: number;
+        has_content: boolean;
+        created_at: string;
+      }>;
+    }>;
+    deleted?: number;
+    kept?: number;
+    details?: Array<{
+      title: string;
+      group: string;
+      kept_id: string;
+      kept_owner: string;
+      kept_links: number;
+      deleted_ids?: string[];
+      deleted_count: number;
+      skipped?: Array<{
+        id: string;
+        links: number;
+        owner: string;
+      }>;
+    }>;
+    skipped?: Array<{
+      title: string;
+      group: string;
+      kept_id: string;
+      kept_owner: string;
+      kept_links: number;
+      deleted_count: number;
+      skipped: Array<{
+        id: string;
+        links: number;
+        owner: string;
+      }>;
+    }>;
+    success: boolean;
+    errors?: string[];
+  } | null>(null);
+
   // Access Manager state
   const [permissions, setPermissions] = useState<TilePermission[]>([]);
   const [permissionsLoading, setPermissionsLoading] = useState(false);
@@ -192,6 +294,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [tileAdminsUsersLoaded, setTileAdminsUsersLoaded] = useState(false);
   const [showGranularPermissionsModal, setShowGranularPermissionsModal] = useState(false);
   const [selectedPermissionForEdit, setSelectedPermissionForEdit] = useState<TilePermission | null>(null);
+  const [tileAdminsTabSearchTerm, setTileAdminsTabSearchTerm] = useState('');
 
   // Roles management state
   const [roles, setRoles] = useState<Role[]>([]);
@@ -1058,6 +1161,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     canChangeVisibility?: boolean;
     canChangeBrowser?: boolean;
     canCloneTile?: boolean;
+    canViewTileInfo?: boolean;
+    canEditTile?: boolean;
   }) => {
     try {
       setError('');
@@ -1078,7 +1183,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         canDeleteTabs: granularPerms?.canDeleteTabs ?? false,
         canChangeVisibility: granularPerms?.canChangeVisibility ?? false,
         canChangeBrowser: granularPerms?.canChangeBrowser ?? false,
-        canCloneTile: granularPerms?.canCloneTile ?? false
+        canCloneTile: granularPerms?.canCloneTile ?? false,
+        canViewTileInfo: granularPerms?.canViewTileInfo ?? true,
+        canEditTile: granularPerms?.canEditTile ?? true
       });
       
       // Reload admins for this tile
@@ -1130,6 +1237,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           canChangeVisibility: perm.canChangeVisibility,
           canChangeBrowser: perm.canChangeBrowser,
           canCloneTile: perm.canCloneTile,
+          canViewTileInfo: perm.canViewTileInfo,
+          canEditTile: perm.canEditTile,
           createdAt: perm.createdAt,
           updatedAt: perm.updatedAt,
           username: perm.username,
@@ -1155,6 +1264,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     canChangeVisibility: boolean;
     canChangeBrowser: boolean;
     canCloneTile: boolean;
+    canViewTileInfo: boolean;
+    canDelete: boolean;
+    canEditTile: boolean;
   }) => {
     if (!selectedPermissionForEdit) return;
     
@@ -1165,8 +1277,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         selectedPermissionForEdit.tileId,
         selectedPermissionForEdit.canView,
         selectedPermissionForEdit.canEdit,
-        selectedPermissionForEdit.canDelete,
-        permissions
+        permissions.canDelete,
+        {
+          canAddLinks: permissions.canAddLinks,
+          canAddSections: permissions.canAddSections,
+          canAddTabs: permissions.canAddTabs,
+          canEditLinks: permissions.canEditLinks,
+          canDeleteLinks: permissions.canDeleteLinks,
+          canDeleteSections: permissions.canDeleteSections,
+          canDeleteTabs: permissions.canDeleteTabs,
+          canChangeVisibility: permissions.canChangeVisibility,
+          canChangeBrowser: permissions.canChangeBrowser,
+          canCloneTile: permissions.canCloneTile,
+          canViewTileInfo: permissions.canViewTileInfo,
+          canEditTile: permissions.canEditTile
+        }
       );
       
       // Reload admins for this tile
@@ -1189,6 +1314,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           canChangeVisibility: perm.canChangeVisibility,
           canChangeBrowser: perm.canChangeBrowser,
           canCloneTile: perm.canCloneTile,
+          canViewTileInfo: perm.canViewTileInfo,
           createdAt: perm.createdAt,
           updatedAt: perm.updatedAt,
           username: perm.username,
@@ -7020,6 +7146,42 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </button>
                       </div>
 
+                      {/* Search Input */}
+                      <div className="mb-4">
+                        <div className="relative">
+                          <input
+                            type="text"
+                            placeholder="Search tiles by name or description..."
+                            value={tileAdminsTabSearchTerm}
+                            onChange={(e) => setTileAdminsTabSearchTerm(e.target.value)}
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                          />
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                            className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                          {tileAdminsTabSearchTerm && (
+                            <button
+                              onClick={() => setTileAdminsTabSearchTerm('')}
+                              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                              title="Clear search"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
                       <div className="mb-4">
                         {permissionsLoading ? (
                           <div className="flex items-center justify-center py-8">
@@ -7032,7 +7194,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 No tiles available. Create tiles first.
                               </div>
                             ) : (
-                              allTiles.map((tile) => {
+                              (() => {
+                                const filteredTiles = allTiles.filter(tile => {
+                                  if (!tileAdminsTabSearchTerm) return true;
+                                  const searchLower = tileAdminsTabSearchTerm.toLowerCase();
+                                  return (
+                                    (tile.title || '').toLowerCase().includes(searchLower) ||
+                                    (tile.description || '').toLowerCase().includes(searchLower) ||
+                                    tile.id.toLowerCase().includes(searchLower)
+                                  );
+                                });
+                                
+                                return filteredTiles.length === 0 ? (
+                                  <div className="text-center py-8 text-slate-600 dark:text-slate-400">
+                                    No tiles found matching "{tileAdminsTabSearchTerm}"
+                                  </div>
+                                ) : (
+                                  filteredTiles.map((tile) => {
                                 // Get tile admins for this tile (users with canEdit=true)
                                 const tileAdminPerms = permissions.filter(
                                   p => p.tileId === tile.id && p.canEdit
@@ -7045,11 +7223,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   >
                                     <div className="flex items-start justify-between">
                                       <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 mb-2">
-                                          <span className="text-base">{tile.emoji || '📄'}</span>
-                                          <h4 className="text-sm font-semibold text-slate-900 dark:text-white truncate">
-                                            {tile.title || tile.id}
-                                          </h4>
+                                        <div className="flex items-center flex-wrap gap-2 mb-2">
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-base">{tile.emoji || '📄'}</span>
+                                            <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
+                                              {tile.title || tile.id}
+                                            </h4>
+                                          </div>
+                                          {/* Owner and Category inline with title */}
+                                          {tile.userId && (() => {
+                                            const owner = allUsers.find(u => u.id === tile.userId);
+                                            return owner ? (
+                                              <span className="text-xs text-slate-500 dark:text-slate-400 font-normal">
+                                                (Owner: <span className="font-medium text-slate-700 dark:text-slate-300">{owner.username}</span>)
+                                              </span>
+                                            ) : null;
+                                          })()}
+                                          {tile.group && (
+                                            <span className="text-xs text-blue-600 dark:text-blue-400 font-normal">
+                                              [Tab: <span className="font-medium">{tile.group}</span>]
+                                            </span>
+                                          )}
                                         </div>
                                         {tile.description && (
                                           <p className="text-xs text-slate-600 dark:text-slate-400 mb-2 line-clamp-1">
@@ -7102,6 +7296,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   </div>
                                 );
                               })
+                                );
+                              })()
                             )}
                           </div>
                         )}
@@ -8571,6 +8767,799 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               {/* Maintenance Tab */}
               {activeTab === 'maintenance' && (
                 <div className="space-y-6 mt-6">
+                  {/* Database Cleanup Section */}
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="flex-shrink-0 w-10 h-10 bg-orange-500 rounded-lg flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
+                          <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Database Cleanup</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">
+                          Check for and remove orphaned records from the database. Orphaned records occur when tiles are deleted but related data (permissions, links, sections, tabs) remain.
+                        </p>
+                      </div>
+                    </div>
+
+                    {cleanupResults && (
+                      <div className={`mb-6 p-4 rounded-lg border ${
+                        cleanupResults.success
+                          ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                          : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+                      }`}>
+                        {cleanupResults.success ? (
+                          <div>
+                            <div className="flex items-center gap-2 mb-3">
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-green-600 dark:text-green-400">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                              </svg>
+                              <h4 className="font-semibold text-green-900 dark:text-green-100">
+                                {cleanupResults.total_cleaned !== undefined 
+                                  ? `Cleanup Complete - ${cleanupResults.total_cleaned} record(s) removed`
+                                  : cleanupResults.orphaned_found !== undefined
+                                  ? cleanupResults.orphaned_found === 0
+                                    ? 'Database is Clean!'
+                                    : `Found ${cleanupResults.orphaned_found} orphaned record(s)`
+                                  : 'Check Complete'}
+                              </h4>
+                            </div>
+                            {cleanupResults.details && cleanupResults.details.length > 0 && (
+                              <div className="space-y-2">
+                                <p className="text-sm text-green-800 dark:text-green-200 mb-2">Orphaned records found:</p>
+                                {cleanupResults.details.map((detail, idx) => (
+                                  <div key={idx} className="flex items-center justify-between text-sm bg-white dark:bg-slate-800 rounded p-2 border border-green-200 dark:border-green-800">
+                                    <div className="flex-1">
+                                      <span className="font-medium text-slate-900 dark:text-white">{detail.label}</span>
+                                      <span className="text-slate-600 dark:text-slate-400 ml-2 text-xs">— {detail.description}</span>
+                                    </div>
+                                    <span className="font-bold text-orange-600 dark:text-orange-400">{detail.count}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {cleanupResults.cleaned && Object.keys(cleanupResults.cleaned).length > 0 && (
+                              <div className="space-y-2 mt-3">
+                                <p className="text-sm text-green-800 dark:text-green-200 mb-2">Records cleaned:</p>
+                                {Object.entries(cleanupResults.cleaned).map(([type, count], idx) => (
+                                  <div key={idx} className="flex items-center justify-between text-sm bg-white dark:bg-slate-800 rounded p-2 border border-green-200 dark:border-green-800">
+                                    <span className="font-medium text-slate-900 dark:text-white capitalize">{type.replace(/_/g, ' ')}</span>
+                                    <span className="font-bold text-green-600 dark:text-green-400">{count}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-red-600 dark:text-red-400">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                              </svg>
+                              <h4 className="font-semibold text-red-900 dark:text-red-100">Error</h4>
+                            </div>
+                            {cleanupResults.errors && cleanupResults.errors.length > 0 && (
+                              <ul className="list-disc list-inside text-sm text-red-800 dark:text-red-200 space-y-1">
+                                {cleanupResults.errors.map((err, idx) => (
+                                  <li key={idx}>{err}</li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={async () => {
+                          try {
+                            setCleanupChecking(true);
+                            setError('');
+                            setCleanupResults(null);
+                            const response = await fetch(`${resolveApiBase()}/cleanup.php?action=check`, {
+                              credentials: 'include'
+                            });
+                            if (!response.ok) {
+                              throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+                            const data = await response.json();
+                            setCleanupResults(data);
+                          } catch (err: any) {
+                            setError(err.message || 'Failed to check for orphaned records');
+                            setCleanupResults({ success: false, errors: [err.message || 'Failed to check for orphaned records'] });
+                          } finally {
+                            setCleanupChecking(false);
+                          }
+                        }}
+                        disabled={cleanupChecking || cleanupCleaning}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors"
+                      >
+                        {cleanupChecking ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Checking...
+                          </>
+                        ) : (
+                          <>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                              <path fillRule="evenodd" d="M8 7a5 5 0 113.61 4.804l-1.903 1.903A1 1 0 019 14H8v1a1 1 0 01-1 1H6v1a1 1 0 01-1 1H3a1 1 0 01-1-1v-2a1 1 0 01.293-.707l5.964-5.964A5 5 0 018 7zm5-3a.75.75 0 000 1.5A1.5 1.5 0 0114.5 7 .75.75 0 0016 7a3 3 0 00-3-3z" clipRule="evenodd" />
+                            </svg>
+                            Check for Orphans
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        onClick={async () => {
+                          if (!confirm('Are you sure you want to clean up orphaned records? This action cannot be undone.')) {
+                            return;
+                          }
+                          try {
+                            setCleanupCleaning(true);
+                            setError('');
+                            setCleanupResults(null);
+                            const response = await fetch(`${resolveApiBase()}/cleanup.php?action=cleanup`, {
+                              credentials: 'include'
+                            });
+                            if (!response.ok) {
+                              throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+                            const data = await response.json();
+                            setCleanupResults(data);
+                            if (data.success && data.total_cleaned > 0) {
+                              alert(`Successfully cleaned ${data.total_cleaned} orphaned record(s)!`);
+                            } else if (data.success && data.total_cleaned === 0) {
+                              alert('No orphaned records found. Database is clean!');
+                            }
+                          } catch (err: any) {
+                            setError(err.message || 'Failed to cleanup orphaned records');
+                            setCleanupResults({ success: false, errors: [err.message || 'Failed to cleanup orphaned records'] });
+                          } finally {
+                            setCleanupCleaning(false);
+                          }
+                        }}
+                        disabled={cleanupChecking || cleanupCleaning || (cleanupResults?.orphaned_found === 0)}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors"
+                      >
+                        {cleanupCleaning ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Cleaning...
+                          </>
+                        ) : (
+                          <>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                              <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                            </svg>
+                            Clean Up Orphans
+                          </>
+                        )}
+                      </button>
+                      
+                      {cleanupResults && (
+                        <button
+                          onClick={() => setCleanupResults(null)}
+                          className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                          </svg>
+                          Clear Results
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+                      <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">What are orphaned records?</h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mb-3">
+                        When tiles are deleted, sometimes related data can remain in the database: permissions for deleted tiles, sections and links that reference missing tiles, or duplicate permission entries. These "orphaned" records can cause display issues (like duplicate tiles in admin panels) and waste database space.
+                      </p>
+                      <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3 border border-slate-200 dark:border-slate-700">
+                        <p className="text-xs text-slate-600 dark:text-slate-400">
+                          <span className="font-semibold text-slate-900 dark:text-white">💡 Best Practice:</span> Run the check periodically, especially after bulk tile deletions or data imports. Cleanup operations use transactions, so if any error occurs, no changes will be made to your database.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Duplicate Tiles Cleanup Section */}
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="flex-shrink-0 w-10 h-10 bg-purple-500 rounded-lg flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
+                          <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                          <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.439A1.5 1.5 0 008.378 6H4.5z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Duplicate Tiles Cleanup</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">
+                          Find and remove duplicate tiles with the same name and category. This tool will automatically keep the tile with content and remove empty duplicates.
+                        </p>
+                      </div>
+                    </div>
+
+                    {dupTilesResults && (
+                      <div className={`mb-6 p-4 rounded-lg border ${
+                        dupTilesResults.success
+                          ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                          : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+                      }`}>
+                        {dupTilesResults.success ? (
+                          <div>
+                            <div className="flex items-center gap-2 mb-3">
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-green-600 dark:text-green-400">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                              </svg>
+                              <h4 className="font-semibold text-green-900 dark:text-green-100">
+                                {dupTilesResults.deleted !== undefined 
+                                  ? dupTilesResults.deleted === 0
+                                    ? 'No duplicate tiles found - All tiles are unique!'
+                                    : `Cleanup Complete - ${dupTilesResults.deleted} duplicate tile(s) removed`
+                                  : dupTilesResults.duplicates_found !== undefined
+                                  ? dupTilesResults.duplicates_found === 0
+                                    ? 'No duplicate tiles found!'
+                                    : `Found ${dupTilesResults.duplicates_found} duplicate tile(s)`
+                                  : 'Check Complete'}
+                              </h4>
+                            </div>
+                            
+                            {dupTilesResults.duplicate_groups && dupTilesResults.duplicate_groups.length > 0 && (
+                              <div className="space-y-3">
+                                <p className="text-sm text-green-800 dark:text-green-200 mb-2">Duplicate tiles found:</p>
+                                {dupTilesResults.duplicate_groups.map((group, idx) => (
+                                  <div key={idx} className="bg-white dark:bg-slate-800 rounded-lg p-3 border border-green-200 dark:border-green-800">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-base">{group.tiles[0]?.emoji || '📄'}</span>
+                                        <span className="font-semibold text-slate-900 dark:text-white">{group.title}</span>
+                                        <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded">
+                                          Tab: {group.group || 'No category'}
+                                        </span>
+                                      </div>
+                                      <span className="text-sm font-bold text-purple-600 dark:text-purple-400">{group.count} copies</span>
+                                    </div>
+                                    <div className="space-y-1 ml-8">
+                                      {group.tiles.map((tile, tidx) => (
+                                        <div key={tidx} className="text-xs text-slate-600 dark:text-slate-400 flex items-center justify-between py-1">
+                                          <div className="flex items-center gap-2">
+                                            <span className="font-mono text-xs bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">{tile.id.substring(0, 8)}</span>
+                                            <span>Owner: <span className="font-medium text-slate-700 dark:text-slate-300">{tile.owner_username}</span></span>
+                                          </div>
+                                          <div className="flex items-center gap-3">
+                                            <span className={tile.link_count > 0 ? 'text-green-600 dark:text-green-400 font-medium' : ''}>
+                                              {tile.link_count} link{tile.link_count !== 1 ? 's' : ''}
+                                            </span>
+                                            <span className={tile.link_count === 0 ? 'text-orange-600 dark:text-orange-400' : ''}>
+                                              {tile.link_count === 0 ? '(empty - will be removed)' : '(will be kept)'}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {dupTilesResults.details && dupTilesResults.details.length > 0 && (
+                              <div className="space-y-2 mt-3">
+                                <p className="text-sm text-green-800 dark:text-green-200 mb-2">Tiles cleaned:</p>
+                                {dupTilesResults.details.map((detail, idx) => (
+                                  <div key={idx} className="bg-white dark:bg-slate-800 rounded-lg p-3 border border-green-200 dark:border-green-800">
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="font-semibold text-slate-900 dark:text-white">{detail.title}</span>
+                                      <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded">
+                                        Tab: {detail.group || 'No category'}
+                                      </span>
+                                    </div>
+                                    <div className="text-xs space-y-1">
+                                      <div className="text-green-700 dark:text-green-300">
+                                        ✓ Kept: {detail.kept_owner}'s copy ({detail.kept_links} link{detail.kept_links !== 1 ? 's' : ''})
+                                      </div>
+                                      <div className="text-orange-700 dark:text-orange-300">
+                                        ✗ Removed: {detail.deleted_count} empty duplicate{detail.deleted_count !== 1 ? 's' : ''}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-red-600 dark:text-red-400">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                              </svg>
+                              <h4 className="font-semibold text-red-900 dark:text-red-100">Error</h4>
+                            </div>
+                            {dupTilesResults.errors && dupTilesResults.errors.length > 0 && (
+                              <ul className="list-disc list-inside text-sm text-red-800 dark:text-red-200 space-y-1">
+                                {dupTilesResults.errors.map((err, idx) => (
+                                  <li key={idx}>{err}</li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={async () => {
+                          try {
+                            setDupTilesFinding(true);
+                            setError('');
+                            setDupTilesResults(null);
+                            const response = await fetch(`${resolveApiBase()}/cleanup_duplicate_tiles.php?action=find`, {
+                              credentials: 'include'
+                            });
+                            if (!response.ok) {
+                              throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+                            const data = await response.json();
+                            setDupTilesResults(data);
+                          } catch (err: any) {
+                            setError(err.message || 'Failed to find duplicate tiles');
+                            setDupTilesResults({ success: false, errors: [err.message || 'Failed to find duplicate tiles'] });
+                          } finally {
+                            setDupTilesFinding(false);
+                          }
+                        }}
+                        disabled={dupTilesFinding || dupTilesCleaning || dupTilesAggressiveCleaning}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors"
+                      >
+                        {dupTilesFinding ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Finding...
+                          </>
+                        ) : (
+                          <>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                              <path d="M15.98 1.804a1 1 0 00-1.96 0l-.24 1.192a1 1 0 01-.784.785l-1.192.238a1 1 0 000 1.962l1.192.238a1 1 0 01.785.785l.238 1.192a1 1 0 001.962 0l.238-1.192a1 1 0 01.785-.785l1.192-.238a1 1 0 000-1.962l-1.192-.238a1 1 0 01-.785-.785l-.238-1.192zM6.949 5.684a1 1 0 00-1.898 0l-.683 2.051a1 1 0 01-.633.633l-2.051.683a1 1 0 000 1.898l2.051.684a1 1 0 01.633.632l.683 2.051a1 1 0 001.898 0l.683-2.051a1 1 0 01.633-.633l2.051-.683a1 1 0 000-1.898l-2.051-.683a1 1 0 01-.633-.633L6.95 5.684zM13.949 13.684a1 1 0 00-1.898 0l-.184.551a1 1 0 01-.632.633l-.551.183a1 1 0 000 1.898l.551.183a1 1 0 01.633.633l.183.551a1 1 0 001.898 0l.184-.551a1 1 0 01.632-.633l.551-.183a1 1 0 000-1.898l-.551-.184a1 1 0 01-.633-.632l-.183-.551z" />
+                            </svg>
+                            Find Duplicate Tiles
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        onClick={async () => {
+                          if (!confirm('This will automatically remove empty duplicate tiles and keep the ones with content. Continue?')) {
+                            return;
+                          }
+                          try {
+                            setDupTilesCleaning(true);
+                            setError('');
+                            setDupTilesResults(null);
+                            const response = await fetch(`${resolveApiBase()}/cleanup_duplicate_tiles.php?action=smart_cleanup`, {
+                              credentials: 'include'
+                            });
+                            if (!response.ok) {
+                              throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+                            const data = await response.json();
+                            setDupTilesResults(data);
+                            if (data.success && data.deleted > 0) {
+                              alert(`Successfully removed ${data.deleted} duplicate tile(s)! Kept ${data.kept} unique tile(s).`);
+                              // Refresh tiles if we're on the tile admins tab
+                              if (activeTab === 'access' && accessSubTab === 'admins') {
+                                loadAllTilesAndLinks();
+                              }
+                            } else if (data.success && data.deleted === 0) {
+                              alert('No duplicate tiles found. All tiles are unique!');
+                            }
+                          } catch (err: any) {
+                            setError(err.message || 'Failed to cleanup duplicate tiles');
+                            setDupTilesResults({ success: false, errors: [err.message || 'Failed to cleanup duplicate tiles'] });
+                          } finally {
+                            setDupTilesCleaning(false);
+                          }
+                        }}
+                        disabled={dupTilesFinding || dupTilesCleaning || dupTilesAggressiveCleaning || (dupTilesResults?.duplicates_found === 0)}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors"
+                      >
+                        {dupTilesCleaning ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Cleaning...
+                          </>
+                        ) : (
+                          <>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                              <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                              <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.439A1.5 1.5 0 008.378 6H4.5z" />
+                            </svg>
+                            Smart Cleanup Duplicates
+                          </>
+                        )}
+                      </button>
+
+                      {/* Aggressive Cleanup Button - Only show if there are skipped tiles */}
+                      {dupTilesResults && (dupTilesResults.skipped && dupTilesResults.skipped.length > 0) && (
+                        <button
+                          onClick={async () => {
+                            if (!confirm('⚠️ WARNING: This will remove ALL duplicate tiles, even if they have content!\n\nThe tile with the most links will be kept, all others will be PERMANENTLY DELETED.\n\nThis action cannot be undone. Are you absolutely sure?')) {
+                              return;
+                            }
+                            try {
+                              setDupTilesAggressiveCleaning(true);
+                              setError('');
+                              setDupTilesResults(null);
+                              const response = await fetch(`${resolveApiBase()}/cleanup_duplicate_tiles.php?action=aggressive_cleanup`, {
+                                credentials: 'include'
+                              });
+                              if (!response.ok) {
+                                throw new Error(`HTTP error! status: ${response.status}`);
+                              }
+                              const data = await response.json();
+                              setDupTilesResults(data);
+                              if (data.success && data.deleted > 0) {
+                                alert(`Successfully removed ${data.deleted} duplicate tile(s)! Kept ${data.kept} unique tile(s).`);
+                                // Refresh tiles if we're on the tile admins tab
+                                if (activeTab === 'access' && accessSubTab === 'admins') {
+                                  loadAllTilesAndLinks();
+                                }
+                              } else if (data.success && data.deleted === 0) {
+                                alert('No duplicate tiles found.');
+                              }
+                            } catch (err: any) {
+                              setError(err.message || 'Failed to cleanup duplicate tiles');
+                              setDupTilesResults({ success: false, errors: [err.message || 'Failed to cleanup duplicate tiles'] });
+                            } finally {
+                              setDupTilesAggressiveCleaning(false);
+                            }
+                          }}
+                          disabled={dupTilesFinding || dupTilesCleaning || dupTilesAggressiveCleaning}
+                          className="flex items-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors"
+                        >
+                          {dupTilesAggressiveCleaning ? (
+                            <>
+                              <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Cleaning...
+                            </>
+                          ) : (
+                            <>
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                              </svg>
+                              Force Remove All Duplicates
+                            </>
+                          )}
+                        </button>
+                      )}
+                      
+                      {dupTilesResults && (
+                        <button
+                          onClick={() => setDupTilesResults(null)}
+                          className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                          </svg>
+                          Clear Results
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Warning about skipped tiles */}
+                    {dupTilesResults && dupTilesResults.skipped && dupTilesResults.skipped.length > 0 && (
+                      <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                        <div className="flex items-start gap-2">
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5">
+                            <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                          </svg>
+                          <div className="flex-1">
+                            <h4 className="font-semibold text-yellow-900 dark:text-yellow-100 text-sm mb-2">
+                              Some duplicates were NOT removed
+                            </h4>
+                            <p className="text-xs text-yellow-800 dark:text-yellow-200 mb-3">
+                              Smart Cleanup only removes <strong>empty</strong> tiles. The following duplicate tiles have content and were kept to preserve your data:
+                            </p>
+                            <div className="space-y-2">
+                              {dupTilesResults.skipped.map((group, idx) => (
+                                <div key={idx} className="bg-white dark:bg-slate-800 rounded p-2 border border-yellow-200 dark:border-yellow-800">
+                                  <div className="text-sm font-semibold text-slate-900 dark:text-white mb-1">
+                                    {group.title} [{group.group || 'No category'}]
+                                  </div>
+                                  <div className="text-xs text-slate-600 dark:text-slate-400 space-y-1">
+                                    <div className="text-green-700 dark:text-green-300">
+                                      ✓ Kept: {group.kept_owner}'s copy ({group.kept_links} links)
+                                    </div>
+                                    {group.skipped.map((skip, sidx) => (
+                                      <div key={sidx} className="text-yellow-700 dark:text-yellow-300">
+                                        ⚠ Skipped: {skip.owner}'s copy ({skip.links} links) - has content, not removed
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="mt-3 p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded text-xs text-yellow-900 dark:text-yellow-200">
+                              <strong>Need to remove these?</strong> Click the <strong className="text-red-600 dark:text-red-400">"Force Remove All Duplicates"</strong> button above (warning: this will permanently delete the duplicate tiles and their content).
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+                      <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">How does Smart Cleanup work?</h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mb-3">
+                        The smart cleanup automatically identifies tiles with identical names and categories. It keeps the tile with content (links) and removes empty duplicates. If multiple tiles have content, it keeps the one with the most links.
+                      </p>
+                      <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3 border border-slate-200 dark:border-slate-700">
+                        <p className="text-xs text-slate-600 dark:text-slate-400">
+                          <span className="font-semibold text-slate-900 dark:text-white">⚡ Safe & Smart:</span> Always check first to preview what will be removed. The cleanup only deletes empty tiles and uses transactions for safety. If you see tiles with the same name but different content, they will all be kept.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Invisible Tiles Diagnosis Section */}
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="flex-shrink-0 w-10 h-10 bg-teal-500 rounded-lg flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-white">
+                          <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
+                          <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Invisible Tiles Diagnosis</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">
+                          Find tiles that exist in the database but are invisible to users. These "ghost" tiles show up in admin panels but don't appear in user dashboards.
+                        </p>
+                      </div>
+                    </div>
+
+                    {invisibleTilesResults && (
+                      <div className={`mb-6 p-4 rounded-lg border ${
+                        invisibleTilesResults.success
+                          ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                          : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+                      }`}>
+                        {invisibleTilesResults.success ? (
+                          <div>
+                            <div className="flex items-center gap-2 mb-3">
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-green-600 dark:text-green-400">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                              </svg>
+                              <h4 className="font-semibold text-green-900 dark:text-green-100">
+                                {invisibleTilesResults.deleted !== undefined
+                                  ? `Cleanup Complete - ${invisibleTilesResults.deleted} invisible tile(s) removed`
+                                  : invisibleTilesResults.invisible_tiles && invisibleTilesResults.invisible_tiles.length > 0
+                                  ? `Found ${invisibleTilesResults.invisible_tiles.length} invisible tile(s)`
+                                  : 'No invisible tiles found - All tiles are properly configured!'}
+                              </h4>
+                            </div>
+
+                            {invisibleTilesResults.total_tiles !== undefined && (
+                              <p className="text-sm text-green-800 dark:text-green-200 mb-3">
+                                Scanned {invisibleTilesResults.total_tiles} total tile(s) in database.
+                              </p>
+                            )}
+
+                            {invisibleTilesResults.invisible_tiles && invisibleTilesResults.invisible_tiles.length > 0 && (
+                              <div className="space-y-3">
+                                <p className="text-sm text-green-800 dark:text-green-200 font-semibold mb-2">Invisible tiles detected:</p>
+                                {invisibleTilesResults.invisible_tiles.map((tile, idx) => (
+                                  <div key={idx} className="bg-white dark:bg-slate-800 rounded-lg p-3 border border-green-200 dark:border-green-800">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-base">{tile.emoji || '📄'}</span>
+                                        <span className="font-semibold text-slate-900 dark:text-white">{tile.title}</span>
+                                        {tile.group && (
+                                          <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded">
+                                            {tile.group}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <span className="font-mono text-xs bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">{tile.id.substring(0, 8)}</span>
+                                    </div>
+                                    <div className="text-xs space-y-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-slate-600 dark:text-slate-400">Owner:</span>
+                                        <span className="font-medium text-slate-900 dark:text-white">{tile.owner_username || 'Unknown'}</span>
+                                        <span className="text-slate-400">•</span>
+                                        <span className="text-slate-600 dark:text-slate-400">{tile.links_count} link(s)</span>
+                                        <span className="text-slate-400">•</span>
+                                        <span className="text-slate-600 dark:text-slate-400">{tile.sections_count} section(s)</span>
+                                      </div>
+                                      <div className="mt-2 flex flex-wrap gap-1">
+                                        {tile.issues.map((issue, iidx) => (
+                                          <span key={iidx} className="px-2 py-0.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 rounded text-xs">
+                                            ⚠ {issue}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {invisibleTilesResults.deleted_tiles && invisibleTilesResults.deleted_tiles.length > 0 && (
+                              <div className="space-y-2 mt-3">
+                                <p className="text-sm text-green-800 dark:text-green-200 mb-2">Tiles removed:</p>
+                                {invisibleTilesResults.deleted_tiles.map((tile, idx) => (
+                                  <div key={idx} className="bg-white dark:bg-slate-800 rounded p-2 border border-green-200 dark:border-green-800">
+                                    <div className="text-xs">
+                                      <div className="font-semibold text-slate-900 dark:text-white">{tile.title}</div>
+                                      <div className="text-slate-600 dark:text-slate-400 mt-1">
+                                        Owner: {tile.owner} • {tile.links} links • Reason: {tile.reason}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-red-600 dark:text-red-400">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                              </svg>
+                              <h4 className="font-semibold text-red-900 dark:text-red-100">Error</h4>
+                            </div>
+                            {invisibleTilesResults.errors && invisibleTilesResults.errors.length > 0 && (
+                              <ul className="list-disc list-inside text-sm text-red-800 dark:text-red-200 space-y-1">
+                                {invisibleTilesResults.errors.map((err, idx) => (
+                                  <li key={idx}>{err}</li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={async () => {
+                          try {
+                            setInvisibleTilesDiagnosing(true);
+                            setError('');
+                            setInvisibleTilesResults(null);
+                            const response = await fetch(`${resolveApiBase()}/diagnose_invisible_tiles.php?action=diagnose`, {
+                              credentials: 'include'
+                            });
+                            if (!response.ok) {
+                              throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+                            const data = await response.json();
+                            setInvisibleTilesResults(data);
+                          } catch (err: any) {
+                            setError(err.message || 'Failed to diagnose invisible tiles');
+                            setInvisibleTilesResults({ success: false, errors: [err.message || 'Failed to diagnose invisible tiles'] });
+                          } finally {
+                            setInvisibleTilesDiagnosing(false);
+                          }
+                        }}
+                        disabled={invisibleTilesDiagnosing || invisibleTilesRemoving}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors"
+                      >
+                        {invisibleTilesDiagnosing ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Scanning...
+                          </>
+                        ) : (
+                          <>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                              <path fillRule="evenodd" d="M8 7a5 5 0 113.61 4.804l-1.903 1.903A1 1 0 019 14H8v1a1 1 0 01-1 1H6v1a1 1 0 01-1 1H3a1 1 0 01-1-1v-2a1 1 0 01.293-.707l5.964-5.964A5 5 0 018 7zm5-3a.75.75 0 000 1.5A1.5 1.5 0 0114.5 7 .75.75 0 0016 7a3 3 0 00-3-3z" clipRule="evenodd" />
+                            </svg>
+                            Diagnose Invisible Tiles
+                          </>
+                        )}
+                      </button>
+
+                      {invisibleTilesResults && invisibleTilesResults.invisible_tiles && invisibleTilesResults.invisible_tiles.length > 0 && (
+                        <button
+                          onClick={async () => {
+                            if (!confirm('⚠️ IMPORTANT: This will remove tiles that are not visible in users\' dashboards.\n\n✓ Public tiles (user_id = 0) are PROTECTED and will NOT be deleted\n✓ Tiles in public/shared categories are PROTECTED\n✓ Only user-owned tiles without arrangement will be removed\n\nContinue?')) {
+                              return;
+                            }
+                            try {
+                              setInvisibleTilesRemoving(true);
+                              setError('');
+                              setInvisibleTilesResults(null);
+                              const response = await fetch(`${resolveApiBase()}/diagnose_invisible_tiles.php?action=remove_no_arrangement`, {
+                                credentials: 'include'
+                              });
+                              if (!response.ok) {
+                                throw new Error(`HTTP error! status: ${response.status}`);
+                              }
+                              const data = await response.json();
+                              setInvisibleTilesResults(data);
+                              if (data.success && data.deleted > 0) {
+                                alert(`Successfully removed ${data.deleted} invisible tile(s)!`);
+                                // Refresh tiles if we're on the tile admins tab
+                                if (activeTab === 'access' && accessSubTab === 'admins') {
+                                  loadAllTilesAndLinks();
+                                }
+                              } else if (data.success && data.deleted === 0) {
+                                alert('No invisible tiles found to remove.');
+                              }
+                            } catch (err: any) {
+                              setError(err.message || 'Failed to remove invisible tiles');
+                              setInvisibleTilesResults({ success: false, errors: [err.message || 'Failed to remove invisible tiles'] });
+                            } finally {
+                              setInvisibleTilesRemoving(false);
+                            }
+                          }}
+                          disabled={invisibleTilesDiagnosing || invisibleTilesRemoving}
+                          className="flex items-center gap-2 px-4 py-2.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors"
+                        >
+                          {invisibleTilesRemoving ? (
+                            <>
+                              <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Removing...
+                            </>
+                          ) : (
+                            <>
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                              </svg>
+                              Remove Invisible Tiles
+                            </>
+                          )}
+                        </button>
+                      )}
+
+                      {invisibleTilesResults && (
+                        <button
+                          onClick={() => setInvisibleTilesResults(null)}
+                          className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                          </svg>
+                          Clear Results
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+                      <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">What are invisible tiles?</h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mb-3">
+                        Invisible tiles exist in the database but don't appear in any user's dashboard. Common issues: not in user's arrangement (UI layout), missing owner, or other configuration problems. These tiles often appear only in admin panels but cannot be accessed by regular users.
+                      </p>
+                      <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3 border border-slate-200 dark:border-slate-700">
+                        <p className="text-xs text-slate-600 dark:text-slate-400">
+                          <span className="font-semibold text-slate-900 dark:text-white">🔍 Perfect for:</span> Finding tiles that appear in "Tile Admins" page but can't be seen by the owner when they log in. This explains why zafar2 can't see their 6 "Company Dashboard" tiles!
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
                     <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Maintenance Mode</h3>
                     <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
@@ -9790,11 +10779,25 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                     className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2 mt-0.5"
                                   />
                                   <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-1">
+                                    <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                                       <span className="text-base">{tile.emoji || '📄'}</span>
-                                      <div className="text-sm font-medium text-slate-900 dark:text-white truncate">
+                                      <div className="text-sm font-medium text-slate-900 dark:text-white">
                                         {tile.title || tile.id}
                                       </div>
+                                      {/* Owner and Tab inline with title */}
+                                      {tile.userId && (() => {
+                                        const owner = allUsers.find(u => u.id === tile.userId);
+                                        return owner ? (
+                                          <span className="text-xs text-slate-500 dark:text-slate-400">
+                                            (Owner: <span className="font-medium text-slate-600 dark:text-slate-300">{owner.username}</span>)
+                                          </span>
+                                        ) : null;
+                                      })()}
+                                      {tile.group && (
+                                        <span className="text-xs text-blue-600 dark:text-blue-400">
+                                          [Tab: <span className="font-medium">{tile.group}</span>]
+                                        </span>
+                                      )}
                                     </div>
                                     {tile.description && (
                                       <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mb-1">
@@ -9996,9 +10999,31 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                               }}
                                               className="w-3.5 h-3.5 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-1"
                                             />
-                                            <span className="text-xs text-slate-700 dark:text-slate-300">
-                                              {tile?.emoji || '📄'} {tile?.title || tileId}
-                                            </span>
+                                            <div className="flex-1 min-w-0">
+                                              <div className="flex items-center gap-1.5">
+                                                <span className="text-xs text-slate-700 dark:text-slate-300">
+                                                  {tile?.emoji || '📄'} {tile?.title || tileId}
+                                                </span>
+                                              </div>
+                                              <div className="flex flex-wrap gap-1 mt-0.5">
+                                                {tile?.userId && (() => {
+                                                  const owner = allUsers.find(u => u.id === tile.userId);
+                                                  return owner ? (
+                                                    <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                                                      Owner: <span className="font-medium text-slate-600 dark:text-slate-300">{owner.username}</span>
+                                                    </span>
+                                                  ) : null;
+                                                })()}
+                                                {tile?.userId && tile?.group && (
+                                                  <span className="text-[10px] text-slate-400">•</span>
+                                                )}
+                                                {tile?.group && (
+                                                  <span className="text-[10px] text-blue-600 dark:text-blue-400">
+                                                    Tab: <span className="font-medium">{tile.group}</span>
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </div>
                                           </label>
                                         );
                                       })}

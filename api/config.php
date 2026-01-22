@@ -485,6 +485,7 @@ function initDatabase() {
             $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
             $columnNames = array_column($columns, 'name');
             $decorationColumns = [
+                'decoration' => 'TEXT',
                 'tile_background_color' => 'TEXT',
                 'tile_gradient_enabled' => 'INTEGER DEFAULT 0',
                 'tile_gradient_colors' => 'TEXT',
@@ -1040,7 +1041,9 @@ function initDatabase() {
                 'can_delete_tabs' => 'INTEGER DEFAULT 0',
                 'can_change_visibility' => 'INTEGER DEFAULT 0',
                 'can_change_browser' => 'INTEGER DEFAULT 0',
-                'can_clone_tile' => 'INTEGER DEFAULT 0'
+                'can_clone_tile' => 'INTEGER DEFAULT 0',
+                'can_view_tile_info' => 'INTEGER DEFAULT 1',
+                'can_edit_tile' => 'INTEGER DEFAULT 1'
             ];
             
             foreach ($granularPermissions as $columnName => $columnDef) {
@@ -2022,7 +2025,7 @@ function getTileAdminPermissions($userId, $tileId, $db) {
         SELECT 
             can_add_links, can_add_sections, can_add_tabs,
             can_edit_links, can_delete_links, can_delete_sections, can_delete_tabs,
-            can_change_visibility, can_change_browser, can_clone_tile
+            can_change_visibility, can_change_browser, can_clone_tile, can_view_tile_info, can_edit_tile
         FROM user_tile_permissions 
         WHERE user_id = ? AND tile_id = ? AND can_edit = 1
     ');
@@ -2043,7 +2046,9 @@ function getTileAdminPermissions($userId, $tileId, $db) {
         'canDeleteTabs' => (bool)($result['can_delete_tabs'] ?? false),
         'canChangeVisibility' => (bool)($result['can_change_visibility'] ?? false),
         'canChangeBrowser' => (bool)($result['can_change_browser'] ?? false),
-        'canCloneTile' => (bool)($result['can_clone_tile'] ?? false)
+        'canCloneTile' => (bool)($result['can_clone_tile'] ?? false),
+        'canViewTileInfo' => (bool)($result['can_view_tile_info'] ?? true),
+        'canEditTile' => (bool)($result['can_edit_tile'] ?? true)
     ];
 }
 
@@ -2082,7 +2087,9 @@ function canTileAdminPerformAction($userId, $tileId, $action, $db) {
         'delete_tab' => 'canDeleteTabs',
         'change_visibility' => 'canChangeVisibility',
         'change_browser' => 'canChangeBrowser',
-        'clone_tile' => 'canCloneTile'
+        'clone_tile' => 'canCloneTile',
+        'view_tile_info' => 'canViewTileInfo',
+        'edit_tile' => 'canEditTile'
     ];
     
     if (!isset($actionMap[$action])) {

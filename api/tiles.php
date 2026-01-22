@@ -168,7 +168,7 @@ function handleGetTiles() {
         }
         
         // Batch fetch all tile permissions (including granular permissions)
-        $permStmt = $db->prepare('SELECT tile_id, can_view, can_edit, can_delete, can_add_links, can_add_sections, can_add_tabs, can_edit_links, can_delete_links, can_delete_sections, can_delete_tabs, can_change_visibility, can_change_browser, can_clone_tile FROM user_tile_permissions WHERE user_id = ?');
+        $permStmt = $db->prepare('SELECT tile_id, can_view, can_edit, can_delete, can_add_links, can_add_sections, can_add_tabs, can_edit_links, can_delete_links, can_delete_sections, can_delete_tabs, can_change_visibility, can_change_browser, can_clone_tile, can_view_tile_info, can_edit_tile FROM user_tile_permissions WHERE user_id = ?');
         $permStmt->execute([$user['id']]);
         while ($perm = $permStmt->fetch()) {
             $tilePermissions[$perm['tile_id']] = $perm;
@@ -288,7 +288,9 @@ function handleGetTiles() {
                                     'canDeleteTabs' => (bool)($permission['can_delete_tabs'] ?? false),
                                     'canChangeVisibility' => (bool)($permission['can_change_visibility'] ?? false),
                                     'canChangeBrowser' => (bool)($permission['can_change_browser'] ?? false),
-                                    'canCloneTile' => (bool)($permission['can_clone_tile'] ?? false)
+                                    'canCloneTile' => (bool)($permission['can_clone_tile'] ?? false),
+                                    'canViewTileInfo' => (bool)($permission['can_view_tile_info'] ?? true),
+                                    'canEditTile' => (bool)($permission['can_edit_tile'] ?? true)
                                 ];
                             }
                         }
@@ -348,6 +350,8 @@ function handleGetTiles() {
             'canChangeVisibility' => $granularPermissions ? $granularPermissions['canChangeVisibility'] : null,
             'canChangeBrowser' => $granularPermissions ? $granularPermissions['canChangeBrowser'] : null,
             'canCloneTile' => $granularPermissions ? $granularPermissions['canCloneTile'] : null,
+            'canViewTileInfo' => $granularPermissions ? $granularPermissions['canViewTileInfo'] : null,
+            'canEditTile' => $granularPermissions ? $granularPermissions['canEditTile'] : null,
             'visibleFrom' => $row['visible_from'] ?? null,
             'expiresAt' => $row['expires_at'] ?? null,
             'hasRoleAccess' => $hasRoleAccess,
@@ -1507,9 +1511,9 @@ function handleUpdateLinksBrowser($tileId) {
         return;
     }
     
-    // Check granular permission for changing browser
+    // Check granular permission for changing browser (deny unless explicitly true; null = no tile-admin record = deny)
     $canChangeBrowser = canTileAdminPerformAction($user['id'], $tileId, 'change_browser', $db);
-    if ($canChangeBrowser === false) {
+    if ($canChangeBrowser !== true) {
         sendJSON(['error' => 'You do not have permission to change browser settings'], 403);
         return;
     }
@@ -1581,9 +1585,9 @@ function handleCloneTile($tileId) {
             return;
         }
         
-        // Check granular permission for cloning
+        // Check granular permission for cloning (deny unless explicitly true; null = no tile-admin record = deny)
         $canClone = canTileAdminPerformAction($user['id'], $tileId, 'clone_tile', $db);
-        if ($canClone === false) {
+        if ($canClone !== true) {
             $db->rollBack();
             sendJSON(['error' => 'You do not have permission to clone this tile'], 403);
             return;
@@ -3994,12 +3998,63 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         $visibleFrom = isset($data['visibleFrom']) && $data['visibleFrom'] ? $data['visibleFrom'] : null;
         $expiresAt = isset($data['expiresAt']) && $data['expiresAt'] ? $data['expiresAt'] : null;
         
-        // Check granular permissions for browser changes
-        if ($granularPerms !== null) {
-            $currentBrowser = $currentTileData['browser'] ?? null;
-            $newBrowser = isset($data['browser']) && $data['browser'] !== 'default' ? $data['browser'] : null;
-            if ($currentBrowser !== $newBrowser && !$granularPerms['canChangeBrowser']) {
-                throw new Exception('You do not have permission to change tile browser settings');
+        // Check granular permission for browser changes (tile-level and link-level). Deny unless explicitly true.
+        $canChangeBrowser = canTileAdminPerformAction($user['id'], $tileId, 'change_browser', $db);
+        $currentBrowser = $currentTileData['browser'] ?? null;
+        $newBrowser = isset($data['browser']) && $data['browser'] !== 'default' && $data['browser'] !== '' ? $data['browser'] : null;
+        if ($currentBrowser !== $newBrowser && $canChangeBrowser !== true) {
+            throw new Exception('You do not have permission to change tile browser settings');
+        }
+        // Build map of existing link id -> browser from current tile data
+        $oldLinkBrowsers = [];
+        foreach ($currentTileData['tabs'] ?? [] as $tab) {
+            foreach ($tab['sections'] ?? [] as $section) {
+                foreach ($section['links'] ?? [] as $link) {
+                    $lid = $link['id'] ?? null;
+                    if ($lid) {
+                        $lb = $link['browser'] ?? null;
+                        $oldLinkBrowsers[$lid] = ($lb === '' || $lb === 'default') ? null : $lb;
+                    }
+                }
+            }
+        }
+        foreach ($currentTileData['sections'] ?? [] as $section) {
+            foreach ($section['links'] ?? [] as $link) {
+                $lid = $link['id'] ?? null;
+                if ($lid && !array_key_exists($lid, $oldLinkBrowsers)) {
+                    $lb = $link['browser'] ?? null;
+                    $oldLinkBrowsers[$lid] = ($lb === '' || $lb === 'default') ? null : $lb;
+                }
+            }
+        }
+        // Check if any link's browser is being changed or a new link has browser set
+        $checkLinkBrowser = function ($links) use ($oldLinkBrowsers, $canChangeBrowser) {
+            foreach ($links as $link) {
+                $newLb = $link['browser'] ?? null;
+                $newLb = ($newLb === '' || $newLb === 'default') ? null : $newLb;
+                $lid = $link['id'] ?? null;
+                $oldLb = ($lid && array_key_exists($lid, $oldLinkBrowsers)) ? $oldLinkBrowsers[$lid] : null;
+                if ($oldLb !== $newLb && $canChangeBrowser !== true) {
+                    throw new Exception('You do not have permission to change link browser settings');
+                }
+            }
+        };
+        if (isset($data['tabs']) && is_array($data['tabs'])) {
+            foreach ($data['tabs'] as $tab) {
+                if (isset($tab['sections']) && is_array($tab['sections'])) {
+                    foreach ($tab['sections'] as $section) {
+                        if (isset($section['links']) && is_array($section['links'])) {
+                            $checkLinkBrowser($section['links']);
+                        }
+                    }
+                }
+            }
+        }
+        if (isset($data['sections']) && is_array($data['sections'])) {
+            foreach ($data['sections'] as $section) {
+                if (isset($section['links']) && is_array($section['links'])) {
+                    $checkLinkBrowser($section['links']);
+                }
             }
         }
         
@@ -4959,6 +5014,17 @@ function handleGetTileInfo($tileId) {
         sendJSON(['error' => 'Tile not found'], 404);
     }
     
+    // Check granular permission for viewing tile info (deny unless explicitly true)
+    if ($user && !$user['is_admin']) {
+        $isCreator = isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id'];
+        if (!$isCreator) {
+            $canViewInfo = canTileAdminPerformAction($user['id'], $tileId, 'view_tile_info', $db);
+            if ($canViewInfo !== true) {
+                sendJSON(['error' => 'You do not have permission to view tile information'], 403);
+            }
+        }
+    }
+    
     // Get user permissions
     $canView = true;
     $canEdit = false;
@@ -4977,7 +5043,7 @@ function handleGetTileInfo($tileId) {
                 $canEdit = true;
                 $canDelete = true;
             } else {
-                $permStmt = $db->prepare('SELECT can_view, can_edit, can_delete, can_add_links, can_add_sections, can_add_tabs, can_edit_links, can_delete_links, can_delete_sections, can_delete_tabs, can_change_visibility, can_change_browser, can_clone_tile FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+                $permStmt = $db->prepare('SELECT can_view, can_edit, can_delete, can_add_links, can_add_sections, can_add_tabs, can_edit_links, can_delete_links, can_delete_sections, can_delete_tabs, can_change_visibility, can_change_browser, can_clone_tile, can_view_tile_info, can_edit_tile FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
                 $permStmt->execute([$user['id'], $tileId]);
                 $permission = $permStmt->fetch();
                 if ($permission) {
@@ -5002,7 +5068,9 @@ function handleGetTileInfo($tileId) {
                                 'canDeleteTabs' => (bool)($permission['can_delete_tabs'] ?? false),
                                 'canChangeVisibility' => (bool)($permission['can_change_visibility'] ?? false),
                                 'canChangeBrowser' => (bool)($permission['can_change_browser'] ?? false),
-                                'canCloneTile' => (bool)($permission['can_clone_tile'] ?? false)
+                                'canCloneTile' => (bool)($permission['can_clone_tile'] ?? false),
+                                'canViewTileInfo' => (bool)($permission['can_view_tile_info'] ?? true),
+                                'canEditTile' => (bool)($permission['can_edit_tile'] ?? true)
                             ];
                         }
                     }
@@ -5029,6 +5097,8 @@ function handleGetTileInfo($tileId) {
             utp.can_change_visibility,
             utp.can_change_browser,
             utp.can_clone_tile,
+            utp.can_view_tile_info,
+            utp.can_edit_tile,
             u.username,
             u.email
         FROM user_tile_permissions utp
@@ -5055,7 +5125,9 @@ function handleGetTileInfo($tileId) {
                 'canDeleteTabs' => isset($admin['can_delete_tabs']) ? (bool)$admin['can_delete_tabs'] : false,
                 'canChangeVisibility' => isset($admin['can_change_visibility']) ? (bool)$admin['can_change_visibility'] : false,
                 'canChangeBrowser' => isset($admin['can_change_browser']) ? (bool)$admin['can_change_browser'] : false,
-                'canCloneTile' => isset($admin['can_clone_tile']) ? (bool)$admin['can_clone_tile'] : false
+                'canCloneTile' => isset($admin['can_clone_tile']) ? (bool)$admin['can_clone_tile'] : false,
+                'canViewTileInfo' => isset($admin['can_view_tile_info']) ? (bool)$admin['can_view_tile_info'] : true,
+                'canEditTile' => isset($admin['can_edit_tile']) ? (bool)$admin['can_edit_tile'] : true
             ]
         ];
     }
@@ -5096,6 +5168,9 @@ function handleGetTileInfo($tileId) {
     ];
     
     // Add granular permissions for current user if they are a tile admin
+    if ($granularPermissions) {
+        $response['granularPermissions'] = $granularPermissions;
+    }
     if ($granularPermissions) {
         $response['granularPermissions'] = $granularPermissions;
     }

@@ -97,6 +97,8 @@ export interface Tile {
   canChangeVisibility?: boolean;
   canChangeBrowser?: boolean;
   canCloneTile?: boolean;
+  canViewTileInfo?: boolean;
+  canEditTile?: boolean;
   deletedAt?: number; // Timestamp when tile was deleted (for recycle bin)
   visibleFrom?: string; // ISO date string - tile becomes visible from this date/time
   expiresAt?: string; // ISO date string - tile expires at this date/time

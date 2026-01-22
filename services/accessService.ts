@@ -16,6 +16,8 @@ export interface TilePermission {
   canChangeVisibility?: boolean;
   canChangeBrowser?: boolean;
   canCloneTile?: boolean;
+  canViewTileInfo?: boolean;
+  canEditTile?: boolean;
   createdAt: number;
   updatedAt: number;
   username?: string;
@@ -69,6 +71,8 @@ export interface SetPermissionRequest {
   canChangeVisibility?: boolean;
   canChangeBrowser?: boolean;
   canCloneTile?: boolean;
+  canViewTileInfo?: boolean;
+  canEditTile?: boolean;
 }
 
 export interface BatchTilePermissionsResponse {
@@ -174,6 +178,8 @@ export const accessService = {
       canChangeVisibility?: boolean;
       canChangeBrowser?: boolean;
       canCloneTile?: boolean;
+      canViewTileInfo?: boolean;
+      canEditTile?: boolean;
     }
   ): Promise<void> {
     const permissionId = `${userId}_${tileId}`;
