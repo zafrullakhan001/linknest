@@ -16,6 +16,8 @@ switch ($method) {
             handleGetRoleLinks($matches[1]);
         } elseif (preg_match('#^/(\d+)/tabs$#', $path, $matches)) {
             handleGetRoleTabs($matches[1]);
+        } elseif (preg_match('#^/(\d+)/widgets$#', $path, $matches)) {
+            handleGetRoleWidgets($matches[1]);
         } elseif ($path === '/current-user/tabs' || $path === '/current-user/tabs/') {
             handleGetCurrentUserTabs();
         } elseif (preg_match('#^/user/(\d+)$#', $path, $matches)) {
@@ -36,6 +38,8 @@ switch ($method) {
             handleAssignLinksToRole($matches[1]);
         } elseif (preg_match('#^/(\d+)/assign-tabs$#', $path, $matches)) {
             handleAssignTabsToRole($matches[1]);
+        } elseif (preg_match('#^/(\d+)/assign-widgets$#', $path, $matches)) {
+            handleAssignWidgetsToRole($matches[1]);
         } elseif (preg_match('#^/user/(\d+)/assign$#', $path, $matches)) {
             handleAssignRolesToUser($matches[1]);
         } elseif ($path === '/bulk-assign' || $path === '/bulk-assign/') {
@@ -62,6 +66,8 @@ switch ($method) {
             handleRemoveTileFromRole($matches[1], $matches[2]);
         } elseif (preg_match('#^/(\d+)/link/(.+)$#', $path, $matches)) {
             handleRemoveLinkFromRole($matches[1], $matches[2]);
+        } elseif (preg_match('#^/(\d+)/widget/(.+)$#', $path, $matches)) {
+            handleRemoveWidgetFromRole($matches[1], $matches[2]);
         } elseif (preg_match('#^/user/(\d+)/role/(\d+)$#', $path, $matches)) {
             handleRemoveRoleFromUser($matches[1], $matches[2]);
         } else {
@@ -82,11 +88,13 @@ function handleGetRoles() {
             r.*,
             COUNT(DISTINCT ur.user_id) as user_count,
             COUNT(DISTINCT rtp.tile_id) as tile_count,
-            COUNT(DISTINCT rlp.link_id) as link_count
+            COUNT(DISTINCT rlp.link_id) as link_count,
+            COUNT(DISTINCT rwp.widget_id) as widget_count
         FROM roles r
         LEFT JOIN user_roles ur ON r.id = ur.role_id
         LEFT JOIN role_tile_permissions rtp ON r.id = rtp.role_id
         LEFT JOIN role_link_permissions rlp ON r.id = rlp.role_id
+        LEFT JOIN role_widget_permissions rwp ON r.id = rwp.role_id
         GROUP BY r.id
         ORDER BY r.name
     ');
@@ -100,6 +108,7 @@ function handleGetRoles() {
             'userCount' => (int)$row['user_count'],
             'tileCount' => (int)$row['tile_count'],
             'linkCount' => (int)$row['link_count'],
+            'widgetCount' => (int)$row['widget_count'],
             'createdAt' => (int)$row['created_at'],
             'updatedAt' => (int)$row['updated_at']
         ];
@@ -222,6 +231,40 @@ function handleGetRoleLinks($roleId) {
     }
     
     sendJSON($links);
+}
+
+function handleGetRoleWidgets($roleId) {
+    requireAdmin();
+    $db = getDB();
+    
+    // Verify role exists
+    $roleCheck = $db->prepare('SELECT id FROM roles WHERE id = ?');
+    $roleCheck->execute([$roleId]);
+    if (!$roleCheck->fetch()) {
+        sendJSON(['error' => 'Role not found'], 404);
+    }
+    
+    $stmt = $db->prepare('
+        SELECT 
+            rwp.widget_id,
+            rwp.can_view,
+            rwp.created_at
+        FROM role_widget_permissions rwp
+        WHERE rwp.role_id = ?
+        ORDER BY rwp.widget_id
+    ');
+    $stmt->execute([$roleId]);
+    
+    $widgets = [];
+    while ($row = $stmt->fetch()) {
+        $widgets[] = [
+            'widgetId' => $row['widget_id'],
+            'canView' => (bool)$row['can_view'],
+            'createdAt' => (int)$row['created_at']
+        ];
+    }
+    
+    sendJSON($widgets);
 }
 
 function handleGetUserRoles($userId) {
@@ -522,6 +565,72 @@ function handleAssignLinksToRole($roleId) {
     }
 }
 
+function handleAssignWidgetsToRole($roleId) {
+    requireAdmin();
+    $data = getJSONInput();
+    
+    if (!isset($data['widgetIds']) || !is_array($data['widgetIds'])) {
+        sendJSON(['error' => 'widgetIds array is required'], 400);
+    }
+    
+    $db = getDB();
+    
+    // Verify role exists
+    $roleCheck = $db->prepare('SELECT id FROM roles WHERE id = ?');
+    $roleCheck->execute([$roleId]);
+    if (!$roleCheck->fetch()) {
+        sendJSON(['error' => 'Role not found'], 404);
+    }
+    
+    // Valid widget IDs
+    $validWidgetIds = [
+        'clock',
+        'weather',
+        'calculator',
+        'notes',
+        'password-generator',
+        'phonetic-alphabet',
+        'zoom-control',
+        'theme',
+        'fav-organizer',
+        'chat',
+        'snake-game'
+    ];
+    
+    $currentTime = time();
+    $canView = isset($data['canView']) ? (int)(bool)$data['canView'] : 1;
+    
+    $db->beginTransaction();
+    try {
+        // First, delete all existing widget assignments for this role
+        $deleteStmt = $db->prepare('DELETE FROM role_widget_permissions WHERE role_id = ?');
+        $deleteStmt->execute([$roleId]);
+        
+        // Then, insert only the selected widgets (if any)
+        if (!empty($data['widgetIds'])) {
+            $stmt = $db->prepare('
+                INSERT INTO role_widget_permissions (role_id, widget_id, can_view, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+            ');
+            
+            foreach ($data['widgetIds'] as $widgetId) {
+                // Validate widget ID
+                if (!in_array($widgetId, $validWidgetIds, true)) {
+                    continue; // Skip invalid widgets
+                }
+                
+                $stmt->execute([$roleId, $widgetId, $canView, $currentTime, $currentTime]);
+            }
+        }
+        
+        $db->commit();
+        sendJSON(['success' => true]);
+    } catch (PDOException $e) {
+        $db->rollBack();
+        sendJSON(['error' => 'Failed to assign widgets: ' . $e->getMessage()], 500);
+    }
+}
+
 function handleAssignRolesToUser($userId) {
     requireAdmin();
     $data = getJSONInput();
@@ -684,6 +793,16 @@ function handleRemoveLinkFromRole($roleId, $linkId) {
     
     $stmt = $db->prepare('DELETE FROM role_link_permissions WHERE role_id = ? AND link_id = ?');
     $stmt->execute([$roleId, $linkId]);
+    
+    sendJSON(['success' => true]);
+}
+
+function handleRemoveWidgetFromRole($roleId, $widgetId) {
+    requireAdmin();
+    $db = getDB();
+    
+    $stmt = $db->prepare('DELETE FROM role_widget_permissions WHERE role_id = ? AND widget_id = ?');
+    $stmt->execute([$roleId, $widgetId]);
     
     sendJSON(['success' => true]);
 }

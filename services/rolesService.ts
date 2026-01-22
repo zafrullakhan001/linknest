@@ -7,6 +7,7 @@ export interface Role {
   userCount?: number;
   tileCount?: number;
   linkCount?: number;
+  widgetCount?: number;
   createdAt: number;
   updatedAt: number;
   users?: Array<{
@@ -93,8 +94,19 @@ export interface RoleTabPermission {
   createdAt: number;
 }
 
+export interface RoleWidgetPermission {
+  widgetId: string;
+  canView: boolean;
+  createdAt: number;
+}
+
 export interface AssignTabsRequest {
   tabIds: string[];
+  canView?: boolean;
+}
+
+export interface AssignWidgetsRequest {
+  widgetIds: string[];
   canView?: boolean;
 }
 
@@ -164,6 +176,20 @@ export const rolesService = {
     if (!response.ok) {
       const data = await response.json();
       throw new Error(data.error || 'Failed to fetch role tabs');
+    }
+
+    return response.json();
+  },
+
+  async getRoleWidgets(roleId: number): Promise<RoleWidgetPermission[]> {
+    const response = await fetch(`${API_BASE}/roles/${roleId}/widgets`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to fetch role widgets');
     }
 
     return response.json();
@@ -327,6 +353,20 @@ export const rolesService = {
     }
   },
 
+  async assignWidgetsToRole(roleId: number, request: AssignWidgetsRequest): Promise<void> {
+    const response = await fetch(`${API_BASE}/roles/${roleId}/assign-widgets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to assign widgets to role');
+    }
+  },
+
   async getCurrentUserAllowedTabs(): Promise<string[]> {
     const response = await fetch(`${API_BASE}/roles/current-user/tabs`, {
       method: 'GET',
@@ -362,6 +402,18 @@ export const rolesService = {
     if (!response.ok) {
       const data = await response.json();
       throw new Error(data.error || 'Failed to remove link from role');
+    }
+  },
+
+  async removeWidgetFromRole(roleId: number, widgetId: string): Promise<void> {
+    const response = await fetch(`${API_BASE}/roles/${roleId}/widget/${encodeURIComponent(widgetId)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to remove widget from role');
     }
   },
 

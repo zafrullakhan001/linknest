@@ -1699,6 +1699,17 @@ function initDatabase() {
             FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
         )');
         
+        // Create role_widget_permissions table for role-based widget access
+        $db->exec('CREATE TABLE IF NOT EXISTS role_widget_permissions (
+            role_id INTEGER NOT NULL,
+            widget_id TEXT NOT NULL,
+            can_view INTEGER DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (role_id, widget_id),
+            FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+        )');
+        
         // Initialize default settings if they don't exist
         $defaultSettings = [
             ['app_name', 'LinkNest', time()],
@@ -1782,6 +1793,8 @@ function createDatabaseIndexes($db) {
             $db->exec('CREATE INDEX IF NOT EXISTS idx_role_link_permissions_link_id ON role_link_permissions(link_id)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_role_tab_permissions_role_id ON role_tab_permissions(role_id)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_role_tab_permissions_tab_id ON role_tab_permissions(tab_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_role_widget_permissions_role_id ON role_widget_permissions(role_id)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_role_widget_permissions_widget_id ON role_widget_permissions(widget_id)');
             
             // User tile permissions indexes for faster lookups
             $db->exec('CREATE INDEX IF NOT EXISTS idx_user_tile_permissions_user_id ON user_tile_permissions(user_id)');

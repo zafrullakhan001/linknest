@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { authService, PendingUser, AllUser } from '../services/authService';
 import { settingsService, AppSettings } from '../services/settingsService';
 import { databaseService } from '../services/databaseService';
@@ -188,6 +188,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [showRoleTilesModal, setShowRoleTilesModal] = useState(false);
   const [showRoleTabsModal, setShowRoleTabsModal] = useState(false);
+  const [showRoleWidgetsModal, setShowRoleWidgetsModal] = useState(false);
   const [showUserRolesModal, setShowUserRolesModal] = useState(false);
   const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
@@ -211,6 +212,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [selectedTileIds, setSelectedTileIds] = useState<Set<string>>(new Set());
   const [selectedLinkIds, setSelectedLinkIds] = useState<Set<string>>(new Set());
   const [selectedTabIds, setSelectedTabIds] = useState<Set<string>>(new Set());
+  const [selectedWidgetIds, setSelectedWidgetIds] = useState<Set<string>>(new Set());
+  const [roleWidgetsLoading, setRoleWidgetsLoading] = useState(false);
   const [tileSearchTerm, setTileSearchTerm] = useState('');
   const [linkSearchTerm, setLinkSearchTerm] = useState('');
   const [expandedTiles, setExpandedTiles] = useState<Set<string>>(new Set());
@@ -491,6 +494,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           setShowRoleTabsModal(false);
           setSelectedRole(null);
           setSelectedTabIds(new Set());
+        } else if (showRoleWidgetsModal) {
+          setShowRoleWidgetsModal(false);
+          setSelectedRole(null);
+          setSelectedWidgetIds(new Set());
         } else if (showBulkAssignModal) {
           setShowBulkAssignModal(false);
           setBulkSelectedUserIds([]);
@@ -516,6 +523,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       showRoleModal ||
       showRoleTilesModal ||
       showRoleTabsModal ||
+      showRoleWidgetsModal ||
       showUserRolesModal ||
       showBulkAssignModal
     )) {
@@ -530,6 +538,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     showRoleModal,
     showRoleTilesModal,
     showRoleTabsModal,
+    showRoleWidgetsModal,
     showUserRolesModal,
     showBulkAssignModal
   ]);
@@ -1289,6 +1298,44 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       await loadRoles();
     } catch (err: any) {
       setError(err.message || 'Failed to assign tabs');
+    }
+  };
+
+  const handleManageRoleWidgets = async (role: Role) => {
+    setSelectedRole(role);
+    setRoleWidgetsLoading(true);
+    setSelectedWidgetIds(new Set());
+    try {
+      // Load existing widget assignments for this role
+      try {
+        const roleWidgets = await rolesService.getRoleWidgets(role.id);
+        const existingWidgetIds = new Set(roleWidgets.map(rw => rw.widgetId));
+        setSelectedWidgetIds(existingWidgetIds);
+      } catch (err) {
+        // Ignore if no widgets assigned yet
+      }
+      setShowRoleWidgetsModal(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load widgets');
+    } finally {
+      setRoleWidgetsLoading(false);
+    }
+  };
+
+  const handleAssignWidgetsToRole = async () => {
+    if (!selectedRole) {
+      setError('No role selected');
+      return;
+    }
+
+    try {
+      setError('');
+      await rolesService.assignWidgetsToRole(selectedRole.id, { widgetIds: Array.from(selectedWidgetIds), canView: true });
+      setShowRoleWidgetsModal(false);
+      setSelectedWidgetIds(new Set());
+      await loadRoles();
+    } catch (err: any) {
+      setError(err.message || 'Failed to assign widgets');
     }
   };
 
@@ -6530,6 +6577,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Users</th>
                                 <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Tiles</th>
                                 <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Links</th>
+                                <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Widgets</th>
                                 <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
                               </tr>
                             </thead>
@@ -6557,6 +6605,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       {role.linkCount || 0}
                                     </span>
                                   </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
+                                      {role.widgetCount || 0}
+                                    </span>
+                                  </td>
                                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                     <div className="flex justify-end gap-2 flex-wrap">
                                       <button
@@ -6576,6 +6629,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         className="text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-300 transition-colors"
                                       >
                                         Tabs
+                                      </button>
+                                      <button
+                                        onClick={() => handleManageRoleWidgets(role)}
+                                        className="text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300 transition-colors"
+                                      >
+                                        Widgets
                                       </button>
                                       <button
                                         onClick={() => handleDeleteRole(role.id)}
@@ -9913,6 +9972,140 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       )}
 
       {/* Role Links Modal - REMOVED - Now combined with Tiles Modal */}
+
+      {/* Role Widgets Modal */}
+      {showRoleWidgetsModal && selectedRole && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                  Assign Widgets to Role: {selectedRole.name}
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowRoleWidgetsModal(false);
+                    setSelectedWidgetIds(new Set());
+                    setError('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              {roleWidgetsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    Select widgets that users with this role can access. Users will only see widgets that are assigned to their roles.
+                  </p>
+                  
+                  <div className="space-y-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30 p-4">
+                    {[
+                      { id: 'clock', label: 'Clock', description: 'Time and timezone display widget' },
+                      { id: 'weather', label: 'Weather', description: 'Weather information widget' },
+                      { id: 'calculator', label: 'Calculator', description: 'Calculator widget' },
+                      { id: 'notes', label: 'Notes', description: 'Personal notes widget (requires authentication)' },
+                      { id: 'password-generator', label: 'Password Generator', description: 'Generate secure passwords' },
+                      { id: 'phonetic-alphabet', label: 'Phonetic Alphabet', description: 'Phonetic alphabet reference' },
+                      { id: 'zoom-control', label: 'Zoom Control', description: 'Page zoom control widget' },
+                      { id: 'theme', label: 'Theme', description: 'Theme switcher widget' },
+                      { id: 'fav-organizer', label: 'Favorite Organizer', description: 'Organize favorite links' },
+                      { id: 'chat', label: 'Chat', description: 'Chat widget (requires authentication)' },
+                      { id: 'snake-game', label: 'Snake Game', description: 'Snake game widget' }
+                    ].map((widget) => (
+                      <label
+                        key={widget.id}
+                        className="flex items-start gap-3 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-lg cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedWidgetIds.has(widget.id)}
+                          onChange={(e) => {
+                            const newWidgetSet = new Set(selectedWidgetIds);
+                            if (e.target.checked) {
+                              newWidgetSet.add(widget.id);
+                            } else {
+                              newWidgetSet.delete(widget.id);
+                            }
+                            setSelectedWidgetIds(newWidgetSet);
+                          }}
+                          className="mt-1 h-4 w-4 text-brand-600 focus:ring-brand-500 border-slate-300 rounded"
+                        />
+                        <div className="flex-1">
+                          <div className="text-sm font-medium text-slate-900 dark:text-white">
+                            {widget.label}
+                          </div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                            {widget.description}
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-700">
+                    <div className="text-sm text-slate-600 dark:text-slate-400">
+                      {selectedWidgetIds.size} widget{selectedWidgetIds.size !== 1 ? 's' : ''} selected
+                    </div>
+                    <button
+                      onClick={() => {
+                        const allWidgetIds = [
+                          'clock', 'weather', 'calculator', 'notes', 'password-generator',
+                          'phonetic-alphabet', 'zoom-control', 'theme', 'fav-organizer',
+                          'chat', 'snake-game'
+                        ];
+                        if (selectedWidgetIds.size === allWidgetIds.length) {
+                          setSelectedWidgetIds(new Set());
+                        } else {
+                          setSelectedWidgetIds(new Set(allWidgetIds));
+                        }
+                      }}
+                      className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                    >
+                      {selectedWidgetIds.size === 11 ? 'Deselect All' : 'Select All'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="flex gap-3 p-6 border-t border-slate-200 dark:border-slate-700">
+              <button
+                onClick={() => {
+                  setShowRoleWidgetsModal(false);
+                  setSelectedWidgetIds(new Set());
+                  setError('');
+                }}
+                className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAssignWidgetsToRole}
+                disabled={roleWidgetsLoading}
+                className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                Assign {selectedWidgetIds.size > 0 ? `${selectedWidgetIds.size} ` : ''}Widget{selectedWidgetIds.size !== 1 ? 's' : ''}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Role Tabs Modal */}
       {showRoleTabsModal && selectedRole && (
