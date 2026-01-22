@@ -102,7 +102,20 @@ export const createTile = async (tile: Tile): Promise<Tile> => {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to create tile');
+      let errorMessage = 'Failed to create tile';
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorData.message || errorMessage;
+        if (errorData.details) {
+          errorMessage += `: ${errorData.details}`;
+        }
+      } catch {
+        // If response is not JSON, use status text
+        errorMessage = `Failed to create tile (${response.status} ${response.statusText})`;
+      }
+      const error = new Error(errorMessage) as any;
+      error.response = { status: response.status };
+      throw error;
     }
 
     const data = await response.json();

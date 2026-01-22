@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { createTile } from '../services/storageService';
+import { createTile, getTiles } from '../services/storageService';
 import { parseSpaceExportObject, normalizeImportedTiles } from '../services/spaceTransferService';
 import { settingsService } from '../services/settingsService';
 
@@ -97,6 +97,10 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
   // Import to category state
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [categoryName, setCategoryName] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [createNewCategory, setCreateNewCategory] = useState<boolean>(false);
+  const [availableCategories, setAvailableCategories] = useState<string[]>([]);
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
   const [importProgress, setImportProgress] = useState<{
     current: number;
     total: number;
@@ -190,6 +194,44 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
     };
     fetchSettings();
   }, []);
+
+  // Fetch available categories from private tabs when import dialog opens
+  useEffect(() => {
+    const fetchCategories = async () => {
+      if (showImportDialog) {
+        try {
+          const tiles = await getTiles();
+          // Get categories from tiles that have private tabs
+          const categoriesSet = new Set<string>();
+          tiles.forEach(tile => {
+            // Check if tile has tabs with private visibility
+            if (tile.tabs && Array.isArray(tile.tabs)) {
+              const hasPrivateTab = tile.tabs.some(tab => tab.visibility === 'private');
+              if (hasPrivateTab && tile.group) {
+                categoriesSet.add(tile.group);
+              }
+            }
+            // Also include tiles with private visibility themselves
+            if (tile.visibility === 'private' && tile.group) {
+              categoriesSet.add(tile.group);
+            }
+          });
+          const categories = Array.from(categoriesSet).sort();
+          setAvailableCategories(categories);
+          
+          // If no categories found, default to creating a new one
+          if (categories.length === 0) {
+            setCreateNewCategory(true);
+          }
+        } catch (err) {
+          console.error('Failed to fetch categories:', err);
+          setAvailableCategories([]);
+          setCreateNewCategory(true); // Default to creating new category on error
+        }
+      }
+    };
+    fetchCategories();
+  }, [showImportDialog]);
 
   // Detect Browser Launcher Pro extension
   const detectExtension = useCallback(() => {
@@ -1282,10 +1324,12 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
       return;
     }
 
-    const finalCategoryName = categoryName.trim() || 'Imported Bookmarks';
+    const finalCategoryName = createNewCategory 
+      ? categoryName.trim() 
+      : selectedCategory;
 
     if (!finalCategoryName) {
-      setError('Please enter a category name');
+      setError(createNewCategory ? 'Please enter a category name' : 'Please select a category');
       return;
     }
 
@@ -1306,11 +1350,102 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
       const parsed = parseSpaceExportObject(data);
       const normalizedTiles = normalizeImportedTiles(parsed);
 
-      // Update group to the new category name
-      const tilesToImport = normalizedTiles.map(tile => ({
-        ...tile,
-        group: finalCategoryName
-      }));
+      // Update group to the category name and ensure tabs are private
+      const tilesToImport = normalizedTiles
+        .filter(tile => {
+          // Validate tile has required fields
+          if (!tile.title || tile.title.trim() === '') {
+            return false;
+          }
+          return true;
+        })
+        .map((tile, tileIndex) => {
+          const updatedTile = {
+            ...tile,
+            group: finalCategoryName,
+            createdAt: tile.createdAt || Date.now(),
+            emoji: tile.emoji || '📁',
+            themeColor: tile.themeColor || 'blue',
+            description: tile.description || ''
+          };
+
+          // Ensure all tabs have private visibility and clean up links
+          if (updatedTile.tabs && Array.isArray(updatedTile.tabs)) {
+            updatedTile.tabs = updatedTile.tabs.map((tab, tabIndex) => ({
+              ...tab,
+              id: tab.id || `tab_${Date.now()}_${tileIndex}_${tabIndex}`,
+              title: tab.title || 'Main',
+              position: typeof tab.position === 'number' ? tab.position : tabIndex,
+              visibility: 'private' as const,
+              sections: Array.isArray(tab.sections) ? tab.sections.map((section, secIndex) => ({
+                ...section,
+                id: section.id || `sec_${Date.now()}_${tileIndex}_${tabIndex}_${secIndex}`,
+                title: section.title || '',
+                position: typeof section.position === 'number' ? section.position : secIndex,
+                links: Array.isArray(section.links) ? section.links
+                  .filter(link => link && link.url && link.url.trim() !== '' && link.label && link.label.trim() !== '')
+                  .map((link, linkIndex) => ({
+                    ...link,
+                    id: link.id || `link_${Date.now()}_${tileIndex}_${tabIndex}_${secIndex}_${linkIndex}`,
+                    label: String(link.label || '').trim(),
+                    url: String(link.url || '').trim(),
+                    visibility: 'private' as const,
+                    position: typeof link.position === 'number' ? link.position : linkIndex
+                  })) : []
+              })) : []
+            }));
+          } else if (updatedTile.sections && Array.isArray(updatedTile.sections)) {
+            // If using old sections format, convert to tabs with private visibility
+            updatedTile.tabs = [{
+              id: `tab_${Date.now()}_${tileIndex}_0`,
+              title: 'Main',
+              position: 0,
+              visibility: 'private' as const,
+              sections: updatedTile.sections
+                .map((section, secIndex) => ({
+                  ...section,
+                  id: section.id || `sec_${Date.now()}_${tileIndex}_0_${secIndex}`,
+                  title: section.title || '',
+                  position: typeof section.position === 'number' ? section.position : secIndex,
+                  links: Array.isArray(section.links) ? section.links
+                    .filter(link => link && link.url && link.url.trim() !== '' && link.label && link.label.trim() !== '')
+                    .map((link, linkIndex) => ({
+                      ...link,
+                      id: link.id || `link_${Date.now()}_${tileIndex}_0_${secIndex}_${linkIndex}`,
+                      label: String(link.label || '').trim(),
+                      url: String(link.url || '').trim(),
+                      visibility: 'private' as const,
+                      position: typeof link.position === 'number' ? link.position : linkIndex
+                    })) : []
+                }))
+                .filter(section => section.links.length > 0) // Only keep sections with valid links
+            }];
+          } else {
+            // Create a default private tab if no tabs/sections exist
+            updatedTile.tabs = [{
+              id: `tab_${Date.now()}_${tileIndex}_0`,
+              title: 'Main',
+              position: 0,
+              sections: [],
+              visibility: 'private' as const
+            }];
+          }
+
+          // Ensure tile visibility is private
+          updatedTile.visibility = 'private';
+
+          return updatedTile;
+        })
+        .filter(tile => {
+          // Filter out tiles that have no valid links in any tab
+          if (!tile.tabs || tile.tabs.length === 0) return false;
+          const hasValidLinks = tile.tabs.some(tab => 
+            tab.sections && tab.sections.some(section => 
+              section.links && section.links.length > 0
+            )
+          );
+          return hasValidLinks;
+        });
 
       if (tilesToImport.length === 0) {
         setError('No tiles found to import.');
@@ -1334,6 +1469,16 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
       for (let i = 0; i < tilesToImport.length; i++) {
         const tile = tilesToImport[i];
         try {
+          // Validate tile before sending
+          if (!tile.title || tile.title.trim() === '') {
+            throw new Error('Tile title is required');
+          }
+          
+          // Ensure createdAt is a number (timestamp)
+          if (!tile.createdAt || typeof tile.createdAt !== 'number') {
+            tile.createdAt = Date.now();
+          }
+
           await createTile(tile);
           successCount++;
 
@@ -1346,9 +1491,21 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
           });
         } catch (error) {
           errorCount++;
-          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-          errors.push(`Failed to import "${tile.title}": ${errorMsg}`);
+          let errorMsg = 'Unknown error';
+          if (error instanceof Error) {
+            errorMsg = error.message;
+            // Try to get more details from the error
+            if (error.message.includes('Failed to create tile')) {
+              // Check if we can get more info from the response
+              const responseError = (error as any).response;
+              if (responseError) {
+                errorMsg = `Failed to create tile (HTTP ${responseError.status})`;
+              }
+            }
+          }
+          errors.push(`Failed to import "${tile.title || 'Untitled'}": ${errorMsg}`);
           console.error('Failed to import tile:', tile.title, error);
+          console.error('Tile data:', JSON.stringify(tile, null, 2));
 
           // Update progress with error
           setImportProgress({
@@ -1374,6 +1531,9 @@ IMPORTANT: Return ONLY valid JSON. No markdown code blocks, no explanations, no 
         setTimeout(() => {
           setShowImportDialog(false);
           setCategoryName('');
+          setSelectedCategory('');
+          setCreateNewCategory(false);
+          setWizardStep(1);
           setImportProgress(null);
         }, 3000);
       } else {
@@ -2287,6 +2447,15 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
     URL.revokeObjectURL(url);
   };
 
+  // Determine current wizard step based on state
+  const getCurrentWizardStep = (): 1 | 2 | 3 => {
+    if (organizedJson) return 3; // Step 3: Import (JSON is ready)
+    if (bookmarks.length > 0 || manualTiles.length > 0) return 2; // Step 2: Organize (bookmarks loaded)
+    return 1; // Step 1: Upload (initial state)
+  };
+
+  const currentWizardStep = getCurrentWizardStep();
+
   return (
     <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 p-4 min-w-[400px] max-w-[600px] max-h-[90vh] overflow-y-auto">
       <div className="mb-4">
@@ -2299,6 +2468,58 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
           Extract browser favorites and organize them into tiles, sections, and links
         </p>
 
+        {/* Wizard Steps Indicator - Horizontal Installation Wizard Style */}
+        <div className="mb-6 pb-4 border-b border-slate-200 dark:border-slate-700">
+          <div className="flex items-center">
+            {/* Step 1 */}
+            <div className="flex items-center">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${
+                currentWizardStep >= 1 
+                  ? 'bg-emerald-500 text-white' 
+                  : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+              }`}>
+                1
+              </div>
+              <span className={`ml-2 text-xs font-medium ${currentWizardStep >= 1 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                Upload
+              </span>
+            </div>
+            
+            {/* Connector 1 */}
+            <div className={`flex-1 h-0.5 mx-3 ${currentWizardStep >= 2 ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'}`} />
+            
+            {/* Step 2 */}
+            <div className="flex items-center">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${
+                currentWizardStep >= 2 
+                  ? 'bg-emerald-500 text-white' 
+                  : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+              }`}>
+                2
+              </div>
+              <span className={`ml-2 text-xs font-medium ${currentWizardStep >= 2 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                Organize
+              </span>
+            </div>
+            
+            {/* Connector 2 */}
+            <div className={`flex-1 h-0.5 mx-3 ${currentWizardStep >= 3 ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'}`} />
+            
+            {/* Step 3 */}
+            <div className="flex items-center">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${
+                currentWizardStep >= 3 
+                  ? 'bg-emerald-500 text-white' 
+                  : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+              }`}>
+                3
+              </div>
+              <span className={`ml-2 text-xs font-medium ${currentWizardStep >= 3 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                Import
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {activeTab === 'ai' ? (
@@ -3063,22 +3284,28 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
           {/* Import to Category Button */}
           <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
             <button
-              onClick={() => setShowImportDialog(true)}
+              onClick={() => {
+                setShowImportDialog(true);
+                setWizardStep(3); // Start at step 3 since steps 1 & 2 (Upload & Organize) are already done
+                setCreateNewCategory(false);
+                setSelectedCategory('');
+                setCategoryName('');
+              }}
               disabled={loading}
               className="w-full px-4 py-2 bg-emerald-500 text-white rounded hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
             >
-              📥 Import to New Category
+              📥 Import to Category
             </button>
           </div>
         </div>
       )}
 
-      {/* Import Dialog */}
+      {/* Import Dialog - Wizard Style */}
       {showImportDialog && organizedJson && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
                   Import to Category
                 </h3>
@@ -3086,6 +3313,9 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
                   onClick={() => {
                     setShowImportDialog(false);
                     setCategoryName('');
+                    setSelectedCategory('');
+                    setCreateNewCategory(false);
+                    setWizardStep(1);
                     setImportProgress(null);
                   }}
                   className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
@@ -3095,22 +3325,143 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
                 </button>
               </div>
 
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Category Name
-                </label>
-                <input
-                  type="text"
-                  value={categoryName}
-                  onChange={(e) => setCategoryName(e.target.value)}
-                  placeholder="e.g., My Bookmarks, Work Links, etc."
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  disabled={loading}
-                />
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  A new category will be created with this name
-                </p>
+              {/* Wizard Steps Indicator - Horizontal Installation Wizard Style */}
+              <div className="mb-6">
+                <div className="flex items-center">
+                  {/* Step 1 */}
+                  <div className="flex items-center">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${
+                      wizardStep >= 1 
+                        ? 'bg-emerald-500 text-white' 
+                        : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                    }`}>
+                      1
+                    </div>
+                    <span className={`ml-2 text-xs font-medium ${wizardStep >= 1 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                      Upload
+                    </span>
+                  </div>
+                  
+                  {/* Connector 1 */}
+                  <div className={`flex-1 h-0.5 mx-3 ${wizardStep >= 2 ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'}`} />
+                  
+                  {/* Step 2 */}
+                  <div className="flex items-center">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${
+                      wizardStep >= 2 
+                        ? 'bg-emerald-500 text-white' 
+                        : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                    }`}>
+                      2
+                    </div>
+                    <span className={`ml-2 text-xs font-medium ${wizardStep >= 2 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                      Organize
+                    </span>
+                  </div>
+                  
+                  {/* Connector 2 */}
+                  <div className={`flex-1 h-0.5 mx-3 ${wizardStep >= 3 ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'}`} />
+                  
+                  {/* Step 3 */}
+                  <div className="flex items-center">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${
+                      wizardStep >= 3 
+                        ? 'bg-emerald-500 text-white' 
+                        : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                    }`}>
+                      3
+                    </div>
+                    <span className={`ml-2 text-xs font-medium ${wizardStep >= 3 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                      Import
+                    </span>
+                  </div>
+                </div>
               </div>
+
+              {/* Step 3 Content - Category Selection */}
+              {wizardStep === 3 && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
+                    Select Category (Private Tab)
+                  </label>
+                  
+                  {/* Category Selection Options */}
+                  <div className="mb-4 space-y-3">
+                    {/* Use Existing Category */}
+                    <div>
+                      <label className="flex items-center mb-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="categoryOption"
+                          checked={!createNewCategory}
+                          onChange={() => {
+                            setCreateNewCategory(false);
+                            setCategoryName('');
+                          }}
+                          className="mr-2"
+                          disabled={loading}
+                        />
+                        <span className="text-sm text-slate-700 dark:text-slate-300">Use existing category</span>
+                      </label>
+                      {!createNewCategory && (
+                        <>
+                          {availableCategories.length === 0 ? (
+                            <div className="w-full mt-2 px-3 py-2 border border-amber-300 dark:border-amber-600 rounded bg-amber-50 dark:bg-amber-900/20 text-sm text-amber-700 dark:text-amber-300">
+                              No categories found in private tab. Please create a new category.
+                            </div>
+                          ) : (
+                            <select
+                              value={selectedCategory}
+                              onChange={(e) => setSelectedCategory(e.target.value)}
+                              className="w-full mt-2 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                              disabled={loading}
+                            >
+                              <option value="">Select a category...</option>
+                              {availableCategories.map((cat) => (
+                                <option key={cat} value={cat}>
+                                  {cat}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </>
+                      )}
+                    </div>
+
+                    {/* Create New Category */}
+                    <div>
+                      <label className="flex items-center mb-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="categoryOption"
+                          checked={createNewCategory}
+                          onChange={() => {
+                            setCreateNewCategory(true);
+                            setSelectedCategory('');
+                          }}
+                          className="mr-2"
+                          disabled={loading}
+                        />
+                        <span className="text-sm text-slate-700 dark:text-slate-300">Create new category</span>
+                      </label>
+                      {createNewCategory && (
+                        <input
+                          type="text"
+                          value={categoryName}
+                          onChange={(e) => setCategoryName(e.target.value)}
+                          placeholder="e.g., My Bookmarks, Work Links, etc."
+                          className="w-full mt-2 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                          disabled={loading}
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                    Categories will be created in your private tab with private visibility.
+                  </p>
+                </div>
+              )}
 
               {/* Progress Display */}
               {importProgress && (
@@ -3123,7 +3474,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
                     {importProgress.total > 0 && (
                       <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-2">
                         <div
-                          className="bg-brand-500 h-2 rounded-full transition-all duration-300"
+                          className="bg-emerald-500 h-2 rounded-full transition-all duration-300"
                           style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
                         />
                       </div>
@@ -3148,11 +3499,25 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
                 </div>
               )}
 
+              {/* Navigation Buttons */}
               <div className="flex gap-3">
+                {/* Previous button only shows for step 2, not step 3 (since steps 1 & 2 are already done) */}
+                {wizardStep === 2 && !importProgress && (
+                  <button
+                    onClick={() => setWizardStep(1)}
+                    disabled={loading}
+                    className="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Previous
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     setShowImportDialog(false);
                     setCategoryName('');
+                    setSelectedCategory('');
+                    setCreateNewCategory(false);
+                    setWizardStep(1);
                     setImportProgress(null);
                   }}
                   disabled={loading}
@@ -3160,13 +3525,24 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
                 >
                   Cancel
                 </button>
-                <button
-                  onClick={handleImportToCategory}
-                  disabled={loading || !categoryName.trim()}
-                  className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
-                >
-                  {loading ? 'Importing...' : 'Import'}
-                </button>
+                {wizardStep === 3 && (
+                  <button
+                    onClick={handleImportToCategory}
+                    disabled={loading || (createNewCategory && !categoryName.trim()) || (!createNewCategory && (!selectedCategory || availableCategories.length === 0))}
+                    className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                  >
+                    {loading ? 'Importing...' : 'Import'}
+                  </button>
+                )}
+                {wizardStep < 3 && !importProgress && (
+                  <button
+                    onClick={() => setWizardStep((prev) => (prev + 1) as 1 | 2 | 3)}
+                    disabled={loading}
+                    className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                  >
+                    Next
+                  </button>
+                )}
               </div>
             </div>
           </div>
