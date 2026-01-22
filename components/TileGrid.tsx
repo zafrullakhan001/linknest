@@ -1832,6 +1832,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
     errors: string[];
   } | null>(null);
 
+  // Delete category progress state
+  const [deleteCategoryProgress, setDeleteCategoryProgress] = useState<{
+    current: number;
+    total: number;
+    status: string;
+    categoryName: string;
+  } | null>(null);
+
   // New Tile Form State
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
@@ -4346,9 +4354,29 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
 
     try {
-      // Soft delete all tiles in this category (move to recycle bin)
-      const deletePromises = categoryTiles.map(tile => deleteTile(tile.id));
-      await Promise.all(deletePromises);
+      // Initialize progress
+      setDeleteCategoryProgress({
+        current: 0,
+        total: categoryTiles.length,
+        status: 'Deleting tiles...',
+        categoryName: categoryName
+      });
+
+      // Soft delete all tiles in this category (move to recycle bin) with progress tracking
+      for (let i = 0; i < categoryTiles.length; i++) {
+        await deleteTile(categoryTiles[i].id);
+        setDeleteCategoryProgress(prev => prev ? {
+          ...prev,
+          current: i + 1,
+          status: `Deleting tile ${i + 1} of ${categoryTiles.length}...`
+        } : null);
+      }
+
+      // Update progress - removing category
+      setDeleteCategoryProgress(prev => prev ? {
+        ...prev,
+        status: 'Removing category...'
+      } : null);
 
       // Remove category from category order
       const newCategoryOrder = categoryOrder.filter(cat => cat !== categoryName);
@@ -4372,6 +4400,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
       delete newMetadata[categoryName];
       setCategoryMetadata(newMetadata);
 
+      // Update progress - reloading data
+      setDeleteCategoryProgress(prev => prev ? {
+        ...prev,
+        status: 'Reloading data...'
+      } : null);
+
       // Reload tiles, recycle bin, and archive
       const updatedTiles = await getTiles();
       onUpdateTiles(updatedTiles);
@@ -4385,8 +4419,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
         const updatedArchive = await getArchive();
         setArchiveTiles(updatedArchive);
       }
+
+      // Clear progress after a short delay
+      setTimeout(() => {
+        setDeleteCategoryProgress(null);
+      }, 500);
     } catch (error) {
       console.error('Failed to delete category:', error);
+      setDeleteCategoryProgress(null);
       alert('Failed to delete category. Please try again.');
     }
   }, [tiles, archiveTiles, isAuthenticated, onUpdateTiles, categoryOrder, categoryMetadata, activeTab]);
@@ -8288,6 +8328,63 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 <div className="flex gap-3">
                   <button
                     onClick={() => setExportProgress(null)}
+                    className="flex-1 px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Delete Category Progress Modal */}
+      {deleteCategoryProgress && createPortal(
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                  Deleting Category
+                </h3>
+                <button
+                  onClick={() => setDeleteCategoryProgress(null)}
+                  className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={deleteCategoryProgress.total > 0 && deleteCategoryProgress.current < deleteCategoryProgress.total}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Progress Display */}
+              <div className="mb-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
+                <div className="mb-2">
+                  <div className="flex items-center justify-between text-sm text-slate-700 dark:text-slate-300 mb-1">
+                    <span>{deleteCategoryProgress.status}</span>
+                    {deleteCategoryProgress.total > 0 && (
+                      <span>{deleteCategoryProgress.current} / {deleteCategoryProgress.total}</span>
+                    )}
+                  </div>
+                  {deleteCategoryProgress.total > 0 && (
+                    <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-2">
+                      <div
+                        className="bg-red-500 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${(deleteCategoryProgress.current / deleteCategoryProgress.total) * 100}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+                <div className="mt-2 text-xs text-slate-600 dark:text-slate-400">
+                  Category: <span className="font-medium">{deleteCategoryProgress.categoryName}</span>
+                </div>
+              </div>
+
+              {deleteCategoryProgress.current >= deleteCategoryProgress.total && deleteCategoryProgress.total > 0 && (
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setDeleteCategoryProgress(null)}
                     className="flex-1 px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
                   >
                     Close
