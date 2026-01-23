@@ -3195,6 +3195,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
       return;
     }
 
+    // Ensure current user (owner) is always included in allowed users for private tiles
+    let finalAllowedUsers = newAllowedUsers;
+    if (tileType === 'space' && newVisibility === 'private' && user) {
+      if (!finalAllowedUsers.includes(user.id)) {
+        finalAllowedUsers = [...finalAllowedUsers, user.id];
+      }
+    }
+
     const newTile: Tile = {
       id: generateId(),
       title: newTitle,
@@ -3212,7 +3220,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       tabs: [],
       createdAt: Date.now(),
       visibility: tileType === 'space' ? newVisibility : 'public',
-      allowedUsers: (tileType === 'space' && newVisibility === 'private') ? newAllowedUsers : undefined,
+      allowedUsers: (tileType === 'space' && newVisibility === 'private') ? finalAllowedUsers : undefined,
       isHyperlink: tileType === 'hyperlink',
       hyperlinkUrl: tileType === 'hyperlink' ? hyperlinkUrl.trim() : undefined,
       openInNewTab: tileType === 'hyperlink' ? openInNewTab : undefined,
@@ -3583,7 +3591,19 @@ export const TileGrid: React.FC<TileGridProps> = ({
     setHyperlinkUrl(tile.hyperlinkUrl || '');
     setOpenInNewTab(tile.openInNewTab !== undefined ? tile.openInNewTab : true);
     setNewVisibility(tile.visibility || 'public');
-    setNewAllowedUsers(tile.allowedUsers || []);
+    
+    // Always include owner in allowed users list
+    const allowedUsers = tile.allowedUsers || [];
+    if (tile.userId) {
+      const ownerIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
+      if (!allowedUsers.includes(ownerIdNum)) {
+        setNewAllowedUsers([...allowedUsers, ownerIdNum]);
+      } else {
+        setNewAllowedUsers(allowedUsers);
+      }
+    } else {
+      setNewAllowedUsers(allowedUsers);
+    }
     // Convert ISO date strings to datetime-local format (YYYY-MM-DDTHH:mm)
     setVisibleFrom(tile.visibleFrom ? new Date(tile.visibleFrom).toISOString().slice(0, 16) : '');
     setExpiresAt(tile.expiresAt ? new Date(tile.expiresAt).toISOString().slice(0, 16) : '');
@@ -3649,6 +3669,15 @@ export const TileGrid: React.FC<TileGridProps> = ({
       return;
     }
 
+    // Ensure owner is always included in allowed users for private tiles
+    let finalAllowedUsers = newAllowedUsers;
+    if (tileType === 'space' && newVisibility === 'private' && editingTile.userId) {
+      const ownerIdNum = typeof editingTile.userId === 'string' ? parseInt(editingTile.userId, 10) : editingTile.userId;
+      if (!finalAllowedUsers.includes(ownerIdNum)) {
+        finalAllowedUsers = [...finalAllowedUsers, ownerIdNum];
+      }
+    }
+
     const updatedTile: Tile = {
       ...editingTile,
       title: newTitle,
@@ -3657,7 +3686,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       themeColor: newColor,
       group: newGroup.trim() || 'General',
       visibility: tileType === 'space' ? newVisibility : 'public',
-      allowedUsers: (tileType === 'space' && newVisibility === 'private') ? newAllowedUsers : undefined,
+      allowedUsers: (tileType === 'space' && newVisibility === 'private') ? finalAllowedUsers : undefined,
       isHyperlink: tileType === 'hyperlink',
       hyperlinkUrl: tileType === 'hyperlink' ? hyperlinkUrl.trim() : undefined,
       openInNewTab: tileType === 'hyperlink' ? openInNewTab : undefined,
@@ -6614,27 +6643,52 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                 <div className="text-sm text-slate-500 dark:text-slate-400">No users available</div>
                               ) : (
                                 <div className="space-y-1.5">
-                                  {availableUsers.map(u => (
-                                    <label key={u.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 p-1.5 rounded">
-                                      <input
-                                        type="checkbox"
-                                        checked={newAllowedUsers.includes(u.id)}
-                                        disabled={user && !user.is_admin && u.id === user.id}
-                                        onChange={(e) => {
-                                          if (e.target.checked) {
-                                            setNewAllowedUsers([...newAllowedUsers, u.id]);
-                                          } else {
-                                            setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
-                                          }
-                                        }}
-                                        className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
-                                      />
-                                      <span className="text-sm text-slate-700 dark:text-slate-300">{u.username}</span>
-                                      {u.auth_source && u.auth_source !== 'local' && (
-                                        <span className="text-xs text-slate-500 dark:text-slate-400">({u.auth_source})</span>
-                                      )}
-                                    </label>
-                                  ))}
+                                  {availableUsers.map(u => {
+                                    // For new tiles, the current user is the owner
+                                    const isCurrentUserOwner = user && u.id === user.id;
+                                    return (
+                                      <label 
+                                        key={u.id} 
+                                        className={`flex items-center gap-2 p-1.5 rounded ${
+                                          isCurrentUserOwner 
+                                            ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
+                                            : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800'
+                                        }`}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={newAllowedUsers.includes(u.id) || isCurrentUserOwner}
+                                          disabled={isCurrentUserOwner}
+                                          onChange={(e) => {
+                                            if (isCurrentUserOwner) return;
+                                            if (e.target.checked) {
+                                              setNewAllowedUsers([...newAllowedUsers, u.id]);
+                                            } else {
+                                              setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
+                                            }
+                                          }}
+                                          className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${
+                                            isCurrentUserOwner ? 'opacity-50 cursor-not-allowed' : ''
+                                          }`}
+                                        />
+                                        <span className={`text-sm flex-1 ${
+                                          isCurrentUserOwner 
+                                            ? 'text-amber-800 dark:text-amber-200 font-medium'
+                                            : 'text-slate-700 dark:text-slate-300'
+                                        }`}>
+                                          {u.username}
+                                        </span>
+                                        {isCurrentUserOwner && (
+                                          <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
+                                            Owner (You)
+                                          </span>
+                                        )}
+                                        {u.auth_source && u.auth_source !== 'local' && (
+                                          <span className="text-xs text-slate-500 dark:text-slate-400">({u.auth_source})</span>
+                                        )}
+                                      </label>
+                                    );
+                                  })}
                                 </div>
                               )}
                             </div>
@@ -7493,27 +7547,51 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                   <div className="text-sm text-slate-500 dark:text-slate-400">No users available</div>
                                 ) : (
                                   <div className="space-y-1.5">
-                                    {availableUsers.map(u => (
-                                      <label key={u.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 p-1.5 rounded">
-                                        <input
-                                          type="checkbox"
-                                          checked={newAllowedUsers.includes(u.id)}
-                                          disabled={user && !user.is_admin && u.id === user.id}
-                                          onChange={(e) => {
-                                            if (e.target.checked) {
-                                              setNewAllowedUsers([...newAllowedUsers, u.id]);
-                                            } else {
-                                              setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
-                                            }
-                                          }}
-                                          className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
-                                        />
-                                        <span className="text-sm text-slate-700 dark:text-slate-300">{u.username}</span>
-                                        {u.auth_source && u.auth_source !== 'local' && (
-                                          <span className="text-xs text-slate-500 dark:text-slate-400">({u.auth_source})</span>
-                                        )}
-                                      </label>
-                                    ))}
+                                    {availableUsers.map(u => {
+                                      const isOwner = editingTile && editingTile.userId && u.id === (typeof editingTile.userId === 'string' ? parseInt(editingTile.userId, 10) : editingTile.userId);
+                                      return (
+                                        <label 
+                                          key={u.id} 
+                                          className={`flex items-center gap-2 p-1.5 rounded ${
+                                            isOwner 
+                                              ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
+                                              : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800'
+                                          }`}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={newAllowedUsers.includes(u.id) || isOwner}
+                                            disabled={isOwner}
+                                            onChange={(e) => {
+                                              if (isOwner) return;
+                                              if (e.target.checked) {
+                                                setNewAllowedUsers([...newAllowedUsers, u.id]);
+                                              } else {
+                                                setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
+                                              }
+                                            }}
+                                            className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${
+                                              isOwner ? 'opacity-50 cursor-not-allowed' : ''
+                                            }`}
+                                          />
+                                          <span className={`text-sm flex-1 ${
+                                            isOwner 
+                                              ? 'text-amber-800 dark:text-amber-200 font-medium'
+                                              : 'text-slate-700 dark:text-slate-300'
+                                          }`}>
+                                            {u.username}
+                                          </span>
+                                          {isOwner && (
+                                            <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
+                                              Owner
+                                            </span>
+                                          )}
+                                          {u.auth_source && u.auth_source !== 'local' && (
+                                            <span className="text-xs text-slate-500 dark:text-slate-400">({u.auth_source})</span>
+                                          )}
+                                        </label>
+                                      );
+                                    })}
                                   </div>
                                 )}
                               </div>

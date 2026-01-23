@@ -56,6 +56,19 @@ try {
     
     $currentTime = time();
     
+    // Get admin user ID
+    echo "Getting admin user ID...\n";
+    $adminStmt = $db->prepare('SELECT id FROM users WHERE is_admin = 1 LIMIT 1');
+    $adminStmt->execute();
+    $adminUser = $adminStmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$adminUser) {
+        throw new Exception('No admin user found. Please ensure an admin user exists before running this script.');
+    }
+    
+    $adminUserId = $adminUser['id'];
+    echo "  Admin user ID: $adminUserId\n";
+    
     // ============================================
     // TILES (Simple Version - No Gradients)
     // ============================================
@@ -300,12 +313,13 @@ try {
     
     $tileStmt = $db->prepare('
         INSERT INTO tiles (id, user_id, title, description, emoji, theme_color, "group", position, created_at, visibility)
-        VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, "public")
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "public")
     ');
     
     foreach ($tiles as $tile) {
         $tileStmt->execute([
             $tile['id'],
+            $adminUserId,
             $tile['title'],
             $tile['description'],
             $tile['emoji'],

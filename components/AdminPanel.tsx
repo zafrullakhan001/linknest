@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { authService, PendingUser, AllUser } from '../services/authService';
 import { settingsService, AppSettings } from '../services/settingsService';
 import { databaseService } from '../services/databaseService';
@@ -93,7 +94,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [editEmail, setEditEmail] = useState('');
   const [editAuthSource, setEditAuthSource] = useState<'local' | 'ldap' | 'saml'>('local');
   const [editUserLoading, setEditUserLoading] = useState(false);
-  const [openDropdownUserId, setOpenDropdownUserId] = useState<number | null>(null);
+  const [userActionsDialog, setUserActionsDialog] = useState<{ open: boolean; user: AllUser | null }>({ open: false, user: null });
   const [autoDetecting, setAutoDetecting] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -295,6 +296,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [showGranularPermissionsModal, setShowGranularPermissionsModal] = useState(false);
   const [selectedPermissionForEdit, setSelectedPermissionForEdit] = useState<TilePermission | null>(null);
   const [tileAdminsTabSearchTerm, setTileAdminsTabSearchTerm] = useState('');
+  const [tileAdminsFilterUsername, setTileAdminsFilterUsername] = useState('');
+  const [tileAdminsFilterMenu, setTileAdminsFilterMenu] = useState<'public' | 'private'>('public');
+  const [tileAdminsFilterCategory, setTileAdminsFilterCategory] = useState('');
+  // Modal-specific filters
+  const [tileAdminModalFilterUsername, setTileAdminModalFilterUsername] = useState('');
+  const [tileAdminModalFilterMenu, setTileAdminModalFilterMenu] = useState<'public' | 'private'>('public');
+  const [tileAdminModalFilterCategory, setTileAdminModalFilterCategory] = useState('');
 
   // Roles management state
   const [roles, setRoles] = useState<Role[]>([]);
@@ -503,6 +511,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     if (activeTab === 'access') {
       loadRoles();
       loadAllTilesAndLinks();
+      // Ensure users are loaded for tile ownership display
+      if (allUsers.length === 0) {
+        loadAllUsers();
+      }
       // Only load permissions if we're on the Tile Admins sub-tab
       if (accessSubTab === 'admins') {
         loadPermissions();
@@ -563,23 +575,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   }, [activeTab]);
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (openDropdownUserId !== null && !target.closest('.user-actions-dropdown')) {
-        setOpenDropdownUserId(null);
-      }
-    };
-
-    if (openDropdownUserId !== null) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => {
-        document.removeEventListener('mousedown', handleClickOutside);
-      };
-    }
-  }, [openDropdownUserId]);
-
   // Load user roles when All Users tab is active and users are loaded
   useEffect(() => {
     const loadUserRolesWhenReady = async () => {
@@ -621,6 +616,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           setTileAdminTileSearchTerm('');
           setTileAdminUserSearchTerm('');
           setTileAdminsUsersLoaded(false);
+          setTileAdminModalFilterUsername('');
+          setTileAdminModalFilterMenu('public');
+          setTileAdminModalFilterCategory('');
         } else if (showRoleTilesModal) {
           setShowRoleTilesModal(false);
           setSelectedRole(null);
@@ -3454,7 +3452,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 {formatDate(user.created_at)}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-right">
-                                <div className="flex items-center justify-end gap-2 user-actions-dropdown relative">
+                                <div className="flex items-center justify-end gap-2">
                                   {/* Primary action buttons - always visible */}
                                   {!user.is_admin && (
                                     <button
@@ -3494,183 +3492,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     </button>
                                   )}
                                   
-                                  {/* Dropdown menu button */}
-                                  <div className="relative">
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setOpenDropdownUserId(openDropdownUserId === user.id ? null : user.id);
-                                      }}
-                                      className="px-2.5 py-1.5 bg-slate-600 hover:bg-slate-500 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
-                                      title="More actions"
-                                    >
-                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                        <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
-                                      </svg>
-                                    </button>
-                                    
-                                    {/* Dropdown menu */}
-                                    {openDropdownUserId === user.id && (
-                                      <div className="absolute right-0 bottom-full mb-1 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 z-50 py-1">
-                                        {/* Promote/Demote */}
-                                        <button
-                                          onClick={async () => {
-                                            setOpenDropdownUserId(null);
-                                            try {
-                                              setProcessing(user.id);
-                                              setError('');
-                                              const result = await authService.toggleAdmin(user.id);
-                                              setAllUsers(prevUsers =>
-                                                prevUsers.map(u =>
-                                                  u.id === user.id ? { ...u, is_admin: result.is_admin } : u
-                                                )
-                                              );
-                                            } catch (err: any) {
-                                              setError(err.message || 'Failed to toggle admin status');
-                                            } finally {
-                                              setProcessing(null);
-                                            }
-                                          }}
-                                          disabled={processing === user.id}
-                                          className={`w-full px-4 py-2 text-left text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700 ${user.is_admin
-                                            ? 'text-amber-700 dark:text-amber-400'
-                                            : 'text-emerald-700 dark:text-emerald-400'
-                                            }`}
-                                        >
-                                          {processing === user.id ? (
-                                            <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                            </svg>
-                                          ) : user.is_admin ? (
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
-                                            </svg>
-                                          ) : (
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                                            </svg>
-                                          )}
-                                          {user.is_admin ? 'Demote from Admin' : 'Promote to Admin'}
-                                        </button>
-                                        
-                                        {!user.is_admin && (
-                                          <>
-                                            {/* Disable/Enable */}
-                                            <button
-                                              onClick={() => {
-                                                setOpenDropdownUserId(null);
-                                                handleToggleDisable(user.id);
-                                              }}
-                                              disabled={processing === user.id}
-                                              className={`w-full px-4 py-2 text-left text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700 ${user.is_disabled
-                                                ? 'text-emerald-700 dark:text-emerald-400'
-                                                : 'text-orange-700 dark:text-orange-400'
-                                                }`}
-                                            >
-                                              {user.is_disabled ? (
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                                                </svg>
-                                              ) : (
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
-                                                </svg>
-                                              )}
-                                              {user.is_disabled ? 'Enable User' : 'Disable User'}
-                                            </button>
-                                            
-                                            {/* Toggle Auth Source */}
-                                            <button
-                                              onClick={async () => {
-                                                setOpenDropdownUserId(null);
-                                                try {
-                                                  setProcessing(user.id);
-                                                  setError('');
-                                                  const result = await authService.toggleAuthSource(user.id);
-                                                  setAllUsers(prevUsers =>
-                                                    prevUsers.map(u =>
-                                                      u.id === user.id ? { ...u, auth_source: result.auth_source } : u
-                                                    )
-                                                  );
-                                                } catch (err: any) {
-                                                  setError(err.message || 'Failed to toggle auth source');
-                                                } finally {
-                                                  setProcessing(null);
-                                                }
-                                              }}
-                                              disabled={processing === user.id}
-                                              className="w-full px-4 py-2 text-left text-xs font-medium text-purple-700 dark:text-purple-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700"
-                                            >
-                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                                <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                                              </svg>
-                                              Toggle Auth Source
-                                            </button>
-                                            
-                                            {/* Reset Password */}
-                                            {user.auth_source !== 'ldap' && user.auth_source !== 'saml' && (
-                                              <button
-                                                onClick={() => {
-                                                  setOpenDropdownUserId(null);
-                                                  setResetPasswordModal({ open: true, userId: user.id, username: user.username });
-                                                }}
-                                                disabled={processing === user.id}
-                                                className="w-full px-4 py-2 text-left text-xs font-medium text-blue-700 dark:text-blue-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700"
-                                              >
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                                  <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
-                                                </svg>
-                                                Reset Password
-                                              </button>
-                                            )}
-                                            
-                                            {/* Impersonate */}
-                                            <button
-                                              onClick={async () => {
-                                                setOpenDropdownUserId(null);
-                                                try {
-                                                  setProcessing(user.id);
-                                                  setError('');
-                                                  await authService.startImpersonation(user.id);
-                                                  window.location.reload();
-                                                } catch (err: any) {
-                                                  setError(err.message || 'Failed to start impersonation');
-                                                  setProcessing(null);
-                                                }
-                                              }}
-                                              disabled={processing === user.id}
-                                              className="w-full px-4 py-2 text-left text-xs font-medium text-indigo-700 dark:text-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700"
-                                            >
-                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                                <path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM16 8a2 2 0 11-4 0 2 2 0 014 0zm-1.615 8.428a1.224 1.224 0 00.569-1.175 5.966 5.966 0 00-2.081-.416 5.967 5.967 0 00-1.788.27A9.953 9.953 0 0013 18a9.953 9.953 0 003.385-.572z" />
-                                              </svg>
-                                              Impersonate
-                                            </button>
-                                            
-                                            {/* Roles */}
-                                            <button
-                                              onClick={async () => {
-                                                setOpenDropdownUserId(null);
-                                                try {
-                                                  await handleManageUserRoles(user.id);
-                                                } catch (err: any) {
-                                                  setError(err.message || 'Failed to load user roles');
-                                                }
-                                              }}
-                                              disabled={processing === user.id}
-                                              className="w-full px-4 py-2 text-left text-xs font-medium text-violet-700 dark:text-violet-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700"
-                                            >
-                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                                <path d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
-                                              </svg>
-                                              Assign Roles
-                                            </button>
-                                          </>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
+                                  {/* More actions button */}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setUserActionsDialog({ open: true, user });
+                                    }}
+                                    className="px-2.5 py-1.5 bg-slate-600 hover:bg-slate-500 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
+                                    title="More actions"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                      <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
+                                    </svg>
+                                  </button>
                                 </div>
                               </td>
                             </tr>
@@ -3864,191 +3698,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   </button>
                                 )}
                                 
-                                {/* Dropdown menu button */}
-                                <div className="relative">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setOpenDropdownUserId(openDropdownUserId === user.id ? null : user.id);
-                                    }}
-                                    className="px-3 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1.5 touch-manipulation"
-                                    style={{ minHeight: '44px' }}
-                                    title="More actions"
-                                  >
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                                      <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
-                                    </svg>
-                                    More
-                                  </button>
-                                  
-                                  {/* Dropdown menu */}
-                                  {openDropdownUserId === user.id && (
-                                    <div className="absolute right-0 bottom-full mb-2 w-56 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-50 py-2">
-                                      {/* Promote/Demote */}
-                                      <button
-                                        onClick={async () => {
-                                          setOpenDropdownUserId(null);
-                                          try {
-                                            setProcessing(user.id);
-                                            setError('');
-                                            const result = await authService.toggleAdmin(user.id);
-                                            setAllUsers(prevUsers =>
-                                              prevUsers.map(u =>
-                                                u.id === user.id ? { ...u, is_admin: result.is_admin } : u
-                                              )
-                                            );
-                                          } catch (err: any) {
-                                            setError(err.message || 'Failed to toggle admin status');
-                                          } finally {
-                                            setProcessing(null);
-                                          }
-                                        }}
-                                        disabled={processing === user.id}
-                                        className={`w-full px-4 py-3 text-left text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700 touch-manipulation ${user.is_admin
-                                          ? 'text-amber-700 dark:text-amber-400'
-                                          : 'text-emerald-700 dark:text-emerald-400'
-                                          }`}
-                                        style={{ minHeight: '44px' }}
-                                      >
-                                        {processing === user.id ? (
-                                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                          </svg>
-                                        ) : user.is_admin ? (
-                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
-                                          </svg>
-                                        ) : (
-                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                                          </svg>
-                                        )}
-                                        {user.is_admin ? 'Demote from Admin' : 'Promote to Admin'}
-                                      </button>
-                                      
-                                      {!user.is_admin && (
-                                        <>
-                                          {/* Disable/Enable */}
-                                          <button
-                                            onClick={() => {
-                                              setOpenDropdownUserId(null);
-                                              handleToggleDisable(user.id);
-                                            }}
-                                            disabled={processing === user.id}
-                                            className={`w-full px-4 py-3 text-left text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700 touch-manipulation ${user.is_disabled
-                                              ? 'text-emerald-700 dark:text-emerald-400'
-                                              : 'text-orange-700 dark:text-orange-400'
-                                              }`}
-                                            style={{ minHeight: '44px' }}
-                                          >
-                                            {user.is_disabled ? (
-                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                                              </svg>
-                                            ) : (
-                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
-                                              </svg>
-                                            )}
-                                            {user.is_disabled ? 'Enable User' : 'Disable User'}
-                                          </button>
-                                          
-                                          {/* Toggle Auth Source */}
-                                          <button
-                                            onClick={async () => {
-                                              setOpenDropdownUserId(null);
-                                              try {
-                                                setProcessing(user.id);
-                                                setError('');
-                                                const result = await authService.toggleAuthSource(user.id);
-                                                setAllUsers(prevUsers =>
-                                                  prevUsers.map(u =>
-                                                    u.id === user.id ? { ...u, auth_source: result.auth_source } : u
-                                                  )
-                                                );
-                                              } catch (err: any) {
-                                                setError(err.message || 'Failed to toggle auth source');
-                                              } finally {
-                                                setProcessing(null);
-                                              }
-                                            }}
-                                            disabled={processing === user.id}
-                                            className="w-full px-4 py-3 text-left text-sm font-medium text-purple-700 dark:text-purple-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700 touch-manipulation"
-                                            style={{ minHeight: '44px' }}
-                                          >
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                              <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                                            </svg>
-                                            Toggle Auth Source
-                                          </button>
-                                          
-                                          {/* Reset Password */}
-                                          {user.auth_source !== 'ldap' && user.auth_source !== 'saml' && (
-                                            <button
-                                              onClick={() => {
-                                                setOpenDropdownUserId(null);
-                                                setResetPasswordModal({ open: true, userId: user.id, username: user.username });
-                                              }}
-                                              disabled={processing === user.id}
-                                              className="w-full px-4 py-3 text-left text-sm font-medium text-blue-700 dark:text-blue-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700 touch-manipulation"
-                                              style={{ minHeight: '44px' }}
-                                            >
-                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
-                                              </svg>
-                                              Reset Password
-                                            </button>
-                                          )}
-                                          
-                                          {/* Impersonate */}
-                                          <button
-                                            onClick={async () => {
-                                              setOpenDropdownUserId(null);
-                                              try {
-                                                setProcessing(user.id);
-                                                setError('');
-                                                await authService.startImpersonation(user.id);
-                                                window.location.reload();
-                                              } catch (err: any) {
-                                                setError(err.message || 'Failed to start impersonation');
-                                                setProcessing(null);
-                                              }
-                                            }}
-                                            disabled={processing === user.id}
-                                            className="w-full px-4 py-3 text-left text-sm font-medium text-indigo-700 dark:text-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700 touch-manipulation"
-                                            style={{ minHeight: '44px' }}
-                                          >
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                              <path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM16 8a2 2 0 11-4 0 2 2 0 014 0zm-1.615 8.428a1.224 1.224 0 00.569-1.175 5.966 5.966 0 00-2.081-.416 5.967 5.967 0 00-1.788.27A9.953 9.953 0 0013 18a9.953 9.953 0 003.385-.572z" />
-                                            </svg>
-                                            Impersonate
-                                          </button>
-                                          
-                                          {/* Roles */}
-                                          <button
-                                            onClick={async () => {
-                                              setOpenDropdownUserId(null);
-                                              try {
-                                                await handleManageUserRoles(user.id);
-                                              } catch (err: any) {
-                                                setError(err.message || 'Failed to load user roles');
-                                              }
-                                            }}
-                                            disabled={processing === user.id}
-                                            className="w-full px-4 py-3 text-left text-sm font-medium text-violet-700 dark:text-violet-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-700 touch-manipulation"
-                                            style={{ minHeight: '44px' }}
-                                          >
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                              <path d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
-                                            </svg>
-                                            Assign Roles
-                                          </button>
-                                        </>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
+                                {/* More actions button */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setUserActionsDialog({ open: true, user });
+                                  }}
+                                  className="px-3 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1.5 touch-manipulation"
+                                  style={{ minHeight: '44px' }}
+                                  title="More actions"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                    <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
+                                  </svg>
+                                  More
+                                </button>
                               </div>
                             </div>
                           );
@@ -7146,8 +6810,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         </button>
                       </div>
 
-                      {/* Search Input */}
-                      <div className="mb-4">
+                      {/* Search and Filters */}
+                      <div className="mb-4 space-y-3">
+                        {/* Search Input */}
                         <div className="relative">
                           <input
                             type="text"
@@ -7180,6 +6845,100 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             </button>
                           )}
                         </div>
+
+                        {/* Filter Row */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          {/* Username Filter */}
+                          <div>
+                            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                              Owner Username
+                            </label>
+                            <select
+                              value={tileAdminsFilterUsername}
+                              onChange={(e) => setTileAdminsFilterUsername(e.target.value)}
+                              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                            >
+                              <option value="">All Owners</option>
+                              {(() => {
+                                // Get all approved users from the database
+                                return allUsers
+                                  .filter(user => user.is_approved)
+                                  .sort((a, b) => a.username.localeCompare(b.username))
+                                  .map(user => (
+                                    <option key={user.id} value={user.username}>
+                                      {user.username}
+                                    </option>
+                                  ));
+                              })()}
+                            </select>
+                          </div>
+
+                          {/* Menu/Tab Filter */}
+                          <div>
+                            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                              Tab/Menu
+                            </label>
+                            <select
+                              value={tileAdminsFilterMenu}
+                              onChange={(e) => setTileAdminsFilterMenu(e.target.value as 'public' | 'private')}
+                              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                            >
+                              <option value="public">Public</option>
+                              <option value="private">Private</option>
+                            </select>
+                          </div>
+
+                          {/* Category Filter */}
+                          <div>
+                            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                              Category
+                            </label>
+                            <select
+                              value={tileAdminsFilterCategory}
+                              onChange={(e) => setTileAdminsFilterCategory(e.target.value)}
+                              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                            >
+                              <option value="">All Categories</option>
+                              {(() => {
+                                // Get unique categories from tiles that are public or private only
+                                const uniqueCategories = new Set<string>();
+                                allTiles.forEach(tile => {
+                                  const visibility = tile.visibility || 'public';
+                                  // Only include categories from public or private tiles
+                                  if ((visibility === 'public' || visibility === 'private') && tile.group) {
+                                    uniqueCategories.add(tile.group);
+                                  }
+                                });
+                                return Array.from(uniqueCategories)
+                                  .sort((a, b) => a.localeCompare(b))
+                                  .map(category => (
+                                    <option key={category} value={category}>
+                                      {category}
+                                    </option>
+                                  ));
+                              })()}
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Clear All Filters */}
+                        {(tileAdminsFilterUsername || tileAdminsFilterCategory) && (
+                          <div className="flex justify-end">
+                            <button
+                              onClick={() => {
+                                setTileAdminsFilterUsername('');
+                                setTileAdminsFilterMenu('public');
+                                setTileAdminsFilterCategory('');
+                              }}
+                              className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium flex items-center gap-1"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                              </svg>
+                              Clear all filters
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       <div className="mb-4">
@@ -7196,18 +6955,45 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             ) : (
                               (() => {
                                 const filteredTiles = allTiles.filter(tile => {
-                                  if (!tileAdminsTabSearchTerm) return true;
-                                  const searchLower = tileAdminsTabSearchTerm.toLowerCase();
-                                  return (
-                                    (tile.title || '').toLowerCase().includes(searchLower) ||
-                                    (tile.description || '').toLowerCase().includes(searchLower) ||
-                                    tile.id.toLowerCase().includes(searchLower)
-                                  );
+                                  // Text search filter
+                                  if (tileAdminsTabSearchTerm) {
+                                    const searchLower = tileAdminsTabSearchTerm.toLowerCase();
+                                    const matchesSearch = (tile.title || '').toLowerCase().includes(searchLower) ||
+                                      (tile.description || '').toLowerCase().includes(searchLower) ||
+                                      tile.id.toLowerCase().includes(searchLower);
+                                    if (!matchesSearch) return false;
+                                  }
+                                  
+                                  // Username filter
+                                  if (tileAdminsFilterUsername) {
+                                    const userIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
+                                    const owner = allUsers.find(u => u.id === userIdNum);
+                                    const ownerUsername = owner?.username || '';
+                                    if (ownerUsername !== tileAdminsFilterUsername) {
+                                      return false;
+                                    }
+                                  }
+                                  
+                                  // Menu/Tab filter (visibility) - always filter by public or private
+                                  const tileVisibility = tile.visibility || 'public';
+                                  if (tileVisibility !== tileAdminsFilterMenu) {
+                                    return false;
+                                  }
+                                  
+                                  // Category filter
+                                  if (tileAdminsFilterCategory) {
+                                    const category = tile.group || '';
+                                    if (category !== tileAdminsFilterCategory) {
+                                      return false;
+                                    }
+                                  }
+                                  
+                                  return true;
                                 });
                                 
                                 return filteredTiles.length === 0 ? (
                                   <div className="text-center py-8 text-slate-600 dark:text-slate-400">
-                                    No tiles found matching "{tileAdminsTabSearchTerm}"
+                                    No tiles found matching the selected filters
                                   </div>
                                 ) : (
                                   filteredTiles.map((tile) => {
@@ -7230,18 +7016,46 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                               {tile.title || tile.id}
                                             </h4>
                                           </div>
-                                          {/* Owner and Category inline with title */}
-                                          {tile.userId && (() => {
-                                            const owner = allUsers.find(u => u.id === tile.userId);
-                                            return owner ? (
-                                              <span className="text-xs text-slate-500 dark:text-slate-400 font-normal">
-                                                (Owner: <span className="font-medium text-slate-700 dark:text-slate-300">{owner.username}</span>)
-                                              </span>
-                                            ) : null;
-                                          })()}
-                                          {tile.group && (
-                                            <span className="text-xs text-blue-600 dark:text-blue-400 font-normal">
-                                              [Tab: <span className="font-medium">{tile.group}</span>]
+                                        </div>
+                                        {/* Owner, Tab/Menu, and Category badges - Always shown */}
+                                        <div className="flex flex-wrap gap-2 mb-2">
+                                          {/* Owner badge - Always show */}
+                                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                              <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                                            </svg>
+                                            <span className="font-medium">
+                                              {(() => {
+                                                if (!tile.userId) return 'No Owner';
+                                                // Convert userId to number for comparison
+                                                const userIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
+                                                // Find owner in allUsers array
+                                                const owner = allUsers.find(u => u.id === userIdNum);
+                                                return owner?.username || `Unknown (ID: ${tile.userId})`;
+                                              })()}
+                                            </span>
+                                          </span>
+                                          {/* Tab/Menu badge */}
+                                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-700">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                              <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.75 9.083a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 12.663a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 16.25a.75.75 0 000 1.5h14.5a.75.75 0 100-1.5H2.75z" />
+                                            </svg>
+                                            <span className="font-medium capitalize">{tile.visibility || 'public'}</span>
+                                          </span>
+                                          {/* Category badge */}
+                                          {tile.group ? (
+                                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700">
+                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.75 9.083a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 12.663a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 16.25a.75.75 0 000 1.5h14.5a.75.75 0 100-1.5H2.75z" />
+                                              </svg>
+                                              <span className="font-medium">{tile.group}</span>
+                                            </span>
+                                          ) : (
+                                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-600">
+                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.75 9.083a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 12.663a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 16.25a.75.75 0 000 1.5h14.5a.75.75 0 100-1.5H2.75z" />
+                                              </svg>
+                                              No Category
                                             </span>
                                           )}
                                         </div>
@@ -7260,22 +7074,36 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                             <div className="flex flex-wrap gap-2">
                                               {tileAdminPerms.map((perm) => {
                                                 const fullPerm = permissions.find(p => p.userId === perm.userId && p.tileId === perm.tileId);
+                                                // Check if this user is the tile owner
+                                                const userIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
+                                                const isOwner = tile.userId && userIdNum === perm.userId;
                                                 return (
                                                   <div
                                                     key={`${perm.userId}_${perm.tileId}`}
-                                                    className="inline-flex items-center gap-1.5 px-2 py-1 bg-brand-50 dark:bg-brand-500/20 border border-brand-200 dark:border-brand-500/30 rounded text-xs text-brand-700 dark:text-brand-300 group"
+                                                    className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs group ${
+                                                      isOwner 
+                                                        ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 text-amber-700 dark:text-amber-300'
+                                                        : 'bg-brand-50 dark:bg-brand-500/20 border border-brand-200 dark:border-brand-500/30 text-brand-700 dark:text-brand-300'
+                                                    }`}
                                                   >
                                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
                                                       <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
                                                     </svg>
                                                     <span>{perm.username || perm.email}</span>
+                                                    {isOwner && (
+                                                      <span className="text-[10px] font-semibold uppercase">Owner</span>
+                                                    )}
                                                     <button
                                                       onClick={() => {
                                                         setSelectedPermissionForEdit(fullPerm || perm);
                                                         setShowGranularPermissionsModal(true);
                                                       }}
-                                                      className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300"
-                                                      title="Configure permissions"
+                                                      className={`ml-1 opacity-0 group-hover:opacity-100 transition-opacity ${
+                                                        isOwner
+                                                          ? 'text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300'
+                                                          : 'text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300'
+                                                      }`}
+                                                      title={isOwner ? "View owner permissions (read-only)" : "Configure permissions"}
                                                     >
                                                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
                                                         <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
@@ -10645,6 +10473,9 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     setTileAdminTileSearchTerm('');
                     setTileAdminUserSearchTerm('');
                     setTileAdminsUsersLoaded(false);
+                    setTileAdminModalFilterUsername('');
+                    setTileAdminModalFilterMenu('public');
+                    setTileAdminModalFilterCategory('');
                     setError('');
                   }}
                   className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
@@ -10672,10 +10503,35 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     </label>
                     <button
                       onClick={() => {
-                        const filteredTiles = allTiles.filter(tile => 
-                          (tile.title || '').toLowerCase().includes(tileAdminTileSearchTerm.toLowerCase()) ||
-                          (tile.description || '').toLowerCase().includes(tileAdminTileSearchTerm.toLowerCase())
-                        );
+                        const filteredTiles = allTiles.filter(tile => {
+                          // Text search filter
+                          if (tileAdminTileSearchTerm) {
+                            const search = tileAdminTileSearchTerm.toLowerCase();
+                            const matchesSearch = (tile.title || '').toLowerCase().includes(search) ||
+                              (tile.description || '').toLowerCase().includes(search);
+                            if (!matchesSearch) return false;
+                          }
+                          
+                          // Owner filter
+                          if (tileAdminModalFilterUsername) {
+                            const userIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
+                            const owner = allUsers.find(u => u.id === userIdNum);
+                            const ownerUsername = owner?.username || '';
+                            if (ownerUsername !== tileAdminModalFilterUsername) return false;
+                          }
+                          
+                          // Tab/Menu filter
+                          const tileVisibility = tile.visibility || 'public';
+                          if (tileVisibility !== tileAdminModalFilterMenu) return false;
+                          
+                          // Category filter
+                          if (tileAdminModalFilterCategory) {
+                            const category = tile.group || '';
+                            if (category !== tileAdminModalFilterCategory) return false;
+                          }
+                          
+                          return true;
+                        });
                         const filteredTileIds = filteredTiles.map(t => t.id);
                         const allFilteredSelected = filteredTileIds.every(id => selectedTileIdsForAdmins.has(id));
                         
@@ -10692,10 +10548,35 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
                     >
                       {(() => {
-                        const filteredTiles = allTiles.filter(tile => 
-                          (tile.title || '').toLowerCase().includes(tileAdminTileSearchTerm.toLowerCase()) ||
-                          (tile.description || '').toLowerCase().includes(tileAdminTileSearchTerm.toLowerCase())
-                        );
+                        const filteredTiles = allTiles.filter(tile => {
+                          // Text search filter
+                          if (tileAdminTileSearchTerm) {
+                            const search = tileAdminTileSearchTerm.toLowerCase();
+                            const matchesSearch = (tile.title || '').toLowerCase().includes(search) ||
+                              (tile.description || '').toLowerCase().includes(search);
+                            if (!matchesSearch) return false;
+                          }
+                          
+                          // Owner filter
+                          if (tileAdminModalFilterUsername) {
+                            const userIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
+                            const owner = allUsers.find(u => u.id === userIdNum);
+                            const ownerUsername = owner?.username || '';
+                            if (ownerUsername !== tileAdminModalFilterUsername) return false;
+                          }
+                          
+                          // Tab/Menu filter
+                          const tileVisibility = tile.visibility || 'public';
+                          if (tileVisibility !== tileAdminModalFilterMenu) return false;
+                          
+                          // Category filter
+                          if (tileAdminModalFilterCategory) {
+                            const category = tile.group || '';
+                            if (category !== tileAdminModalFilterCategory) return false;
+                          }
+                          
+                          return true;
+                        });
                         const filteredTileIds = filteredTiles.map(t => t.id);
                         const allFilteredSelected = filteredTileIds.length > 0 && filteredTileIds.every(id => selectedTileIdsForAdmins.has(id));
                         return allFilteredSelected ? 'Deselect All' : 'Select All';
@@ -10737,6 +10618,90 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       )}
                     </div>
                   </div>
+
+                  {/* Filters */}
+                  <div className="mb-3 space-y-2">
+                    {/* Owner Filter */}
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                        Owner
+                      </label>
+                      <select
+                        value={tileAdminModalFilterUsername}
+                        onChange={(e) => setTileAdminModalFilterUsername(e.target.value)}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                      >
+                        <option value="">All Owners</option>
+                        {allUsers
+                          .filter(user => user.is_approved)
+                          .sort((a, b) => a.username.localeCompare(b.username))
+                          .map(user => (
+                            <option key={user.id} value={user.username}>
+                              {user.username}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+
+                    {/* Tab/Menu Filter */}
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                        Tab
+                      </label>
+                      <select
+                        value={tileAdminModalFilterMenu}
+                        onChange={(e) => setTileAdminModalFilterMenu(e.target.value as 'public' | 'private')}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                      >
+                        <option value="public">Public</option>
+                        <option value="private">Private</option>
+                      </select>
+                    </div>
+
+                    {/* Category Filter */}
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                        Category
+                      </label>
+                      <select
+                        value={tileAdminModalFilterCategory}
+                        onChange={(e) => setTileAdminModalFilterCategory(e.target.value)}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                      >
+                        <option value="">All Categories</option>
+                        {(() => {
+                          const uniqueCategories = new Set<string>();
+                          allTiles.forEach(tile => {
+                            const visibility = tile.visibility || 'public';
+                            if ((visibility === 'public' || visibility === 'private') && tile.group) {
+                              uniqueCategories.add(tile.group);
+                            }
+                          });
+                          return Array.from(uniqueCategories)
+                            .sort((a, b) => a.localeCompare(b))
+                            .map(category => (
+                              <option key={category} value={category}>
+                                {category}
+                              </option>
+                            ));
+                        })()}
+                      </select>
+                    </div>
+
+                    {/* Clear Filters Button */}
+                    {(tileAdminModalFilterUsername || tileAdminModalFilterCategory) && (
+                      <button
+                        onClick={() => {
+                          setTileAdminModalFilterUsername('');
+                          setTileAdminModalFilterMenu('public');
+                          setTileAdminModalFilterCategory('');
+                        }}
+                        className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium"
+                      >
+                        Clear filters
+                      </button>
+                    )}
+                  </div>
                   
                   {tileAdminsLoading ? (
                     <div className="flex items-center justify-center py-12 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
@@ -10752,10 +10717,38 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                         <div className="divide-y divide-slate-200 dark:divide-slate-700">
                           {allTiles
                             .filter(tile => {
-                              if (!tileAdminTileSearchTerm) return true;
-                              const search = tileAdminTileSearchTerm.toLowerCase();
-                              return (tile.title || '').toLowerCase().includes(search) ||
-                                     (tile.description || '').toLowerCase().includes(search);
+                              // Text search filter
+                              if (tileAdminTileSearchTerm) {
+                                const search = tileAdminTileSearchTerm.toLowerCase();
+                                const matchesSearch = (tile.title || '').toLowerCase().includes(search) ||
+                                  (tile.description || '').toLowerCase().includes(search);
+                                if (!matchesSearch) return false;
+                              }
+                              
+                              // Owner filter
+                              if (tileAdminModalFilterUsername) {
+                                const owner = allUsers.find(u => u.id === Number(tile.userId));
+                                const ownerUsername = owner?.username || '';
+                                if (ownerUsername !== tileAdminModalFilterUsername) {
+                                  return false;
+                                }
+                              }
+                              
+                              // Tab/Menu filter (visibility) - always filter by public or private
+                              const tileVisibility = tile.visibility || 'public';
+                              if (tileVisibility !== tileAdminModalFilterMenu) {
+                                return false;
+                              }
+                              
+                              // Category filter
+                              if (tileAdminModalFilterCategory) {
+                                const category = tile.group || '';
+                                if (category !== tileAdminModalFilterCategory) {
+                                  return false;
+                                }
+                              }
+                              
+                              return true;
                             })
                             .map((tile) => {
                               const admins = tileAdminsMap[tile.id] || [];
@@ -10779,32 +10772,60 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                     className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2 mt-0.5"
                                   />
                                   <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                                    <div className="flex items-center gap-1.5 mb-2 flex-wrap">
                                       <span className="text-base">{tile.emoji || '📄'}</span>
                                       <div className="text-sm font-medium text-slate-900 dark:text-white">
                                         {tile.title || tile.id}
                                       </div>
-                                      {/* Owner and Tab inline with title */}
-                                      {tile.userId && (() => {
-                                        const owner = allUsers.find(u => u.id === tile.userId);
-                                        return owner ? (
-                                          <span className="text-xs text-slate-500 dark:text-slate-400">
-                                            (Owner: <span className="font-medium text-slate-600 dark:text-slate-300">{owner.username}</span>)
-                                          </span>
-                                        ) : null;
-                                      })()}
-                                      {tile.group && (
-                                        <span className="text-xs text-blue-600 dark:text-blue-400">
-                                          [Tab: <span className="font-medium">{tile.group}</span>]
+                                    </div>
+                                    {/* Owner, Tab/Menu, and Category badges - Always shown */}
+                                    <div className="flex flex-wrap gap-1.5 mb-2">
+                                      {/* Owner badge - Always show */}
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                          <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                                        </svg>
+                                        <span className="font-medium">
+                                          {(() => {
+                                            if (!tile.userId) return 'No Owner';
+                                            // Convert userId to number for comparison
+                                            const userIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
+                                            // Find owner in allUsers array
+                                            const owner = allUsers.find(u => u.id === userIdNum);
+                                            return owner?.username || `Unknown (ID: ${tile.userId})`;
+                                          })()}
+                                        </span>
+                                      </span>
+                                      {/* Tab/Menu badge */}
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-700">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                          <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.75 9.083a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 12.663a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 16.25a.75.75 0 000 1.5h14.5a.75.75 0 100-1.5H2.75z" />
+                                        </svg>
+                                        <span className="font-medium capitalize">{tile.visibility || 'public'}</span>
+                                      </span>
+                                      {/* Category badge */}
+                                      {tile.group ? (
+                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700">
+                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                            <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.75 9.083a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 12.663a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 16.25a.75.75 0 000 1.5h14.5a.75.75 0 100-1.5H2.75z" />
+                                          </svg>
+                                          <span className="font-medium">{tile.group}</span>
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-600">
+                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                            <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.75 9.083a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 12.663a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 16.25a.75.75 0 000 1.5h14.5a.75.75 0 100-1.5H2.75z" />
+                                          </svg>
+                                          No Category
                                         </span>
                                       )}
                                     </div>
                                     {tile.description && (
-                                      <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mb-1">
+                                      <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mb-2">
                                         {tile.description}
                                       </div>
                                     )}
-                                    <div className="flex items-center gap-2 mt-1">
+                                    <div className="flex items-center gap-2">
                                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-300">
                                         {admins.length} admin{admins.length !== 1 ? 's' : ''}
                                       </span>
@@ -11007,12 +11028,17 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                               </div>
                                               <div className="flex flex-wrap gap-1 mt-0.5">
                                                 {tile?.userId && (() => {
-                                                  const owner = allUsers.find(u => u.id === tile.userId);
+                                                  const userIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
+                                                  const owner = allUsers.find(u => u.id === userIdNum);
                                                   return owner ? (
                                                     <span className="text-[10px] text-slate-500 dark:text-slate-400">
                                                       Owner: <span className="font-medium text-slate-600 dark:text-slate-300">{owner.username}</span>
                                                     </span>
-                                                  ) : null;
+                                                  ) : (
+                                                    <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                                                      Owner: <span className="font-medium text-slate-600 dark:text-slate-300">Unknown (ID: {tile.userId})</span>
+                                                    </span>
+                                                  );
                                                 })()}
                                                 {tile?.userId && tile?.group && (
                                                   <span className="text-[10px] text-slate-400">•</span>
@@ -11052,6 +11078,9 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     setTileAdminTileSearchTerm('');
                     setTileAdminUserSearchTerm('');
                     setTileAdminsUsersLoaded(false);
+                    setTileAdminModalFilterUsername('');
+                    setTileAdminModalFilterMenu('public');
+                    setTileAdminModalFilterCategory('');
                     setError('');
                   }}
                   className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
@@ -12621,9 +12650,247 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
         }}
         permission={selectedPermissionForEdit}
         onSave={handleUpdateGranularPermissions}
+        onRemove={async () => {
+          if (selectedPermissionForEdit) {
+            await accessService.removePermission(selectedPermissionForEdit.userId, selectedPermissionForEdit.tileId);
+            // Reload admins for this tile
+            const tilePerms = await accessService.getTilePermissions(selectedPermissionForEdit.tileId);
+            const admins = tilePerms.permissions
+              .filter(perm => perm.canEdit)
+              .map(perm => ({
+                userId: perm.userId,
+                tileId: selectedPermissionForEdit.tileId,
+                canView: perm.canView,
+                canEdit: perm.canEdit,
+                canDelete: perm.canDelete,
+                canAddLinks: perm.canAddLinks,
+                canAddSections: perm.canAddSections,
+                canAddTabs: perm.canAddTabs,
+                canEditLinks: perm.canEditLinks,
+                canDeleteLinks: perm.canDeleteLinks,
+                canDeleteSections: perm.canDeleteSections,
+                canDeleteTabs: perm.canDeleteTabs,
+                canChangeVisibility: perm.canChangeVisibility,
+                canChangeBrowser: perm.canChangeBrowser,
+                canCloneTile: perm.canCloneTile,
+                canViewTileInfo: perm.canViewTileInfo,
+                createdAt: perm.createdAt,
+                updatedAt: perm.updatedAt,
+                username: perm.username,
+                email: perm.email,
+                tileTitle: allTiles.find(t => t.id === selectedPermissionForEdit.tileId)?.title || selectedPermissionForEdit.tileId
+              }));
+            setTileAdminsMap(prev => ({ ...prev, [selectedPermissionForEdit.tileId]: admins }));
+            await loadPermissions();
+          }
+        }}
         userName={selectedPermissionForEdit?.username || selectedPermissionForEdit?.email}
         tileTitle={selectedPermissionForEdit?.tileTitle || allTiles.find(t => t.id === selectedPermissionForEdit?.tileId)?.title}
+        isOwner={(() => {
+          if (!selectedPermissionForEdit) return false;
+          const tile = allTiles.find(t => t.id === selectedPermissionForEdit.tileId);
+          if (!tile || !tile.userId) return false;
+          const userIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
+          return userIdNum === selectedPermissionForEdit.userId;
+        })()}
+        tileOwnerId={allTiles.find(t => t.id === selectedPermissionForEdit?.tileId)?.userId}
       />
+
+      {/* User Actions Dialog */}
+      {userActionsDialog.open && userActionsDialog.user && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setUserActionsDialog({ open: false, user: null })}>
+          <div
+            className="bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl border border-slate-200 dark:border-[#333] w-full max-w-md max-h-[85vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-[#333] flex items-center justify-between bg-slate-50 dark:bg-[#252525]">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-indigo-500/10 text-indigo-500">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                    <path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM16 8a2 2 0 11-4 0 2 2 0 014 0zm-1.615 8.428a1.224 1.224 0 00.569-1.175 5.966 5.966 0 00-2.081-.416 5.967 5.967 0 00-1.788.27A9.953 9.953 0 0013 18a9.953 9.953 0 003.385-.572z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900 dark:text-white">User Actions</h2>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">{userActionsDialog.user.username}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setUserActionsDialog({ open: false, user: null })}
+                className="p-2 hover:bg-slate-200 dark:hover:bg-[#333] rounded-xl transition-colors text-slate-500"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                  <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="space-y-2">
+                {/* Promote/Demote */}
+                <button
+                  onClick={async () => {
+                    setUserActionsDialog({ open: false, user: null });
+                    try {
+                      setProcessing(userActionsDialog.user.id);
+                      setError('');
+                      const result = await authService.toggleAdmin(userActionsDialog.user.id);
+                      setAllUsers(prevUsers =>
+                        prevUsers.map(u =>
+                          u.id === userActionsDialog.user.id ? { ...u, is_admin: result.is_admin } : u
+                        )
+                      );
+                    } catch (err: any) {
+                      setError(err.message || 'Failed to toggle admin status');
+                    } finally {
+                      setProcessing(null);
+                    }
+                  }}
+                  disabled={processing === userActionsDialog.user.id}
+                  className={`w-full px-4 py-3 text-left text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 rounded-xl transition-all ${userActionsDialog.user.is_admin
+                    ? 'bg-amber-50 dark:bg-amber-900/10 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/20'
+                    : 'bg-emerald-50 dark:bg-emerald-900/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/20'
+                    }`}
+                >
+                  {processing === userActionsDialog.user.id ? (
+                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  ) : userActionsDialog.user.is_admin ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                  {userActionsDialog.user.is_admin ? 'Demote from Admin' : 'Promote to Admin'}
+                </button>
+                
+                {!userActionsDialog.user.is_admin && (
+                  <>
+                    {/* Disable/Enable */}
+                    <button
+                      onClick={() => {
+                        setUserActionsDialog({ open: false, user: null });
+                        handleToggleDisable(userActionsDialog.user.id);
+                      }}
+                      disabled={processing === userActionsDialog.user.id}
+                      className={`w-full px-4 py-3 text-left text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 rounded-xl transition-all ${userActionsDialog.user.is_disabled
+                        ? 'bg-emerald-50 dark:bg-emerald-900/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/20'
+                        : 'bg-orange-50 dark:bg-orange-900/10 text-orange-700 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/20'
+                        }`}
+                    >
+                      {userActionsDialog.user.is_disabled ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                        </svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                      {userActionsDialog.user.is_disabled ? 'Enable User' : 'Disable User'}
+                    </button>
+                    
+                    {/* Toggle Auth Source */}
+                    <button
+                      onClick={async () => {
+                        setUserActionsDialog({ open: false, user: null });
+                        try {
+                          setProcessing(userActionsDialog.user.id);
+                          setError('');
+                          const result = await authService.toggleAuthSource(userActionsDialog.user.id);
+                          setAllUsers(prevUsers =>
+                            prevUsers.map(u =>
+                              u.id === userActionsDialog.user.id ? { ...u, auth_source: result.auth_source } : u
+                            )
+                          );
+                        } catch (err: any) {
+                          setError(err.message || 'Failed to toggle auth source');
+                        } finally {
+                          setProcessing(null);
+                        }
+                      }}
+                      disabled={processing === userActionsDialog.user.id}
+                      className="w-full px-4 py-3 text-left text-sm font-medium bg-purple-50 dark:bg-purple-900/10 text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 rounded-xl transition-all"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                        <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                      </svg>
+                      Toggle Auth Source
+                    </button>
+                    
+                    {/* Reset Password */}
+                    {userActionsDialog.user.auth_source !== 'ldap' && userActionsDialog.user.auth_source !== 'saml' && (
+                      <button
+                        onClick={() => {
+                          setUserActionsDialog({ open: false, user: null });
+                          setResetPasswordModal({ open: true, userId: userActionsDialog.user.id, username: userActionsDialog.user.username });
+                        }}
+                        disabled={processing === userActionsDialog.user.id}
+                        className="w-full px-4 py-3 text-left text-sm font-medium bg-blue-50 dark:bg-blue-900/10 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 rounded-xl transition-all"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                          <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
+                        </svg>
+                        Reset Password
+                      </button>
+                    )}
+                    
+                    {/* Impersonate */}
+                    <button
+                      onClick={async () => {
+                        setUserActionsDialog({ open: false, user: null });
+                        try {
+                          setProcessing(userActionsDialog.user.id);
+                          setError('');
+                          await authService.startImpersonation(userActionsDialog.user.id);
+                          window.location.reload();
+                        } catch (err: any) {
+                          setError(err.message || 'Failed to start impersonation');
+                          setProcessing(null);
+                        }
+                      }}
+                      disabled={processing === userActionsDialog.user.id}
+                      className="w-full px-4 py-3 text-left text-sm font-medium bg-indigo-50 dark:bg-indigo-900/10 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 rounded-xl transition-all"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                        <path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM16 8a2 2 0 11-4 0 2 2 0 014 0zm-1.615 8.428a1.224 1.224 0 00.569-1.175 5.966 5.966 0 00-2.081-.416 5.967 5.967 0 00-1.788.27A9.953 9.953 0 0013 18a9.953 9.953 0 003.385-.572z" />
+                      </svg>
+                      Impersonate
+                    </button>
+                    
+                    {/* Roles */}
+                    <button
+                      onClick={async () => {
+                        setUserActionsDialog({ open: false, user: null });
+                        try {
+                          await handleManageUserRoles(userActionsDialog.user.id);
+                        } catch (err: any) {
+                          setError(err.message || 'Failed to load user roles');
+                        }
+                      }}
+                      disabled={processing === userActionsDialog.user.id}
+                      className="w-full px-4 py-3 text-left text-sm font-medium bg-violet-50 dark:bg-violet-900/10 text-violet-700 dark:text-violet-400 hover:bg-violet-100 dark:hover:bg-violet-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 rounded-xl transition-all"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                        <path d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                      </svg>
+                      Assign Roles
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

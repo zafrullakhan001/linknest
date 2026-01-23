@@ -8,6 +8,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 const transformTile = (apiTile: any): Tile => {
   return {
     id: apiTile.id,
+    userId: apiTile.userId !== undefined && apiTile.userId !== null ? Number(apiTile.userId) : undefined,
     title: apiTile.title,
     description: apiTile.description || '',
     htmlContent: apiTile.htmlContent || '',

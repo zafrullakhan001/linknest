@@ -54,6 +54,19 @@ try {
     
     $currentTime = time();
     
+    // Get admin user ID
+    echo "Getting admin user ID...\n";
+    $adminStmt = $db->prepare('SELECT id FROM users WHERE is_admin = 1 LIMIT 1');
+    $adminStmt->execute();
+    $adminUser = $adminStmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$adminUser) {
+        throw new Exception('No admin user found. Please ensure an admin user exists before running this script.');
+    }
+    
+    $adminUserId = $adminUser['id'];
+    echo "  Admin user ID: $adminUserId\n";
+    
     // Define decoration presets with gradient configurations
     $decorationPresets = [
         'gold' => [
@@ -456,7 +469,7 @@ try {
             tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, 
             tile_gradient_direction, tile_gradient_type, tile_text_color, tile_border_radius
         )
-        VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, "public", ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "public", ?, ?, ?, ?, ?, ?, ?)
     ');
     
     foreach ($tiles as $tile) {
@@ -486,6 +499,7 @@ try {
         
         $tileStmt->execute([
             $tile['id'],
+            $adminUserId,
             $tile['title'],
             $tile['description'],
             $tile['emoji'],

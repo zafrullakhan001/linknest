@@ -189,7 +189,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editEmoji, setEditEmoji] = useState(tile.emoji);
     const [editColor, setEditColor] = useState<ThemeColor>(tile.themeColor);
     const [editVisibility, setEditVisibility] = useState<TileVisibility>(tile.visibility || 'public');
-    const [editAllowedUsers, setEditAllowedUsers] = useState<number[]>(tile.allowedUsers || []);
+    const [editAllowedUsers, setEditAllowedUsers] = useState<number[]>(() => {
+        // Always include owner in allowed users list for initialization
+        const allowedUsers = tile.allowedUsers || [];
+        if (tile.userId) {
+            const ownerIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
+            if (!allowedUsers.includes(ownerIdNum)) {
+                return [...allowedUsers, ownerIdNum];
+            }
+        }
+        return allowedUsers;
+    });
     const [editBrowser, setEditBrowser] = useState<string>(tile.browser || 'default');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [showTileUserSelector, setShowTileUserSelector] = useState(false);
@@ -586,7 +596,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setEditEmoji(tile.emoji);
         setEditColor(tile.themeColor);
         setEditVisibility(tile.visibility || 'public');
-        setEditAllowedUsers(tile.allowedUsers || []);
+        
+        // Always include owner in allowed users list
+        const allowedUsers = tile.allowedUsers || [];
+        if (tile.userId) {
+            const ownerIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
+            if (!allowedUsers.includes(ownerIdNum)) {
+                setEditAllowedUsers([...allowedUsers, ownerIdNum]);
+            } else {
+                setEditAllowedUsers(allowedUsers);
+            }
+        } else {
+            setEditAllowedUsers(allowedUsers);
+        }
+        
         setEditBrowser(tile.browser || 'default');
 
         // Tabs / sections: always reflect the latest tile data when
@@ -1454,6 +1477,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             richTextContent: section.richTextContent ? section.richTextContent.map(rt => ({ ...rt })) : []
         })) : undefined;
 
+        // Ensure owner is always included in allowed users for private tiles
+        let finalAllowedUsers = editAllowedUsers;
+        if (editVisibility === 'private' && tile.userId) {
+            const ownerIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
+            if (!finalAllowedUsers.includes(ownerIdNum)) {
+                finalAllowedUsers = [...finalAllowedUsers, ownerIdNum];
+            }
+        }
+
         const updatedTile: Tile = {
             ...tile,
             title: editTitle,
@@ -1464,7 +1496,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             tabs: clonedTabs,
             sections: clonedSections, // Only include sections if no tabs
             visibility: editVisibility,
-            allowedUsers: editVisibility === 'private' ? editAllowedUsers : undefined,
+            allowedUsers: editVisibility === 'private' ? finalAllowedUsers : undefined,
             browser: editBrowser !== 'default' ? editBrowser : undefined,
         };
 
@@ -4534,22 +4566,32 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 <div className="flex flex-wrap gap-2 mb-3">
                                                     {editAllowedUsers.map(userId => {
                                                         const user = usersList.find(u => u.id === userId);
+                                                        const isOwner = tile.userId && userId === (typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId);
                                                         return (
                                                             <span
                                                                 key={userId}
-                                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 rounded-lg text-xs font-medium border border-brand-200 dark:border-brand-800"
+                                                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${
+                                                                    isOwner 
+                                                                        ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-700'
+                                                                        : 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 border-brand-200 dark:border-brand-800'
+                                                                }`}
                                                             >
                                                                 {user?.username || `User ${userId}`}
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => setEditAllowedUsers(editAllowedUsers.filter(id => id !== userId))}
-                                                                    className="hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                                                                    title="Remove user"
-                                                                >
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                                                        <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                                                                    </svg>
-                                                                </button>
+                                                                {isOwner && (
+                                                                    <span className="text-[9px] font-bold uppercase">Owner</span>
+                                                                )}
+                                                                {!isOwner && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setEditAllowedUsers(editAllowedUsers.filter(id => id !== userId))}
+                                                                        className="hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                                                                        title="Remove user"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                                            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                                                        </svg>
+                                                                    </button>
+                                                                )}
                                                             </span>
                                                         );
                                                     })}
@@ -4568,31 +4610,53 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     ) : usersList.length === 0 ? (
                                                         <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-4">No users available</div>
                                                     ) : (
-                                                        usersList.map(user => (
-                                                            <label
-                                                                key={user.id}
-                                                                className="flex items-center gap-3 p-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg cursor-pointer transition-colors"
-                                                            >
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={editAllowedUsers.includes(user.id)}
-                                                                    onChange={(e) => {
-                                                                        if (e.target.checked) {
-                                                                            setEditAllowedUsers([...editAllowedUsers, user.id]);
-                                                                        } else {
-                                                                            setEditAllowedUsers(editAllowedUsers.filter(id => id !== user.id));
-                                                                        }
-                                                                    }}
-                                                                    className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 w-4 h-4"
-                                                                />
-                                                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300 flex-1">{user.username}</span>
-                                                                {user.auth_source && user.auth_source !== 'local' && (
-                                                                    <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[10px] font-semibold">
-                                                                        {user.auth_source.toUpperCase()}
+                                                        usersList.map(user => {
+                                                            const isOwner = tile.userId && user.id === (typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId);
+                                                            return (
+                                                                <label
+                                                                    key={user.id}
+                                                                    className={`flex items-center gap-3 p-2.5 rounded-lg transition-colors ${
+                                                                        isOwner 
+                                                                            ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
+                                                                            : 'hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer'
+                                                                    }`}
+                                                                >
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={editAllowedUsers.includes(user.id) || isOwner}
+                                                                        onChange={(e) => {
+                                                                            if (isOwner) return;
+                                                                            if (e.target.checked) {
+                                                                                setEditAllowedUsers([...editAllowedUsers, user.id]);
+                                                                            } else {
+                                                                                setEditAllowedUsers(editAllowedUsers.filter(id => id !== user.id));
+                                                                            }
+                                                                        }}
+                                                                        disabled={isOwner}
+                                                                        className={`rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 w-4 h-4 ${
+                                                                            isOwner ? 'opacity-50 cursor-not-allowed' : ''
+                                                                        }`}
+                                                                    />
+                                                                    <span className={`text-sm font-medium flex-1 ${
+                                                                        isOwner 
+                                                                            ? 'text-amber-800 dark:text-amber-200'
+                                                                            : 'text-slate-700 dark:text-slate-300'
+                                                                    }`}>
+                                                                        {user.username}
                                                                     </span>
-                                                                )}
-                                                            </label>
-                                                        ))
+                                                                    {isOwner && (
+                                                                        <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
+                                                                            Owner
+                                                                        </span>
+                                                                    )}
+                                                                    {user.auth_source && user.auth_source !== 'local' && (
+                                                                        <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[10px] font-semibold">
+                                                                            {user.auth_source.toUpperCase()}
+                                                                        </span>
+                                                                    )}
+                                                                </label>
+                                                            );
+                                                        })
                                                     )}
                                                 </div>
                                             )}

@@ -5015,7 +5015,8 @@ function handleGetTileInfo($tileId) {
     }
     
     // Check granular permission for viewing tile info (deny unless explicitly true)
-    if ($user && !$user['is_admin']) {
+    // Skip this check for public tiles - anyone can view info on public tiles
+    if ($user && !$user['is_admin'] && $tileVisibility !== 'public') {
         $isCreator = isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id'];
         if (!$isCreator) {
             $canViewInfo = canTileAdminPerformAction($user['id'], $tileId, 'view_tile_info', $db);

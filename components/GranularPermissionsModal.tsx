@@ -20,8 +20,11 @@ interface GranularPermissionsModalProps {
     canDelete: boolean;
     canEditTile: boolean;
   }) => Promise<void>;
+  onRemove?: () => Promise<void>;
   userName?: string;
   tileTitle?: string;
+  isOwner?: boolean;
+  tileOwnerId?: number | null;
 }
 
 export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> = ({
@@ -29,8 +32,11 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
   onClose,
   permission,
   onSave,
+  onRemove,
   userName,
-  tileTitle
+  tileTitle,
+  isOwner = false,
+  tileOwnerId
 }) => {
   const [permissions, setPermissions] = useState({
     canAddLinks: true,
@@ -89,7 +95,8 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
     checked: boolean;
     onChange: (checked: boolean) => void;
     category: 'add' | 'edit' | 'delete' | 'restricted';
-  }> = ({ label, description, checked, onChange, category }) => {
+    disabled?: boolean;
+  }> = ({ label, description, checked, onChange, category, disabled = false }) => {
     const categoryColors = {
       add: 'text-green-600 dark:text-green-400',
       edit: 'text-blue-600 dark:text-blue-400',
@@ -98,17 +105,18 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
     };
 
     return (
-      <div className="flex items-start gap-3 p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+      <div className={`flex items-start gap-3 p-3 rounded-lg transition-colors ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}>
         <div className="flex items-center h-5 mt-0.5">
           <input
             type="checkbox"
             checked={checked}
-            onChange={(e) => onChange(e.target.checked)}
-            className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2"
+            onChange={(e) => !disabled && onChange(e.target.checked)}
+            disabled={disabled}
+            className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
           />
         </div>
         <div className="flex-1 min-w-0">
-          <label className="text-sm font-medium text-slate-900 dark:text-white cursor-pointer">
+          <label className={`text-sm font-medium text-slate-900 dark:text-white ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
             {label}
           </label>
           <p className={`text-xs mt-0.5 ${categoryColors[category]}`}>
@@ -146,6 +154,25 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
         </div>
 
         <div className="p-6 space-y-6">
+          {/* Owner Protection Message */}
+          {isOwner && (
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
+                </svg>
+                <div className="flex-1">
+                  <h4 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                    Tile Owner - Protected Permissions
+                  </h4>
+                  <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                    This user is the owner of the tile. Owner permissions cannot be modified or removed by tile administrators for security reasons. Only the owner or system administrators can manage ownership.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Add Permissions */}
           <div>
             <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 uppercase tracking-wider">
@@ -158,6 +185,7 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
                 checked={permissions.canAddLinks}
                 onChange={(checked) => setPermissions(prev => ({ ...prev, canAddLinks: checked }))}
                 category="add"
+                disabled={isOwner}
               />
               <PermissionToggle
                 label="Add Sections"
@@ -165,6 +193,7 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
                 checked={permissions.canAddSections}
                 onChange={(checked) => setPermissions(prev => ({ ...prev, canAddSections: checked }))}
                 category="add"
+                disabled={isOwner}
               />
               <PermissionToggle
                 label="Add Tabs"
@@ -172,6 +201,7 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
                 checked={permissions.canAddTabs}
                 onChange={(checked) => setPermissions(prev => ({ ...prev, canAddTabs: checked }))}
                 category="add"
+                disabled={isOwner}
               />
             </div>
           </div>
@@ -188,6 +218,7 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
                 checked={permissions.canEditLinks}
                 onChange={(checked) => setPermissions(prev => ({ ...prev, canEditLinks: checked }))}
                 category="edit"
+                disabled={isOwner}
               />
             </div>
           </div>
@@ -204,6 +235,7 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
                 checked={permissions.canDeleteLinks}
                 onChange={(checked) => setPermissions(prev => ({ ...prev, canDeleteLinks: checked }))}
                 category="delete"
+                disabled={isOwner}
               />
               <PermissionToggle
                 label="Delete Sections"
@@ -211,6 +243,7 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
                 checked={permissions.canDeleteSections}
                 onChange={(checked) => setPermissions(prev => ({ ...prev, canDeleteSections: checked }))}
                 category="delete"
+                disabled={isOwner}
               />
               <PermissionToggle
                 label="Delete Tabs"
@@ -218,6 +251,7 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
                 checked={permissions.canDeleteTabs}
                 onChange={(checked) => setPermissions(prev => ({ ...prev, canDeleteTabs: checked }))}
                 category="delete"
+                disabled={isOwner}
               />
             </div>
           </div>
@@ -234,6 +268,7 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
                 checked={permissions.canChangeVisibility}
                 onChange={(checked) => setPermissions(prev => ({ ...prev, canChangeVisibility: checked }))}
                 category="restricted"
+                disabled={isOwner}
               />
               <PermissionToggle
                 label="Change Browser"
@@ -241,6 +276,7 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
                 checked={permissions.canChangeBrowser}
                 onChange={(checked) => setPermissions(prev => ({ ...prev, canChangeBrowser: checked }))}
                 category="restricted"
+                disabled={isOwner}
               />
               <PermissionToggle
                 label="Clone Tile"
@@ -248,6 +284,7 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
                 checked={permissions.canCloneTile}
                 onChange={(checked) => setPermissions(prev => ({ ...prev, canCloneTile: checked }))}
                 category="restricted"
+                disabled={isOwner}
               />
               <PermissionToggle
                 label="Tile Card Info"
@@ -255,6 +292,7 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
                 checked={permissions.canViewTileInfo}
                 onChange={(checked) => setPermissions(prev => ({ ...prev, canViewTileInfo: checked }))}
                 category="restricted"
+                disabled={isOwner}
               />
               <PermissionToggle
                 label="Edit Tile Settings"
@@ -262,6 +300,7 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
                 checked={permissions.canEditTile}
                 onChange={(checked) => setPermissions(prev => ({ ...prev, canEditTile: checked }))}
                 category="restricted"
+                disabled={isOwner}
               />
               <PermissionToggle
                 label="Delete/Archive Tile"
@@ -269,16 +308,18 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
                 checked={permissions.canDelete}
                 onChange={(checked) => setPermissions(prev => ({ ...prev, canDelete: checked }))}
                 category="restricted"
+                disabled={isOwner}
               />
             </div>
           </div>
 
           {/* Quick Presets */}
-          <div>
-            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 uppercase tracking-wider">
-              Quick Presets
-            </h3>
-            <div className="flex flex-wrap gap-2">
+          {!isOwner && (
+            <div>
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 uppercase tracking-wider">
+                Quick Presets
+              </h3>
+              <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setPermissions({
                   canAddLinks: true,
@@ -340,23 +381,58 @@ export const GranularPermissionsModal: React.FC<GranularPermissionsModalProps> =
                 Links Only (No Structure)
               </button>
             </div>
-          </div>
+            </div>
+          )}
         </div>
 
         <div className="p-6 border-t border-slate-200 dark:border-slate-700 flex gap-3">
-          <button
-            onClick={onClose}
-            className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isSaving ? 'Saving...' : 'Save Permissions'}
-          </button>
+          {isOwner ? (
+            // Owner view - Close button only
+            <button
+              onClick={onClose}
+              className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+            >
+              Close
+            </button>
+          ) : (
+            // Non-owner view - Cancel, Remove, Save buttons
+            <>
+              <button
+                onClick={onClose}
+                className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              {onRemove && (
+                <button
+                  onClick={async () => {
+                    if (confirm(`Remove ${userName || 'this user'} as a tile admin?`)) {
+                      setIsSaving(true);
+                      try {
+                        await onRemove();
+                        onClose();
+                      } catch (error) {
+                        console.error('Failed to remove tile admin:', error);
+                      } finally {
+                        setIsSaving(false);
+                      }
+                    }
+                  }}
+                  disabled={isSaving}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSaving ? 'Removing...' : 'Remove Admin'}
+                </button>
+              )}
+              <button
+                onClick={handleSave}
+                disabled={isSaving}
+                className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSaving ? 'Saving...' : 'Save Permissions'}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
