@@ -32,9 +32,10 @@ interface NavigationProps {
   user: { id: number; username: string; email: string; is_admin?: boolean } | null;
   onLoginClick: () => void;
   onHelpClick: () => void;
+  isWidgetAllowed: (widgetId: string) => boolean;
 }
 
-export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: toggleDarkMode, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, showWeather, toggleWeather, showCalculator, toggleCalculator, showPasswordGenerator, togglePasswordGenerator, showZoomControl, toggleZoomControl, showTheme, toggleThemeWidget, showFavOrganizer, toggleFavOrganizer, showChat, toggleChat, showSnakeGame, toggleSnakeGame, hasUnreadChatMessages = false, user, onLoginClick, onHelpClick }) => {
+export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: toggleDarkMode, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, showWeather, toggleWeather, showCalculator, toggleCalculator, showPasswordGenerator, togglePasswordGenerator, showZoomControl, toggleZoomControl, showTheme, toggleThemeWidget, showFavOrganizer, toggleFavOrganizer, showChat, toggleChat, showSnakeGame, toggleSnakeGame, hasUnreadChatMessages = false, user, onLoginClick, onHelpClick, isWidgetAllowed }) => {
   const { logout } = useAuth();
   const { settings } = useSettings();
   const disabledTabs = getDisabledTabsFromSettings(settings);
@@ -125,31 +126,36 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
 
           {/* Widgets Pill */}
           <div className="flex items-center gap-0.5 bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-full p-1 shadow-sm backdrop-blur-sm">
-            <button
-              onClick={toggleClock}
-              className={`p-2 rounded-full transition-all ${showClock ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-              title={showClock ? "Hide Clock Widget" : "Show Clock Widget"}
-            >
+            {isWidgetAllowed('clock') && (
+              <button
+                onClick={toggleClock}
+                className={`p-2 rounded-full transition-all ${showClock ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                title={showClock ? "Hide Clock Widget" : "Show Clock Widget"}
+              >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
                 <circle cx="12" cy="12" r="10"></circle>
                 <polyline points="12 6 12 12 16 14"></polyline>
               </svg>
-            </button>
-            <button
-              onClick={toggleWeather}
-              className={`p-2 rounded-full transition-all ${showWeather ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-              title={showWeather ? "Hide Weather Widget" : "Show Weather Widget"}
-            >
+              </button>
+            )}
+            {isWidgetAllowed('weather') && (
+              <button
+                onClick={toggleWeather}
+                className={`p-2 rounded-full transition-all ${showWeather ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                title={showWeather ? "Hide Weather Widget" : "Show Weather Widget"}
+              >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
                 <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
                 <path d="M22 10a3 3 0 0 0-3-3h-2.5a2.5 2.5 0 0 0-5 0H12a3 3 0 0 0 0 6h3a2.5 2.5 0 0 0 5 0H22Z"></path>
               </svg>
-            </button>
-            <button
-              onClick={toggleCalculator}
-              className={`p-2 rounded-full transition-all ${showCalculator ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-              title={showCalculator ? "Hide Calculator Widget" : "Show Calculator Widget"}
-            >
+              </button>
+            )}
+            {isWidgetAllowed('calculator') && (
+              <button
+                onClick={toggleCalculator}
+                className={`p-2 rounded-full transition-all ${showCalculator ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                title={showCalculator ? "Hide Calculator Widget" : "Show Calculator Widget"}
+              >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
                 <rect x="4" y="2" width="16" height="20" rx="2"></rect>
                 <line x1="8" y1="6" x2="16" y2="6"></line>
@@ -157,8 +163,9 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
                 <line x1="8" y1="14" x2="16" y2="14"></line>
                 <line x1="8" y1="18" x2="16" y2="18"></line>
               </svg>
-            </button>
-            {user && (
+              </button>
+            )}
+            {user && isWidgetAllowed('notes') && (
               <button
                 onClick={toggleNotes}
                 className={`p-2 rounded-full transition-all ${showNotes ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
@@ -173,43 +180,50 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
                 </svg>
               </button>
             )}
-            <button
-              onClick={togglePasswordGenerator}
-              className={`p-2 rounded-full transition-all ${showPasswordGenerator ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-              title={showPasswordGenerator ? "Hide Password Generator Widget" : "Show Password Generator Widget"}
-            >
+            {isWidgetAllowed('password-generator') && (
+              <button
+                onClick={togglePasswordGenerator}
+                className={`p-2 rounded-full transition-all ${showPasswordGenerator ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                title={showPasswordGenerator ? "Hide Password Generator Widget" : "Show Password Generator Widget"}
+              >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
                 <rect x="5" y="11" width="14" height="10" rx="2" ry="2"></rect>
                 <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
               </svg>
-            </button>
-            <button
-              onClick={togglePhoneticAlphabet}
-              className={`p-2 rounded-full transition-all ${showPhoneticAlphabet ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-              title={showPhoneticAlphabet ? "Hide Phonetic Alphabet" : "Show Phonetic Alphabet"}
-            >
+              </button>
+            )}
+            {isWidgetAllowed('phonetic-alphabet') && (
+              <button
+                onClick={togglePhoneticAlphabet}
+                className={`p-2 rounded-full transition-all ${showPhoneticAlphabet ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                title={showPhoneticAlphabet ? "Hide Phonetic Alphabet" : "Show Phonetic Alphabet"}
+              >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
                 <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
                 <path d="M8 8h4M8 12h4M8 16h4"></path>
               </svg>
-            </button>
-            <button
-              onClick={toggleZoomControl}
-              className={`p-2 rounded-full transition-all ${showZoomControl ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-              title={showZoomControl ? "Hide Zoom Control Widget" : "Show Zoom Control Widget"}
-            >
+              </button>
+            )}
+            {isWidgetAllowed('zoom-control') && (
+              <button
+                onClick={toggleZoomControl}
+                className={`p-2 rounded-full transition-all ${showZoomControl ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                title={showZoomControl ? "Hide Zoom Control Widget" : "Show Zoom Control Widget"}
+              >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
                 <circle cx="11" cy="11" r="8"></circle>
                 <path d="m21 21-4.35-4.35"></path>
                 <line x1="11" y1="8" x2="11" y2="14"></line>
                 <line x1="8" y1="11" x2="14" y2="11"></line>
               </svg>
-            </button>
-            <button
-              onClick={toggleThemeWidget}
-              className={`p-2 rounded-full transition-all ${showTheme ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-              title={showTheme ? "Hide Theme Widget" : "Show Theme Widget"}
-            >
+              </button>
+            )}
+            {isWidgetAllowed('theme') && (
+              <button
+                onClick={toggleThemeWidget}
+                className={`p-2 rounded-full transition-all ${showTheme ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                title={showTheme ? "Hide Theme Widget" : "Show Theme Widget"}
+              >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
                 <circle cx="13.5" cy="6.5" r=".5"></circle>
                 <circle cx="17.5" cy="10.5" r=".5"></circle>
@@ -217,12 +231,14 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
                 <circle cx="6.5" cy="12.5" r=".5"></circle>
                 <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path>
               </svg>
-            </button>
-            <button
-              onClick={toggleFavOrganizer}
-              className={`p-2 rounded-full transition-all ${showFavOrganizer ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-              title={showFavOrganizer ? "Hide Favorite Organizer Widget" : "Show Favorite Organizer Widget"}
-            >
+              </button>
+            )}
+            {isWidgetAllowed('fav-organizer') && (
+              <button
+                onClick={toggleFavOrganizer}
+                className={`p-2 rounded-full transition-all ${showFavOrganizer ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                title={showFavOrganizer ? "Hide Favorite Organizer Widget" : "Show Favorite Organizer Widget"}
+              >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
                 <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
                 <path d="M12 2v14"></path>
@@ -230,8 +246,9 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
                 <path d="M8 10h8"></path>
                 <path d="M8 14h6"></path>
               </svg>
-            </button>
-            {user && (
+              </button>
+            )}
+            {user && isWidgetAllowed('chat') && (
               <button
                 onClick={toggleChat}
                 className={`p-2 rounded-full transition-all relative ${showChat ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : hasUnreadChatMessages ? 'hover:bg-slate-200 dark:hover:bg-slate-700 text-red-500 dark:text-red-400' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
@@ -246,18 +263,20 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
                 )}
               </button>
             )}
-            <button
-              onClick={toggleSnakeGame}
-              className={`p-2 rounded-full transition-all ${showSnakeGame ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-              title={showSnakeGame ? "Hide Snake Game Widget" : "Show Snake Game Widget"}
-            >
+            {isWidgetAllowed('snake-game') && (
+              <button
+                onClick={toggleSnakeGame}
+                className={`p-2 rounded-full transition-all ${showSnakeGame ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                title={showSnakeGame ? "Hide Snake Game Widget" : "Show Snake Game Widget"}
+              >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
                 <path d="M2 12h20"></path>
                 <path d="M12 2v20"></path>
                 <path d="M8 8l-4 4 4 4"></path>
                 <path d="M16 8l4 4-4 4"></path>
               </svg>
-            </button>
+              </button>
+            )}
           </div>
 
           {/* System Section */}

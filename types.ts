@@ -78,6 +78,7 @@ export interface Tile {
   createdAt: number;
   visibility?: TileVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
   allowedUsers?: number[]; // Array of user IDs for private tiles/spaces
+  allowedGroups?: number[]; // Array of user group IDs for private tiles/spaces
   isFavorite?: boolean; // Whether this tile is favorited by the current user
   isHyperlink?: boolean; // Whether this tile is a hyperlink instead of a space
   hyperlinkUrl?: string; // URL for hyperlink tiles

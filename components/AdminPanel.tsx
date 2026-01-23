@@ -12,9 +12,11 @@ import { Tile } from '../types';
 import { getCategoryArrangement } from '../services/storageService';
 import { SecurePasswordInput } from './SecurePasswordInput';
 import { accessService, TilePermission } from '../services/accessService';
+import { groupTilePermissionsService, GroupTilePermission } from '../services/groupTilePermissionsService';
 import { APP_TABS, getDisabledTabsFromSettings, setToSortedJsonArray, type AppTabId } from '../services/tabVisibilityService';
 import { broadcastService, BroadcastMessage } from '../services/broadcastService';
 import { rolesService, Role } from '../services/rolesService';
+import { userGroupsService, UserGroup } from '../services/userGroupsService';
 import SamlConfigModal from './SamlConfigModal';
 import { useMobile } from '../hooks/useMobile';
 import { getCustomWidgets, createWidget, updateWidget, deleteWidget, CustomWidget, CreateWidgetRequest, UpdateWidgetRequest } from '../services/widgetService';
@@ -283,13 +285,41 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   // Access Manager state
   const [permissions, setPermissions] = useState<TilePermission[]>([]);
   const [permissionsLoading, setPermissionsLoading] = useState(false);
-  const [accessSubTab, setAccessSubTab] = useState<'roles' | 'assign' | 'admins'>('roles');
+  // Initialize accessSubTab from localStorage or default to 'roles'
+  const [accessSubTab, setAccessSubTab] = useState<'roles' | 'assign' | 'admins' | 'groups'>(() => {
+    const savedSubTab = localStorage.getItem('adminPanelAccessSubTab');
+    const validSubTabs: Array<'roles' | 'assign' | 'admins' | 'groups'> = ['roles', 'assign', 'admins', 'groups'];
+    return (savedSubTab && validSubTabs.includes(savedSubTab as any)) ? savedSubTab as any : 'roles';
+  });
+  
+  // User Groups state
+  const [userGroups, setUserGroups] = useState<Array<{ id: number; name: string; description: string | null; memberCount: number; roleCount: number; createdAt: number; updatedAt: number }>>([]);
+  const [userGroupsLoading, setUserGroupsLoading] = useState(false);
+  const [showUserGroupModal, setShowUserGroupModal] = useState(false);
+  const [editingUserGroup, setEditingUserGroup] = useState<{ id: number; name: string; description: string | null } | null>(null);
+  const [userGroupName, setUserGroupName] = useState('');
+  const [userGroupDescription, setUserGroupDescription] = useState('');
+  const [userGroupSaving, setUserGroupSaving] = useState(false);
+  const [showGroupMembersModal, setShowGroupMembersModal] = useState(false);
+  const [showGroupRolesModal, setShowGroupRolesModal] = useState(false);
+  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
+  const [groupMembers, setGroupMembers] = useState<Array<{ id: number; username: string; email: string; authSource: string; joinedAt: number }>>([]);
+  const [groupRoles, setGroupRoles] = useState<Array<{ id: number; name: string; description: string | null; assignedAt: number }>>([]);
+  const [groupMembersLoading, setGroupMembersLoading] = useState(false);
+  const [groupRolesLoading, setGroupRolesLoading] = useState(false);
+  const [selectedUsersToAdd, setSelectedUsersToAdd] = useState<Set<number>>(new Set());
+  const [selectedRolesToAssign, setSelectedRolesToAssign] = useState<Set<number>>(new Set());
+  const [groupMembersSearchTerm, setGroupMembersSearchTerm] = useState('');
+  const [groupRolesSearchTerm, setGroupRolesSearchTerm] = useState('');
+  const [addingMembersLoading, setAddingMembersLoading] = useState(false);
+  const [assigningRolesLoading, setAssigningRolesLoading] = useState(false);
 
   // Tile Admins state
   const [showTileAdminsModal, setShowTileAdminsModal] = useState(false);
   const [selectedTileIdsForAdmins, setSelectedTileIdsForAdmins] = useState<Set<string>>(new Set());
   const [tileAdminsLoading, setTileAdminsLoading] = useState(false);
   const [tileAdminsMap, setTileAdminsMap] = useState<Record<string, TilePermission[]>>({});
+  const [tileAdminGroupsMap, setTileAdminGroupsMap] = useState<Record<string, Array<{ groupId: number; groupName: string; canView: boolean; canEdit: boolean; canDelete: boolean }>>>({});
   const [tileAdminTileSearchTerm, setTileAdminTileSearchTerm] = useState('');
   const [tileAdminUserSearchTerm, setTileAdminUserSearchTerm] = useState('');
   const [tileAdminsUsersLoaded, setTileAdminsUsersLoaded] = useState(false);
@@ -303,6 +333,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [tileAdminModalFilterUsername, setTileAdminModalFilterUsername] = useState('');
   const [tileAdminModalFilterMenu, setTileAdminModalFilterMenu] = useState<'public' | 'private'>('public');
   const [tileAdminModalFilterCategory, setTileAdminModalFilterCategory] = useState('');
+  const [tileAdminEntityFilter, setTileAdminEntityFilter] = useState<'all' | 'users' | 'groups'>('all');
 
   // Roles management state
   const [roles, setRoles] = useState<Role[]>([]);
@@ -325,6 +356,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [userRolesMap, setUserRolesMap] = useState<Record<number, Array<{ id: number; name: string; description?: string }>>>({});
   const [loadingUserRoles, setLoadingUserRoles] = useState<Set<number>>(new Set());
   const [userRolesLoading, setUserRolesLoading] = useState(false);
+  const [bulkAssignTarget, setBulkAssignTarget] = useState<'users' | 'groups'>('users');
+  const [bulkSelectedGroupIds, setBulkSelectedGroupIds] = useState<number[]>([]);
+  const [bulkGroupSearchTerm, setBulkGroupSearchTerm] = useState('');
+  const [groupRolesMap, setGroupRolesMap] = useState<Record<number, Array<{ id: number; name: string; description?: string }>>>({});
+  const [loadingGroupRoles, setLoadingGroupRoles] = useState<Set<number>>(new Set());
   const [roleForm, setRoleForm] = useState({ name: '', description: '' });
   const [allTiles, setAllTiles] = useState<Tile[]>([]);
   const [allLinks, setAllLinks] = useState<Array<{ id: string; label: string; url: string; tileId: string; tileTitle: string }>>([]);
@@ -528,6 +564,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       if (accessSubTab === 'admins') {
         loadPermissions();
       }
+      // Load user groups if on groups sub-tab
+      if (accessSubTab === 'groups') {
+        loadUserGroups();
+      }
     }
     // Load permissions and roles when viewing All Users tab to show badges
     if (activeTab === 'all') {
@@ -612,6 +652,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   useEffect(() => {
     localStorage.setItem('adminPanelActiveTab', activeTab);
   }, [activeTab]);
+
+  // Persist accessSubTab to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('adminPanelAccessSubTab', accessSubTab);
+  }, [accessSubTab]);
 
   // ESC key handler for Access Manager modals
   useEffect(() => {
@@ -1105,12 +1150,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     setTileAdminTileSearchTerm('');
     setTileAdminUserSearchTerm('');
     setTileAdminsMap({});
+    setTileAdminGroupsMap({});
     setTileAdminsUsersLoaded(false);
     setTileAdminsLoading(true);
     try {
-      // Always load users and tiles to ensure fresh data
+      // Always load users, groups, and tiles to ensure fresh data
       await Promise.all([
         loadAllUsers(),
+        loadUserGroups(),
         loadAllTilesAndLinks()
       ]);
       
@@ -1118,10 +1165,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setTileAdminsUsersLoaded(true);
       
       // Load all permissions for all tiles in a single batch call (much faster)
-      const batchPermissions = await accessService.getBatchPermissions();
-      const permissionsMap: Record<string, TilePermission[]> = {};
+      const [batchPermissions, batchGroupPermissions] = await Promise.all([
+        accessService.getBatchPermissions(),
+        groupTilePermissionsService.getBatchPermissions()
+      ]);
       
-      // Process batch response and filter to only tile admins (canEdit = true)
+      const permissionsMap: Record<string, TilePermission[]> = {};
+      const groupPermissionsMap: Record<string, Array<{ groupId: number; groupName: string; canView: boolean; canEdit: boolean; canDelete: boolean }>> = {};
+      
+      // Process user permissions - filter to only tile admins (canEdit = true)
       for (const tilePerms of batchPermissions) {
         const admins = tilePerms.permissions
           .filter(perm => perm.canEdit)
@@ -1140,15 +1192,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         permissionsMap[tilePerms.tileId] = admins;
       }
       
+      // Process group permissions - filter to only tile admins (canEdit = true)
+      for (const tileGroupPerms of batchGroupPermissions) {
+        const groupAdmins = tileGroupPerms.groupPermissions
+          .filter(perm => perm.canEdit)
+          .map(perm => ({
+            groupId: perm.groupId,
+            groupName: perm.groupName,
+            canView: perm.canView,
+            canEdit: perm.canEdit,
+            canDelete: perm.canDelete
+          }));
+        groupPermissionsMap[tileGroupPerms.tileId] = groupAdmins;
+      }
+      
       // Ensure all tiles have an entry (even if empty)
       const currentTiles = await getTiles();
       for (const tile of currentTiles) {
         if (!permissionsMap[tile.id]) {
           permissionsMap[tile.id] = [];
         }
+        if (!groupPermissionsMap[tile.id]) {
+          groupPermissionsMap[tile.id] = [];
+        }
       }
       
       setTileAdminsMap(permissionsMap);
+      setTileAdminGroupsMap(groupPermissionsMap);
       setShowTileAdminsModal(true);
     } catch (err: any) {
       setError(err.message || 'Failed to load tile admins');
@@ -1257,6 +1327,87 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       await loadPermissions();
     } catch (err: any) {
       setError(err.message || 'Failed to remove tile admin');
+    }
+  };
+
+  // Group tile admin handlers
+  const handleAddGroupTileAdmin = async (groupId: number, tileId: string, granularPerms?: {
+    canAddLinks?: boolean;
+    canAddSections?: boolean;
+    canAddTabs?: boolean;
+    canEditLinks?: boolean;
+    canDeleteLinks?: boolean;
+    canDeleteSections?: boolean;
+    canDeleteTabs?: boolean;
+    canChangeVisibility?: boolean;
+    canChangeBrowser?: boolean;
+    canCloneTile?: boolean;
+    canViewTileInfo?: boolean;
+    canEditTile?: boolean;
+  }) => {
+    try {
+      setError('');
+      // Set group as tile admin with granular permissions
+      await groupTilePermissionsService.setPermission({
+        groupId,
+        tileId,
+        canView: true,
+        canEdit: true,
+        canDelete: false,
+        canAddLinks: granularPerms?.canAddLinks ?? true,
+        canAddSections: granularPerms?.canAddSections ?? true,
+        canAddTabs: granularPerms?.canAddTabs ?? true,
+        canEditLinks: granularPerms?.canEditLinks ?? true,
+        canDeleteLinks: granularPerms?.canDeleteLinks ?? false,
+        canDeleteSections: granularPerms?.canDeleteSections ?? false,
+        canDeleteTabs: granularPerms?.canDeleteTabs ?? false,
+        canChangeVisibility: granularPerms?.canChangeVisibility ?? false,
+        canChangeBrowser: granularPerms?.canChangeBrowser ?? false,
+        canCloneTile: granularPerms?.canCloneTile ?? false,
+        canViewTileInfo: granularPerms?.canViewTileInfo ?? true,
+        canEditTile: granularPerms?.canEditTile ?? true
+      });
+      
+      // Reload group admins for this tile
+      const tileGroupPerms = await groupTilePermissionsService.getTileGroupPermissions(tileId);
+      const groupAdmins = tileGroupPerms.groupPermissions
+        .filter(perm => perm.canEdit)
+        .map(perm => ({
+          groupId: perm.groupId,
+          groupName: perm.groupName,
+          canView: perm.canView,
+          canEdit: perm.canEdit,
+          canDelete: perm.canDelete
+        }));
+      
+      setTileAdminGroupsMap(prev => ({ ...prev, [tileId]: groupAdmins }));
+      await loadPermissions();
+    } catch (err: any) {
+      setError(err.message || 'Failed to add group tile admin');
+    }
+  };
+
+  const handleRemoveGroupTileAdmin = async (groupId: number, tileId: string) => {
+    try {
+      setError('');
+      await groupTilePermissionsService.deletePermission(groupId, tileId);
+      
+      // Reload group admins for this tile
+      const tileGroupPerms = await groupTilePermissionsService.getTileGroupPermissions(tileId);
+      const groupAdmins = tileGroupPerms.groupPermissions
+        .filter(perm => perm.canEdit)
+        .map(perm => ({
+          groupId: perm.groupId,
+          groupName: perm.groupName,
+          canView: perm.canView,
+          canEdit: perm.canEdit,
+          canDelete: perm.canDelete
+        }));
+      
+      setTileAdminGroupsMap(prev => ({ ...prev, [tileId]: groupAdmins }));
+      await loadPermissions();
+    } catch (err: any) {
+      setError(err.message || 'Failed to remove group tile admin');
     }
   };
 
@@ -1808,10 +1959,53 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     }
   };
 
+  const loadGroupRolesForBulk = async (groups?: Array<{ id: number; name: string; description: string | null; memberCount: number; roleCount: number; createdAt: number; updatedAt: number }>) => {
+    const groupsToUse = groups || userGroups;
+    if (groupsToUse.length === 0) return;
+    
+    try {
+      setUserRolesLoading(true); // Reuse the same loading state
+      const rolesMap: Record<number, Array<{ id: number; name: string; description?: string }>> = {};
+      
+      // Load roles for each group
+      for (const group of groupsToUse) {
+        try {
+          const groupRoles = await userGroupsService.getGroupRoles(group.id);
+          rolesMap[group.id] = groupRoles.map(r => ({
+            id: r.id,
+            name: r.name,
+            description: r.description
+          }));
+        } catch (err) {
+          rolesMap[group.id] = [];
+        }
+      }
+      
+      setGroupRolesMap(rolesMap);
+    } catch (err) {
+      // If loading fails, set empty map
+      const rolesMap: Record<number, Array<{ id: number; name: string; description?: string }>> = {};
+      for (const group of groupsToUse) {
+        rolesMap[group.id] = [];
+      }
+      setGroupRolesMap(rolesMap);
+    } finally {
+      setUserRolesLoading(false);
+    }
+  };
+
   const handleBulkAssignRoles = async () => {
-    if (bulkSelectedUserIds.length === 0) {
-      setError('Please select at least one user');
-      return;
+    // Validate target selection
+    if (bulkAssignTarget === 'users') {
+      if (bulkSelectedUserIds.length === 0) {
+        setError('Please select at least one user');
+        return;
+      }
+    } else {
+      if (bulkSelectedGroupIds.length === 0) {
+        setError('Please select at least one group');
+        return;
+      }
     }
 
     if (bulkSelectedRoleIds.length === 0) {
@@ -1824,49 +2018,272 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setBulkAssignLoading(true);
       
       let result;
-      if (bulkAssignMode === 'remove') {
-        // Remove roles from users
-        result = await rolesService.bulkRemoveRolesFromUsers({
-          userIds: bulkSelectedUserIds,
-          roleIds: bulkSelectedRoleIds
-        });
+      if (bulkAssignTarget === 'users') {
+        if (bulkAssignMode === 'remove') {
+          // Remove roles from users
+          result = await rolesService.bulkRemoveRolesFromUsers({
+            userIds: bulkSelectedUserIds,
+            roleIds: bulkSelectedRoleIds
+          });
+        } else {
+          // Assign roles to users (add or replace)
+          result = await rolesService.bulkAssignRolesToUsers({
+            userIds: bulkSelectedUserIds,
+            roleIds: bulkSelectedRoleIds,
+            mode: bulkAssignMode
+          });
+        }
       } else {
-        // Assign roles to users (add or replace)
-        result = await rolesService.bulkAssignRolesToUsers({
-          userIds: bulkSelectedUserIds,
-          roleIds: bulkSelectedRoleIds,
-          mode: bulkAssignMode
-        });
+        // Groups
+        if (bulkAssignMode === 'remove') {
+          // Remove roles from groups
+          result = await rolesService.bulkRemoveRolesFromGroups({
+            groupIds: bulkSelectedGroupIds,
+            roleIds: bulkSelectedRoleIds
+          });
+        } else {
+          // Assign roles to groups (add or replace)
+          result = await rolesService.bulkAssignRolesToGroups({
+            groupIds: bulkSelectedGroupIds,
+            roleIds: bulkSelectedRoleIds,
+            mode: bulkAssignMode
+          });
+        }
       }
       
       setShowBulkAssignModal(false);
       setBulkSelectedUserIds([]);
+      setBulkSelectedGroupIds([]);
       setBulkSelectedRoleIds([]);
       setBulkAssignMode('add');
       setBulkUserSearchTerm('');
+      setBulkGroupSearchTerm('');
       setBulkRoleSearchTerm('');
       setUserRolesMap({});
+      setGroupRolesMap({});
       
       await loadRoles();
       await loadData(); // Refresh user list to show updated role counts
+      if (bulkAssignTarget === 'groups') {
+        await loadUserGroups(); // Refresh group list
+      }
+      
+      const targetName = bulkAssignTarget === 'users' ? 'user' : 'group';
+      const targetNamePlural = bulkAssignTarget === 'users' ? 'users' : 'groups';
       
       if (bulkAssignMode === 'remove') {
         if (result.failed > 0) {
-          alert(`Bulk removal completed with some errors:\n- Successfully removed: ${result.removed} users\n- Failed: ${result.failed} users${result.errors ? '\n\nErrors:\n' + result.errors.join('\n') : ''}`);
+          alert(`Bulk removal completed with some errors:\n- Successfully removed: ${result.removed} ${targetNamePlural}\n- Failed: ${result.failed} ${targetNamePlural}${result.errors ? '\n\nErrors:\n' + result.errors.join('\n') : ''}`);
         } else {
-          alert(`Successfully removed roles from ${result.removed} user${result.removed !== 1 ? 's' : ''}!`);
+          alert(`Successfully removed roles from ${result.removed} ${targetName}${result.removed !== 1 ? 's' : ''}!`);
         }
       } else {
         if (result.failed > 0) {
-          alert(`Bulk assignment completed with some errors:\n- Successfully assigned: ${result.assigned} users\n- Failed: ${result.failed} users${result.errors ? '\n\nErrors:\n' + result.errors.join('\n') : ''}`);
+          alert(`Bulk assignment completed with some errors:\n- Successfully assigned: ${result.assigned} ${targetNamePlural}\n- Failed: ${result.failed} ${targetNamePlural}${result.errors ? '\n\nErrors:\n' + result.errors.join('\n') : ''}`);
         } else {
-          alert(`Successfully assigned roles to ${result.assigned} user${result.assigned !== 1 ? 's' : ''}!`);
+          alert(`Successfully assigned roles to ${result.assigned} ${targetName}${result.assigned !== 1 ? 's' : ''}!`);
         }
       }
     } catch (err: any) {
       setError(err.message || `Failed to ${bulkAssignMode === 'remove' ? 'remove' : 'assign'} roles`);
     } finally {
       setBulkAssignLoading(false);
+    }
+  };
+
+  // User Groups management handlers
+  const loadUserGroups = async () => {
+    try {
+      setUserGroupsLoading(true);
+      setError('');
+      const groupsList = await userGroupsService.getAllGroups();
+      setUserGroups(groupsList);
+      return groupsList;
+    } catch (err: any) {
+      setError(err.message || 'Failed to load user groups');
+      return [];
+    } finally {
+      setUserGroupsLoading(false);
+    }
+  };
+
+  const handleAddUserGroup = () => {
+    setUserGroupName('');
+    setUserGroupDescription('');
+    setEditingUserGroup(null);
+    setShowUserGroupModal(true);
+  };
+
+  const handleEditUserGroup = (group: UserGroup) => {
+    setUserGroupName(group.name);
+    setUserGroupDescription(group.description || '');
+    setEditingUserGroup({ id: group.id, name: group.name, description: group.description });
+    setShowUserGroupModal(true);
+  };
+
+  const handleSaveUserGroup = async () => {
+    if (!userGroupName.trim()) {
+      setError('Group name is required');
+      return;
+    }
+
+    try {
+      setError('');
+      setUserGroupSaving(true);
+      if (editingUserGroup) {
+        await userGroupsService.updateGroup(editingUserGroup.id, {
+          name: userGroupName.trim(),
+          description: userGroupDescription.trim() || undefined
+        });
+      } else {
+        await userGroupsService.createGroup({
+          name: userGroupName.trim(),
+          description: userGroupDescription.trim() || undefined
+        });
+      }
+      setShowUserGroupModal(false);
+      setUserGroupName('');
+      setUserGroupDescription('');
+      setEditingUserGroup(null);
+      await loadUserGroups();
+    } catch (err: any) {
+      setError(err.message || 'Failed to save user group');
+    } finally {
+      setUserGroupSaving(false);
+    }
+  };
+
+  const handleDeleteUserGroup = async (groupId: number) => {
+    if (!confirm('Are you sure you want to delete this user group? All members and role assignments will be removed.')) {
+      return;
+    }
+
+    try {
+      setError('');
+      await userGroupsService.deleteGroup(groupId);
+      await loadUserGroups();
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete user group');
+    }
+  };
+
+  const handleManageGroupMembers = async (group: UserGroup) => {
+    setSelectedGroupId(group.id);
+    setGroupMembersLoading(true);
+    try {
+      // Ensure users are loaded
+      if (allUsers.length === 0) {
+        await loadAllUsers();
+      }
+      const members = await userGroupsService.getGroupMembers(group.id);
+      setGroupMembers(members);
+      setSelectedUsersToAdd(new Set());
+      setGroupMembersSearchTerm('');
+      setShowGroupMembersModal(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load group members');
+    } finally {
+      setGroupMembersLoading(false);
+    }
+  };
+
+  const handleManageGroupRoles = async (group: UserGroup) => {
+    setSelectedGroupId(group.id);
+    setGroupRolesLoading(true);
+    try {
+      // Ensure roles are loaded
+      if (roles.length === 0) {
+        await loadRoles();
+      }
+      const groupRolesList = await userGroupsService.getGroupRoles(group.id);
+      setGroupRoles(groupRolesList);
+      setSelectedRolesToAssign(new Set(groupRolesList.map(r => r.id)));
+      setGroupRolesSearchTerm('');
+      setShowGroupRolesModal(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load group roles');
+    } finally {
+      setGroupRolesLoading(false);
+    }
+  };
+
+  const handleAddMembersToGroup = async () => {
+    if (!selectedGroupId || selectedUsersToAdd.size === 0) {
+      setError('Please select at least one user to add');
+      return;
+    }
+
+    try {
+      setError('');
+      setAddingMembersLoading(true);
+      await userGroupsService.addMembersToGroup(selectedGroupId, Array.from(selectedUsersToAdd));
+      // Reload members
+      const members = await userGroupsService.getGroupMembers(selectedGroupId);
+      setGroupMembers(members);
+      setSelectedUsersToAdd(new Set());
+      await loadUserGroups(); // Refresh the group list to update member count
+    } catch (err: any) {
+      setError(err.message || 'Failed to add members to group');
+    } finally {
+      setAddingMembersLoading(false);
+    }
+  };
+
+  const handleRemoveMemberFromGroup = async (userId: number) => {
+    if (!selectedGroupId) return;
+
+    if (!confirm('Are you sure you want to remove this member from the group?')) {
+      return;
+    }
+
+    try {
+      setError('');
+      await userGroupsService.removeMemberFromGroup(selectedGroupId, userId);
+      // Reload members
+      const members = await userGroupsService.getGroupMembers(selectedGroupId);
+      setGroupMembers(members);
+      await loadUserGroups(); // Refresh the group list to update member count
+    } catch (err: any) {
+      setError(err.message || 'Failed to remove member from group');
+    }
+  };
+
+  const handleAssignRolesToGroup = async () => {
+    if (!selectedGroupId) return;
+
+    try {
+      setError('');
+      setAssigningRolesLoading(true);
+      await userGroupsService.assignRolesToGroup(selectedGroupId, Array.from(selectedRolesToAssign));
+      // Reload roles
+      const groupRolesList = await userGroupsService.getGroupRoles(selectedGroupId);
+      setGroupRoles(groupRolesList);
+      await loadUserGroups(); // Refresh the group list to update role count
+      alert('Roles assigned successfully!');
+    } catch (err: any) {
+      setError(err.message || 'Failed to assign roles to group');
+    } finally {
+      setAssigningRolesLoading(false);
+    }
+  };
+
+  const handleRemoveRoleFromGroup = async (roleId: number) => {
+    if (!selectedGroupId) return;
+
+    if (!confirm('Are you sure you want to remove this role from the group?')) {
+      return;
+    }
+
+    try {
+      setError('');
+      await userGroupsService.removeRoleFromGroup(selectedGroupId, roleId);
+      // Reload roles
+      const groupRolesList = await userGroupsService.getGroupRoles(selectedGroupId);
+      setGroupRoles(groupRolesList);
+      setSelectedRolesToAssign(new Set(groupRolesList.map(r => r.id)));
+      await loadUserGroups(); // Refresh the group list to update role count
+    } catch (err: any) {
+      setError(err.message || 'Failed to remove role from group');
     }
   };
 
@@ -6969,6 +7386,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       >
                         Tile Admins
                       </button>
+                      <button
+                        onClick={() => {
+                          setAccessSubTab('groups');
+                          // Load user groups when switching to Groups tab
+                          if (userGroups.length === 0 && !userGroupsLoading) {
+                            loadUserGroups();
+                          }
+                        }}
+                        className={`flex-1 px-4 py-2 text-sm font-medium transition-colors rounded-lg ${
+                          accessSubTab === 'groups'
+                            ? 'bg-brand-600 text-white'
+                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        User Groups
+                      </button>
                     </div>
                   </div>
 
@@ -7111,9 +7544,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             setBulkAssignMode('add');
                             setBulkUserSearchTerm('');
                             setBulkRoleSearchTerm('');
+                            setBulkGroupSearchTerm('');
                             setError('');
                             // Load user roles when modal opens
                             await loadUserRolesForBulk();
+                            // Load groups if not already loaded
+                            if (userGroups.length === 0 && !userGroupsLoading) {
+                              await loadUserGroups();
+                            }
                           }}
                           className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
                         >
@@ -7470,6 +7908,109 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           </div>
                         )}
                       </div>
+                    </div>
+                  )}
+
+                  {/* User Groups Tab */}
+                  {accessSubTab === 'groups' && (
+                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                      <div className="flex justify-between items-center mb-4">
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">User Groups</h3>
+                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                            Create and manage user groups. Assign roles to groups and use groups for visibility control.
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleAddUserGroup}
+                          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                          </svg>
+                          Create Group
+                        </button>
+                      </div>
+
+                      {userGroupsLoading ? (
+                        <div className="flex items-center justify-center py-12">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                        </div>
+                      ) : userGroups.length === 0 ? (
+                        <div className="text-center py-12 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl">
+                          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-slate-400">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.059 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+                            </svg>
+                          </div>
+                          <p className="text-slate-600 dark:text-slate-400 font-medium">No user groups configured</p>
+                          <p className="text-slate-500 dark:text-slate-500 text-sm mt-1">Create groups to organize users and assign roles</p>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                              <tr>
+                                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Group Name</th>
+                                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Description</th>
+                                <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Members</th>
+                                <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Roles</th>
+                                <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                              {userGroups.map((group) => (
+                                <tr key={group.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <div className="text-sm font-medium text-slate-900 dark:text-white">{group.name}</div>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <div className="text-sm text-slate-600 dark:text-slate-400">{group.description || '-'}</div>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
+                                      {group.memberCount || 0}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300">
+                                      {group.roleCount || 0}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <div className="flex justify-end gap-2 flex-wrap">
+                                      <button
+                                        onClick={() => handleEditUserGroup(group)}
+                                        className="text-brand-600 dark:text-brand-400 hover:text-brand-900 dark:hover:text-brand-300 transition-colors"
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        onClick={() => handleManageGroupMembers(group)}
+                                        className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 transition-colors"
+                                      >
+                                        Members
+                                      </button>
+                                      <button
+                                        onClick={() => handleManageGroupRoles(group)}
+                                        className="text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-300 transition-colors"
+                                      >
+                                        Roles
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteUserGroup(group.id)}
+                                        className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition-colors"
+                                      >
+                                        Delete
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -10802,7 +11343,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     Manage Tile Admins
                   </h2>
                   <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                    Select tiles on the left and users on the right to assign tile admin privileges. Tile admins can add and edit links, sections, and tabs by default. Delete, visibility, browser, and clone actions are restricted.
+                    Select tiles on the left and users/groups on the right to assign tile admin privileges. Tile admins can add and edit links, sections, and tabs by default. Delete, visibility, browser, and clone actions are restricted.
                   </p>
                 </div>
                 <button
@@ -11092,6 +11633,8 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                             })
                             .map((tile) => {
                               const admins = tileAdminsMap[tile.id] || [];
+                              const groupAdmins = tileAdminGroupsMap[tile.id] || [];
+                              const totalAdmins = admins.length + groupAdmins.length;
                               return (
                                 <label
                                   key={tile.id}
@@ -11167,7 +11710,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                     )}
                                     <div className="flex items-center gap-2">
                                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-300">
-                                        {admins.length} admin{admins.length !== 1 ? 's' : ''}
+                                        {totalAdmins} admin{totalAdmins !== 1 ? 's' : ''} ({admins.length}👤 {groupAdmins.length}👥)
                                       </span>
                                     </div>
                                   </div>
@@ -11183,11 +11726,11 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                   )}
                 </div>
 
-                {/* Users Selection */}
+                {/* Users & Groups Selection */}
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Select Users
+                      Select Users & Groups
                     </label>
                     <button
                       onClick={() => {
@@ -11238,12 +11781,25 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     </button>
                   </div>
                   
+                  {/* Entity Type Filter */}
+                  <div className="mb-3">
+                    <select
+                      value={tileAdminEntityFilter}
+                      onChange={(e) => setTileAdminEntityFilter(e.target.value as 'all' | 'users' | 'groups')}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                    >
+                      <option value="all">All Users & Groups</option>
+                      <option value="users">Users Only</option>
+                      <option value="groups">Groups Only</option>
+                    </select>
+                  </div>
+                  
                   {/* Search Input */}
                   <div className="mb-3">
                     <div className="relative">
                       <input
                         type="text"
-                        placeholder="Search users..."
+                        placeholder="Search users & groups..."
                         value={tileAdminUserSearchTerm}
                         onChange={(e) => setTileAdminUserSearchTerm(e.target.value)}
                         className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
@@ -11282,6 +11838,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
                     </div>
                   ) : (() => {
+                    // Filter users
                     const approvedUsers = allUsers.filter(user => user.is_approved);
                     const filteredUsers = approvedUsers.filter(user => {
                       if (!tileAdminUserSearchTerm) return true;
@@ -11290,18 +11847,67 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                              user.email.toLowerCase().includes(search);
                     });
                     
-                    if (approvedUsers.length === 0) {
-                      return (
-                        <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
-                          No approved users available
-                        </div>
-                      );
+                    // Filter groups
+                    const filteredGroups = userGroups.filter(group => {
+                      if (!tileAdminUserSearchTerm) return true;
+                      const search = tileAdminUserSearchTerm.toLowerCase();
+                      return group.name.toLowerCase().includes(search) ||
+                             (group.description && group.description.toLowerCase().includes(search));
+                    });
+                    
+                    // Create combined entity list
+                    const combinedEntities: Array<{
+                      type: 'user' | 'group';
+                      id: string;
+                      entityId: number;
+                      name: string;
+                      subtitle: string;
+                      icon: React.ReactNode;
+                      badgeColor: string;
+                    }> = [];
+                    
+                    // Add users if filter allows
+                    if (tileAdminEntityFilter === 'all' || tileAdminEntityFilter === 'users') {
+                      filteredUsers.forEach(user => {
+                        combinedEntities.push({
+                          type: 'user',
+                          id: `user-${user.id}`,
+                          entityId: user.id,
+                          name: user.username,
+                          subtitle: user.email,
+                          icon: (
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-600 dark:text-slate-400">
+                              <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                            </svg>
+                          ),
+                          badgeColor: 'bg-slate-200 dark:bg-slate-700'
+                        });
+                      });
                     }
                     
-                    if (filteredUsers.length === 0) {
+                    // Add groups if filter allows
+                    if (tileAdminEntityFilter === 'all' || tileAdminEntityFilter === 'groups') {
+                      filteredGroups.forEach(group => {
+                        combinedEntities.push({
+                          type: 'group',
+                          id: `group-${group.id}`,
+                          entityId: group.id,
+                          name: group.name,
+                          subtitle: `${group.memberCount} member${group.memberCount !== 1 ? 's' : ''}`,
+                          icon: (
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-blue-600 dark:text-blue-400">
+                              <path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.49 15.326a.78.78 0 01-.358-.442 3 3 0 014.308-3.516 6.484 6.484 0 00-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 01-2.07-.655zM16.44 15.98a4.97 4.97 0 002.07-.654.78.78 0 00.357-.442 3 3 0 00-4.308-3.517 6.484 6.484 0 011.907 3.96 2.32 2.32 0 01-.026.654zM18 8a2 2 0 11-4 0 2 2 0 014 0zM5.304 16.19a.844.844 0 01-.277-.71 5 5 0 019.947 0 .843.843 0 01-.277.71A6.975 6.975 0 0110 18a6.974 6.974 0 01-4.696-1.81z" />
+                            </svg>
+                          ),
+                          badgeColor: 'bg-blue-100 dark:bg-blue-900/30'
+                        });
+                      });
+                    }
+                    
+                    if (combinedEntities.length === 0) {
                       return (
                         <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
-                          No users match your search
+                          No users or groups match your search
                         </div>
                       );
                     }
@@ -11310,26 +11916,31 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       <>
                         <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
                           <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                            {filteredUsers.map((user) => {
+                            {combinedEntities.map((entity) => {
                               const selectedTileIds: string[] = Array.from(selectedTileIdsForAdmins);
                               
                               return (
                                 <div
-                                  key={user.id}
+                                  key={entity.id}
                                   className="p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors"
                                 >
                                   <div className="flex items-center gap-3 mb-2">
-                                    <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center flex-shrink-0">
-                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-600 dark:text-slate-400">
-                                        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                                      </svg>
+                                    <div className={`w-8 h-8 rounded-full ${entity.badgeColor} flex items-center justify-center flex-shrink-0`}>
+                                      {entity.icon}
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                      <div className="text-sm font-medium text-slate-900 dark:text-white truncate">
-                                        {user.username}
+                                      <div className="flex items-center gap-2">
+                                        <div className="text-sm font-medium text-slate-900 dark:text-white truncate">
+                                          {entity.name}
+                                        </div>
+                                        {entity.type === 'group' && (
+                                          <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded">
+                                            GROUP
+                                          </span>
+                                        )}
                                       </div>
                                       <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                                        {user.email}
+                                        {entity.subtitle}
                                       </div>
                                     </div>
                                   </div>
@@ -11339,7 +11950,9 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                     <div className="ml-11 space-y-1">
                                       {selectedTileIds.map((tileId: string) => {
                                         const tile = allTiles.find(t => t.id === tileId);
-                                        const isAdmin = tileAdminsMap[tileId]?.some(admin => admin.userId === user.id) || false;
+                                        const isAdmin = entity.type === 'user'
+                                          ? tileAdminsMap[tileId]?.some(admin => admin.userId === entity.entityId) || false
+                                          : tileAdminGroupsMap[tileId]?.some(admin => admin.groupId === entity.entityId) || false;
                                         
                                         return (
                                           <label
@@ -11348,14 +11961,20 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                           >
                                             <input
                                               type="checkbox"
-                                              data-tile-admin-user={user.id}
-                                              data-tile-admin-tile={tileId}
                                               checked={isAdmin}
                                               onChange={async (e) => {
-                                                if (e.target.checked) {
-                                                  await handleAddTileAdmin(user.id, tileId);
+                                                if (entity.type === 'user') {
+                                                  if (e.target.checked) {
+                                                    await handleAddTileAdmin(entity.entityId, tileId);
+                                                  } else {
+                                                    await handleRemoveTileAdmin(entity.entityId, tileId);
+                                                  }
                                                 } else {
-                                                  await handleRemoveTileAdmin(user.id, tileId);
+                                                  if (e.target.checked) {
+                                                    await handleAddGroupTileAdmin(entity.entityId, tileId);
+                                                  } else {
+                                                    await handleRemoveGroupTileAdmin(entity.entityId, tileId);
+                                                  }
                                                 }
                                               }}
                                               className="w-3.5 h-3.5 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-1"
@@ -11401,7 +12020,10 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                           </div>
                         </div>
                         <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                          {approvedUsers.length} approved user{approvedUsers.length !== 1 ? 's' : ''} available
+                          {combinedEntities.length} entit{combinedEntities.length !== 1 ? 'ies' : 'y'} 
+                          {tileAdminEntityFilter === 'all' && ` (${filteredUsers.length} user${filteredUsers.length !== 1 ? 's' : ''}, ${filteredGroups.length} group${filteredGroups.length !== 1 ? 's' : ''})`}
+                          {tileAdminEntityFilter === 'users' && ` (${filteredUsers.length} user${filteredUsers.length !== 1 ? 's' : ''})`}
+                          {tileAdminEntityFilter === 'groups' && ` (${filteredGroups.length} group${filteredGroups.length !== 1 ? 's' : ''})`}
                         </div>
                       </>
                     );
@@ -11415,12 +12037,14 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     setShowTileAdminsModal(false);
                     setSelectedTileIdsForAdmins(new Set());
                     setTileAdminsMap({});
+                    setTileAdminGroupsMap({});
                     setTileAdminTileSearchTerm('');
                     setTileAdminUserSearchTerm('');
                     setTileAdminsUsersLoaded(false);
                     setTileAdminModalFilterUsername('');
                     setTileAdminModalFilterMenu('public');
                     setTileAdminModalFilterCategory('');
+                    setTileAdminEntityFilter('all');
                     setError('');
                   }}
                   className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
@@ -11509,6 +12133,394 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                   className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
                 >
                   {selectedRole ? 'Update Role' : 'Create Role'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* User Group Modal */}
+      {showUserGroupModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                  {editingUserGroup ? 'Edit User Group' : 'Create User Group'}
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowUserGroupModal(false);
+                    setUserGroupName('');
+                    setUserGroupDescription('');
+                    setEditingUserGroup(null);
+                    setError('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Group Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={userGroupName}
+                  onChange={(e) => setUserGroupName(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                  placeholder="Enter group name (e.g., Marketing Team, IT Department)"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Description
+                </label>
+                <textarea
+                  value={userGroupDescription}
+                  onChange={(e) => setUserGroupDescription(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                  placeholder="Enter group description (optional)"
+                  rows={3}
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => {
+                    setShowUserGroupModal(false);
+                    setUserGroupName('');
+                    setUserGroupDescription('');
+                    setEditingUserGroup(null);
+                    setError('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveUserGroup}
+                  disabled={!userGroupName.trim() || userGroupSaving}
+                  className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  {userGroupSaving ? 'Saving...' : editingUserGroup ? 'Update Group' : 'Create Group'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Group Members Modal */}
+      {showGroupMembersModal && selectedGroupId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                  Manage Group Members
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowGroupMembersModal(false);
+                    setGroupMembers([]);
+                    setSelectedUsersToAdd(new Set());
+                    setGroupMembersSearchTerm('');
+                    setSelectedGroupId(null);
+                    setError('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              {/* Add Members Section */}
+              <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Add Members</h3>
+                <div className="space-y-3">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={groupMembersSearchTerm}
+                      onChange={(e) => setGroupMembersSearchTerm(e.target.value)}
+                      placeholder="Search users by name or email..."
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                    />
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 absolute left-3 top-2.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900">
+                    {allUsers
+                      .filter(user => {
+                        const searchLower = groupMembersSearchTerm.toLowerCase();
+                        return (
+                          user.username.toLowerCase().includes(searchLower) ||
+                          user.email.toLowerCase().includes(searchLower)
+                        ) && !groupMembers.some(m => m.id === user.id);
+                      })
+                      .map(user => (
+                        <label key={user.id} className="flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer border-b border-slate-200 dark:border-slate-700 last:border-b-0">
+                          <input
+                            type="checkbox"
+                            checked={selectedUsersToAdd.has(user.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedUsersToAdd(prev => new Set([...prev, user.id]));
+                              } else {
+                                setSelectedUsersToAdd(prev => {
+                                  const next = new Set(prev);
+                                  next.delete(user.id);
+                                  return next;
+                                });
+                              }
+                            }}
+                            className="w-4 h-4 text-brand-600 focus:ring-brand-500 border-slate-300 rounded"
+                          />
+                          <div className="flex-1">
+                            <div className="text-sm font-medium text-slate-900 dark:text-white">{user.username}</div>
+                            <div className="text-xs text-slate-500 dark:text-slate-400">{user.email}</div>
+                          </div>
+                          <span className="text-xs px-2 py-1 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                            {user.auth_source || 'Local'}
+                          </span>
+                        </label>
+                      ))}
+                    {allUsers.filter(user => {
+                      const searchLower = groupMembersSearchTerm.toLowerCase();
+                      return (
+                        user.username.toLowerCase().includes(searchLower) ||
+                        user.email.toLowerCase().includes(searchLower)
+                      ) && !groupMembers.some(m => m.id === user.id);
+                    }).length === 0 && (
+                      <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">
+                        {groupMembersSearchTerm ? 'No users found' : 'All users are already members'}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleAddMembersToGroup}
+                    disabled={selectedUsersToAdd.size === 0 || addingMembersLoading}
+                    className="w-full px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    {addingMembersLoading ? 'Adding...' : `Add ${selectedUsersToAdd.size} Member${selectedUsersToAdd.size !== 1 ? 's' : ''}`}
+                  </button>
+                </div>
+              </div>
+
+              {/* Current Members Section */}
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Current Members ({groupMembers.length})</h3>
+                {groupMembersLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                  </div>
+                ) : groupMembers.length === 0 ? (
+                  <div className="text-center py-8 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-lg">
+                    No members in this group
+                  </div>
+                ) : (
+                  <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                    {groupMembers.map(member => (
+                      <div key={member.id} className="flex items-center justify-between p-3 border-b border-slate-200 dark:border-slate-700 last:border-b-0 hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                        <div className="flex-1">
+                          <div className="text-sm font-medium text-slate-900 dark:text-white">{member.username}</div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400">{member.email}</div>
+                          <div className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                            Joined: {new Date(member.joinedAt * 1000).toLocaleDateString()}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs px-2 py-1 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                            {member.authSource || 'Local'}
+                          </span>
+                          <button
+                            onClick={() => handleRemoveMemberFromGroup(member.id)}
+                            className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition-colors text-sm"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => {
+                    setShowGroupMembersModal(false);
+                    setGroupMembers([]);
+                    setSelectedUsersToAdd(new Set());
+                    setGroupMembersSearchTerm('');
+                    setSelectedGroupId(null);
+                    setError('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Group Roles Modal */}
+      {showGroupRolesModal && selectedGroupId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                  Manage Group Roles
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowGroupRolesModal(false);
+                    setGroupRoles([]);
+                    setSelectedRolesToAssign(new Set());
+                    setGroupRolesSearchTerm('');
+                    setSelectedGroupId(null);
+                    setError('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Select roles to assign to this group. All members of the group will inherit these roles.
+              </p>
+
+              {/* Search Input */}
+              <div className="relative">
+                <input
+                  type="text"
+                  value={groupRolesSearchTerm}
+                  onChange={(e) => setGroupRolesSearchTerm(e.target.value)}
+                  placeholder="Search roles..."
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 pl-10 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                />
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 absolute left-3 top-2.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+
+              {groupRolesLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                </div>
+              ) : roles.length === 0 ? (
+                <div className="text-center py-8 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-lg">
+                  No roles available. Create roles first.
+                </div>
+              ) : (
+                <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden max-h-96 overflow-y-auto">
+                  {roles
+                    .filter(role => {
+                      const searchLower = groupRolesSearchTerm.toLowerCase();
+                      return role.name.toLowerCase().includes(searchLower) ||
+                        (role.description || '').toLowerCase().includes(searchLower);
+                    })
+                    .map(role => (
+                      <label key={role.id} className="flex items-start gap-3 p-4 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer border-b border-slate-200 dark:border-slate-700 last:border-b-0">
+                        <input
+                          type="checkbox"
+                          checked={selectedRolesToAssign.has(role.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedRolesToAssign(prev => new Set([...prev, role.id]));
+                            } else {
+                              setSelectedRolesToAssign(prev => {
+                                const next = new Set(prev);
+                                next.delete(role.id);
+                                return next;
+                              });
+                            }
+                          }}
+                          className="mt-1 w-4 h-4 text-brand-600 focus:ring-brand-500 border-slate-300 rounded"
+                        />
+                        <div className="flex-1">
+                          <div className="text-sm font-medium text-slate-900 dark:text-white">{role.name}</div>
+                          {role.description && (
+                            <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">{role.description}</div>
+                          )}
+                          <div className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                            {role.userCount || 0} users, {role.tileCount || 0} tiles, {role.linkCount || 0} links
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  {roles.filter(role => {
+                    const searchLower = groupRolesSearchTerm.toLowerCase();
+                    return role.name.toLowerCase().includes(searchLower) ||
+                      (role.description || '').toLowerCase().includes(searchLower);
+                  }).length === 0 && (
+                    <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">
+                      No roles found
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => {
+                    setShowGroupRolesModal(false);
+                    setGroupRoles([]);
+                    setSelectedRolesToAssign(new Set());
+                    setGroupRolesSearchTerm('');
+                    setSelectedGroupId(null);
+                    setError('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAssignRolesToGroup}
+                  disabled={assigningRolesLoading}
+                  className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  {assigningRolesLoading ? 'Assigning...' : 'Assign Selected Roles'}
                 </button>
               </div>
             </div>
@@ -12309,17 +13321,21 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
             <div className="p-6 border-b border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  Bulk Manage User Roles
+                  Bulk Manage Roles
                 </h2>
                 <button
                   onClick={() => {
                     setShowBulkAssignModal(false);
                     setBulkSelectedUserIds([]);
+                    setBulkSelectedGroupIds([]);
                     setBulkSelectedRoleIds([]);
                     setBulkAssignMode('add');
+                    setBulkAssignTarget('users');
                     setBulkUserSearchTerm('');
+                    setBulkGroupSearchTerm('');
                     setBulkRoleSearchTerm('');
                     setUserRolesMap({});
+                    setGroupRolesMap({});
                     setError('');
                   }}
                   className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
@@ -12337,6 +13353,52 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                   {error}
                 </div>
               )}
+
+              {/* Target Selection */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Assign Roles To
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => {
+                      setBulkAssignTarget('users');
+                      setBulkSelectedGroupIds([]);
+                      setGroupRolesMap({});
+                    }}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      bulkAssignTarget === 'users'
+                        ? 'bg-brand-600 text-white'
+                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    Users
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setBulkAssignTarget('groups');
+                      setBulkSelectedUserIds([]);
+                      setUserRolesMap({});
+                      // Load groups if not already loaded
+                      let groupsToUse = userGroups;
+                      if (userGroups.length === 0 && !userGroupsLoading) {
+                        groupsToUse = await loadUserGroups() || [];
+                      }
+                      // Load group roles if groups exist and roles not loaded
+                      if (groupsToUse.length > 0 && Object.keys(groupRolesMap).length === 0) {
+                        await loadGroupRolesForBulk(groupsToUse);
+                      }
+                    }}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      bulkAssignTarget === 'groups'
+                        ? 'bg-brand-600 text-white'
+                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    Groups
+                  </button>
+                </div>
+              </div>
 
               {/* Assignment Mode */}
               <div>
@@ -12377,20 +13439,21 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
                   {bulkAssignMode === 'add' 
-                    ? 'Selected roles will be added to existing user roles'
+                    ? `Selected roles will be added to existing ${bulkAssignTarget} roles`
                     : bulkAssignMode === 'replace'
-                    ? 'Selected roles will replace all existing user roles'
-                    : 'Selected roles will be removed from the selected users'}
+                    ? `Selected roles will replace all existing ${bulkAssignTarget} roles`
+                    : `Selected roles will be removed from the selected ${bulkAssignTarget}`}
                 </p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Users Selection */}
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Select Users
-                    </label>
+                {/* Users or Groups Selection */}
+                {bulkAssignTarget === 'users' ? (
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Select Users
+                      </label>
                     <div className="flex gap-2 items-center">
                       <button
                         onClick={loadUserRolesForBulk}
@@ -12553,6 +13616,180 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     {bulkSelectedUserIds.length} user{bulkSelectedUserIds.length !== 1 ? 's' : ''} selected
                   </div>
                 </div>
+                ) : (
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Select Groups
+                      </label>
+                      <div className="flex gap-2 items-center">
+                        <button
+                          onClick={loadGroupRolesForBulk}
+                          className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition-colors"
+                          title="Refresh group roles"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => {
+                            const filteredGroups = userGroups.filter(group => 
+                              group.name.toLowerCase().includes(bulkGroupSearchTerm.toLowerCase()) ||
+                              (group.description && group.description.toLowerCase().includes(bulkGroupSearchTerm.toLowerCase()))
+                            );
+                            const filteredGroupIds = filteredGroups.map(g => g.id);
+                            const allFilteredSelected = filteredGroupIds.every(id => bulkSelectedGroupIds.includes(id));
+                            
+                            if (allFilteredSelected) {
+                              // Deselect all filtered groups
+                              setBulkSelectedGroupIds(bulkSelectedGroupIds.filter(id => !filteredGroupIds.includes(id)));
+                            } else {
+                              // Select all filtered groups
+                              const newSelected = [...bulkSelectedGroupIds];
+                              filteredGroupIds.forEach(id => {
+                                if (!newSelected.includes(id)) {
+                                  newSelected.push(id);
+                                }
+                              });
+                              setBulkSelectedGroupIds(newSelected);
+                            }
+                          }}
+                          className="text-xs text-brand-600 dark:text-brand-400 hover:underline"
+                        >
+                          {(() => {
+                            const filteredGroups = userGroups.filter(group => 
+                              group.name.toLowerCase().includes(bulkGroupSearchTerm.toLowerCase()) ||
+                              (group.description && group.description.toLowerCase().includes(bulkGroupSearchTerm.toLowerCase()))
+                            );
+                            const filteredGroupIds = filteredGroups.map(g => g.id);
+                            const allFilteredSelected = filteredGroupIds.length > 0 && filteredGroupIds.every(id => bulkSelectedGroupIds.includes(id));
+                            return allFilteredSelected ? 'Deselect All' : 'Select All';
+                          })()}
+                        </button>
+                      </div>
+                    </div>
+                    {/* Search Input */}
+                    <div className="mb-3">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Search groups..."
+                          value={bulkGroupSearchTerm}
+                          onChange={(e) => setBulkGroupSearchTerm(e.target.value)}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                        />
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                          className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        {bulkGroupSearchTerm && (
+                          <button
+                            onClick={() => setBulkGroupSearchTerm('')}
+                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/30">
+                      <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                        {(() => {
+                          const filteredGroups = userGroups.filter(group => 
+                            group.name.toLowerCase().includes(bulkGroupSearchTerm.toLowerCase()) ||
+                            (group.description && group.description.toLowerCase().includes(bulkGroupSearchTerm.toLowerCase()))
+                          );
+                          
+                          if (filteredGroups.length === 0) {
+                            return (
+                              <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">
+                                {userGroups.length === 0 ? 'No groups available' : 'No groups match your search'}
+                              </div>
+                            );
+                          }
+                          
+                          return filteredGroups.map((group) => {
+                            const groupRoles = groupRolesMap[group.id] || [];
+                            const isLoading = loadingGroupRoles.has(group.id);
+                            
+                            return (
+                              <label
+                                key={group.id}
+                                className="flex items-start gap-3 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={bulkSelectedGroupIds.includes(group.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setBulkSelectedGroupIds([...bulkSelectedGroupIds, group.id]);
+                                    } else {
+                                      setBulkSelectedGroupIds(bulkSelectedGroupIds.filter(id => id !== group.id));
+                                    }
+                                  }}
+                                  className="w-4 h-4 text-brand-600 border-slate-300 dark:border-slate-600 rounded focus:ring-brand-500 focus:ring-2 mt-0.5"
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <div className="text-sm font-medium text-slate-900 dark:text-white truncate">
+                                      {group.name}
+                                    </div>
+                                    {isLoading && (
+                                      <svg className="animate-spin h-3 w-3 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                      </svg>
+                                    )}
+                                  </div>
+                                  {group.description && (
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 truncate mb-1">
+                                      {group.description}
+                                    </div>
+                                  )}
+                                  <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">
+                                    {group.memberCount} member{group.memberCount !== 1 ? 's' : ''}
+                                  </div>
+                                  {groupRoles.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {groupRoles.map((role) => (
+                                        <span
+                                          key={role.id}
+                                          className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+                                          title={role.description || role.name}
+                                        >
+                                          {role.name}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {!isLoading && groupRoles.length === 0 && (
+                                    <div className="text-xs text-slate-400 dark:text-slate-500 italic mt-1">
+                                      No roles assigned
+                                    </div>
+                                  )}
+                                </div>
+                              </label>
+                            );
+                          });
+                        })()}
+                      </div>
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                      {bulkSelectedGroupIds.length} group{bulkSelectedGroupIds.length !== 1 ? 's' : ''} selected
+                    </div>
+                  </div>
+                )}
 
                 {/* Roles Selection */}
                 <div>
@@ -12650,15 +13887,25 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                               (role.description && role.description.toLowerCase().includes(bulkRoleSearchTerm.toLowerCase()))
                             );
                             
-                            // In remove mode, only show roles that at least one selected user has
-                            if (bulkAssignMode === 'remove' && bulkSelectedUserIds.length > 0) {
-                              const userRoleIds = new Set<number>();
-                              bulkSelectedUserIds.forEach(userId => {
-                                const userRoles = userRolesMap[userId] || [];
-                                userRoles.forEach(role => userRoleIds.add(role.id));
-                              });
-                              
-                              filteredRoles = filteredRoles.filter(role => userRoleIds.has(role.id));
+                            // In remove mode, only show roles that at least one selected user/group has
+                            if (bulkAssignMode === 'remove') {
+                              if (bulkAssignTarget === 'users' && bulkSelectedUserIds.length > 0) {
+                                const userRoleIds = new Set<number>();
+                                bulkSelectedUserIds.forEach(userId => {
+                                  const userRoles = userRolesMap[userId] || [];
+                                  userRoles.forEach(role => userRoleIds.add(role.id));
+                                });
+                                
+                                filteredRoles = filteredRoles.filter(role => userRoleIds.has(role.id));
+                              } else if (bulkAssignTarget === 'groups' && bulkSelectedGroupIds.length > 0) {
+                                const groupRoleIds = new Set<number>();
+                                bulkSelectedGroupIds.forEach(groupId => {
+                                  const groupRoles = groupRolesMap[groupId] || [];
+                                  groupRoles.forEach(role => groupRoleIds.add(role.id));
+                                });
+                                
+                                filteredRoles = filteredRoles.filter(role => groupRoleIds.has(role.id));
+                              }
                             }
                             
                             if (filteredRoles.length === 0) {
@@ -12666,33 +13913,41 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                 <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">
                                   {roles.length === 0 
                                     ? 'No roles available. Create roles first.' 
-                                    : bulkAssignMode === 'remove' && bulkSelectedUserIds.length > 0
-                                    ? 'No roles found for selected users'
+                                    : bulkAssignMode === 'remove' && (bulkAssignTarget === 'users' ? bulkSelectedUserIds.length > 0 : bulkSelectedGroupIds.length > 0)
+                                    ? `No roles found for selected ${bulkAssignTarget}`
                                     : 'No roles match your search'}
                                 </div>
                               );
                             }
                             
                             return filteredRoles.map((role) => {
-                              // Check if all selected users have this role (for remove mode)
-                              const allUsersHaveRole = bulkAssignMode === 'remove' && bulkSelectedUserIds.length > 0
-                                ? bulkSelectedUserIds.every(userId => {
+                              // Check if all selected users/groups have this role (for remove mode)
+                              let allTargetsHaveRole = true;
+                              if (bulkAssignMode === 'remove') {
+                                if (bulkAssignTarget === 'users' && bulkSelectedUserIds.length > 0) {
+                                  allTargetsHaveRole = bulkSelectedUserIds.every(userId => {
                                     const userRoles = userRolesMap[userId] || [];
                                     return userRoles.some(r => r.id === role.id);
-                                  })
-                                : true;
+                                  });
+                                } else if (bulkAssignTarget === 'groups' && bulkSelectedGroupIds.length > 0) {
+                                  allTargetsHaveRole = bulkSelectedGroupIds.every(groupId => {
+                                    const groupRoles = groupRolesMap[groupId] || [];
+                                    return groupRoles.some(r => r.id === role.id);
+                                  });
+                                }
+                              }
                               
                               return (
                             <label
                               key={role.id}
                               className={`flex items-center gap-3 p-3 hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors ${
-                                !allUsersHaveRole && bulkAssignMode === 'remove' ? 'opacity-50' : ''
+                                !allTargetsHaveRole && bulkAssignMode === 'remove' ? 'opacity-50' : ''
                               }`}
                             >
                               <input
                                 type="checkbox"
                                 checked={bulkSelectedRoleIds.includes(role.id)}
-                                disabled={!allUsersHaveRole && bulkAssignMode === 'remove'}
+                                disabled={!allTargetsHaveRole && bulkAssignMode === 'remove'}
                                 onChange={(e) => {
                                   if (e.target.checked) {
                                     setBulkSelectedRoleIds([...bulkSelectedRoleIds, role.id]);
@@ -12707,9 +13962,9 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                                   <div className="text-sm font-medium text-slate-900 dark:text-white">
                                     {role.name}
                                   </div>
-                                  {bulkAssignMode === 'remove' && !allUsersHaveRole && (
+                                  {bulkAssignMode === 'remove' && !allTargetsHaveRole && (
                                     <span className="text-xs text-slate-400 dark:text-slate-500 italic">
-                                      (not all users have this role)
+                                      (not all {bulkAssignTarget} have this role)
                                     </span>
                                   )}
                                 </div>
@@ -12745,11 +14000,15 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                   onClick={() => {
                     setShowBulkAssignModal(false);
                     setBulkSelectedUserIds([]);
+                    setBulkSelectedGroupIds([]);
                     setBulkSelectedRoleIds([]);
                     setBulkAssignMode('add');
+                    setBulkAssignTarget('users');
                     setBulkUserSearchTerm('');
+                    setBulkGroupSearchTerm('');
                     setBulkRoleSearchTerm('');
                     setUserRolesMap({});
+                    setGroupRolesMap({});
                     setError('');
                   }}
                   className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
@@ -12758,7 +14017,11 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                 </button>
                 <button
                   onClick={handleBulkAssignRoles}
-                  disabled={bulkAssignLoading || bulkSelectedUserIds.length === 0 || bulkSelectedRoleIds.length === 0}
+                  disabled={
+                    bulkAssignLoading || 
+                    (bulkAssignTarget === 'users' ? bulkSelectedUserIds.length === 0 : bulkSelectedGroupIds.length === 0) || 
+                    bulkSelectedRoleIds.length === 0
+                  }
                   className={`flex-1 px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors ${
                     bulkAssignMode === 'remove'
                       ? 'bg-red-600 hover:bg-red-500'
@@ -12775,8 +14038,8 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     </>
                   ) : (
                     bulkAssignMode === 'remove'
-                      ? `Remove ${bulkSelectedRoleIds.length} Role${bulkSelectedRoleIds.length !== 1 ? 's' : ''} from ${bulkSelectedUserIds.length} User${bulkSelectedUserIds.length !== 1 ? 's' : ''}`
-                      : `Assign ${bulkSelectedRoleIds.length} Role${bulkSelectedRoleIds.length !== 1 ? 's' : ''} to ${bulkSelectedUserIds.length} User${bulkSelectedUserIds.length !== 1 ? 's' : ''}`
+                      ? `Remove ${bulkSelectedRoleIds.length} Role${bulkSelectedRoleIds.length !== 1 ? 's' : ''} from ${bulkAssignTarget === 'users' ? bulkSelectedUserIds.length : bulkSelectedGroupIds.length} ${bulkAssignTarget === 'users' ? 'User' : 'Group'}${(bulkAssignTarget === 'users' ? bulkSelectedUserIds.length : bulkSelectedGroupIds.length) !== 1 ? 's' : ''}`
+                      : `Assign ${bulkSelectedRoleIds.length} Role${bulkSelectedRoleIds.length !== 1 ? 's' : ''} to ${bulkAssignTarget === 'users' ? bulkSelectedUserIds.length : bulkSelectedGroupIds.length} ${bulkAssignTarget === 'users' ? 'User' : 'Group'}${(bulkAssignTarget === 'users' ? bulkSelectedUserIds.length : bulkSelectedGroupIds.length) !== 1 ? 's' : ''}`
                   )}
                 </button>
               </div>

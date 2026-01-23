@@ -356,9 +356,27 @@ function initDatabase() {
             if (!$hasVisibility) {
                 $db->exec('ALTER TABLE tiles ADD COLUMN visibility TEXT DEFAULT "public"');
                 $db->exec('ALTER TABLE tiles ADD COLUMN allowed_users TEXT');
+                $db->exec('ALTER TABLE tiles ADD COLUMN allowed_groups TEXT');
             }
         } catch (PDOException $e) {
             error_log('Tiles visibility migration warning: ' . $e->getMessage());
+        }
+        
+        // Migrate existing tiles table to add allowed_groups column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();
+            $hasAllowedGroups = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'allowed_groups') {
+                    $hasAllowedGroups = true;
+                    break;
+                }
+            }
+            if (!$hasAllowedGroups) {
+                $db->exec('ALTER TABLE tiles ADD COLUMN allowed_groups TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Tiles allowed_groups migration warning: ' . $e->getMessage());
         }
         
         // Migrate existing tiles table to add hyperlink columns if they don't exist
@@ -711,9 +729,27 @@ function initDatabase() {
             if (!$hasVisibility) {
                 $db->exec('ALTER TABLE links ADD COLUMN visibility TEXT DEFAULT "public"');
                 $db->exec('ALTER TABLE links ADD COLUMN allowed_users TEXT');
+                $db->exec('ALTER TABLE links ADD COLUMN allowed_groups TEXT');
             }
         } catch (PDOException $e) {
             error_log('Links visibility migration warning: ' . $e->getMessage());
+        }
+        
+        // Migrate existing links table to add allowed_groups column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(links)")->fetchAll();
+            $hasAllowedGroups = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'allowed_groups') {
+                    $hasAllowedGroups = true;
+                    break;
+                }
+            }
+            if (!$hasAllowedGroups) {
+                $db->exec('ALTER TABLE links ADD COLUMN allowed_groups TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Links allowed_groups migration warning: ' . $e->getMessage());
         }
         
         // Migrate existing links table to add notes column if it doesn't exist
@@ -1764,6 +1800,35 @@ function initDatabase() {
             updated_at INTEGER NOT NULL
         )');
         
+        // Create user_groups table for managing user groups
+        $db->exec('CREATE TABLE IF NOT EXISTS user_groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            description TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )');
+        
+        // Create user_group_members table for group membership
+        $db->exec('CREATE TABLE IF NOT EXISTS user_group_members (
+            user_id INTEGER NOT NULL,
+            group_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, group_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (group_id) REFERENCES user_groups(id) ON DELETE CASCADE
+        )');
+        
+        // Create group_roles table for assigning roles to groups
+        $db->exec('CREATE TABLE IF NOT EXISTS group_roles (
+            group_id INTEGER NOT NULL,
+            role_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (group_id, role_id),
+            FOREIGN KEY (group_id) REFERENCES user_groups(id) ON DELETE CASCADE,
+            FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+        )');
+        
         // Initialize default settings if they don't exist
         $defaultSettings = [
             ['app_name', 'LinkNest', time()],
@@ -1981,18 +2046,37 @@ function canUserEditTile($userId, $tileId, $db) {
     return (bool)$permission['can_edit'];
 }
 
-// Helper function to get user's role IDs
+// Helper function to get user's role IDs (including roles from groups)
 function getUserRoleIds($userId, $db) {
     if (!$userId) {
         return [];
     }
     
+    $roleIds = [];
+    
+    // Get roles directly assigned to user
     $stmt = $db->prepare('SELECT role_id FROM user_roles WHERE user_id = ?');
     $stmt->execute([$userId]);
-    $roleIds = [];
     while ($row = $stmt->fetch()) {
         $roleIds[] = (int)$row['role_id'];
     }
+    
+    // Get roles from groups the user belongs to
+    $groupStmt = $db->prepare('
+        SELECT DISTINCT gr.role_id 
+        FROM user_group_members ugm
+        INNER JOIN group_roles gr ON ugm.group_id = gr.group_id
+        WHERE ugm.user_id = ?
+    ');
+    $groupStmt->execute([$userId]);
+    while ($row = $groupStmt->fetch()) {
+        $roleId = (int)$row['role_id'];
+        // Avoid duplicates
+        if (!in_array($roleId, $roleIds)) {
+            $roleIds[] = $roleId;
+        }
+    }
+    
     return $roleIds;
 }
 

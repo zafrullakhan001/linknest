@@ -107,6 +107,15 @@ if ($path === '/') {
 } elseif (strpos($path, '/roles') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 6); // Remove '/roles'
     require __DIR__ . '/roles.php';
+} elseif (strpos($path, '/user-groups') === 0) {
+    $_SERVER['PATH_INFO'] = substr($path, 12); // Remove '/user-groups'
+    require __DIR__ . '/user_groups.php';
+} elseif (strpos($path, '/group-tile-permissions') === 0) {
+    $_SERVER['PATH_INFO'] = substr($path, 23); // Remove '/group-tile-permissions'
+    require __DIR__ . '/group_tile_permissions.php';
+} elseif (strpos($path, '/widgets') === 0) {
+    $_SERVER['PATH_INFO'] = substr($path, 8); // Remove '/widgets'
+    require __DIR__ . '/widgets.php';
 } elseif (strpos($path, '/clone') === 0) {
     error_log("api/index.php: Matched /clone route");
     $remainingPath = substr($path, 6); // Remove '/clone'

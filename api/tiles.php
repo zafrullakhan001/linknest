@@ -155,10 +155,18 @@ function handleGetTiles() {
     $linkFavorites = [];
     $linkRoleAccess = [];
     $userRoleIds = [];
+    $userGroupIds = [];
     
     if ($user) {
         // Get user role IDs once
         $userRoleIds = getUserRoleIds($user['id'], $db);
+        
+        // Get user group IDs once
+        $groupStmt = $db->prepare('SELECT group_id FROM user_group_members WHERE user_id = ?');
+        $groupStmt->execute([$user['id']]);
+        while ($group = $groupStmt->fetch()) {
+            $userGroupIds[] = (int)$group['group_id'];
+        }
         
         // Batch fetch all tile favorites
         $favStmt = $db->prepare('SELECT tile_id FROM user_tile_favorites WHERE user_id = ?');
@@ -206,6 +214,7 @@ function handleGetTiles() {
         // Filter tiles based on visibility
         $tileVisibility = $row['visibility'] ?? 'public';
         $tileAllowedUsers = $row['allowed_users'] ? json_decode($row['allowed_users'], true) : [];
+        $tileAllowedGroups = $row['allowed_groups'] ? json_decode($row['allowed_groups'], true) : [];
         
         // Check if tile should be visible to current user
         // Admin users can see all tiles regardless of visibility
@@ -217,8 +226,13 @@ function handleGetTiles() {
         } elseif ($tileVisibility === 'authenticated' && $user) {
             $isTileVisible = true; // Authenticated tiles visible to logged-in users
         } elseif ($tileVisibility === 'private' && $user) {
-            // Private tiles visible only to specific users
+            // Private tiles visible only to specific users or groups
             $isTileVisible = in_array($user['id'], $tileAllowedUsers);
+            
+            // Also check if user is in any allowed groups
+            if (!$isTileVisible && !empty($tileAllowedGroups) && !empty($userGroupIds)) {
+                $isTileVisible = !empty(array_intersect($userGroupIds, $tileAllowedGroups));
+            }
         }
         
         // Check role-based access from batched data
@@ -332,6 +346,7 @@ function handleGetTiles() {
             'position' => $position,
             'visibility' => $tileVisibility,
             'allowedUsers' => $tileAllowedUsers,
+            'allowedGroups' => $tileAllowedGroups,
             'isFavorite' => $isFavorite,
             'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
             'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
@@ -529,6 +544,7 @@ function handleGetTiles() {
                                     // Filter links based on visibility
                                     $visibility = $linkRow['visibility'] ?? 'public';
                                     $allowedUsers = $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [];
+                                    $allowedGroups = $linkRow['allowed_groups'] ? json_decode($linkRow['allowed_groups'], true) : [];
                                     
                                     // Check if link should be visible to current user
                                     $isVisible = false;
@@ -540,6 +556,11 @@ function handleGetTiles() {
                                         $isVisible = true;
                                     } elseif ($visibility === 'private' && $user) {
                                         $isVisible = in_array($user['id'], $allowedUsers);
+                                        
+                                        // Also check if user is in any allowed groups
+                                        if (!$isVisible && !empty($allowedGroups) && !empty($userGroupIds)) {
+                                            $isVisible = !empty(array_intersect($userGroupIds, $allowedGroups));
+                                        }
                                     }
                                     
                                     // Check role-based access from batched data
@@ -624,6 +645,7 @@ function handleGetTiles() {
                         foreach ($linksBySection[$sectionRow['id']] as $linkRow) {
                             $visibility = $linkRow['visibility'] ?? 'public';
                             $allowedUsers = $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [];
+                            $allowedGroups = $linkRow['allowed_groups'] ? json_decode($linkRow['allowed_groups'], true) : [];
                             
                             $isVisible = false;
                             if ($user && $user['is_admin']) {
@@ -634,6 +656,11 @@ function handleGetTiles() {
                                 $isVisible = true;
                             } elseif ($visibility === 'private' && $user) {
                                 $isVisible = in_array($user['id'], $allowedUsers);
+                                
+                                // Also check if user is in any allowed groups
+                                if (!$isVisible && !empty($allowedGroups) && !empty($userGroupIds)) {
+                                    $isVisible = !empty(array_intersect($userGroupIds, $allowedGroups));
+                                }
                             }
                             
                             // Check role-based access from batched data
@@ -779,6 +806,17 @@ function handleGetTile($tileId) {
     // Filter tiles based on visibility
     $tileVisibility = $row['visibility'] ?? 'public';
     $tileAllowedUsers = $row['allowed_users'] ? json_decode($row['allowed_users'], true) : [];
+    $tileAllowedGroups = $row['allowed_groups'] ? json_decode($row['allowed_groups'], true) : [];
+    
+    // Get user's group IDs if user is logged in
+    $userGroupIds = [];
+    if ($user) {
+        $groupStmt = $db->prepare('SELECT group_id FROM user_group_members WHERE user_id = ?');
+        $groupStmt->execute([$user['id']]);
+        while ($group = $groupStmt->fetch()) {
+            $userGroupIds[] = (int)$group['group_id'];
+        }
+    }
     
     // Check if tile should be visible to current user
     // Admin users can see all tiles regardless of visibility
@@ -790,8 +828,13 @@ function handleGetTile($tileId) {
     } elseif ($tileVisibility === 'authenticated' && $user) {
         $isTileVisible = true; // Authenticated tiles visible to logged-in users
     } elseif ($tileVisibility === 'private' && $user) {
-        // Private tiles visible only to specific users
+        // Private tiles visible only to specific users or groups
         $isTileVisible = in_array($user['id'], $tileAllowedUsers);
+        
+        // Also check if user is in any allowed groups
+        if (!$isTileVisible && !empty($tileAllowedGroups) && !empty($userGroupIds)) {
+            $isTileVisible = !empty(array_intersect($userGroupIds, $tileAllowedGroups));
+        }
     }
     
     if (!$isTileVisible) {
@@ -870,6 +913,7 @@ function handleGetTile($tileId) {
         'createdAt' => (int)$row['created_at'],
         'visibility' => $tileVisibility,
         'allowedUsers' => $tileAllowedUsers,
+        'allowedGroups' => $tileAllowedGroups,
         'isFavorite' => $isFavorite,
         'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
         'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
@@ -1070,6 +1114,7 @@ function handleGetTile($tileId) {
                 while ($linkRow = $linkStmt->fetch()) {
                     $visibility = $linkRow['visibility'] ?? 'public';
                     $allowedUsers = $linkRow['allowed_users'] ? json_decode($linkRow['allowed_users'], true) : [];
+                    $allowedGroups = $linkRow['allowed_groups'] ? json_decode($linkRow['allowed_groups'], true) : [];
                     
                     $isVisible = false;
                     if ($user && $user['is_admin']) {
@@ -1080,6 +1125,11 @@ function handleGetTile($tileId) {
                         $isVisible = true;
                     } elseif ($visibility === 'private' && $user) {
                         $isVisible = in_array($user['id'], $allowedUsers);
+                        
+                        // Also check if user is in any allowed groups
+                        if (!$isVisible && !empty($allowedGroups) && !empty($userGroupIds)) {
+                            $isVisible = !empty(array_intersect($userGroupIds, $allowedGroups));
+                        }
                     }
                     
                     // Always check role-based access for authenticated users (for "Your Apps" tab)
@@ -1157,11 +1207,15 @@ function handleCreateTile() {
         $db = getDB();
     $tileId = $data['id'] ?? uniqid('tile_', true);
     
-    // Handle visibility and allowed_users
+    // Handle visibility and allowed_users/allowed_groups
     $visibility = $data['visibility'] ?? 'public';
     $allowedUsers = null;
+    $allowedGroups = null;
     if ($visibility === 'private' && isset($data['allowedUsers']) && is_array($data['allowedUsers'])) {
         $allowedUsers = json_encode($data['allowedUsers']);
+    }
+    if ($visibility === 'private' && isset($data['allowedGroups']) && is_array($data['allowedGroups'])) {
+        $allowedGroups = json_encode($data['allowedGroups']);
     }
     
     // Handle hyperlink fields
@@ -1184,7 +1238,7 @@ function handleCreateTile() {
     $tileBorderRadius = array_key_exists('tileBorderRadius', $data) && $data['tileBorderRadius'] !== null ? (int)$data['tileBorderRadius'] : null;
     $tileTextColor = isset($data['tileTextColor']) && $data['tileTextColor'] !== null && $data['tileTextColor'] !== '' ? $data['tileTextColor'] : null;
     
-    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     
     if (!$stmt->execute([
         $tileId,
@@ -1197,6 +1251,7 @@ function handleCreateTile() {
         $data['group'] ?? 'General',
         $visibility,
         $allowedUsers,
+        $allowedGroups,
         $isHyperlink,
         $hyperlinkUrl,
         $openInNewTab,
@@ -1596,6 +1651,7 @@ function handleCloneTile($tileId) {
         // Check visibility - user must be able to see the tile to clone it
         $tileVisibility = $originalTile['visibility'] ?? 'public';
         $tileAllowedUsers = $originalTile['allowed_users'] ? json_decode($originalTile['allowed_users'], true) : [];
+        $tileAllowedGroups = $originalTile['allowed_groups'] ? json_decode($originalTile['allowed_groups'], true) : [];
         
         $isTileVisible = false;
         if ($user && $user['is_admin']) {
@@ -1606,6 +1662,18 @@ function handleCloneTile($tileId) {
             $isTileVisible = true;
         } elseif ($tileVisibility === 'private' && $user) {
             $isTileVisible = in_array($user['id'], $tileAllowedUsers);
+            // Also check if user is in any allowed groups
+            if (!$isTileVisible && !empty($tileAllowedGroups)) {
+                $groupStmt = $db->prepare('SELECT group_id FROM user_group_members WHERE user_id = ?');
+                $groupStmt->execute([$user['id']]);
+                $userGroupIds = [];
+                while ($group = $groupStmt->fetch()) {
+                    $userGroupIds[] = (int)$group['group_id'];
+                }
+                if (!empty($userGroupIds)) {
+                    $isTileVisible = !empty(array_intersect($userGroupIds, $tileAllowedGroups));
+                }
+            }
         }
         
         if (!$isTileVisible) {
@@ -1627,6 +1695,7 @@ function handleCloneTile($tileId) {
         $newTitle = 'Copy of ' . $originalTile['title'];
         $newVisibility = $originalTile['visibility'];
         $newAllowedUsers = $originalTile['allowed_users'];
+        $newAllowedGroups = $originalTile['allowed_groups'];
         
         // Prepare tile decoration properties
         $tileBackgroundColor = !empty($originalTile['tile_background_color']) ? $originalTile['tile_background_color'] : null;
@@ -1638,7 +1707,7 @@ function handleCloneTile($tileId) {
         $tileBorderRadius = isset($originalTile['tile_border_radius']) && $originalTile['tile_border_radius'] !== null ? (int)$originalTile['tile_border_radius'] : null;
         $tileTextColor = !empty($originalTile['tile_text_color']) ? $originalTile['tile_text_color'] : null;
         
-        $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         if (!$insertStmt->execute([
             $newTileId,
@@ -1651,6 +1720,7 @@ function handleCloneTile($tileId) {
             $originalTile['group'],
             $newVisibility,
             $newAllowedUsers,
+            $newAllowedGroups,
             $originalTile['is_hyperlink'] ?? 0,
             $originalTile['hyperlink_url'] ?? null,
             $originalTile['open_in_new_tab'] ?? 0,
@@ -1989,6 +2059,7 @@ function handleCloneCategory($categoryName) {
             $newTitle = 'Copy of ' . $originalTile['title'];
             $newVisibility = $originalTile['visibility'];
             $newAllowedUsers = $originalTile['allowed_users'];
+            $newAllowedGroups = $originalTile['allowed_groups'];
             
             // Prepare tile decoration properties
             $tileBackgroundColor = !empty($originalTile['tile_background_color']) ? $originalTile['tile_background_color'] : null;
@@ -2000,7 +2071,7 @@ function handleCloneCategory($categoryName) {
             $tileBorderRadius = isset($originalTile['tile_border_radius']) && $originalTile['tile_border_radius'] !== null ? (int)$originalTile['tile_border_radius'] : null;
             $tileTextColor = !empty($originalTile['tile_text_color']) ? $originalTile['tile_text_color'] : null;
             
-            $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             
             if (!$insertStmt->execute([
                 $newTileId,
@@ -2013,6 +2084,7 @@ function handleCloneCategory($categoryName) {
                 $finalCategoryName, // Use the new category name
                 $newVisibility,
                 $newAllowedUsers,
+                $newAllowedGroups,
                 $originalTile['is_hyperlink'] ?? 0,
                 $originalTile['hyperlink_url'] ?? null,
                 $originalTile['open_in_new_tab'] ?? 0,
@@ -2924,6 +2996,7 @@ function handleGetRecycleBin() {
             'deletedAt' => (int)$row['deleted_at'],
             'visibility' => $tileVisibility,
             'allowedUsers' => $tileAllowedUsers,
+            'allowedGroups' => $tileAllowedGroups,
             'isFavorite' => $isFavorite,
             'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
             'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
@@ -3254,6 +3327,7 @@ function handleGetArchive() {
                 'archivedAt' => isset($row['archived_at']) && $row['archived_at'] !== null ? (int)$row['archived_at'] : null,
                 'visibility' => $tileVisibility,
                 'allowedUsers' => $tileAllowedUsers,
+                'allowedGroups' => $tileAllowedGroups,
                 'isFavorite' => $isFavorite,
                 'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
                 'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
@@ -3982,11 +4056,15 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
             }
         }
         
-        // Handle visibility and allowed_users
+        // Handle visibility and allowed_users/allowed_groups
         $visibility = $data['visibility'] ?? 'public';
         $allowedUsers = null;
+        $allowedGroups = null;
         if ($visibility === 'private' && isset($data['allowedUsers']) && is_array($data['allowedUsers'])) {
             $allowedUsers = json_encode($data['allowedUsers']);
+        }
+        if ($visibility === 'private' && isset($data['allowedGroups']) && is_array($data['allowedGroups'])) {
+            $allowedGroups = json_encode($data['allowedGroups']);
         }
         
         // Handle hyperlink fields
@@ -4072,7 +4150,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         $tileTextColor = isset($data['tileTextColor']) && $data['tileTextColor'] !== null && $data['tileTextColor'] !== '' ? $data['tileTextColor'] : null;
         
         // Update tile
-        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ?, tile_background_color = ?, tile_gradient_enabled = ?, tile_gradient_colors = ?, tile_gradient_color_positions = ?, tile_gradient_direction = ?, tile_gradient_type = ?, tile_border_radius = ?, tile_text_color = ? WHERE id = ?');
+        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, allowed_groups = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ?, tile_background_color = ?, tile_gradient_enabled = ?, tile_gradient_colors = ?, tile_gradient_color_positions = ?, tile_gradient_direction = ?, tile_gradient_type = ?, tile_border_radius = ?, tile_text_color = ? WHERE id = ?');
         $stmt->execute([
             $data['title'] ?? '',
             $data['description'] ?? '',
@@ -4082,6 +4160,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
             $data['group'] ?? 'General',
             $visibility,
             $allowedUsers,
+            $allowedGroups,
             $isHyperlink,
             $hyperlinkUrl,
             $openInNewTab,

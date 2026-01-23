@@ -41,6 +41,26 @@ interface TileGridProps {
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
+// Resolve API base dynamically
+function resolveApiBase(): string {
+  const envBase = (import.meta as any)?.env?.VITE_API_BASE;
+  if (envBase) {
+    return envBase;
+  }
+
+  if (typeof window !== 'undefined') {
+    const path = window.location.pathname || '';
+    if (path !== '/' && path.length > 1) {
+      const cleanPath = path.replace(/\/[^/]*$/, '').replace(/\/$/, '');
+      if (cleanPath && cleanPath !== '/') {
+        return `${cleanPath}/api`;
+      }
+    }
+  }
+
+  return '/api';
+}
+
 // Category Visibility Management Dialog
 interface CategoryVisibilityDialogProps {
   categoryName: string;
@@ -1852,9 +1872,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [visibleFrom, setVisibleFrom] = useState<string>('');
   const [expiresAt, setExpiresAt] = useState<string>('');
   const [newAllowedUsers, setNewAllowedUsers] = useState<number[]>([]);
+  const [newAllowedGroups, setNewAllowedGroups] = useState<number[]>([]);
   const [availableUsers, setAvailableUsers] = useState<UserListItem[]>([]);
+  const [availableGroups, setAvailableGroups] = useState<Array<{ id: number; name: string; description: string | null; memberCount: number }>>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [isLoadingGroups, setIsLoadingGroups] = useState(false);
   const [showUserSelector, setShowUserSelector] = useState(false);
+  const [visibilitySearchTerm, setVisibilitySearchTerm] = useState('');
+  const [visibilityActiveTab, setVisibilityActiveTab] = useState<'users' | 'groups'>('users');
 
   // Hyperlink state
   const [tileType, setTileType] = useState<'space' | 'hyperlink'>('space');
@@ -3221,6 +3246,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       createdAt: Date.now(),
       visibility: newVisibility,
       allowedUsers: (newVisibility === 'private') ? finalAllowedUsers : undefined,
+      allowedGroups: (newVisibility === 'private') ? newAllowedGroups : undefined,
       isHyperlink: tileType === 'hyperlink',
       hyperlinkUrl: tileType === 'hyperlink' ? hyperlinkUrl.trim() : undefined,
       openInNewTab: tileType === 'hyperlink' ? openInNewTab : undefined,
@@ -3265,6 +3291,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
     setShowEmojiPicker(false);
     setNewVisibility('public');
     setNewAllowedUsers([]);
+    setNewAllowedGroups([]);
+    setVisibilitySearchTerm('');
+    setVisibilityActiveTab('users');
     setShowUserSelector(false);
     setTileType('space');
     setHyperlinkUrl('');
@@ -3292,7 +3321,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     setMessagePriority(0);
   };
 
-  // Fetch users when modal opens and visibility is private
+  // Fetch users and groups when modal opens and visibility is private
   useEffect(() => {
     const shouldFetchUsers = (isModalOpen || isEditModalOpen) && isAuthenticated && newVisibility === 'private' && availableUsers.length === 0 && !isLoadingUsers;
     if (shouldFetchUsers) {
@@ -3305,6 +3334,24 @@ export const TileGrid: React.FC<TileGridProps> = ({
         .catch(err => {
           console.error('Failed to fetch users:', err);
           setIsLoadingUsers(false);
+        });
+    }
+    
+    const shouldFetchGroups = (isModalOpen || isEditModalOpen) && isAuthenticated && newVisibility === 'private' && availableGroups.length === 0 && !isLoadingGroups;
+    if (shouldFetchGroups) {
+      setIsLoadingGroups(true);
+      fetch(`${resolveApiBase()}/user-groups`, {
+        method: 'GET',
+        credentials: 'include',
+      })
+        .then(response => response.json())
+        .then(groups => {
+          setAvailableGroups(groups);
+          setIsLoadingGroups(false);
+        })
+        .catch(err => {
+          console.error('Failed to fetch groups:', err);
+          setIsLoadingGroups(false);
         });
     }
   }, [isModalOpen, isEditModalOpen, isAuthenticated, newVisibility]);
@@ -3609,6 +3656,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     
     // Always include owner in allowed users list
     const allowedUsers = tile.allowedUsers || [];
+    const allowedGroups = tile.allowedGroups || [];
     if (tile.userId) {
       const ownerIdNum = typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId;
       if (!allowedUsers.includes(ownerIdNum)) {
@@ -3619,6 +3667,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     } else {
       setNewAllowedUsers(allowedUsers);
     }
+    setNewAllowedGroups(allowedGroups);
     // Convert ISO date strings to datetime-local format (YYYY-MM-DDTHH:mm)
     setVisibleFrom(tile.visibleFrom ? new Date(tile.visibleFrom).toISOString().slice(0, 16) : '');
     setExpiresAt(tile.expiresAt ? new Date(tile.expiresAt).toISOString().slice(0, 16) : '');
@@ -3702,6 +3751,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       group: newGroup.trim() || 'General',
       visibility: newVisibility,
       allowedUsers: (newVisibility === 'private') ? finalAllowedUsers : undefined,
+      allowedGroups: (newVisibility === 'private') ? newAllowedGroups : undefined,
       isHyperlink: tileType === 'hyperlink',
       hyperlinkUrl: tileType === 'hyperlink' ? hyperlinkUrl.trim() : undefined,
       openInNewTab: tileType === 'hyperlink' ? openInNewTab : undefined,
@@ -6556,70 +6606,192 @@ export const TileGrid: React.FC<TileGridProps> = ({
                           </label>
                         </div>
 
-                        {/* User Selector for Private Visibility */}
+                        {/* User and Group Selector for Private Visibility */}
                         {newVisibility === 'private' && isAuthenticated && (
-                          <div className="mt-3">
-                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Select Users</label>
-                            {isLoadingUsers ? (
-                              <div className="text-sm text-slate-500 dark:text-slate-400">Loading users...</div>
-                            ) : (
-                              <div className="max-h-32 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-slate-50 dark:bg-slate-900/50">
-                                {availableUsers.length === 0 ? (
-                                  <div className="text-sm text-slate-500 dark:text-slate-400">No users available</div>
+                          <div className="mt-3 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                            {/* Tabs */}
+                            <div className="flex border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                              <button
+                                type="button"
+                                onClick={() => setVisibilityActiveTab('users')}
+                                className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${
+                                  visibilityActiveTab === 'users'
+                                    ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
+                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                }`}
+                              >
+                                USERS ({newAllowedUsers.length})
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setVisibilityActiveTab('groups')}
+                                className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${
+                                  visibilityActiveTab === 'groups'
+                                    ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
+                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                }`}
+                              >
+                                GROUPS ({newAllowedGroups.length})
+                              </button>
+                            </div>
+
+                            {/* Search Input */}
+                            <div className="p-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+                              <div className="relative">
+                                <input
+                                  type="text"
+                                  value={visibilitySearchTerm}
+                                  onChange={(e) => setVisibilitySearchTerm(e.target.value)}
+                                  placeholder={`Search ${visibilityActiveTab}...`}
+                                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                />
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 absolute left-3 top-2.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                                {visibilitySearchTerm && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setVisibilitySearchTerm('')}
+                                    className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                      <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                    </svg>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Content */}
+                            <div className="max-h-64 overflow-y-auto p-2 bg-white dark:bg-slate-800">
+                              {visibilityActiveTab === 'users' && (
+                                isLoadingUsers ? (
+                                  <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">Loading users...</div>
+                                ) : availableUsers.length === 0 ? (
+                                  <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users available</div>
                                 ) : (
-                                  <div className="space-y-1.5">
-                                    {availableUsers.map(u => {
-                                      // For new tiles, the current user is the owner
-                                      const isCurrentUserOwner = user && u.id === user.id;
-                                      return (
+                                  <div className="space-y-1">
+                                    {availableUsers
+                                      .filter(u => {
+                                        const searchLower = visibilitySearchTerm.toLowerCase();
+                                        return u.username.toLowerCase().includes(searchLower) ||
+                                          u.email?.toLowerCase().includes(searchLower);
+                                      })
+                                      .map(u => {
+                                        const isCurrentUserOwner = user && u.id === user.id;
+                                        return (
+                                          <label 
+                                            key={u.id} 
+                                            className={`flex items-center gap-2 p-2 rounded ${
+                                              isCurrentUserOwner 
+                                                ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
+                                                : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                                            }`}
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              checked={newAllowedUsers.includes(u.id) || isCurrentUserOwner}
+                                              disabled={isCurrentUserOwner}
+                                              onChange={(e) => {
+                                                if (isCurrentUserOwner) return;
+                                                if (e.target.checked) {
+                                                  setNewAllowedUsers([...newAllowedUsers, u.id]);
+                                                } else {
+                                                  setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
+                                                }
+                                              }}
+                                              className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${
+                                                isCurrentUserOwner ? 'opacity-50 cursor-not-allowed' : ''
+                                              }`}
+                                            />
+                                            <span className={`text-sm flex-1 ${
+                                              isCurrentUserOwner 
+                                                ? 'text-amber-800 dark:text-amber-200 font-medium'
+                                                : 'text-slate-700 dark:text-slate-300'
+                                            }`}>
+                                              {u.username}
+                                            </span>
+                                            {isCurrentUserOwner && (
+                                              <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
+                                                Owner (You)
+                                              </span>
+                                            )}
+                                            {u.auth_source && u.auth_source !== 'local' && (
+                                              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400">
+                                                {u.auth_source.toUpperCase()}
+                                              </span>
+                                            )}
+                                          </label>
+                                        );
+                                      })}
+                                    {availableUsers.filter(u => {
+                                      const searchLower = visibilitySearchTerm.toLowerCase();
+                                      return u.username.toLowerCase().includes(searchLower) ||
+                                        u.email?.toLowerCase().includes(searchLower);
+                                    }).length === 0 && (
+                                      <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users found</div>
+                                    )}
+                                  </div>
+                                )
+                              )}
+
+                              {visibilityActiveTab === 'groups' && (
+                                isLoadingGroups ? (
+                                  <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">Loading groups...</div>
+                                ) : availableGroups.length === 0 ? (
+                                  <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups available</div>
+                                ) : (
+                                  <div className="space-y-1">
+                                    {availableGroups
+                                      .filter(g => {
+                                        const searchLower = visibilitySearchTerm.toLowerCase();
+                                        return g.name.toLowerCase().includes(searchLower) ||
+                                          (g.description || '').toLowerCase().includes(searchLower);
+                                      })
+                                      .map(g => (
                                         <label 
-                                          key={u.id} 
-                                          className={`flex items-center gap-2 p-1.5 rounded ${
-                                            isCurrentUserOwner 
-                                              ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
-                                              : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800'
-                                          }`}
+                                          key={g.id} 
+                                          className="flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50"
                                         >
                                           <input
                                             type="checkbox"
-                                            checked={newAllowedUsers.includes(u.id) || isCurrentUserOwner}
-                                            disabled={isCurrentUserOwner}
+                                            checked={newAllowedGroups.includes(g.id)}
                                             onChange={(e) => {
-                                              if (isCurrentUserOwner) return;
                                               if (e.target.checked) {
-                                                setNewAllowedUsers([...newAllowedUsers, u.id]);
+                                                setNewAllowedGroups([...newAllowedGroups, g.id]);
                                               } else {
-                                                setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
+                                                setNewAllowedGroups(newAllowedGroups.filter(id => id !== g.id));
                                               }
                                             }}
-                                            className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${
-                                              isCurrentUserOwner ? 'opacity-50 cursor-not-allowed' : ''
-                                            }`}
+                                            className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
                                           />
-                                          <span className={`text-sm flex-1 ${
-                                            isCurrentUserOwner 
-                                              ? 'text-amber-800 dark:text-amber-200 font-medium'
-                                              : 'text-slate-700 dark:text-slate-300'
-                                          }`}>
-                                            {u.username}
+                                          <div className="flex-1">
+                                            <div className="text-sm font-medium text-slate-700 dark:text-slate-300">{g.name}</div>
+                                            {g.description && (
+                                              <div className="text-xs text-slate-500 dark:text-slate-400">{g.description}</div>
+                                            )}
+                                          </div>
+                                          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                                            {g.memberCount} {g.memberCount === 1 ? 'member' : 'members'}
                                           </span>
-                                          {isCurrentUserOwner && (
-                                            <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
-                                              Owner (You)
-                                            </span>
-                                          )}
-                                          {u.auth_source && u.auth_source !== 'local' && (
-                                            <span className="text-xs text-slate-500 dark:text-slate-400">({u.auth_source})</span>
-                                          )}
                                         </label>
-                                      );
-                                    })}
+                                      ))}
+                                    {availableGroups.filter(g => {
+                                      const searchLower = visibilitySearchTerm.toLowerCase();
+                                      return g.name.toLowerCase().includes(searchLower) ||
+                                        (g.description || '').toLowerCase().includes(searchLower);
+                                    }).length === 0 && (
+                                      <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups found</div>
+                                    )}
                                   </div>
-                                )}
-                              </div>
-                            )}
-                            {newVisibility === 'private' && newAllowedUsers.length === 0 && (
-                              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Please select at least one user for private hyperlinks</p>
+                                )
+                              )}
+                            </div>
+
+                            {newVisibility === 'private' && newAllowedUsers.length === 0 && newAllowedGroups.length === 0 && (
+                              <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-700">
+                                Please select at least one user or group for private hyperlinks
+                              </p>
                             )}
                           </div>
                         )}
@@ -6776,70 +6948,192 @@ export const TileGrid: React.FC<TileGridProps> = ({
                         </label>
                       </div>
 
-                      {/* User Selector for Private Visibility */}
+                      {/* User and Group Selector for Private Visibility */}
                       {newVisibility === 'private' && isAuthenticated && (
-                        <div className="mt-3">
-                          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Select Users</label>
-                          {isLoadingUsers ? (
-                            <div className="text-sm text-slate-500 dark:text-slate-400">Loading users...</div>
-                          ) : (
-                            <div className="max-h-32 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-slate-50 dark:bg-slate-900/50">
-                              {availableUsers.length === 0 ? (
-                                <div className="text-sm text-slate-500 dark:text-slate-400">No users available</div>
+                        <div className="mt-3 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                          {/* Tabs */}
+                          <div className="flex border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                            <button
+                              type="button"
+                              onClick={() => setVisibilityActiveTab('users')}
+                              className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${
+                                visibilityActiveTab === 'users'
+                                  ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
+                                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                              }`}
+                            >
+                              USERS ({newAllowedUsers.length})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setVisibilityActiveTab('groups')}
+                              className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${
+                                visibilityActiveTab === 'groups'
+                                  ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
+                                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                              }`}
+                            >
+                              GROUPS ({newAllowedGroups.length})
+                            </button>
+                          </div>
+
+                          {/* Search Input */}
+                          <div className="p-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+                            <div className="relative">
+                              <input
+                                type="text"
+                                value={visibilitySearchTerm}
+                                onChange={(e) => setVisibilitySearchTerm(e.target.value)}
+                                placeholder={`Search ${visibilityActiveTab}...`}
+                                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                              />
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 absolute left-3 top-2.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                              </svg>
+                              {visibilitySearchTerm && (
+                                <button
+                                  type="button"
+                                  onClick={() => setVisibilitySearchTerm('')}
+                                  className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                    <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                  </svg>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Content */}
+                          <div className="max-h-64 overflow-y-auto p-2 bg-white dark:bg-slate-800">
+                            {visibilityActiveTab === 'users' && (
+                              isLoadingUsers ? (
+                                <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">Loading users...</div>
+                              ) : availableUsers.length === 0 ? (
+                                <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users available</div>
                               ) : (
-                                <div className="space-y-1.5">
-                                  {availableUsers.map(u => {
-                                    // For new tiles, the current user is the owner
-                                    const isCurrentUserOwner = user && u.id === user.id;
-                                    return (
+                                <div className="space-y-1">
+                                  {availableUsers
+                                    .filter(u => {
+                                      const searchLower = visibilitySearchTerm.toLowerCase();
+                                      return u.username.toLowerCase().includes(searchLower) ||
+                                        u.email?.toLowerCase().includes(searchLower);
+                                    })
+                                    .map(u => {
+                                      const isCurrentUserOwner = user && u.id === user.id;
+                                      return (
+                                        <label 
+                                          key={u.id} 
+                                          className={`flex items-center gap-2 p-2 rounded ${
+                                            isCurrentUserOwner 
+                                              ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
+                                              : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                                          }`}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={newAllowedUsers.includes(u.id) || isCurrentUserOwner}
+                                            disabled={isCurrentUserOwner}
+                                            onChange={(e) => {
+                                              if (isCurrentUserOwner) return;
+                                              if (e.target.checked) {
+                                                setNewAllowedUsers([...newAllowedUsers, u.id]);
+                                              } else {
+                                                setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
+                                              }
+                                            }}
+                                            className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${
+                                              isCurrentUserOwner ? 'opacity-50 cursor-not-allowed' : ''
+                                            }`}
+                                          />
+                                          <span className={`text-sm flex-1 ${
+                                            isCurrentUserOwner 
+                                              ? 'text-amber-800 dark:text-amber-200 font-medium'
+                                              : 'text-slate-700 dark:text-slate-300'
+                                          }`}>
+                                            {u.username}
+                                          </span>
+                                          {isCurrentUserOwner && (
+                                            <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
+                                              Owner (You)
+                                            </span>
+                                          )}
+                                          {u.auth_source && u.auth_source !== 'local' && (
+                                            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400">
+                                              {u.auth_source.toUpperCase()}
+                                            </span>
+                                          )}
+                                        </label>
+                                      );
+                                    })}
+                                  {availableUsers.filter(u => {
+                                    const searchLower = visibilitySearchTerm.toLowerCase();
+                                    return u.username.toLowerCase().includes(searchLower) ||
+                                      u.email?.toLowerCase().includes(searchLower);
+                                  }).length === 0 && (
+                                    <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users found</div>
+                                  )}
+                                </div>
+                              )
+                            )}
+
+                            {visibilityActiveTab === 'groups' && (
+                              isLoadingGroups ? (
+                                <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">Loading groups...</div>
+                              ) : availableGroups.length === 0 ? (
+                                <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups available</div>
+                              ) : (
+                                <div className="space-y-1">
+                                  {availableGroups
+                                    .filter(g => {
+                                      const searchLower = visibilitySearchTerm.toLowerCase();
+                                      return g.name.toLowerCase().includes(searchLower) ||
+                                        (g.description || '').toLowerCase().includes(searchLower);
+                                    })
+                                    .map(g => (
                                       <label 
-                                        key={u.id} 
-                                        className={`flex items-center gap-2 p-1.5 rounded ${
-                                          isCurrentUserOwner 
-                                            ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
-                                            : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800'
-                                        }`}
+                                        key={g.id} 
+                                        className="flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50"
                                       >
                                         <input
                                           type="checkbox"
-                                          checked={newAllowedUsers.includes(u.id) || isCurrentUserOwner}
-                                          disabled={isCurrentUserOwner}
+                                          checked={newAllowedGroups.includes(g.id)}
                                           onChange={(e) => {
-                                            if (isCurrentUserOwner) return;
                                             if (e.target.checked) {
-                                              setNewAllowedUsers([...newAllowedUsers, u.id]);
+                                              setNewAllowedGroups([...newAllowedGroups, g.id]);
                                             } else {
-                                              setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
+                                              setNewAllowedGroups(newAllowedGroups.filter(id => id !== g.id));
                                             }
                                           }}
-                                          className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${
-                                            isCurrentUserOwner ? 'opacity-50 cursor-not-allowed' : ''
-                                          }`}
+                                          className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
                                         />
-                                        <span className={`text-sm flex-1 ${
-                                          isCurrentUserOwner 
-                                            ? 'text-amber-800 dark:text-amber-200 font-medium'
-                                            : 'text-slate-700 dark:text-slate-300'
-                                        }`}>
-                                          {u.username}
+                                        <div className="flex-1">
+                                          <div className="text-sm font-medium text-slate-700 dark:text-slate-300">{g.name}</div>
+                                          {g.description && (
+                                            <div className="text-xs text-slate-500 dark:text-slate-400">{g.description}</div>
+                                          )}
+                                        </div>
+                                        <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                                          {g.memberCount} {g.memberCount === 1 ? 'member' : 'members'}
                                         </span>
-                                        {isCurrentUserOwner && (
-                                          <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
-                                            Owner (You)
-                                          </span>
-                                        )}
-                                        {u.auth_source && u.auth_source !== 'local' && (
-                                          <span className="text-xs text-slate-500 dark:text-slate-400">({u.auth_source})</span>
-                                        )}
                                       </label>
-                                    );
-                                  })}
+                                    ))}
+                                  {availableGroups.filter(g => {
+                                    const searchLower = visibilitySearchTerm.toLowerCase();
+                                    return g.name.toLowerCase().includes(searchLower) ||
+                                      (g.description || '').toLowerCase().includes(searchLower);
+                                  }).length === 0 && (
+                                    <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups found</div>
+                                  )}
                                 </div>
-                              )}
-                            </div>
-                          )}
-                          {newVisibility === 'private' && newAllowedUsers.length === 0 && (
-                            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Please select at least one user for private spaces</p>
+                              )
+                            )}
+                          </div>
+
+                          {newVisibility === 'private' && newAllowedUsers.length === 0 && newAllowedGroups.length === 0 && (
+                            <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-700">
+                              Please select at least one user or group for private spaces
+                            </p>
                           )}
                         </div>
                       )}
@@ -7683,69 +7977,192 @@ export const TileGrid: React.FC<TileGridProps> = ({
                           </label>
                         </div>
 
-                        {/* User Selector for Private Visibility */}
+                        {/* User and Group Selector for Private Visibility */}
                         {newVisibility === 'private' && isAuthenticated && (
-                          <div className="mt-3">
-                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Select Users</label>
-                            {isLoadingUsers ? (
-                              <div className="text-sm text-slate-500 dark:text-slate-400">Loading users...</div>
-                            ) : (
-                              <div className="max-h-32 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-slate-50 dark:bg-slate-900/50">
-                                {availableUsers.length === 0 ? (
-                                  <div className="text-sm text-slate-500 dark:text-slate-400">No users available</div>
+                          <div className="mt-3 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                            {/* Tabs */}
+                            <div className="flex border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                              <button
+                                type="button"
+                                onClick={() => setVisibilityActiveTab('users')}
+                                className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${
+                                  visibilityActiveTab === 'users'
+                                    ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
+                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                }`}
+                              >
+                                USERS ({newAllowedUsers.length})
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setVisibilityActiveTab('groups')}
+                                className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${
+                                  visibilityActiveTab === 'groups'
+                                    ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
+                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                }`}
+                              >
+                                GROUPS ({newAllowedGroups.length})
+                              </button>
+                            </div>
+
+                            {/* Search Input */}
+                            <div className="p-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+                              <div className="relative">
+                                <input
+                                  type="text"
+                                  value={visibilitySearchTerm}
+                                  onChange={(e) => setVisibilitySearchTerm(e.target.value)}
+                                  placeholder={`Search ${visibilityActiveTab}...`}
+                                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                />
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 absolute left-3 top-2.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                                {visibilitySearchTerm && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setVisibilitySearchTerm('')}
+                                    className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                      <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                    </svg>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Content */}
+                            <div className="max-h-64 overflow-y-auto p-2 bg-white dark:bg-slate-800">
+                              {visibilityActiveTab === 'users' && (
+                                isLoadingUsers ? (
+                                  <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">Loading users...</div>
+                                ) : availableUsers.length === 0 ? (
+                                  <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users available</div>
                                 ) : (
-                                  <div className="space-y-1.5">
-                                    {availableUsers.map(u => {
-                                      const isOwner = editingTile && editingTile.userId && u.id === (typeof editingTile.userId === 'string' ? parseInt(editingTile.userId, 10) : editingTile.userId);
-                                      return (
+                                  <div className="space-y-1">
+                                    {availableUsers
+                                      .filter(u => {
+                                        const searchLower = visibilitySearchTerm.toLowerCase();
+                                        return u.username.toLowerCase().includes(searchLower) ||
+                                          u.email?.toLowerCase().includes(searchLower);
+                                      })
+                                      .map(u => {
+                                        const isOwner = editingTile && editingTile.userId && u.id === (typeof editingTile.userId === 'string' ? parseInt(editingTile.userId, 10) : editingTile.userId);
+                                        return (
+                                          <label 
+                                            key={u.id} 
+                                            className={`flex items-center gap-2 p-2 rounded ${
+                                              isOwner 
+                                                ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
+                                                : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                                            }`}
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              checked={newAllowedUsers.includes(u.id) || isOwner}
+                                              disabled={isOwner}
+                                              onChange={(e) => {
+                                                if (isOwner) return;
+                                                if (e.target.checked) {
+                                                  setNewAllowedUsers([...newAllowedUsers, u.id]);
+                                                } else {
+                                                  setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
+                                                }
+                                              }}
+                                              className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${
+                                                isOwner ? 'opacity-50 cursor-not-allowed' : ''
+                                              }`}
+                                            />
+                                            <span className={`text-sm flex-1 ${
+                                              isOwner 
+                                                ? 'text-amber-800 dark:text-amber-200 font-medium'
+                                                : 'text-slate-700 dark:text-slate-300'
+                                            }`}>
+                                              {u.username}
+                                            </span>
+                                            {isOwner && (
+                                              <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
+                                                Owner
+                                              </span>
+                                            )}
+                                            {u.auth_source && u.auth_source !== 'local' && (
+                                              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400">
+                                                {u.auth_source.toUpperCase()}
+                                              </span>
+                                            )}
+                                          </label>
+                                        );
+                                      })}
+                                    {availableUsers.filter(u => {
+                                      const searchLower = visibilitySearchTerm.toLowerCase();
+                                      return u.username.toLowerCase().includes(searchLower) ||
+                                        u.email?.toLowerCase().includes(searchLower);
+                                    }).length === 0 && (
+                                      <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users found</div>
+                                    )}
+                                  </div>
+                                )
+                              )}
+
+                              {visibilityActiveTab === 'groups' && (
+                                isLoadingGroups ? (
+                                  <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">Loading groups...</div>
+                                ) : availableGroups.length === 0 ? (
+                                  <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups available</div>
+                                ) : (
+                                  <div className="space-y-1">
+                                    {availableGroups
+                                      .filter(g => {
+                                        const searchLower = visibilitySearchTerm.toLowerCase();
+                                        return g.name.toLowerCase().includes(searchLower) ||
+                                          (g.description || '').toLowerCase().includes(searchLower);
+                                      })
+                                      .map(g => (
                                         <label 
-                                          key={u.id} 
-                                          className={`flex items-center gap-2 p-1.5 rounded ${
-                                            isOwner 
-                                              ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
-                                              : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800'
-                                          }`}
+                                          key={g.id} 
+                                          className="flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50"
                                         >
                                           <input
                                             type="checkbox"
-                                            checked={newAllowedUsers.includes(u.id) || isOwner}
-                                            disabled={isOwner}
+                                            checked={newAllowedGroups.includes(g.id)}
                                             onChange={(e) => {
-                                              if (isOwner) return;
                                               if (e.target.checked) {
-                                                setNewAllowedUsers([...newAllowedUsers, u.id]);
+                                                setNewAllowedGroups([...newAllowedGroups, g.id]);
                                               } else {
-                                                setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
+                                                setNewAllowedGroups(newAllowedGroups.filter(id => id !== g.id));
                                               }
                                             }}
-                                            className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${
-                                              isOwner ? 'opacity-50 cursor-not-allowed' : ''
-                                            }`}
+                                            className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
                                           />
-                                          <span className={`text-sm flex-1 ${
-                                            isOwner 
-                                              ? 'text-amber-800 dark:text-amber-200 font-medium'
-                                              : 'text-slate-700 dark:text-slate-300'
-                                          }`}>
-                                            {u.username}
+                                          <div className="flex-1">
+                                            <div className="text-sm font-medium text-slate-700 dark:text-slate-300">{g.name}</div>
+                                            {g.description && (
+                                              <div className="text-xs text-slate-500 dark:text-slate-400">{g.description}</div>
+                                            )}
+                                          </div>
+                                          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                                            {g.memberCount} {g.memberCount === 1 ? 'member' : 'members'}
                                           </span>
-                                          {isOwner && (
-                                            <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
-                                              Owner
-                                            </span>
-                                          )}
-                                          {u.auth_source && u.auth_source !== 'local' && (
-                                            <span className="text-xs text-slate-500 dark:text-slate-400">({u.auth_source})</span>
-                                          )}
                                         </label>
-                                      );
-                                    })}
+                                      ))}
+                                    {availableGroups.filter(g => {
+                                      const searchLower = visibilitySearchTerm.toLowerCase();
+                                      return g.name.toLowerCase().includes(searchLower) ||
+                                        (g.description || '').toLowerCase().includes(searchLower);
+                                    }).length === 0 && (
+                                      <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups found</div>
+                                    )}
                                   </div>
-                                )}
-                              </div>
-                            )}
-                            {newVisibility === 'private' && newAllowedUsers.length === 0 && (
-                              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Please select at least one user for private hyperlinks</p>
+                                )
+                              )}
+                            </div>
+
+                            {newVisibility === 'private' && newAllowedUsers.length === 0 && newAllowedGroups.length === 0 && (
+                              <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-700">
+                                Please select at least one user or group for private hyperlinks
+                              </p>
                             )}
                           </div>
                         )}
@@ -7803,69 +8220,192 @@ export const TileGrid: React.FC<TileGridProps> = ({
                           </label>
                         </div>
 
-                        {/* User Selector for Private Visibility */}
+                        {/* User and Group Selector for Private Visibility */}
                         {newVisibility === 'private' && isAuthenticated && (
-                          <div className="mt-3">
-                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Select Users</label>
-                            {isLoadingUsers ? (
-                              <div className="text-sm text-slate-500 dark:text-slate-400">Loading users...</div>
-                            ) : (
-                              <div className="max-h-32 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-slate-50 dark:bg-slate-900/50">
-                                {availableUsers.length === 0 ? (
-                                  <div className="text-sm text-slate-500 dark:text-slate-400">No users available</div>
+                          <div className="mt-3 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                            {/* Tabs */}
+                            <div className="flex border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                              <button
+                                type="button"
+                                onClick={() => setVisibilityActiveTab('users')}
+                                className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${
+                                  visibilityActiveTab === 'users'
+                                    ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
+                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                }`}
+                              >
+                                USERS ({newAllowedUsers.length})
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setVisibilityActiveTab('groups')}
+                                className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${
+                                  visibilityActiveTab === 'groups'
+                                    ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
+                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                }`}
+                              >
+                                GROUPS ({newAllowedGroups.length})
+                              </button>
+                            </div>
+
+                            {/* Search Input */}
+                            <div className="p-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+                              <div className="relative">
+                                <input
+                                  type="text"
+                                  value={visibilitySearchTerm}
+                                  onChange={(e) => setVisibilitySearchTerm(e.target.value)}
+                                  placeholder={`Search ${visibilityActiveTab}...`}
+                                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                />
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 absolute left-3 top-2.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                                {visibilitySearchTerm && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setVisibilitySearchTerm('')}
+                                    className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                      <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                    </svg>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Content */}
+                            <div className="max-h-64 overflow-y-auto p-2 bg-white dark:bg-slate-800">
+                              {visibilityActiveTab === 'users' && (
+                                isLoadingUsers ? (
+                                  <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">Loading users...</div>
+                                ) : availableUsers.length === 0 ? (
+                                  <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users available</div>
                                 ) : (
-                                  <div className="space-y-1.5">
-                                    {availableUsers.map(u => {
-                                      const isOwner = editingTile && editingTile.userId && u.id === (typeof editingTile.userId === 'string' ? parseInt(editingTile.userId, 10) : editingTile.userId);
-                                      return (
+                                  <div className="space-y-1">
+                                    {availableUsers
+                                      .filter(u => {
+                                        const searchLower = visibilitySearchTerm.toLowerCase();
+                                        return u.username.toLowerCase().includes(searchLower) ||
+                                          u.email?.toLowerCase().includes(searchLower);
+                                      })
+                                      .map(u => {
+                                        const isOwner = editingTile && editingTile.userId && u.id === (typeof editingTile.userId === 'string' ? parseInt(editingTile.userId, 10) : editingTile.userId);
+                                        return (
+                                          <label 
+                                            key={u.id} 
+                                            className={`flex items-center gap-2 p-2 rounded ${
+                                              isOwner 
+                                                ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
+                                                : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                                            }`}
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              checked={newAllowedUsers.includes(u.id) || isOwner}
+                                              disabled={isOwner}
+                                              onChange={(e) => {
+                                                if (isOwner) return;
+                                                if (e.target.checked) {
+                                                  setNewAllowedUsers([...newAllowedUsers, u.id]);
+                                                } else {
+                                                  setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
+                                                }
+                                              }}
+                                              className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${
+                                                isOwner ? 'opacity-50 cursor-not-allowed' : ''
+                                              }`}
+                                            />
+                                            <span className={`text-sm flex-1 ${
+                                              isOwner 
+                                                ? 'text-amber-800 dark:text-amber-200 font-medium'
+                                                : 'text-slate-700 dark:text-slate-300'
+                                            }`}>
+                                              {u.username}
+                                            </span>
+                                            {isOwner && (
+                                              <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
+                                                Owner
+                                              </span>
+                                            )}
+                                            {u.auth_source && u.auth_source !== 'local' && (
+                                              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400">
+                                                {u.auth_source.toUpperCase()}
+                                              </span>
+                                            )}
+                                          </label>
+                                        );
+                                      })}
+                                    {availableUsers.filter(u => {
+                                      const searchLower = visibilitySearchTerm.toLowerCase();
+                                      return u.username.toLowerCase().includes(searchLower) ||
+                                        u.email?.toLowerCase().includes(searchLower);
+                                    }).length === 0 && (
+                                      <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users found</div>
+                                    )}
+                                  </div>
+                                )
+                              )}
+
+                              {visibilityActiveTab === 'groups' && (
+                                isLoadingGroups ? (
+                                  <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">Loading groups...</div>
+                                ) : availableGroups.length === 0 ? (
+                                  <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups available</div>
+                                ) : (
+                                  <div className="space-y-1">
+                                    {availableGroups
+                                      .filter(g => {
+                                        const searchLower = visibilitySearchTerm.toLowerCase();
+                                        return g.name.toLowerCase().includes(searchLower) ||
+                                          (g.description || '').toLowerCase().includes(searchLower);
+                                      })
+                                      .map(g => (
                                         <label 
-                                          key={u.id} 
-                                          className={`flex items-center gap-2 p-1.5 rounded ${
-                                            isOwner 
-                                              ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
-                                              : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800'
-                                          }`}
+                                          key={g.id} 
+                                          className="flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50"
                                         >
                                           <input
                                             type="checkbox"
-                                            checked={newAllowedUsers.includes(u.id) || isOwner}
-                                            disabled={isOwner}
+                                            checked={newAllowedGroups.includes(g.id)}
                                             onChange={(e) => {
-                                              if (isOwner) return;
                                               if (e.target.checked) {
-                                                setNewAllowedUsers([...newAllowedUsers, u.id]);
+                                                setNewAllowedGroups([...newAllowedGroups, g.id]);
                                               } else {
-                                                setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
+                                                setNewAllowedGroups(newAllowedGroups.filter(id => id !== g.id));
                                               }
                                             }}
-                                            className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${
-                                              isOwner ? 'opacity-50 cursor-not-allowed' : ''
-                                            }`}
+                                            className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
                                           />
-                                          <span className={`text-sm flex-1 ${
-                                            isOwner 
-                                              ? 'text-amber-800 dark:text-amber-200 font-medium'
-                                              : 'text-slate-700 dark:text-slate-300'
-                                          }`}>
-                                            {u.username}
+                                          <div className="flex-1">
+                                            <div className="text-sm font-medium text-slate-700 dark:text-slate-300">{g.name}</div>
+                                            {g.description && (
+                                              <div className="text-xs text-slate-500 dark:text-slate-400">{g.description}</div>
+                                            )}
+                                          </div>
+                                          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                                            {g.memberCount} {g.memberCount === 1 ? 'member' : 'members'}
                                           </span>
-                                          {isOwner && (
-                                            <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
-                                              Owner
-                                            </span>
-                                          )}
-                                          {u.auth_source && u.auth_source !== 'local' && (
-                                            <span className="text-xs text-slate-500 dark:text-slate-400">({u.auth_source})</span>
-                                          )}
                                         </label>
-                                      );
-                                    })}
+                                      ))}
+                                    {availableGroups.filter(g => {
+                                      const searchLower = visibilitySearchTerm.toLowerCase();
+                                      return g.name.toLowerCase().includes(searchLower) ||
+                                        (g.description || '').toLowerCase().includes(searchLower);
+                                    }).length === 0 && (
+                                      <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups found</div>
+                                    )}
                                   </div>
-                                )}
-                              </div>
-                            )}
-                            {newVisibility === 'private' && newAllowedUsers.length === 0 && (
-                              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Please select at least one user for private spaces</p>
+                                )
+                              )}
+                            </div>
+
+                            {newVisibility === 'private' && newAllowedUsers.length === 0 && newAllowedGroups.length === 0 && (
+                              <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-700">
+                                Please select at least one user or group for private spaces
+                              </p>
                             )}
                           </div>
                         )}

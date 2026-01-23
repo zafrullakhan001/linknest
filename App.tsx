@@ -39,6 +39,7 @@ import { getMessages, ChatMessage } from './services/chatService';
 import { WidgetQuickAccess } from './components/WidgetQuickAccess';
 import { FloatingWidgetQuickAccess } from './components/FloatingWidgetQuickAccess';
 import { useMobile } from './hooks/useMobile';
+import { getAllowedWidgets } from './services/widgetService';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -91,6 +92,10 @@ const AppContent: React.FC = () => {
   const { settings, loading: settingsLoading } = useSettings();
   const disabledTabs = useMemo(() => getDisabledTabsFromSettings(settings), [settings?.disabled_tabs]);
   const isMobile = useMobile(768); // Hide widgets on mobile devices (below 768px width)
+  
+  // Allowed widgets state (for role-based widget filtering)
+  const [allowedWidgetIds, setAllowedWidgetIds] = useState<Set<string>>(new Set());
+  const [widgetsLoading, setWidgetsLoading] = useState(false);
 
   // Footer Details Toggle State
   const [showFooterDetails, setShowFooterDetails] = useState(() => {
@@ -250,6 +255,68 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     themeService.initialize();
   }, []);
+
+  // Fetch allowed widgets when user logs in or auth state changes
+  useEffect(() => {
+    const fetchAllowedWidgets = async () => {
+      if (!isAuthenticated || !user) {
+        // For logged out users, allow all non-auth widgets
+        setAllowedWidgetIds(new Set([
+          'clock', 'weather', 'calculator', 'password-generator',
+          'phonetic-alphabet', 'zoom-control', 'theme', 'fav-organizer', 'snake-game'
+        ]));
+        setWidgetsLoading(false);
+        return;
+      }
+
+      // Admins get all widgets
+      if (user.is_admin) {
+        setAllowedWidgetIds(new Set([
+          'clock', 'weather', 'calculator', 'notes', 'password-generator',
+          'phonetic-alphabet', 'zoom-control', 'theme', 'fav-organizer',
+          'chat', 'snake-game'
+        ]));
+        setWidgetsLoading(false);
+        return;
+      }
+
+      try {
+        setWidgetsLoading(true);
+        const allowedWidgets = await getAllowedWidgets();
+        const widgetIds = new Set(allowedWidgets.map(w => w.id));
+        setAllowedWidgetIds(widgetIds);
+      } catch (error) {
+        console.error('Failed to fetch allowed widgets:', error);
+        // On error, show no widgets for non-admins (strict security)
+        setAllowedWidgetIds(new Set());
+      } finally {
+        setWidgetsLoading(false);
+      }
+    };
+
+    fetchAllowedWidgets();
+  }, [isAuthenticated, user]);
+
+  // Helper function to check if a widget is allowed
+  const isWidgetAllowed = useCallback((widgetId: string): boolean => {
+    // If user is not authenticated, allow public widgets
+    if (!isAuthenticated || !user) {
+      // Allow non-auth widgets for logged out users
+      return !['notes', 'chat'].includes(widgetId);
+    }
+    
+    // Admins can see all widgets
+    if (user.is_admin) return true;
+    
+    // During loading, don't show any widgets (prevent flickering)
+    if (widgetsLoading) {
+      return false;
+    }
+    
+    // Check if widget is in allowed list
+    const isAllowed = allowedWidgetIds.has(widgetId);
+    return isAllowed;
+  }, [isAuthenticated, user, allowedWidgetIds, widgetsLoading]);
 
   // Theme State
   const [darkMode, setDarkMode] = useState(() => {
@@ -856,10 +923,11 @@ const AppContent: React.FC = () => {
           showSnakeGame={showSnakeGame}
           toggleSnakeGame={toggleSnakeGame}
           hasUnreadChatMessages={hasUnreadChatMessages}
-          user={user}
-          onLoginClick={() => setAuthModalOpen(true)}
-          onHelpClick={() => setHelpAboutOpen(true)}
-        />
+            user={user}
+            onLoginClick={() => setAuthModalOpen(true)}
+            onHelpClick={() => setHelpAboutOpen(true)}
+            isWidgetAllowed={isWidgetAllowed}
+          />
       )}
       {user?.impersonating && (
         <div className="bg-amber-500 dark:bg-amber-600 text-white px-4 py-3 flex items-center justify-between border-b border-amber-600 dark:border-amber-700">
@@ -1056,52 +1124,52 @@ const AppContent: React.FC = () => {
       {/* Hide all widgets on mobile view */}
       {!isMobile && (
         <>
-          {showClock && (
+          {showClock && isWidgetAllowed('clock') && (
             <FloatingClock>
               <TimezoneDisplay onClose={toggleClock} />
             </FloatingClock>
           )}
-          {showPhoneticAlphabet && (
+          {showPhoneticAlphabet && isWidgetAllowed('phonetic-alphabet') && (
             <FloatingPhoneticAlphabet>
               <PhoneticAlphabet onClose={togglePhoneticAlphabet} />
             </FloatingPhoneticAlphabet>
           )}
-          {isAuthenticated && showNotes && (
+          {isAuthenticated && showNotes && isWidgetAllowed('notes') && (
             <FloatingNotesWidget>
               <NotesWidget onClose={toggleNotes} />
             </FloatingNotesWidget>
           )}
-          {showWeather && (
+          {showWeather && isWidgetAllowed('weather') && (
             <FloatingWeatherWidget>
               <WeatherWidget onClose={toggleWeather} />
             </FloatingWeatherWidget>
           )}
-          {showCalculator && (
+          {showCalculator && isWidgetAllowed('calculator') && (
             <FloatingCalculatorWidget>
               <CalculatorWidget onClose={toggleCalculator} />
             </FloatingCalculatorWidget>
           )}
-          {showPasswordGenerator && (
+          {showPasswordGenerator && isWidgetAllowed('password-generator') && (
             <FloatingPasswordGeneratorWidget>
               <PasswordGeneratorWidget onClose={togglePasswordGenerator} />
             </FloatingPasswordGeneratorWidget>
           )}
-          {showZoomControl && (
+          {showZoomControl && isWidgetAllowed('zoom-control') && (
             <FloatingPageZoomControl onClose={toggleZoomControl}>
               <PageZoomWidget />
             </FloatingPageZoomControl>
           )}
-          {showTheme && (
+          {showTheme && isWidgetAllowed('theme') && (
             <FloatingThemeWidget onClose={toggleThemeWidget}>
               <ThemeWidget onClose={toggleThemeWidget} />
             </FloatingThemeWidget>
           )}
-          {showFavOrganizer && (
+          {showFavOrganizer && isWidgetAllowed('fav-organizer') && (
             <FloatingFavOrganizerWidget onClose={toggleFavOrganizer}>
               <FavOrganizerWidget />
             </FloatingFavOrganizerWidget>
           )}
-          {showChat && isAuthenticated && (
+          {showChat && isAuthenticated && isWidgetAllowed('chat') && (
             <FloatingChatWidget>
               <ChatWidget
                 tiles={tiles}
@@ -1132,7 +1200,7 @@ const AppContent: React.FC = () => {
               />
             </FloatingChatWidget>
           )}
-          {showSnakeGame && (
+          {showSnakeGame && isWidgetAllowed('snake-game') && (
             <FloatingSnakeGameWidget>
               <SnakeGameWidget onClose={toggleSnakeGame} />
             </FloatingSnakeGameWidget>
@@ -1313,7 +1381,7 @@ const AppContent: React.FC = () => {
                 isVisible: showSnakeGame,
                 onToggle: toggleSnakeGame,
               },
-            ]}
+            ].filter(widget => isWidgetAllowed(widget.id))}
           />
         </FloatingWidgetQuickAccess>
       )}

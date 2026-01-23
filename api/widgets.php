@@ -10,6 +10,8 @@ switch ($method) {
             handleGetWidget($_GET['widgetId']);
         } elseif ($action === 'all') {
             handleGetAllAvailableWidgets();
+        } elseif ($action === 'allowed') {
+            handleGetAllowedWidgets();
         } else {
             handleGetAllWidgets();
         }
@@ -120,6 +122,86 @@ function handleGetAllAvailableWidgets() {
     }
     
     sendJSON([...$builtInWidgets, ...$customWidgets]);
+}
+
+function handleGetAllowedWidgets() {
+    // This endpoint returns widgets that the current user is allowed to access based on their roles
+    $user = getAuthenticatedUser();
+    $db = getDB();
+    
+    // Admins can access all widgets
+    if ($user && $user['is_admin']) {
+        handleGetAllAvailableWidgets();
+        return;
+    }
+    
+    // Get user's role IDs (including from groups)
+    $userRoleIds = getUserRoleIds($user ? $user['id'] : null, $db);
+    
+    // If user has no roles, return empty array (no widgets allowed)
+    if (empty($userRoleIds)) {
+        sendJSON([]);
+        return;
+    }
+    
+    // Get allowed widget IDs from role_widget_permissions
+    $placeholders = implode(',', array_fill(0, count($userRoleIds), '?'));
+    $stmt = $db->prepare("SELECT DISTINCT widget_id FROM role_widget_permissions WHERE role_id IN ($placeholders) AND can_view = 1");
+    $stmt->execute($userRoleIds);
+    
+    $allowedWidgetIds = [];
+    while ($row = $stmt->fetch()) {
+        $allowedWidgetIds[] = $row['widget_id'];
+    }
+    
+    // Get all available widgets
+    $builtInWidgets = [
+        ['id' => 'clock', 'label' => 'Clock', 'description' => 'Time and timezone display widget', 'isCustom' => false],
+        ['id' => 'weather', 'label' => 'Weather', 'description' => 'Weather information widget', 'isCustom' => false],
+        ['id' => 'calculator', 'label' => 'Calculator', 'description' => 'Calculator widget', 'isCustom' => false],
+        ['id' => 'notes', 'label' => 'Notes', 'description' => 'Personal notes widget (requires authentication)', 'isCustom' => false],
+        ['id' => 'password-generator', 'label' => 'Password Generator', 'description' => 'Generate secure passwords', 'isCustom' => false],
+        ['id' => 'phonetic-alphabet', 'label' => 'Phonetic Alphabet', 'description' => 'Phonetic alphabet reference', 'isCustom' => false],
+        ['id' => 'zoom-control', 'label' => 'Zoom Control', 'description' => 'Page zoom control widget', 'isCustom' => false],
+        ['id' => 'theme', 'label' => 'Theme', 'description' => 'Theme switcher widget', 'isCustom' => false],
+        ['id' => 'fav-organizer', 'label' => 'Favorite Organizer', 'description' => 'Organize favorite links', 'isCustom' => false],
+        ['id' => 'chat', 'label' => 'Chat', 'description' => 'Chat widget (requires authentication)', 'isCustom' => false],
+        ['id' => 'snake-game', 'label' => 'Snake Game', 'description' => 'Snake game widget', 'isCustom' => false]
+    ];
+    
+    $customWidgets = [];
+    try {
+        $customStmt = $db->query('
+            SELECT 
+                widget_id,
+                name,
+                description,
+                enabled
+            FROM custom_widgets
+            WHERE enabled = 1
+            ORDER BY name
+        ');
+        
+        while ($row = $customStmt->fetch(PDO::FETCH_ASSOC)) {
+            $customWidgets[] = [
+                'id' => $row['widget_id'],
+                'label' => $row['name'],
+                'description' => $row['description'] ?? 'Custom widget',
+                'isCustom' => true
+            ];
+        }
+    } catch (PDOException $e) {
+        error_log('Failed to fetch custom widgets: ' . $e->getMessage());
+    }
+    
+    $allWidgets = [...$builtInWidgets, ...$customWidgets];
+    
+    // Filter to only include allowed widgets
+    $allowedWidgets = array_filter($allWidgets, function($widget) use ($allowedWidgetIds) {
+        return in_array($widget['id'], $allowedWidgetIds);
+    });
+    
+    sendJSON(array_values($allowedWidgets));
 }
 
 function handleGetWidget($widgetId) {

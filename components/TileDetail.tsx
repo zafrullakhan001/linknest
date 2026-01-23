@@ -15,6 +15,26 @@ import { MobileTileEdit } from './MobileTileEdit';
 import { useMobile } from '../hooks/useMobile';
 import { VersionDiffViewer } from './VersionDiffViewer';
 
+// Resolve API base dynamically
+function resolveApiBase(): string {
+  const envBase = (import.meta as any)?.env?.VITE_API_BASE;
+  if (envBase) {
+    return envBase;
+  }
+
+  if (typeof window !== 'undefined') {
+    const path = window.location.pathname || '';
+    if (path !== '/' && path.length > 1) {
+      const cleanPath = path.replace(/\/[^/]*$/, '').replace(/\/$/, '');
+      if (cleanPath && cleanPath !== '/') {
+        return `${cleanPath}/api`;
+      }
+    }
+  }
+
+  return '/api';
+}
+
 interface TileVersion {
     id: number;
     version_number: number;
@@ -200,9 +220,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
         return allowedUsers;
     });
+    const [editAllowedGroups, setEditAllowedGroups] = useState<number[]>(tile.allowedGroups || []);
+    const [availableGroups, setAvailableGroups] = useState<Array<{ id: number; name: string; description: string | null; memberCount: number }>>([]);
+    const [isLoadingGroups, setIsLoadingGroups] = useState(false);
     const [editBrowser, setEditBrowser] = useState<string>(tile.browser || 'default');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [showTileUserSelector, setShowTileUserSelector] = useState(false);
+    const [visibilitySearchTerm, setVisibilitySearchTerm] = useState('');
+    const [visibilityActiveTab, setVisibilityActiveTab] = useState<'users' | 'groups'>('users');
 
     const { settings } = useSettings();
     const isMobile = useMobile(768); // Use mobile layout below 768px
@@ -610,6 +635,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             setEditAllowedUsers(allowedUsers);
         }
         
+        // Load allowed groups
+        setEditAllowedGroups(tile.allowedGroups || []);
+        
         setEditBrowser(tile.browser || 'default');
 
         // Tabs / sections: always reflect the latest tile data when
@@ -780,7 +808,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     setLoadingUsers(false);
                 }
             };
+            const loadGroups = async () => {
+                try {
+                    setIsLoadingGroups(true);
+                    const response = await fetch(`${resolveApiBase()}/user-groups`, {
+                        method: 'GET',
+                        credentials: 'include',
+                    });
+                    if (response.ok) {
+                        const groups = await response.json();
+                        setAvailableGroups(groups);
+                    }
+                } catch (error) {
+                    console.error('Failed to load groups:', error);
+                } finally {
+                    setIsLoadingGroups(false);
+                }
+            };
             loadUsers();
+            loadGroups();
         }
     }, [isEditing, isAuthenticated, tile.canEdit]);
 
@@ -1497,6 +1543,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             sections: clonedSections, // Only include sections if no tabs
             visibility: editVisibility,
             allowedUsers: editVisibility === 'private' ? finalAllowedUsers : undefined,
+            allowedGroups: editVisibility === 'private' ? editAllowedGroups : undefined,
             browser: editBrowser !== 'default' ? editBrowser : undefined,
         };
 
@@ -4307,18 +4354,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     onClick={() => {
                                         console.log('=== SAVE BUTTON CLICKED ===');
                                         console.log('Current editTabs count:', editTabs.length);
-                                        console.log('Button disabled?', editVisibility === 'private' && editAllowedUsers.length === 0);
+                                        console.log('Button disabled?', editVisibility === 'private' && editAllowedUsers.length === 0 && editAllowedGroups.length === 0);
                                         console.log('editVisibility:', editVisibility);
                                         console.log('editAllowedUsers.length:', editAllowedUsers.length);
-                                        if (editVisibility === 'private' && editAllowedUsers.length === 0) {
-                                            alert('Please select at least one user for private visibility before saving.');
+                                        console.log('editAllowedGroups.length:', editAllowedGroups.length);
+                                        if (editVisibility === 'private' && editAllowedUsers.length === 0 && editAllowedGroups.length === 0) {
+                                            alert('Please select at least one user or group for private visibility before saving.');
                                             return;
                                         }
                                         handleSaveChanges();
                                     }}
-                                    disabled={editVisibility === 'private' && editAllowedUsers.length === 0}
+                                    disabled={editVisibility === 'private' && editAllowedUsers.length === 0 && editAllowedGroups.length === 0}
                                     className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-lg font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center gap-2 flex-1 sm:flex-none"
-                                    title={editVisibility === 'private' && editAllowedUsers.length === 0 ? 'Please select users for private visibility' : 'Save all changes'}
+                                    title={editVisibility === 'private' && editAllowedUsers.length === 0 && editAllowedGroups.length === 0 ? 'Please select users or groups for private visibility' : 'Save all changes'}
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -4535,138 +4583,272 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         </label>
                                     </div>
 
-                                    {/* User Selector for Private Visibility */}
+                                    {/* User and Group Selector for Private Visibility */}
                                     {editVisibility === 'private' && isAuthenticated && (
-                                        <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                                            <div className="flex items-center justify-between mb-3">
-                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Select Users</label>
+                                        <div className="mt-4 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                                            {/* Tabs */}
+                                            <div className="flex border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
                                                 <button
                                                     type="button"
-                                                    onClick={() => setShowTileUserSelector(!showTileUserSelector)}
-                                                    className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium flex items-center gap-1"
+                                                    onClick={() => setVisibilityActiveTab('users')}
+                                                    className={`flex-1 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors ${
+                                                        visibilityActiveTab === 'users'
+                                                            ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400 border-b-2 border-brand-500'
+                                                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                                    }`}
                                                 >
-                                                    {showTileUserSelector ? (
-                                                        <>
-                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                                                <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
-                                                            </svg>
-                                                            Hide
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                                                <path fillRule="evenodd" d="M14.77 12.79a.75.75 0 01-1.06-.02L10 8.832l-3.71 3.938a.75.75 0 11-1.08-1.04l4.25-4.5a.75.75 0 011.08 0l4.25 4.5a.75.75 0 01-.02 1.06z" clipRule="evenodd" />
-                                                            </svg>
-                                                            Show
-                                                        </>
-                                                    )}
+                                                    Users ({editAllowedUsers.length})
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setVisibilityActiveTab('groups')}
+                                                    className={`flex-1 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors ${
+                                                        visibilityActiveTab === 'groups'
+                                                            ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400 border-b-2 border-brand-500'
+                                                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                                    }`}
+                                                >
+                                                    Groups ({editAllowedGroups.length})
                                                 </button>
                                             </div>
-                                            {editAllowedUsers.length > 0 && (
-                                                <div className="flex flex-wrap gap-2 mb-3">
-                                                    {editAllowedUsers.map(userId => {
-                                                        const user = usersList.find(u => u.id === userId);
-                                                        const isOwner = tile.userId && userId === (typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId);
-                                                        return (
-                                                            <span
-                                                                key={userId}
-                                                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${
-                                                                    isOwner 
-                                                                        ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-700'
-                                                                        : 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 border-brand-200 dark:border-brand-800'
-                                                                }`}
-                                                            >
-                                                                {user?.username || `User ${userId}`}
-                                                                {isOwner && (
-                                                                    <span className="text-[9px] font-bold uppercase">Owner</span>
-                                                                )}
-                                                                {!isOwner && (
+
+                                            {/* Search Input */}
+                                            <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+                                                <div className="relative">
+                                                    <input
+                                                        type="text"
+                                                        value={visibilitySearchTerm}
+                                                        onChange={(e) => setVisibilitySearchTerm(e.target.value)}
+                                                        placeholder={`Search ${visibilityActiveTab}...`}
+                                                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 pl-10 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                                                    />
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 absolute left-3 top-2.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                                    </svg>
+                                                    {visibilitySearchTerm && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setVisibilitySearchTerm('')}
+                                                            className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                                                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                                            </svg>
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Selected Items Display */}
+                                            {(editAllowedUsers.length > 0 || editAllowedGroups.length > 0) && (
+                                                <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30">
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {editAllowedUsers.map(userId => {
+                                                            const user = usersList.find(u => u.id === userId);
+                                                            const isOwner = tile.userId && userId === (typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId);
+                                                            return (
+                                                                <span
+                                                                    key={`user-${userId}`}
+                                                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${
+                                                                        isOwner 
+                                                                            ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-700'
+                                                                            : 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 border-brand-200 dark:border-brand-800'
+                                                                    }`}
+                                                                >
+                                                                    {user?.username || `User ${userId}`}
+                                                                    {isOwner && (
+                                                                        <span className="text-[9px] font-bold uppercase">Owner</span>
+                                                                    )}
+                                                                    {!isOwner && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => setEditAllowedUsers(editAllowedUsers.filter(id => id !== userId))}
+                                                                            className="hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                                                                            title="Remove user"
+                                                                        >
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                                                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                                                            </svg>
+                                                                        </button>
+                                                                    )}
+                                                                </span>
+                                                            );
+                                                        })}
+                                                        {editAllowedGroups.map(groupId => {
+                                                            const group = availableGroups.find(g => g.id === groupId);
+                                                            return (
+                                                                <span
+                                                                    key={`group-${groupId}`}
+                                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                                        <path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-3.385-.572zM16 8a2 2 0 11-4 0 2 2 0 014 0zm-1.615 8.428a1.224 1.224 0 00.569-1.175 5.966 5.966 0 00-2.081-.416 5.967 5.967 0 00-1.788.27A9.953 9.953 0 0013 18a9.953 9.953 0 003.385-.572z" />
+                                                                    </svg>
+                                                                    {group?.name || `Group ${groupId}`}
                                                                     <button
                                                                         type="button"
-                                                                        onClick={() => setEditAllowedUsers(editAllowedUsers.filter(id => id !== userId))}
+                                                                        onClick={() => setEditAllowedGroups(editAllowedGroups.filter(id => id !== groupId))}
                                                                         className="hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                                                                        title="Remove user"
+                                                                        title="Remove group"
                                                                     >
                                                                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
                                                                             <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
                                                                         </svg>
                                                                     </button>
-                                                                )}
-                                                            </span>
-                                                        );
-                                                    })}
+                                                                </span>
+                                                            );
+                                                        })}
+                                                    </div>
                                                 </div>
                                             )}
-                                            {showTileUserSelector && (
-                                                <div className="max-h-56 overflow-y-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-3 space-y-1.5">
-                                                    {loadingUsers ? (
-                                                        <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-4 flex items-center justify-center gap-2">
-                                                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+
+                                            {/* Content */}
+                                            <div className="max-h-80 overflow-y-auto p-3 bg-white dark:bg-slate-800">
+                                                {visibilityActiveTab === 'users' && (
+                                                    loadingUsers ? (
+                                                        <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8 flex items-center justify-center gap-2">
+                                                            <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                                             </svg>
                                                             Loading users...
                                                         </div>
                                                     ) : usersList.length === 0 ? (
-                                                        <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-4">No users available</div>
+                                                        <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users available</div>
                                                     ) : (
-                                                        usersList.map(user => {
-                                                            const isOwner = tile.userId && user.id === (typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId);
-                                                            return (
-                                                                <label
-                                                                    key={user.id}
-                                                                    className={`flex items-center gap-3 p-2.5 rounded-lg transition-colors ${
-                                                                        isOwner 
-                                                                            ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
-                                                                            : 'hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer'
-                                                                    }`}
-                                                                >
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={editAllowedUsers.includes(user.id) || isOwner}
-                                                                        onChange={(e) => {
-                                                                            if (isOwner) return;
-                                                                            if (e.target.checked) {
-                                                                                setEditAllowedUsers([...editAllowedUsers, user.id]);
-                                                                            } else {
-                                                                                setEditAllowedUsers(editAllowedUsers.filter(id => id !== user.id));
-                                                                            }
-                                                                        }}
-                                                                        disabled={isOwner}
-                                                                        className={`rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 w-4 h-4 ${
-                                                                            isOwner ? 'opacity-50 cursor-not-allowed' : ''
-                                                                        }`}
-                                                                    />
-                                                                    <span className={`text-sm font-medium flex-1 ${
-                                                                        isOwner 
-                                                                            ? 'text-amber-800 dark:text-amber-200'
-                                                                            : 'text-slate-700 dark:text-slate-300'
-                                                                    }`}>
-                                                                        {user.username}
-                                                                    </span>
-                                                                    {isOwner && (
-                                                                        <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
-                                                                            Owner
+                                                        <div className="space-y-1">
+                                                            {usersList
+                                                                .filter(u => {
+                                                                    const searchLower = visibilitySearchTerm.toLowerCase();
+                                                                    return u.username.toLowerCase().includes(searchLower) ||
+                                                                        u.email?.toLowerCase().includes(searchLower);
+                                                                })
+                                                                .map(user => {
+                                                                    const isOwner = tile.userId && user.id === (typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId);
+                                                                    return (
+                                                                        <label
+                                                                            key={user.id}
+                                                                            className={`flex items-center gap-3 p-2.5 rounded-lg transition-colors ${
+                                                                                isOwner 
+                                                                                    ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
+                                                                                    : 'hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer'
+                                                                            }`}
+                                                                        >
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={editAllowedUsers.includes(user.id) || isOwner}
+                                                                                onChange={(e) => {
+                                                                                    if (isOwner) return;
+                                                                                    if (e.target.checked) {
+                                                                                        setEditAllowedUsers([...editAllowedUsers, user.id]);
+                                                                                    } else {
+                                                                                        setEditAllowedUsers(editAllowedUsers.filter(id => id !== user.id));
+                                                                                    }
+                                                                                }}
+                                                                                disabled={isOwner}
+                                                                                className={`rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 w-4 h-4 ${
+                                                                                    isOwner ? 'opacity-50 cursor-not-allowed' : ''
+                                                                                }`}
+                                                                            />
+                                                                            <span className={`text-sm font-medium flex-1 ${
+                                                                                isOwner 
+                                                                                    ? 'text-amber-800 dark:text-amber-200'
+                                                                                    : 'text-slate-700 dark:text-slate-300'
+                                                                            }`}>
+                                                                                {user.username}
+                                                                            </span>
+                                                                            {isOwner && (
+                                                                                <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
+                                                                                    Owner
+                                                                                </span>
+                                                                            )}
+                                                                            {user.auth_source && user.auth_source !== 'local' && (
+                                                                                <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[10px] font-semibold">
+                                                                                    {user.auth_source.toUpperCase()}
+                                                                                </span>
+                                                                            )}
+                                                                        </label>
+                                                                    );
+                                                                })}
+                                                            {usersList.filter(u => {
+                                                                const searchLower = visibilitySearchTerm.toLowerCase();
+                                                                return u.username.toLowerCase().includes(searchLower) ||
+                                                                    u.email?.toLowerCase().includes(searchLower);
+                                                            }).length === 0 && (
+                                                                <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users found</div>
+                                                            )}
+                                                        </div>
+                                                    )
+                                                )}
+
+                                                {visibilityActiveTab === 'groups' && (
+                                                    isLoadingGroups ? (
+                                                        <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8 flex items-center justify-center gap-2">
+                                                            <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                            </svg>
+                                                            Loading groups...
+                                                        </div>
+                                                    ) : availableGroups.length === 0 ? (
+                                                        <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups available</div>
+                                                    ) : (
+                                                        <div className="space-y-1">
+                                                            {availableGroups
+                                                                .filter(g => {
+                                                                    const searchLower = visibilitySearchTerm.toLowerCase();
+                                                                    return g.name.toLowerCase().includes(searchLower) ||
+                                                                        (g.description || '').toLowerCase().includes(searchLower);
+                                                                })
+                                                                .map(g => (
+                                                                    <label 
+                                                                        key={g.id} 
+                                                                        className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                                                                    >
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={editAllowedGroups.includes(g.id)}
+                                                                            onChange={(e) => {
+                                                                                if (e.target.checked) {
+                                                                                    setEditAllowedGroups([...editAllowedGroups, g.id]);
+                                                                                } else {
+                                                                                    setEditAllowedGroups(editAllowedGroups.filter(id => id !== g.id));
+                                                                                }
+                                                                            }}
+                                                                            className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 w-4 h-4"
+                                                                        />
+                                                                        <div className="flex-1">
+                                                                            <div className="text-sm font-medium text-slate-700 dark:text-slate-300">{g.name}</div>
+                                                                            {g.description && (
+                                                                                <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{g.description}</div>
+                                                                            )}
+                                                                        </div>
+                                                                        <span className="text-xs px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                                                                            {g.memberCount} {g.memberCount === 1 ? 'member' : 'members'}
                                                                         </span>
-                                                                    )}
-                                                                    {user.auth_source && user.auth_source !== 'local' && (
-                                                                        <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[10px] font-semibold">
-                                                                            {user.auth_source.toUpperCase()}
-                                                                        </span>
-                                                                    )}
-                                                                </label>
-                                                            );
-                                                        })
-                                                    )}
+                                                                    </label>
+                                                                ))}
+                                                            {availableGroups.filter(g => {
+                                                                const searchLower = visibilitySearchTerm.toLowerCase();
+                                                                return g.name.toLowerCase().includes(searchLower) ||
+                                                                    (g.description || '').toLowerCase().includes(searchLower);
+                                                            }).length === 0 && (
+                                                                <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups found</div>
+                                                            )}
+                                                        </div>
+                                                    )
+                                                )}
+                                            </div>
+
+                                            {editVisibility === 'private' && editAllowedUsers.length === 0 && editAllowedGroups.length === 0 && (
+                                                <div className="p-4 bg-amber-50 dark:bg-amber-900/20">
+                                                    <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                            <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                                                        </svg>
+                                                        Please select at least one user or group for private spaces
+                                                    </p>
                                                 </div>
-                                            )}
-                                            {editVisibility === 'private' && editAllowedUsers.length === 0 && (
-                                                <p className="mt-3 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                        <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
-                                                    </svg>
-                                                    Please select at least one user for private spaces
-                                                </p>
                                             )}
                                         </div>
                                     )}

@@ -88,6 +88,17 @@ export interface BulkRemoveRolesRequest {
   roleIds: number[];
 }
 
+export interface BulkAssignRolesToGroupsRequest {
+  groupIds: number[];
+  roleIds: number[];
+  mode?: 'add' | 'replace';
+}
+
+export interface BulkRemoveRolesFromGroupsRequest {
+  groupIds: number[];
+  roleIds: number[];
+}
+
 export interface RoleTabPermission {
   tabId: string;
   canView: boolean;
@@ -427,5 +438,37 @@ export const rolesService = {
       const data = await response.json();
       throw new Error(data.error || 'Failed to remove role from user');
     }
+  },
+
+  async bulkAssignRolesToGroups(request: BulkAssignRolesToGroupsRequest): Promise<{ assigned: number; failed: number; errors?: string[] }> {
+    const response = await fetch(`${API_BASE}/roles/bulk-assign-to-groups`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to bulk assign roles to groups');
+    }
+
+    return response.json();
+  },
+
+  async bulkRemoveRolesFromGroups(request: BulkRemoveRolesFromGroupsRequest): Promise<{ removed: number; failed: number; errors?: string[] }> {
+    const response = await fetch(`${API_BASE}/roles/bulk-remove-from-groups`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to bulk remove roles from groups');
+    }
+
+    return response.json();
   },
 };

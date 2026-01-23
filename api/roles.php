@@ -46,6 +46,10 @@ switch ($method) {
             handleBulkAssignRolesToUsers();
         } elseif ($path === '/bulk-remove' || $path === '/bulk-remove/') {
             handleBulkRemoveRolesFromUsers();
+        } elseif ($path === '/bulk-assign-to-groups' || $path === '/bulk-assign-to-groups/') {
+            handleBulkAssignRolesToGroups();
+        } elseif ($path === '/bulk-remove-from-groups' || $path === '/bulk-remove-from-groups/') {
+            handleBulkRemoveRolesFromGroups();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -1021,4 +1025,182 @@ function handleRemoveRoleFromUser($userId, $roleId) {
     $stmt->execute([$userId, $roleId]);
     
     sendJSON(['success' => true]);
+}
+
+function handleBulkAssignRolesToGroups() {
+    requireAdmin();
+    $data = getJSONInput();
+    
+    if (!isset($data['groupIds']) || !is_array($data['groupIds']) || empty($data['groupIds'])) {
+        sendJSON(['error' => 'groupIds array is required and must not be empty'], 400);
+    }
+    
+    if (!isset($data['roleIds']) || !is_array($data['roleIds']) || empty($data['roleIds'])) {
+        sendJSON(['error' => 'roleIds array is required and must not be empty'], 400);
+    }
+    
+    $db = getDB();
+    $currentTime = time();
+    $successCount = 0;
+    $errorCount = 0;
+    $errors = [];
+    
+    $db->beginTransaction();
+    try {
+        // Verify all groups exist
+        $placeholders = str_repeat('?,', count($data['groupIds']) - 1) . '?';
+        $groupCheck = $db->prepare("SELECT id FROM user_groups WHERE id IN ($placeholders)");
+        $groupCheck->execute($data['groupIds']);
+        $validGroupIds = [];
+        while ($row = $groupCheck->fetch()) {
+            $validGroupIds[] = (int)$row['id'];
+        }
+        
+        if (empty($validGroupIds)) {
+            $db->rollBack();
+            sendJSON(['error' => 'No valid groups found'], 400);
+        }
+        
+        // Verify all roles exist
+        $rolePlaceholders = str_repeat('?,', count($data['roleIds']) - 1) . '?';
+        $roleCheck = $db->prepare("SELECT id FROM roles WHERE id IN ($rolePlaceholders)");
+        $roleCheck->execute($data['roleIds']);
+        $validRoleIds = [];
+        while ($row = $roleCheck->fetch()) {
+            $validRoleIds[] = (int)$row['id'];
+        }
+        
+        if (empty($validRoleIds)) {
+            $db->rollBack();
+            sendJSON(['error' => 'No valid roles found'], 400);
+        }
+        
+        // Determine mode
+        $mode = isset($data['mode']) && $data['mode'] === 'replace' ? 'replace' : 'add';
+        
+        // Prepare statements
+        $deleteStmt = $db->prepare('DELETE FROM group_roles WHERE group_id = ?');
+        // Use INSERT OR IGNORE for add mode to avoid duplicates, regular INSERT for replace mode
+        $insertStmt = $db->prepare($mode === 'add' 
+            ? 'INSERT OR IGNORE INTO group_roles (group_id, role_id, created_at) VALUES (?, ?, ?)'
+            : 'INSERT INTO group_roles (group_id, role_id, created_at) VALUES (?, ?, ?)');
+        
+        // Process each group
+        foreach ($validGroupIds as $groupId) {
+            try {
+                // Remove existing roles for this group (if replace mode)
+                if ($mode === 'replace') {
+                    $deleteStmt->execute([$groupId]);
+                }
+                
+                // Assign new roles
+                foreach ($validRoleIds as $roleId) {
+                    $insertStmt->execute([$groupId, $roleId, $currentTime]);
+                }
+                
+                $successCount++;
+            } catch (PDOException $e) {
+                $errorCount++;
+                $errors[] = "Group ID $groupId: " . $e->getMessage();
+            }
+        }
+        
+        $db->commit();
+        
+        $response = [
+            'success' => true,
+            'assigned' => $successCount,
+            'failed' => $errorCount
+        ];
+        
+        if (!empty($errors)) {
+            $response['errors'] = $errors;
+        }
+        
+        sendJSON($response);
+    } catch (PDOException $e) {
+        $db->rollBack();
+        sendJSON(['error' => 'Failed to bulk assign roles to groups: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleBulkRemoveRolesFromGroups() {
+    requireAdmin();
+    $data = getJSONInput();
+    
+    if (!isset($data['groupIds']) || !is_array($data['groupIds']) || empty($data['groupIds'])) {
+        sendJSON(['error' => 'groupIds array is required and must not be empty'], 400);
+    }
+    
+    if (!isset($data['roleIds']) || !is_array($data['roleIds']) || empty($data['roleIds'])) {
+        sendJSON(['error' => 'roleIds array is required and must not be empty'], 400);
+    }
+    
+    $db = getDB();
+    $successCount = 0;
+    $errorCount = 0;
+    $errors = [];
+    
+    $db->beginTransaction();
+    try {
+        // Verify all groups exist
+        $placeholders = str_repeat('?,', count($data['groupIds']) - 1) . '?';
+        $groupCheck = $db->prepare("SELECT id FROM user_groups WHERE id IN ($placeholders)");
+        $groupCheck->execute($data['groupIds']);
+        $validGroupIds = [];
+        while ($row = $groupCheck->fetch()) {
+            $validGroupIds[] = (int)$row['id'];
+        }
+        
+        if (empty($validGroupIds)) {
+            $db->rollBack();
+            sendJSON(['error' => 'No valid groups found'], 400);
+        }
+        
+        // Verify all roles exist
+        $rolePlaceholders = str_repeat('?,', count($data['roleIds']) - 1) . '?';
+        $roleCheck = $db->prepare("SELECT id FROM roles WHERE id IN ($rolePlaceholders)");
+        $roleCheck->execute($data['roleIds']);
+        $validRoleIds = [];
+        while ($row = $roleCheck->fetch()) {
+            $validRoleIds[] = (int)$row['id'];
+        }
+        
+        if (empty($validRoleIds)) {
+            $db->rollBack();
+            sendJSON(['error' => 'No valid roles found'], 400);
+        }
+        
+        // Prepare statement to remove roles
+        $placeholders = str_repeat('?,', count($validRoleIds) - 1) . '?';
+        $deleteStmt = $db->prepare("DELETE FROM group_roles WHERE group_id = ? AND role_id IN ($placeholders)");
+        
+        // Process each group
+        foreach ($validGroupIds as $groupId) {
+            try {
+                $deleteStmt->execute([$groupId, ...$validRoleIds]);
+                $successCount++;
+            } catch (PDOException $e) {
+                $errorCount++;
+                $errors[] = "Group ID $groupId: " . $e->getMessage();
+            }
+        }
+        
+        $db->commit();
+        
+        $response = [
+            'success' => true,
+            'removed' => $successCount,
+            'failed' => $errorCount
+        ];
+        
+        if (!empty($errors)) {
+            $response['errors'] = $errors;
+        }
+        
+        sendJSON($response);
+    } catch (PDOException $e) {
+        $db->rollBack();
+        sendJSON(['error' => 'Failed to bulk remove roles from groups: ' . $e->getMessage()], 500);
+    }
 }
