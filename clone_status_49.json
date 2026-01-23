@@ -1,0 +1,175 @@
+{
+    "step": "complete",
+    "progress": 100,
+    "message": "Clone completed successfully!",
+    "logs": [
+        {
+            "time": "2026-01-23 13:32:39",
+            "message": "Starting clone operation for: zaf2"
+        },
+        {
+            "time": "2026-01-23 13:32:39",
+            "message": "Source: C:\\xampp\\htdocs\\linknest"
+        },
+        {
+            "time": "2026-01-23 13:32:39",
+            "message": "Target: C:\\xampp\\htdocs\\zaf2"
+        },
+        {
+            "time": "2026-01-23 13:32:39",
+            "message": "Target directory created"
+        },
+        {
+            "time": "2026-01-23 13:32:39",
+            "message": "Copying root files..."
+        },
+        {
+            "time": "2026-01-23 13:32:39",
+            "message": "Copied 21 root files"
+        },
+        {
+            "time": "2026-01-23 13:32:39",
+            "message": "Copying api directory..."
+        },
+        {
+            "time": "2026-01-23 13:32:40",
+            "message": "Copying components directory..."
+        },
+        {
+            "time": "2026-01-23 13:32:40",
+            "message": "Copying config directory..."
+        },
+        {
+            "time": "2026-01-23 13:32:40",
+            "message": "Copying contexts directory..."
+        },
+        {
+            "time": "2026-01-23 13:32:40",
+            "message": "Copying hooks directory..."
+        },
+        {
+            "time": "2026-01-23 13:32:40",
+            "message": "Copying migrations directory..."
+        },
+        {
+            "time": "2026-01-23 13:32:40",
+            "message": "Copying services directory..."
+        },
+        {
+            "time": "2026-01-23 13:32:40",
+            "message": "Copying src directory..."
+        },
+        {
+            "time": "2026-01-23 13:32:40",
+            "message": "Copying docker directory..."
+        },
+        {
+            "time": "2026-01-23 13:32:40",
+            "message": "Copying docs directory..."
+        },
+        {
+            "time": "2026-01-23 13:32:40",
+            "message": "Copying land directory..."
+        },
+        {
+            "time": "2026-01-23 13:32:40",
+            "message": "Created data directory"
+        },
+        {
+            "time": "2026-01-23 13:32:40",
+            "message": "Created uploads directory"
+        },
+        {
+            "time": "2026-01-23 13:32:40",
+            "message": "Created scripts directory"
+        },
+        {
+            "time": "2026-01-23 13:32:40",
+            "message": "Copying scripts..."
+        },
+        {
+            "time": "2026-01-23 13:32:40",
+            "message": "Scripts copied (took 0.12s)"
+        },
+        {
+            "time": "2026-01-23 13:32:40",
+            "message": "Copying assets..."
+        },
+        {
+            "time": "2026-01-23 13:32:40",
+            "message": "Copied 5 asset files"
+        },
+        {
+            "time": "2026-01-23 13:32:40",
+            "message": "Copying database..."
+        },
+        {
+            "time": "2026-01-23 13:33:46",
+            "message": "Database copied successfully"
+        },
+        {
+            "time": "2026-01-23 13:33:46",
+            "message": "Removing clone records from target database..."
+        },
+        {
+            "time": "2026-01-23 13:33:46",
+            "message": "Removed 4 clone record(s) from target database"
+        },
+        {
+            "time": "2026-01-23 13:33:46",
+            "message": "Re-encrypting LDAP password..."
+        },
+        {
+            "time": "2026-01-23 13:33:46",
+            "message": "LDAP password re-encrypted successfully"
+        },
+        {
+            "time": "2026-01-23 13:33:46",
+            "message": "Initializing database schema in cloned instance..."
+        },
+        {
+            "time": "2026-01-23 13:33:46",
+            "message": "Creating .env file..."
+        },
+        {
+            "time": "2026-01-23 13:33:46",
+            "message": "Created .env with VITE_BASE_PATH=\/zaf2"
+        },
+        {
+            "time": "2026-01-23 13:33:46",
+            "message": "Installing npm dependencies (this may take a few minutes)..."
+        },
+        {
+            "time": "2026-01-23 13:33:51",
+            "message": "npm install completed successfully"
+        },
+        {
+            "time": "2026-01-23 13:33:51",
+            "message": "Building application (this may take a few minutes)..."
+        },
+        {
+            "time": "2026-01-23 13:34:02",
+            "message": "Build completed successfully"
+        },
+        {
+            "time": "2026-01-23 13:34:15",
+            "message": "Cleaned up node_modules"
+        },
+        {
+            "time": "2026-01-23 13:34:15",
+            "message": "Creating deployment README..."
+        },
+        {
+            "time": "2026-01-23 13:34:15",
+            "message": "Clone completed successfully!"
+        },
+        {
+            "time": "2026-01-23 13:34:15",
+            "message": "URL: http:\/\/localhost\/zaf2\/"
+        }
+    ],
+    "timestamp": 1769193255,
+    "memory_usage": "2 MB",
+    "peak_memory": "2 MB",
+    "elapsed_time": "95.37"
+}

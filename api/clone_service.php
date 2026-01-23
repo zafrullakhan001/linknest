@@ -448,7 +448,7 @@ class CloneService {
             
             // Copy directories
             $this->writeTraceLog("Starting to copy directories", 'INFO');
-            $directories = ['api', 'components', 'contexts', 'services', 'src', 'docker', 'docs', 'land'];
+            $directories = ['api', 'components', 'config', 'contexts', 'hooks', 'migrations', 'services', 'src', 'docker', 'docs', 'land'];
             $this->writeTraceLog("Directories to copy: " . implode(', ', $directories), 'DEBUG');
             
             foreach ($directories as $index => $dir) {
