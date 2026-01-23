@@ -230,6 +230,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [snapshotsLoading, setSnapshotsLoading] = useState(false);
   const [snapshotCreating, setSnapshotCreating] = useState(false);
   const [snapshotRestoring, setSnapshotRestoring] = useState<string | null>(null);
+  const [showSnapshotMessageModal, setShowSnapshotMessageModal] = useState(false);
+  const [snapshotMessage, setSnapshotMessage] = useState('');
 
   const loadPendingUsers = async () => {
     try {
@@ -1767,17 +1769,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             </svg>
                           </button>
                           <button
-                            onClick={async () => {
-                              try {
-                                setSnapshotCreating(true);
-                                await databaseService.createSnapshot();
-                                await loadSnapshots();
-                                alert('Database snapshot created successfully!');
-                              } catch (err: any) {
-                                setError(err.message || 'Failed to create snapshot');
-                              } finally {
-                                setSnapshotCreating(false);
-                              }
+                            onClick={() => {
+                              setSnapshotMessage('');
+                              setShowSnapshotMessageModal(true);
                             }}
                             disabled={snapshotCreating}
                             className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
@@ -1797,6 +1791,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             <tr>
                               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Date & Time</th>
                               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Filename</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Message</th>
                               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Size</th>
                               <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
                             </tr>
@@ -1804,11 +1799,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                             {snapshotsLoading && snapshots.length === 0 ? (
                               <tr>
-                                <td colSpan={4} className="px-4 py-8 text-center text-sm text-slate-500">Loading snapshots...</td>
+                                <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">Loading snapshots...</td>
                               </tr>
                             ) : snapshots.length === 0 ? (
                               <tr>
-                                <td colSpan={4} className="px-4 py-8 text-center text-sm text-slate-500">No snapshots found.</td>
+                                <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">No snapshots found.</td>
                               </tr>
                             ) : (
                               snapshots.map((snap) => (
@@ -1818,6 +1813,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   </td>
                                   <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">
                                     {snap.filename}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400 max-w-xs">
+                                    {snap.metadata?.message ? (
+                                      <span className="inline-block px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded text-xs break-words">
+                                        {snap.metadata.message}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400 dark:text-slate-500 italic text-xs">No message</span>
+                                    )}
                                   </td>
                                   <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400 font-mono">
                                     {snap.size_formatted}
@@ -1901,6 +1905,70 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           </div>
                         </div>
                       </div>
+
+                      {/* Snapshot Message Modal */}
+                      {showSnapshotMessageModal && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4" onClick={() => setShowSnapshotMessageModal(false)}>
+                          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                            <div className="p-6">
+                              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">
+                                Create Database Snapshot
+                              </h3>
+                              <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                                Add an optional message to tag this snapshot for easy identification later.
+                              </p>
+                              <div className="mb-6">
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                  Message (Optional)
+                                </label>
+                                <textarea
+                                  value={snapshotMessage}
+                                  onChange={(e) => setSnapshotMessage(e.target.value)}
+                                  placeholder="e.g., Before major update, Pre-deployment backup, etc."
+                                  className="w-full p-3 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-none"
+                                  rows={3}
+                                  maxLength={200}
+                                />
+                                <div className="mt-1 text-right text-xs text-slate-500 dark:text-slate-400">
+                                  {snapshotMessage.length}/200
+                                </div>
+                              </div>
+                              <div className="flex gap-3 justify-end">
+                                <button
+                                  onClick={() => {
+                                    setShowSnapshotMessageModal(false);
+                                    setSnapshotMessage('');
+                                  }}
+                                  className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-lg transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      setSnapshotCreating(true);
+                                      setShowSnapshotMessageModal(false);
+                                      const message = snapshotMessage.trim() || undefined;
+                                      await databaseService.createSnapshot(message);
+                                      await loadSnapshots();
+                                      setSnapshotMessage('');
+                                      alert('Database snapshot created successfully!');
+                                    } catch (err: any) {
+                                      setError(err.message || 'Failed to create snapshot');
+                                    } finally {
+                                      setSnapshotCreating(false);
+                                    }
+                                  }}
+                                  disabled={snapshotCreating}
+                                  className="px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-500 disabled:opacity-50 rounded-lg transition-colors"
+                                >
+                                  {snapshotCreating ? 'Creating...' : 'Create Snapshot'}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

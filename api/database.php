@@ -16,6 +16,8 @@ switch ($method) {
             handleGetDatabaseInfo();
         } elseif ($path === '/snapshots' || $path === '/snapshots/') {
             handleGetSnapshots();
+        } elseif (preg_match('/^\/snapshots\/(.+)\/download$/', $path, $matches)) {
+            handleDownloadSnapshot($matches[1]);
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -28,6 +30,8 @@ switch ($method) {
             handleCreateSnapshot();
         } elseif ($path === '/restore' || $path === '/restore/') {
             handleRestoreSnapshot();
+        } elseif ($path === '/snapshots/upload' || $path === '/snapshots/upload/') {
+            handleUploadSnapshot();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -35,7 +39,14 @@ switch ($method) {
 
     case 'DELETE':
         if (preg_match('/^\/snapshots\/(.+)$/', $path, $matches)) {
-            handleDeleteSnapshot($matches[1]);
+            $filename = $matches[1];
+            if ($filename === 'delete-by-age') {
+                handleDeleteSnapshotsByAge();
+            } elseif ($filename === 'delete-all') {
+                handleDeleteAllSnapshots();
+            } else {
+                handleDeleteSnapshot($filename);
+            }
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -315,8 +326,17 @@ function handleGetSnapshots() {
 
 function handleCreateSnapshot() {
     requireAdmin();
+    // Get custom message from POST data if provided
+    $customMessage = null;
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $data = getJSONInput();
+        $customMessage = isset($data['message']) ? trim($data['message']) : null;
+    }
+    
     // Include snapshot.php but capture output to ensure no extra whitespace
     ob_start();
+    // Pass custom message to snapshot.php via global variable
+    $GLOBALS['snapshot_custom_message'] = $customMessage;
     include __DIR__ . '/snapshot.php';
     $output = ob_get_clean();
     echo $output;
@@ -398,6 +418,190 @@ function handleRestoreSnapshot() {
     } catch (Exception $e) {
         sendJSON(['error' => 'Restore failed: ' . $e->getMessage()], 500);
     }
+}
+
+function handleDownloadSnapshot($filename) {
+    requireAdmin();
+    // Security check: only allow filename in backups directory
+    if (strpos($filename, '..') !== false || strpos($filename, '/') !== false || strpos($filename, '\\') !== false) {
+        sendJSON(['error' => 'Invalid filename'], 400);
+        return;
+    }
+
+    $filePath = DB_DIR . '/backups/' . $filename;
+    if (!file_exists($filePath)) {
+        sendJSON(['error' => 'Snapshot not found'], 404);
+        return;
+    }
+
+    // Set headers for file download
+    header('Content-Type: application/octet-stream');
+    header('Content-Disposition: attachment; filename="' . basename($filename) . '"');
+    header('Content-Length: ' . filesize($filePath));
+    header('Cache-Control: no-cache, must-revalidate');
+    header('Pragma: no-cache');
+    
+    // Clear any output buffering
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    
+    // Stream the file
+    readfile($filePath);
+    exit;
+}
+
+function handleUploadSnapshot() {
+    requireAdmin();
+    
+    if (!isset($_FILES['snapshot']) || $_FILES['snapshot']['error'] !== UPLOAD_ERR_OK) {
+        sendJSON(['error' => 'No file uploaded or upload error occurred'], 400);
+        return;
+    }
+
+    $uploadedFile = $_FILES['snapshot'];
+    $backupsDir = DB_DIR . '/backups';
+    
+    if (!file_exists($backupsDir)) {
+        if (!mkdir($backupsDir, 0755, true)) {
+            sendJSON(['error' => 'Failed to create backups directory'], 500);
+            return;
+        }
+    }
+
+    // Validate file extension
+    $filename = $uploadedFile['name'];
+    $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+    if ($ext !== 'db') {
+        sendJSON(['error' => 'Invalid file type. Only .db files are allowed'], 400);
+        return;
+    }
+
+    // Validate file size (max 500MB)
+    $maxSize = 500 * 1024 * 1024; // 500MB
+    if ($uploadedFile['size'] > $maxSize) {
+        sendJSON(['error' => 'File too large. Maximum size is 500MB'], 400);
+        return;
+    }
+
+    // Generate safe filename with timestamp if needed
+    $safeFilename = preg_replace('/[^a-zA-Z0-9._-]/', '_', $filename);
+    $destPath = $backupsDir . '/' . $safeFilename;
+
+    // Check if file already exists
+    if (file_exists($destPath)) {
+        // Add timestamp to make it unique
+        $pathInfo = pathinfo($safeFilename);
+        $timestamp = date('Y-m-d-His');
+        $safeFilename = $pathInfo['filename'] . '-' . $timestamp . '.' . $pathInfo['extension'];
+        $destPath = $backupsDir . '/' . $safeFilename;
+    }
+
+    // Move uploaded file
+    if (!move_uploaded_file($uploadedFile['tmp_name'], $destPath)) {
+        sendJSON(['error' => 'Failed to save uploaded file'], 500);
+        return;
+    }
+
+    // Create metadata file
+    $metadata = [
+        'timestamp' => time(),
+        'date' => date('Y-m-d H:i:s'),
+        'filename' => $safeFilename,
+        'method' => 'uploaded',
+        'size' => filesize($destPath),
+        'original_filename' => $filename
+    ];
+    
+    // Get custom message if provided
+    $customMessage = $_POST['message'] ?? null;
+    if (!empty($customMessage)) {
+        $metadata['message'] = trim($customMessage);
+    }
+    
+    file_put_contents($destPath . '.json', json_encode($metadata, JSON_PRETTY_PRINT));
+
+    sendJSON([
+        'success' => true,
+        'message' => 'Snapshot uploaded successfully',
+        'filename' => $safeFilename
+    ]);
+}
+
+function handleDeleteSnapshotsByAge() {
+    requireAdmin();
+    $data = getJSONInput();
+    $days = isset($data['days']) ? (int)$data['days'] : null;
+
+    if ($days === null || $days < 0) {
+        sendJSON(['error' => 'Invalid days parameter'], 400);
+        return;
+    }
+
+    $backupsDir = DB_DIR . '/backups';
+    if (!file_exists($backupsDir)) {
+        sendJSON(['success' => true, 'deleted' => 0, 'message' => 'No backups directory found']);
+        return;
+    }
+
+    $files = glob($backupsDir . '/linknest-snapshot-*.db');
+    $now = time();
+    $cutoffTime = $now - ($days * 24 * 60 * 60);
+    $deleted = 0;
+    $deletedFiles = [];
+
+    foreach ($files as $file) {
+        $fileTime = filemtime($file);
+        if ($fileTime < $cutoffTime) {
+            if (unlink($file)) {
+                $deletedFiles[] = basename($file);
+                $deleted++;
+                // Also delete metadata file if it exists
+                if (file_exists($file . '.json')) {
+                    unlink($file . '.json');
+                }
+            }
+        }
+    }
+
+    sendJSON([
+        'success' => true,
+        'deleted' => $deleted,
+        'files' => $deletedFiles,
+        'message' => "Deleted $deleted snapshot(s) older than $days days"
+    ]);
+}
+
+function handleDeleteAllSnapshots() {
+    requireAdmin();
+    $backupsDir = DB_DIR . '/backups';
+    
+    if (!file_exists($backupsDir)) {
+        sendJSON(['success' => true, 'deleted' => 0, 'message' => 'No backups directory found']);
+        return;
+    }
+
+    $files = glob($backupsDir . '/linknest-snapshot-*.db');
+    $deleted = 0;
+    $deletedFiles = [];
+
+    foreach ($files as $file) {
+        if (unlink($file)) {
+            $deletedFiles[] = basename($file);
+            $deleted++;
+            // Also delete metadata file if it exists
+            if (file_exists($file . '.json')) {
+                unlink($file . '.json');
+            }
+        }
+    }
+
+    sendJSON([
+        'success' => true,
+        'deleted' => $deleted,
+        'files' => $deletedFiles,
+        'message' => "Deleted all $deleted snapshot(s)"
+    ]);
 }
 
 

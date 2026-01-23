@@ -428,6 +428,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [snapshotsLoading, setSnapshotsLoading] = useState(false);
   const [snapshotCreating, setSnapshotCreating] = useState(false);
   const [snapshotRestoring, setSnapshotRestoring] = useState<string | null>(null);
+  const [showSnapshotMessageModal, setShowSnapshotMessageModal] = useState(false);
+  const [snapshotMessage, setSnapshotMessage] = useState('');
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadMessage, setUploadMessage] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [deleteDays, setDeleteDays] = useState(30);
+  const [deletingBulk, setDeletingBulk] = useState(false);
 
   const loadPendingUsers = async () => {
     try {
@@ -4014,7 +4023,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     <div className={`${isMobile ? 'mt-6' : 'mt-8'} ${isMobile ? 'pt-6' : 'pt-8'} border-t border-slate-200 dark:border-slate-700`}>
                       <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-3' : ''} mb-4`}>
                         <h3 className={`${isMobile ? 'text-base' : 'text-lg'} font-bold text-slate-900 dark:text-white`}>Database Snapshots (Backups)</h3>
-                        <div className={`flex items-center ${isMobile ? 'w-full justify-between' : 'gap-2'}`}>
+                        <div className={`flex items-center ${isMobile ? 'w-full justify-between flex-wrap' : 'gap-2'}`}>
                           <button
                             onClick={loadSnapshots}
                             className={`${isMobile ? 'p-2.5' : 'p-2'} text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors touch-manipulation`}
@@ -4025,25 +4034,47 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
                             </svg>
                           </button>
-                          <button
-                            onClick={async () => {
-                              try {
-                                setSnapshotCreating(true);
-                                await databaseService.createSnapshot();
-                                await loadSnapshots();
-                                alert('Database snapshot created successfully!');
-                              } catch (err: any) {
-                                setError(err.message || 'Failed to create snapshot');
-                              } finally {
-                                setSnapshotCreating(false);
-                              }
-                            }}
-                            disabled={snapshotCreating}
-                            className={`bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white ${isMobile ? 'px-3 py-2.5 text-xs' : 'px-4 py-2 text-sm'} rounded-lg font-semibold transition-colors flex items-center gap-2 touch-manipulation`}
-                            style={isMobile ? { minHeight: '44px' } : {}}
-                          >
-                            {snapshotCreating ? 'Creating...' : '+ Create Snapshot'}
-                          </button>
+                          <div className={`flex items-center ${isMobile ? 'gap-2 w-full' : 'gap-2'}`}>
+                            <button
+                              onClick={() => {
+                                setUploadFile(null);
+                                setUploadMessage('');
+                                setShowUploadModal(true);
+                              }}
+                              disabled={uploading}
+                              className={`bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white ${isMobile ? 'px-3 py-2.5 text-xs' : 'px-4 py-2 text-sm'} rounded-lg font-semibold transition-colors flex items-center gap-2 touch-manipulation`}
+                              style={isMobile ? { minHeight: '44px' } : {}}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                <path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 2.955a.75.75 0 001.06-1.06l-4.25-4.25a.75.75 0 00-1.06 0l-4.25 4.25a.75.75 0 001.06 1.06l2.955-2.955V13.25zM3.75 15a.75.75 0 000 1.5h12.5a.75.75 0 000-1.5H3.75z" />
+                              </svg>
+                              {isMobile ? 'Upload' : 'Upload Snapshot'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSnapshotMessage('');
+                                setShowSnapshotMessageModal(true);
+                              }}
+                              disabled={snapshotCreating}
+                              className={`bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white ${isMobile ? 'px-3 py-2.5 text-xs' : 'px-4 py-2 text-sm'} rounded-lg font-semibold transition-colors flex items-center gap-2 touch-manipulation`}
+                              style={isMobile ? { minHeight: '44px' } : {}}
+                            >
+                              {snapshotCreating ? 'Creating...' : '+ Create Snapshot'}
+                            </button>
+                            <button
+                              onClick={() => setShowBulkDeleteModal(true)}
+                              disabled={deletingBulk || snapshots.length === 0}
+                              className={`bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white ${isMobile ? 'px-3 py-2.5 text-xs' : 'px-4 py-2 text-sm'} rounded-lg font-semibold transition-colors flex items-center gap-2 touch-manipulation`}
+                              style={isMobile ? { minHeight: '44px' } : {}}
+                              title="Bulk delete options"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443a.75.75 0 01-.298.604l-1.5 1.25a.75.75 0 00-.704 1.27l1.5 1.25a.75.75 0 01.298.604v.443A2.75 2.75 0 008.75 13h2.5A2.75 2.75 0 0014 10.25v-.443a.75.75 0 01.298-.604l1.5-1.25a.75.75 0 00-.704-1.27l-1.5-1.25a.75.75 0 01-.298-.604v-.443A2.75 2.75 0 0011.25 1h-2.5zM10 4c.414 0 .75.336.75.75v2.5a.75.75 0 01-1.5 0v-2.5A.75.75 0 0110 4zM10 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                                <path d="M2 13a1 1 0 011-1h14a1 1 0 110 2H3a1 1 0 01-1-1z" />
+                              </svg>
+                              {isMobile ? 'Delete' : 'Bulk Delete'}
+                            </button>
+                          </div>
                         </div>
                       </div>
                       <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 mb-6`}>
@@ -4059,6 +4090,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             <tr>
                               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Date & Time</th>
                               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Filename</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Message</th>
                               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Size</th>
                               <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
                             </tr>
@@ -4066,11 +4098,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                             {snapshotsLoading && snapshots.length === 0 ? (
                               <tr>
-                                <td colSpan={4} className="px-4 py-8 text-center text-sm text-slate-500">Loading snapshots...</td>
+                                <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">Loading snapshots...</td>
                               </tr>
                             ) : snapshots.length === 0 ? (
                               <tr>
-                                <td colSpan={4} className="px-4 py-8 text-center text-sm text-slate-500">No snapshots found.</td>
+                                <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">No snapshots found.</td>
                               </tr>
                             ) : (
                               snapshots.map((snap) => (
@@ -4081,11 +4113,36 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">
                                     {snap.filename}
                                   </td>
+                                  <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400 max-w-xs">
+                                    {snap.metadata?.message ? (
+                                      <span className="inline-block px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded text-xs break-words">
+                                        {snap.metadata.message}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400 dark:text-slate-500 italic text-xs">No message</span>
+                                    )}
+                                  </td>
                                   <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400 font-mono">
                                     {snap.size_formatted}
                                   </td>
                                   <td className="px-4 py-3 whitespace-nowrap text-right">
                                     <div className="flex items-center justify-end gap-2">
+                                      <button
+                                        onClick={async () => {
+                                          try {
+                                            await databaseService.downloadSnapshot(snap.filename);
+                                          } catch (err: any) {
+                                            setError(err.message || 'Failed to download snapshot');
+                                          }
+                                        }}
+                                        className="px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded-lg text-xs font-medium transition-colors"
+                                        title="Download snapshot"
+                                      >
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 inline">
+                                          <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.295a.75.75 0 00-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.069V2.75z" />
+                                          <path d="M3.5 12.75a.75.75 0 00-1.5 0v3.5A2.75 2.75 0 004.75 19h10.5A2.75 2.75 0 0018 16.25v-3.5a.75.75 0 00-1.5 0v3.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-3.5z" />
+                                        </svg>
+                                      </button>
                                       <button
                                         onClick={async () => {
                                           if (!confirm(`Are you sure you want to RESTORE the database from ${snap.filename}? This will OVERWRITE all current data!`)) return;
@@ -4168,8 +4225,36 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     </div>
                                   </div>
                                   
+                                  {snap.metadata?.message && (
+                                    <div>
+                                      <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Message</div>
+                                      <div className="text-sm text-slate-600 dark:text-slate-400">
+                                        <span className="inline-block px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded text-xs break-words">
+                                          {snap.metadata.message}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )}
+                                  
                                   <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
                                     <div className="flex flex-col gap-2">
+                                      <button
+                                        onClick={async () => {
+                                          try {
+                                            await databaseService.downloadSnapshot(snap.filename);
+                                          } catch (err: any) {
+                                            setError(err.message || 'Failed to download snapshot');
+                                          }
+                                        }}
+                                        className="w-full px-4 py-2.5 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors touch-manipulation flex items-center justify-center gap-2"
+                                        style={{ minHeight: '44px' }}
+                                      >
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                          <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.295a.75.75 0 00-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.069V2.75z" />
+                                          <path d="M3.5 12.75a.75.75 0 00-1.5 0v3.5A2.75 2.75 0 004.75 19h10.5A2.75 2.75 0 0018 16.25v-3.5a.75.75 0 00-1.5 0v3.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-3.5z" />
+                                        </svg>
+                                        Download
+                                      </button>
                                       <button
                                         onClick={async () => {
                                           if (!confirm(`Are you sure you want to RESTORE the database from ${snap.filename}? This will OVERWRITE all current data!`)) return;
@@ -4249,6 +4334,261 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           </div>
                         </div>
                       </div>
+
+                      {/* Snapshot Message Modal */}
+                      {showSnapshotMessageModal && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4" onClick={() => setShowSnapshotMessageModal(false)}>
+                          <div className={`bg-white dark:bg-slate-800 rounded-xl shadow-xl ${isMobile ? 'w-full max-w-sm' : 'w-full max-w-md'} max-h-[90vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
+                            <div className="p-6">
+                              <h3 className={`${isMobile ? 'text-lg' : 'text-xl'} font-bold text-slate-900 dark:text-white mb-4`}>
+                                Create Database Snapshot
+                              </h3>
+                              <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 mb-4`}>
+                                Add an optional message to tag this snapshot for easy identification later.
+                              </p>
+                              <div className="mb-6">
+                                <label className={`block ${isMobile ? 'text-xs' : 'text-sm'} font-medium text-slate-700 dark:text-slate-300 mb-2`}>
+                                  Message (Optional)
+                                </label>
+                                <textarea
+                                  value={snapshotMessage}
+                                  onChange={(e) => setSnapshotMessage(e.target.value)}
+                                  placeholder="e.g., Before major update, Pre-deployment backup, etc."
+                                  className={`w-full ${isMobile ? 'p-2.5 text-sm' : 'p-3 text-sm'} border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-none`}
+                                  rows={3}
+                                  maxLength={200}
+                                />
+                                <div className={`mt-1 text-right ${isMobile ? 'text-xs' : 'text-xs'} text-slate-500 dark:text-slate-400`}>
+                                  {snapshotMessage.length}/200
+                                </div>
+                              </div>
+                              <div className="flex gap-3 justify-end">
+                                <button
+                                  onClick={() => {
+                                    setShowSnapshotMessageModal(false);
+                                    setSnapshotMessage('');
+                                  }}
+                                  className={`px-4 py-2 ${isMobile ? 'text-xs' : 'text-sm'} font-medium text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-lg transition-colors touch-manipulation`}
+                                  style={isMobile ? { minHeight: '44px' } : {}}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      setSnapshotCreating(true);
+                                      setShowSnapshotMessageModal(false);
+                                      const message = snapshotMessage.trim() || undefined;
+                                      await databaseService.createSnapshot(message);
+                                      await loadSnapshots();
+                                      setSnapshotMessage('');
+                                      alert('Database snapshot created successfully!');
+                                    } catch (err: any) {
+                                      setError(err.message || 'Failed to create snapshot');
+                                    } finally {
+                                      setSnapshotCreating(false);
+                                    }
+                                  }}
+                                  disabled={snapshotCreating}
+                                  className={`px-4 py-2 ${isMobile ? 'text-xs' : 'text-sm'} font-medium text-white bg-brand-600 hover:bg-brand-500 disabled:opacity-50 rounded-lg transition-colors touch-manipulation`}
+                                  style={isMobile ? { minHeight: '44px' } : {}}
+                                >
+                                  {snapshotCreating ? 'Creating...' : 'Create Snapshot'}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Upload Snapshot Modal */}
+                      {showUploadModal && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4" onClick={() => setShowUploadModal(false)}>
+                          <div className={`bg-white dark:bg-slate-800 rounded-xl shadow-xl ${isMobile ? 'w-full max-w-sm' : 'w-full max-w-md'} max-h-[90vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
+                            <div className="p-6">
+                              <h3 className={`${isMobile ? 'text-lg' : 'text-xl'} font-bold text-slate-900 dark:text-white mb-4`}>
+                                Upload Database Snapshot
+                              </h3>
+                              <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 mb-4`}>
+                                Upload a .db snapshot file to the server. You can optionally add a message to tag it.
+                              </p>
+                              <div className="mb-4">
+                                <label className={`block ${isMobile ? 'text-xs' : 'text-sm'} font-medium text-slate-700 dark:text-slate-300 mb-2`}>
+                                  Snapshot File (.db)
+                                </label>
+                                <input
+                                  type="file"
+                                  accept=".db"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                      if (file.size > 500 * 1024 * 1024) {
+                                        setError('File too large. Maximum size is 500MB');
+                                        return;
+                                      }
+                                      setUploadFile(file);
+                                    }
+                                  }}
+                                  className={`w-full ${isMobile ? 'p-2.5 text-sm' : 'p-3 text-sm'} border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent`}
+                                />
+                                {uploadFile && (
+                                  <p className={`mt-2 ${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400`}>
+                                    Selected: {uploadFile.name} ({(uploadFile.size / 1024 / 1024).toFixed(2)} MB)
+                                  </p>
+                                )}
+                              </div>
+                              <div className="mb-6">
+                                <label className={`block ${isMobile ? 'text-xs' : 'text-sm'} font-medium text-slate-700 dark:text-slate-300 mb-2`}>
+                                  Message (Optional)
+                                </label>
+                                <textarea
+                                  value={uploadMessage}
+                                  onChange={(e) => setUploadMessage(e.target.value)}
+                                  placeholder="e.g., Imported from backup, Pre-migration snapshot, etc."
+                                  className={`w-full ${isMobile ? 'p-2.5 text-sm' : 'p-3 text-sm'} border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-none`}
+                                  rows={3}
+                                  maxLength={200}
+                                />
+                                <div className={`mt-1 text-right ${isMobile ? 'text-xs' : 'text-xs'} text-slate-500 dark:text-slate-400`}>
+                                  {uploadMessage.length}/200
+                                </div>
+                              </div>
+                              <div className="flex gap-3 justify-end">
+                                <button
+                                  onClick={() => {
+                                    setShowUploadModal(false);
+                                    setUploadFile(null);
+                                    setUploadMessage('');
+                                  }}
+                                  className={`px-4 py-2 ${isMobile ? 'text-xs' : 'text-sm'} font-medium text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-lg transition-colors touch-manipulation`}
+                                  style={isMobile ? { minHeight: '44px' } : {}}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    if (!uploadFile) {
+                                      setError('Please select a file to upload');
+                                      return;
+                                    }
+                                    try {
+                                      setUploading(true);
+                                      setShowUploadModal(false);
+                                      const message = uploadMessage.trim() || undefined;
+                                      await databaseService.uploadSnapshot(uploadFile, message);
+                                      await loadSnapshots();
+                                      setUploadFile(null);
+                                      setUploadMessage('');
+                                      alert('Snapshot uploaded successfully!');
+                                    } catch (err: any) {
+                                      setError(err.message || 'Failed to upload snapshot');
+                                    } finally {
+                                      setUploading(false);
+                                    }
+                                  }}
+                                  disabled={uploading || !uploadFile}
+                                  className={`px-4 py-2 ${isMobile ? 'text-xs' : 'text-sm'} font-medium text-white bg-green-600 hover:bg-green-500 disabled:opacity-50 rounded-lg transition-colors touch-manipulation`}
+                                  style={isMobile ? { minHeight: '44px' } : {}}
+                                >
+                                  {uploading ? 'Uploading...' : 'Upload'}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Bulk Delete Modal */}
+                      {showBulkDeleteModal && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4" onClick={() => setShowBulkDeleteModal(false)}>
+                          <div className={`bg-white dark:bg-slate-800 rounded-xl shadow-xl ${isMobile ? 'w-full max-w-sm' : 'w-full max-w-md'} max-h-[90vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
+                            <div className="p-6">
+                              <h3 className={`${isMobile ? 'text-lg' : 'text-xl'} font-bold text-slate-900 dark:text-white mb-4`}>
+                                Bulk Delete Snapshots
+                              </h3>
+                              <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 mb-6`}>
+                                Choose how you want to delete snapshots. This action cannot be undone.
+                              </p>
+                              
+                              <div className="mb-6 space-y-4">
+                                <div>
+                                  <label className={`block ${isMobile ? 'text-xs' : 'text-sm'} font-medium text-slate-700 dark:text-slate-300 mb-2`}>
+                                    Delete Snapshots Older Than (Days)
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      max="365"
+                                      value={deleteDays}
+                                      onChange={(e) => setDeleteDays(parseInt(e.target.value) || 30)}
+                                      className={`flex-1 ${isMobile ? 'p-2.5 text-sm' : 'p-3 text-sm'} border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent`}
+                                    />
+                                    <button
+                                      onClick={async () => {
+                                        if (!confirm(`Are you sure you want to DELETE all snapshots older than ${deleteDays} days? This cannot be undone!`)) return;
+                                        try {
+                                          setDeletingBulk(true);
+                                          setShowBulkDeleteModal(false);
+                                          const result = await databaseService.deleteSnapshotsByAge(deleteDays);
+                                          await loadSnapshots();
+                                          alert(result.message || `Deleted ${result.deleted} snapshot(s)`);
+                                        } catch (err: any) {
+                                          setError(err.message || 'Failed to delete snapshots');
+                                        } finally {
+                                          setDeletingBulk(false);
+                                        }
+                                      }}
+                                      disabled={deletingBulk}
+                                      className={`px-4 py-2 ${isMobile ? 'text-xs' : 'text-sm'} font-medium text-white bg-orange-600 hover:bg-orange-500 disabled:opacity-50 rounded-lg transition-colors touch-manipulation`}
+                                      style={isMobile ? { minHeight: '44px' } : {}}
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                </div>
+                                
+                                <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                                  <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 mb-3`}>
+                                    Delete all snapshots regardless of age:
+                                  </p>
+                                  <button
+                                    onClick={async () => {
+                                      if (!confirm(`Are you sure you want to DELETE ALL ${snapshots.length} snapshot(s)? This cannot be undone!`)) return;
+                                      try {
+                                        setDeletingBulk(true);
+                                        setShowBulkDeleteModal(false);
+                                        const result = await databaseService.deleteAllSnapshots();
+                                        await loadSnapshots();
+                                        alert(result.message || `Deleted ${result.deleted} snapshot(s)`);
+                                      } catch (err: any) {
+                                        setError(err.message || 'Failed to delete all snapshots');
+                                      } finally {
+                                        setDeletingBulk(false);
+                                      }
+                                    }}
+                                    disabled={deletingBulk || snapshots.length === 0}
+                                    className={`w-full px-4 py-2 ${isMobile ? 'text-xs' : 'text-sm'} font-medium text-white bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-lg transition-colors touch-manipulation`}
+                                    style={isMobile ? { minHeight: '44px' } : {}}
+                                  >
+                                    {deletingBulk ? 'Deleting...' : `Delete All (${snapshots.length})`}
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="flex gap-3 justify-end">
+                                <button
+                                  onClick={() => setShowBulkDeleteModal(false)}
+                                  className={`px-4 py-2 ${isMobile ? 'text-xs' : 'text-sm'} font-medium text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-lg transition-colors touch-manipulation`}
+                                  style={isMobile ? { minHeight: '44px' } : {}}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
