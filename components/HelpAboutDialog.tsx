@@ -142,7 +142,13 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Link Management</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Add, edit, and organize links with custom icons, notes, and tooltips. Set visibility levels for each link.
+                      Add, edit, and organize links with custom icons, notes, tooltips, and rich text content. Set visibility levels, scheduling, and browser preferences for each link.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Roles & Groups</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Create user groups and roles to manage permissions at scale. Assign tile access, tabs, widgets, and admin privileges to entire teams. Groups and roles work together for flexible access control.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -182,9 +188,21 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
-                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Access Control</h4>
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Access Control & User Groups</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Fine-grained permission system allows administrators to grant specific users view, edit, or delete permissions on individual tiles. Perfect for collaborative workspaces.
+                      Advanced permission system with role-based access control and user groups. Assign tile admin privileges to individual users or entire groups. Granular permissions control add, edit, and delete actions for links, sections, and tabs. Perfect for team collaboration.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Version Control</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Track all changes to your tiles with comprehensive version history. View, compare, and restore previous versions. Lock important versions to prevent deletion. Automatic changelog generation for every change.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Custom Widgets</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Create and integrate custom widgets into the application. Full widget development framework with role-based access control. Build your own tools and utilities that integrate seamlessly with {appName}.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -315,6 +333,172 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
               <section>
                 <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.49 15.326a.78.78 0 01-.358-.442 3 3 0 014.308-3.516 6.484 6.484 0 00-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 01-2.07-.655zM16.44 15.98a4.97 4.97 0 002.07-.654.78.78 0 00.357-.442 3 3 0 00-4.308-3.517 6.484 6.484 0 011.907 3.96 2.32 2.32 0 01-.026.654zM18 8a2 2 0 11-4 0 2 2 0 014 0zM5.304 16.19a.844.844 0 01-.277-.71 5 5 0 019.947 0 .843.843 0 01-.277.71A6.975 6.975 0 0110 18a6.974 6.974 0 01-4.696-1.81z" />
+                  </svg>
+                  User Groups & Access Control
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p>
+                    Manage access to tiles and content using <strong>user groups</strong> and <strong>role-based permissions</strong>.
+                  </p>
+                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-brand-900 dark:text-brand-100">User Groups:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Create groups to organize users by team, department, or project</li>
+                      <li>Assign users to multiple groups for flexible organization</li>
+                      <li>Assign roles to groups - all members inherit group permissions</li>
+                      <li>Manage group membership through the Admin Panel</li>
+                    </ul>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-slate-900 dark:text-white">Tile Admins with Group Support:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li><strong>Assign Users & Groups:</strong> Grant tile admin privileges to individual users or entire groups</li>
+                      <li><strong>Visual Distinction:</strong> Users shown with 👤, groups with 👥 icon</li>
+                      <li><strong>Entity Filter:</strong> Filter view to show all entities, users only, or groups only</li>
+                      <li><strong>Combined Search:</strong> Search across both users and groups simultaneously</li>
+                      <li><strong>Admin Count Display:</strong> See breakdown of user and group admins per tile</li>
+                      <li><strong>Simplified Management:</strong> Update entire team permissions at once via groups</li>
+                    </ul>
+                  </div>
+                  <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-emerald-900 dark:text-emerald-100">Granular Permissions:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li><strong>Add/Edit Control:</strong> Allow or restrict adding/editing links, sections, and tabs</li>
+                      <li><strong>Delete Control:</strong> Separate permissions for deleting links, sections, and tabs</li>
+                      <li><strong>Visibility Control:</strong> Control who can change tile visibility settings</li>
+                      <li><strong>Browser Control:</strong> Manage who can change browser settings</li>
+                      <li><strong>Clone Control:</strong> Restrict tile cloning to specific users</li>
+                      <li><strong>Info Access:</strong> Control access to tile information and statistics</li>
+                      <li>Default: Tile admins can add/edit but not delete or change sensitive settings</li>
+                    </ul>
+                  </div>
+                  <div className="bg-violet-50 dark:bg-violet-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-violet-900 dark:text-violet-100">Role Management:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Create custom roles with specific permissions</li>
+                      <li>Assign roles to individual users or groups</li>
+                      <li>Control access to tiles, tabs, links, and widgets per role</li>
+                      <li>Bulk assign/remove roles from multiple users or groups</li>
+                      <li>View all users/groups with a specific role</li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
+                    <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
+                  </svg>
+                  Version Control & History
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p>
+                    Track every change made to your tiles with comprehensive version control.
+                  </p>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-slate-900 dark:text-white">Version Features:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Automatic version creation on every save</li>
+                      <li>View complete history of all changes</li>
+                      <li>Compare versions side-by-side with diff viewer</li>
+                      <li>Restore any previous version</li>
+                      <li>Lock important versions to prevent deletion</li>
+                      <li>Auto-generated changelog summaries</li>
+                      <li>Add tags and comments to versions</li>
+                      <li>Cleanup empty or duplicate versions</li>
+                      <li>Temporary "before" snapshots when editing</li>
+                    </ul>
+                  </div>
+                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-brand-900 dark:text-brand-100">What's Tracked:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Tile properties (title, description, emoji, theme, category)</li>
+                      <li>All tabs, sections, and links</li>
+                      <li>Visibility settings and allowed users</li>
+                      <li>Rich text content and formatting</li>
+                      <li>Scheduling dates and browser preferences</li>
+                      <li>Messages and announcements</li>
+                      <li>Complete structure and organization</li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path fillRule="evenodd" d="M3 3.5A1.5 1.5 0 014.5 2h1.148a1.5 1.5 0 011.465 1.175l.716 3.223a1.5 1.5 0 01-1.052 1.767l-.933.267c-.41.117-.643.555-.48.95a11.542 11.542 0 006.254 6.254c.395.163.833-.07.95-.48l.267-.933a1.5 1.5 0 011.767-1.052l3.223.716A1.5 1.5 0 0118 15.352V16.5a1.5 1.5 0 01-1.5 1.5H15c-1.149 0-2.263-.15-3.326-.43A13.022 13.022 0 012.43 8.326 13.019 13.019 0 012 5V3.5z" clipRule="evenodd" />
+                  </svg>
+                  Database Maintenance
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p>
+                    Keep your database clean and optimized with built-in maintenance tools.
+                  </p>
+                  <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-orange-900 dark:text-orange-100">Database Cleanup:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Scan for orphaned records (sections, links, tabs, permissions)</li>
+                      <li>Remove orphaned data with one click</li>
+                      <li>Detailed breakdown of what will be cleaned</li>
+                      <li>Transaction-based safety (rollback on errors)</li>
+                      <li>Available via Admin Panel UI or CLI scripts</li>
+                      <li>Helps resolve duplicate entries and improves performance</li>
+                    </ul>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-slate-900 dark:text-white">What Gets Cleaned:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Permissions for deleted tiles</li>
+                      <li>Sections referencing deleted tiles</li>
+                      <li>Links referencing deleted sections</li>
+                      <li>Tabs referencing deleted tiles</li>
+                      <li>Duplicate permission records</li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path fillRule="evenodd" d="M4 2a2 2 0 00-2 2v11a3 3 0 106 0V4a2 2 0 00-2-2H4zm1 14a1 1 0 100-2 1 1 0 000 2zm5-1.757l4.9-4.9a2 2 0 000-2.828L13.485 5.1a2 2 0 00-2.828 0L10 5.757v8.486zM16 18H9.071l6-6H16a2 2 0 012 2v2a2 2 0 01-2 2z" clipRule="evenodd" />
+                  </svg>
+                  Custom Widgets Development
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p>
+                    Extend {appName} with custom widgets built using React and TypeScript.
+                  </p>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-slate-900 dark:text-white">Widget Capabilities:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Create floating widgets or embedded components</li>
+                      <li>Full access to React hooks and state management</li>
+                      <li>Integration with {appName} design system</li>
+                      <li>Dark mode support built-in</li>
+                      <li>Role-based access control for custom widgets</li>
+                      <li>Register widgets via Admin Panel interface</li>
+                    </ul>
+                  </div>
+                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-brand-900 dark:text-brand-100">Getting Started:</p>
+                    <ol className="list-decimal list-inside space-y-1 ml-2 text-sm">
+                      <li>Create your React component in <code className="bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded text-xs">components/</code></li>
+                      <li>Register widget via Admin Panel → Widgets</li>
+                      <li>Assign widget to roles for access control</li>
+                      <li>Widget appears in navigation for authorized users</li>
+                    </ol>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
                   </svg>
                   Tips & Tricks
@@ -334,8 +518,13 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     <li>Archive old tiles to keep your workspace clean</li>
                     <li>Add rich text content with formatting, emojis, and images to sections</li>
                     <li>Use style profiles to customize the application appearance (admin only)</li>
-                    <li>Grant specific permissions to users for individual tiles (admin only)</li>
+                    <li>Create user groups and assign entire teams to tiles (admin only)</li>
+                    <li>Assign tile admin privileges to users or groups with granular permission control (admin only)</li>
+                    <li>Manage roles and assign them to users and groups for streamlined access control (admin only)</li>
+                    <li>Track tile changes with version control - view, compare, and restore versions</li>
                     <li>Clone {appName} instances for testing or backup purposes (admin only)</li>
+                    <li>Run database cleanup to remove orphaned records and optimize performance (admin only)</li>
+                    <li>Create custom widgets with full development framework (admin only)</li>
                     <li>Customize tile animations from 200+ options for a personalized experience</li>
                     <li>Add seasonal decorations to tiles for holidays and special occasions</li>
                     <li>Toggle floating widgets (Clock, Phonetic Alphabet, Notes, Weather, Calculator) from navigation</li>
@@ -345,7 +534,45 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     <li>View monitoring history with interactive charts and graphs</li>
                     <li>Schedule maintenance windows to suppress monitoring alerts</li>
                     <li>Pause/resume email notifications globally when needed</li>
+                    <li>Use SAML/SSO for enterprise Single Sign-On authentication (admin only)</li>
+                    <li>Control tab visibility to show/hide specific tabs application-wide (admin only)</li>
+                    <li>Send broadcast messages that scroll across the application (admin only)</li>
                   </ul>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path fillRule="evenodd" d="M4.083 9h1.946c.089-1.546.383-2.97.837-4.118A6.004 6.004 0 004.083 9zM10 2a8 8 0 100 16 8 8 0 000-16zm0 2c-.076 0-.232.032-.465.262-.238.234-.497.623-.737 1.182-.389.907-.673 2.142-.766 3.556h3.936c-.093-1.414-.377-2.649-.766-3.556-.24-.56-.5-.948-.737-1.182C10.232 4.032 10.076 4 10 4zm3.971 5c-.089-1.546-.383-2.97-.837-4.118A6.004 6.004 0 0115.917 9h-1.946zm-2.003 2H8.032c.093 1.414.377 2.649.766 3.556.24.56.5.948.737 1.182.233.23.389.262.465.262.076 0 .232-.032.465-.262.238-.234.498-.623.737-1.182.389-.907.673-2.142.766-3.556zm1.166 4.118c.454-1.147.748-2.572.837-4.118h1.946a6.004 6.004 0 01-2.783 4.118zm-6.268 0C6.412 13.97 6.118 12.546 6.03 11H4.083a6.004 6.004 0 002.783 4.118z" clipRule="evenodd" />
+                  </svg>
+                  Enterprise Features
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p>
+                    {appName} includes enterprise-grade features for large organizations.
+                  </p>
+                  <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-indigo-900 dark:text-indigo-100">Authentication & SSO:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li><strong>Local Authentication:</strong> Built-in user management with secure password storage</li>
+                      <li><strong>LDAP Integration:</strong> Connect to Active Directory or LDAP servers for centralized user management</li>
+                      <li><strong>SAML/SSO:</strong> Enterprise Single Sign-On with SAML 2.0 protocol support</li>
+                      <li>Multiple authentication sources can coexist</li>
+                      <li>User provisioning and synchronization</li>
+                    </ul>
+                  </div>
+                  <div className="bg-cyan-50 dark:bg-cyan-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-cyan-900 dark:text-cyan-100">Deployment Options:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Traditional LAMP/WAMP stack deployment</li>
+                      <li>Docker containerization support</li>
+                      <li>Docker Compose orchestration</li>
+                      <li>HTTPS/SSL configuration guides</li>
+                      <li>Reverse proxy support (Apache, Nginx)</li>
+                      <li>Load balancing ready</li>
+                    </ul>
+                  </div>
                 </div>
               </section>
 
@@ -363,15 +590,24 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                   <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
                     <p className="font-medium text-brand-900 dark:text-brand-100">Admin Panel Features:</p>
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
-                      <li><strong>User Management:</strong> Approve pending users, manage all users, reset passwords</li>
-                      <li><strong>Access Control:</strong> Set view, edit, and delete permissions for users on specific tiles</li>
+                      <li><strong>User Management:</strong> Approve pending users, manage all users, reset passwords, edit user details</li>
+                      <li><strong>User Groups:</strong> Create and manage user groups, assign members, bulk assign roles to groups</li>
+                      <li><strong>Role Management:</strong> Create roles, assign roles to users and groups, manage role permissions</li>
+                      <li><strong>Tile Admins:</strong> Assign users and groups as tile admins with granular permission control</li>
+                      <li><strong>Granular Permissions:</strong> Fine-tune what tile admins can do (add/edit/delete links, sections, tabs)</li>
+                      <li><strong>Access Control:</strong> Assign tiles, links, tabs, and widgets to specific roles</li>
                       <li><strong>Style Management:</strong> Create and switch between custom style profiles</li>
                       <li><strong>Instance Cloning:</strong> Clone {appName} installations with progress tracking</li>
                       <li><strong>LDAP Integration:</strong> Configure LDAP authentication for enterprise environments</li>
+                      <li><strong>SAML/SSO:</strong> Enterprise Single Sign-On with SAML 2.0 support</li>
                       <li><strong>Browser Extension:</strong> Configure Browser Launcher Pro extension settings</li>
-                      <li><strong>Database Management:</strong> Export and import database backups</li>
+                      <li><strong>Database Management:</strong> Export/import backups, cleanup orphaned records</li>
+                      <li><strong>Database Cleanup:</strong> Scan and remove orphaned records, optimize database performance</li>
                       <li><strong>Space Management:</strong> Bulk import/export spaces, manage all spaces</li>
+                      <li><strong>Tab Visibility:</strong> Control which tabs are visible in the application</li>
+                      <li><strong>Custom Widgets:</strong> Create, enable/disable, and manage custom widgets</li>
                       <li><strong>Application Settings:</strong> Customize app name, logo, footer, and other global settings</li>
+                      <li><strong>Broadcast Messages:</strong> Display scrolling messages across the application</li>
                       <li><strong>Monitoring Management:</strong> Create, edit, and manage system monitors with advanced configuration</li>
                       <li><strong>SMTP Configuration:</strong> Configure multiple SMTP servers for email notifications</li>
                       <li><strong>Email Templates:</strong> Customize email notification templates and manage notification rules</li>
@@ -394,7 +630,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                   A smart, aesthetic landing page manager
                 </p>
                 <p className="text-sm text-slate-500 dark:text-slate-500">
-                  Version 1.0.0
+                  Version 2.0.0
                 </p>
               </section>
 
@@ -403,9 +639,10 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                 <p className="text-slate-700 dark:text-slate-300">
                   {appName} helps you create beautiful, organized landing pages for your important links. 
                   Organize links into visual tiles, customize their appearance, and share them with your team or make them public. 
-                  With features like browser integration, scheduling, link health monitoring, rich text content, style management, 
-                  access control, flexible visibility controls, system monitoring, email notifications, floating widgets, and 200+ tile animations, 
-                  {appName} makes managing and sharing links simple and elegant.
+                  With advanced features like <strong>user groups</strong>, <strong>role-based access control</strong>, <strong>granular tile admin permissions</strong>, 
+                  <strong>version control</strong>, browser integration, scheduling, link health monitoring, rich text content, style management, 
+                  flexible visibility controls, system monitoring, email notifications, floating widgets, custom widget development, database cleanup tools, 
+                  SAML/SSO authentication, and 200+ tile animations, {appName} makes managing and sharing links simple, powerful, and elegant.
                 </p>
               </section>
 
@@ -454,11 +691,22 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     'Tab & Section Organization',
                     'Rich Text Content Editor',
                     'Style Profile Management',
+                    'User Groups Management',
+                    'Role-Based Access Control',
+                    'Tile Admin with User & Group Support',
+                    'Granular Permission System',
+                    'Version Control & History',
+                    'Version Comparison & Restore',
                     'Access Control & Permissions',
                     'Instance Cloning',
                     'LDAP Authentication',
+                    'SAML/SSO Authentication',
                     'Admin Panel',
                     'Bulk Import/Export',
+                    'Database Cleanup Tools',
+                    'Custom Widget Development',
+                    'Tab Visibility Control',
+                    'Broadcast Messages',
                     'Tile Animations (200+ options)',
                     'Seasonal Decorations',
                     'Floating Widgets',
@@ -467,6 +715,12 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                     'Notes Widget',
                     'Weather Widget',
                     'Calculator Widget',
+                    'Password Generator Widget',
+                    'Zoom Control Widget',
+                    'Theme Toggle Widget',
+                    'Favorites Organizer Widget',
+                    'Chat Widget',
+                    'Snake Game Widget',
                     'System Monitoring Dashboard',
                     'URL Monitoring',
                     'Keyword Monitoring',
@@ -497,7 +751,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({ isOpen, onClos
                   Designed and developed by AIT Architecture team
                 </p>
                 <p className="text-xs text-brand-700 dark:text-brand-300 mt-2">
-                  © 2025 AdventHealth
+                  © 2026 AdventHealth
                 </p>
               </section>
             </div>
