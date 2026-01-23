@@ -3197,7 +3197,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
     // Ensure current user (owner) is always included in allowed users for private tiles
     let finalAllowedUsers = newAllowedUsers;
-    if (tileType === 'space' && newVisibility === 'private' && user) {
+    if (newVisibility === 'private' && user) {
       if (!finalAllowedUsers.includes(user.id)) {
         finalAllowedUsers = [...finalAllowedUsers, user.id];
       }
@@ -3219,14 +3219,24 @@ export const TileGrid: React.FC<TileGridProps> = ({
       ] : [],
       tabs: [],
       createdAt: Date.now(),
-      visibility: tileType === 'space' ? newVisibility : 'public',
-      allowedUsers: (tileType === 'space' && newVisibility === 'private') ? finalAllowedUsers : undefined,
+      visibility: newVisibility,
+      allowedUsers: (newVisibility === 'private') ? finalAllowedUsers : undefined,
       isHyperlink: tileType === 'hyperlink',
       hyperlinkUrl: tileType === 'hyperlink' ? hyperlinkUrl.trim() : undefined,
       openInNewTab: tileType === 'hyperlink' ? openInNewTab : undefined,
       visibleFrom: visibleFrom.trim() ? new Date(visibleFrom).toISOString() : undefined,
       expiresAt: expiresAt.trim() ? new Date(expiresAt).toISOString() : undefined,
-      messages: messages
+      messages: messages,
+      // Tile decoration properties - preserve false/0 values, only use undefined for empty
+      // When all values are empty/default, they'll be undefined and tile will use global style manager
+      tileBackgroundColor: tileBackgroundColor.trim() ? tileBackgroundColor.trim() : undefined,
+      tileGradientEnabled: tileGradientEnabled !== undefined ? tileGradientEnabled : undefined,
+      tileGradientColors: tileGradientEnabled && tileGradientColors && tileGradientColors.length > 0 ? tileGradientColors : undefined,
+      tileGradientColorPositions: tileGradientEnabled && tileGradientColors && tileGradientColorPositions && tileGradientColorPositions.length === tileGradientColors.length ? tileGradientColorPositions : undefined,
+      tileGradientDirection: tileGradientEnabled && tileGradientDirection !== undefined ? tileGradientDirection : undefined,
+      tileGradientType: tileGradientEnabled && tileGradientType ? tileGradientType : undefined,
+      tileBorderRadius: tileBorderRadius !== undefined && tileBorderRadius !== null ? tileBorderRadius : undefined,
+      tileTextColor: tileTextColor.trim() ? tileTextColor.trim() : undefined
     };
 
     if (onCreateTile) {
@@ -3590,7 +3600,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
     setTileType(tile.isHyperlink ? 'hyperlink' : 'space');
     setHyperlinkUrl(tile.hyperlinkUrl || '');
     setOpenInNewTab(tile.openInNewTab !== undefined ? tile.openInNewTab : true);
-    setNewVisibility(tile.visibility || 'public');
+    // For hyperlinks: if user is not admin, set visibility to private (they can only select private)
+    if (tile.isHyperlink && user && !user.is_admin && isAuthenticated) {
+      setNewVisibility('private');
+    } else {
+      setNewVisibility(tile.visibility || 'public');
+    }
     
     // Always include owner in allowed users list
     const allowedUsers = tile.allowedUsers || [];
@@ -3671,7 +3686,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
     // Ensure owner is always included in allowed users for private tiles
     let finalAllowedUsers = newAllowedUsers;
-    if (tileType === 'space' && newVisibility === 'private' && editingTile.userId) {
+    if (newVisibility === 'private' && editingTile.userId) {
       const ownerIdNum = typeof editingTile.userId === 'string' ? parseInt(editingTile.userId, 10) : editingTile.userId;
       if (!finalAllowedUsers.includes(ownerIdNum)) {
         finalAllowedUsers = [...finalAllowedUsers, ownerIdNum];
@@ -3685,8 +3700,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
       emoji: newEmoji,
       themeColor: newColor,
       group: newGroup.trim() || 'General',
-      visibility: tileType === 'space' ? newVisibility : 'public',
-      allowedUsers: (tileType === 'space' && newVisibility === 'private') ? finalAllowedUsers : undefined,
+      visibility: newVisibility,
+      allowedUsers: (newVisibility === 'private') ? finalAllowedUsers : undefined,
       isHyperlink: tileType === 'hyperlink',
       hyperlinkUrl: tileType === 'hyperlink' ? hyperlinkUrl.trim() : undefined,
       openInNewTab: tileType === 'hyperlink' ? openInNewTab : undefined,
@@ -6338,6 +6353,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
                             setTileType(e.target.value as 'space' | 'hyperlink');
                             if (e.target.value === 'hyperlink') {
                               setNewEmoji('🔗'); // Set default link emoji
+                              // Set default visibility: private for authenticated non-admin users, public for admins
+                              if (user && !user.is_admin && isAuthenticated) {
+                                setNewVisibility('private');
+                              } else if (!user || user.is_admin) {
+                                setNewVisibility('public');
+                              }
                             } else {
                               setNewEmoji('📁'); // Reset to folder for space
                             }
@@ -6478,6 +6499,130 @@ export const TileGrid: React.FC<TileGridProps> = ({
                           {userOwnedCategories.map(cat => <option key={cat} value={cat} />)}
                         </datalist>
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Select an existing category or type a new name to create one</p>
+                      </div>
+
+                      {/* Visibility Settings - For hyperlinks */}
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Visibility</label>
+                        <div className="space-y-2">
+                          {/* Public - Only for admins */}
+                          {user && user.is_admin && (
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="visibility-hyperlink"
+                                value="public"
+                                checked={newVisibility === 'public'}
+                                onChange={(e) => {
+                                  setNewVisibility(e.target.value as TileVisibility);
+                                  setShowUserSelector(false);
+                                }}
+                                className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                              />
+                              <span className="text-sm text-slate-700 dark:text-slate-300">Public - Available for everyone (guests and logged in users)</span>
+                            </label>
+                          )}
+                          {/* Authenticated - Only for admins */}
+                          {user && user.is_admin && (
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="visibility-hyperlink"
+                                value="authenticated"
+                                checked={newVisibility === 'authenticated'}
+                                onChange={(e) => {
+                                  setNewVisibility(e.target.value as TileVisibility);
+                                  setShowUserSelector(false);
+                                }}
+                                className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                              />
+                              <span className="text-sm text-slate-700 dark:text-slate-300">Authenticated - Available for logged in users only</span>
+                            </label>
+                          )}
+                          {/* Private - For admins and authenticated users */}
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="visibility-hyperlink"
+                              value="private"
+                              checked={newVisibility === 'private'}
+                              onChange={(e) => {
+                                setNewVisibility(e.target.value as TileVisibility);
+                                setShowUserSelector(true);
+                              }}
+                              className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300">Private - Available for specific users only</span>
+                          </label>
+                        </div>
+
+                        {/* User Selector for Private Visibility */}
+                        {newVisibility === 'private' && isAuthenticated && (
+                          <div className="mt-3">
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Select Users</label>
+                            {isLoadingUsers ? (
+                              <div className="text-sm text-slate-500 dark:text-slate-400">Loading users...</div>
+                            ) : (
+                              <div className="max-h-32 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-slate-50 dark:bg-slate-900/50">
+                                {availableUsers.length === 0 ? (
+                                  <div className="text-sm text-slate-500 dark:text-slate-400">No users available</div>
+                                ) : (
+                                  <div className="space-y-1.5">
+                                    {availableUsers.map(u => {
+                                      // For new tiles, the current user is the owner
+                                      const isCurrentUserOwner = user && u.id === user.id;
+                                      return (
+                                        <label 
+                                          key={u.id} 
+                                          className={`flex items-center gap-2 p-1.5 rounded ${
+                                            isCurrentUserOwner 
+                                              ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
+                                              : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800'
+                                          }`}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={newAllowedUsers.includes(u.id) || isCurrentUserOwner}
+                                            disabled={isCurrentUserOwner}
+                                            onChange={(e) => {
+                                              if (isCurrentUserOwner) return;
+                                              if (e.target.checked) {
+                                                setNewAllowedUsers([...newAllowedUsers, u.id]);
+                                              } else {
+                                                setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
+                                              }
+                                            }}
+                                            className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${
+                                              isCurrentUserOwner ? 'opacity-50 cursor-not-allowed' : ''
+                                            }`}
+                                          />
+                                          <span className={`text-sm flex-1 ${
+                                            isCurrentUserOwner 
+                                              ? 'text-amber-800 dark:text-amber-200 font-medium'
+                                              : 'text-slate-700 dark:text-slate-300'
+                                          }`}>
+                                            {u.username}
+                                          </span>
+                                          {isCurrentUserOwner && (
+                                            <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
+                                              Owner (You)
+                                            </span>
+                                          )}
+                                          {u.auth_source && u.auth_source !== 'local' && (
+                                            <span className="text-xs text-slate-500 dark:text-slate-400">({u.auth_source})</span>
+                                          )}
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            {newVisibility === 'private' && newAllowedUsers.length === 0 && (
+                              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Please select at least one user for private hyperlinks</p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </>
                   )}
@@ -6743,7 +6888,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                       onClick={handleCreateTile}
                       disabled={
                         !newTitle.trim() ||
-                        (tileType === 'space' && newVisibility === 'private' && newAllowedUsers.length === 0) ||
+                        (newVisibility === 'private' && newAllowedUsers.length === 0) ||
                         (tileType === 'hyperlink' && !hyperlinkUrl.trim())
                       }
                       className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-brand-500/20 hover:shadow-lg hover:shadow-brand-500/30 hover:scale-105 active:scale-95"
@@ -6810,27 +6955,25 @@ export const TileGrid: React.FC<TileGridProps> = ({
                 >
                   General
                 </button>
+                <button
+                  onClick={() => setEditModalActiveTab('decoration')}
+                  className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${editModalActiveTab === 'decoration'
+                    ? 'text-brand-600 dark:text-brand-400 border-brand-500'
+                    : 'text-slate-500 dark:text-slate-400 border-transparent hover:text-slate-700 dark:hover:text-slate-300'
+                    }`}
+                >
+                  Tile Decoration
+                </button>
                 {tileType === 'space' && (
-                  <>
-                    <button
-                      onClick={() => setEditModalActiveTab('decoration')}
-                      className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${editModalActiveTab === 'decoration'
-                        ? 'text-brand-600 dark:text-brand-400 border-brand-500'
-                        : 'text-slate-500 dark:text-slate-400 border-transparent hover:text-slate-700 dark:hover:text-slate-300'
-                        }`}
-                    >
-                      Tile Decoration
-                    </button>
-                    <button
-                      onClick={() => setEditModalActiveTab('messages')}
-                      className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${editModalActiveTab === 'messages'
-                        ? 'text-brand-600 dark:text-brand-400 border-brand-500'
-                        : 'text-slate-500 dark:text-slate-400 border-transparent hover:text-slate-700 dark:hover:text-slate-300'
-                        }`}
-                    >
-                      Tile Message Board
-                    </button>
-                  </>
+                  <button
+                    onClick={() => setEditModalActiveTab('messages')}
+                    className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${editModalActiveTab === 'messages'
+                      ? 'text-brand-600 dark:text-brand-400 border-brand-500'
+                      : 'text-slate-500 dark:text-slate-400 border-transparent hover:text-slate-700 dark:hover:text-slate-300'
+                      }`}
+                  >
+                    Tile Message Board
+                  </button>
                 )}
               </div>
 
@@ -7481,6 +7624,131 @@ export const TileGrid: React.FC<TileGridProps> = ({
                             <span className="text-sm text-slate-700 dark:text-slate-300">Open in same tab</span>
                           </label>
                         </div>
+                      </div>
+                    )}
+
+                    {/* Visibility Settings - For hyperlinks */}
+                    {tileType === 'hyperlink' && (
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Visibility</label>
+                        <div className="space-y-2">
+                          {/* Public - Only for admins */}
+                          {user && user.is_admin && (
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="editVisibility-hyperlink"
+                                value="public"
+                                checked={newVisibility === 'public'}
+                                onChange={(e) => {
+                                  setNewVisibility(e.target.value as TileVisibility);
+                                  setShowUserSelector(false);
+                                }}
+                                className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                              />
+                              <span className="text-sm text-slate-700 dark:text-slate-300">Public - Available for everyone (guests and logged in users)</span>
+                            </label>
+                          )}
+                          {/* Authenticated - Only for admins */}
+                          {user && user.is_admin && (
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="editVisibility-hyperlink"
+                                value="authenticated"
+                                checked={newVisibility === 'authenticated'}
+                                onChange={(e) => {
+                                  setNewVisibility(e.target.value as TileVisibility);
+                                  setShowUserSelector(false);
+                                }}
+                                className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                              />
+                              <span className="text-sm text-slate-700 dark:text-slate-300">Authenticated - Available for logged in users only</span>
+                            </label>
+                          )}
+                          {/* Private - For admins and authenticated users */}
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="editVisibility-hyperlink"
+                              value="private"
+                              checked={newVisibility === 'private'}
+                              onChange={(e) => {
+                                setNewVisibility(e.target.value as TileVisibility);
+                                setShowUserSelector(true);
+                              }}
+                              className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300">Private - Available for specific users only</span>
+                          </label>
+                        </div>
+
+                        {/* User Selector for Private Visibility */}
+                        {newVisibility === 'private' && isAuthenticated && (
+                          <div className="mt-3">
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Select Users</label>
+                            {isLoadingUsers ? (
+                              <div className="text-sm text-slate-500 dark:text-slate-400">Loading users...</div>
+                            ) : (
+                              <div className="max-h-32 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-slate-50 dark:bg-slate-900/50">
+                                {availableUsers.length === 0 ? (
+                                  <div className="text-sm text-slate-500 dark:text-slate-400">No users available</div>
+                                ) : (
+                                  <div className="space-y-1.5">
+                                    {availableUsers.map(u => {
+                                      const isOwner = editingTile && editingTile.userId && u.id === (typeof editingTile.userId === 'string' ? parseInt(editingTile.userId, 10) : editingTile.userId);
+                                      return (
+                                        <label 
+                                          key={u.id} 
+                                          className={`flex items-center gap-2 p-1.5 rounded ${
+                                            isOwner 
+                                              ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
+                                              : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800'
+                                          }`}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={newAllowedUsers.includes(u.id) || isOwner}
+                                            disabled={isOwner}
+                                            onChange={(e) => {
+                                              if (isOwner) return;
+                                              if (e.target.checked) {
+                                                setNewAllowedUsers([...newAllowedUsers, u.id]);
+                                              } else {
+                                                setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
+                                              }
+                                            }}
+                                            className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${
+                                              isOwner ? 'opacity-50 cursor-not-allowed' : ''
+                                            }`}
+                                          />
+                                          <span className={`text-sm flex-1 ${
+                                            isOwner 
+                                              ? 'text-amber-800 dark:text-amber-200 font-medium'
+                                              : 'text-slate-700 dark:text-slate-300'
+                                          }`}>
+                                            {u.username}
+                                          </span>
+                                          {isOwner && (
+                                            <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
+                                              Owner
+                                            </span>
+                                          )}
+                                          {u.auth_source && u.auth_source !== 'local' && (
+                                            <span className="text-xs text-slate-500 dark:text-slate-400">({u.auth_source})</span>
+                                          )}
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            {newVisibility === 'private' && newAllowedUsers.length === 0 && (
+                              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Please select at least one user for private hyperlinks</p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -8170,7 +8438,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                     disabled={
                       !newTitle.trim() ||
                       (tileType === 'hyperlink' && !hyperlinkUrl.trim()) ||
-                      (tileType === 'space' && newVisibility === 'private' && newAllowedUsers.length === 0)
+                      (newVisibility === 'private' && newAllowedUsers.length === 0)
                     }
                     className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-brand-500/20 hover:shadow-lg hover:shadow-brand-500/30 hover:scale-105 active:scale-95"
                   >
