@@ -265,9 +265,9 @@ const AppContent: React.FC = () => {
       try {
         const cfg = await performanceAnalyticsService.getConfig();
         if (!cfg.enabled) return;
-        // Location endpoints require an authenticated session (privacy + avoids guest prompts)
-        if (!isAuthenticated) return;
-        await performanceAnalyticsService.ensureLocation(cfg, { allowPrompt: false });
+        // Request browser geolocation for accurate performance analytics
+        // Works for both authenticated and anonymous users
+        await performanceAnalyticsService.ensureLocation(cfg, { allowPrompt: true });
       } catch {
         // ignore - analytics must never affect app UX
       }

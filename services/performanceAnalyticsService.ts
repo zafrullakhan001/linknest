@@ -208,8 +208,9 @@ export const performanceAnalyticsService = {
     const allowPrompt = opts?.allowPrompt === true;
     const geo = await getPreciseGeo({ allowPrompt });
 
-    // If we have an authenticated user, also store in server session (reverse geocode + user_geolocations)
-    if (geo && cfg.userId) {
+    // Store browser geolocation in server session (works for both authenticated and anonymous users)
+    // This enables reverse geocoding and populates session with accurate location data
+    if (geo) {
       try {
         await fetchJson(`${API_BASE}/analytics/update-location`, {
           method: 'POST',
@@ -220,10 +221,10 @@ export const performanceAnalyticsService = {
           })
         });
       } catch {
-        // ignore
+        // ignore - geolocation will still be included in metrics from cache
       }
-    } else if (cfg.userId && cfg.needsLocation) {
-      // Fallback to IP update (no coords) if authenticated and session location is missing
+    } else if (cfg.needsLocation) {
+      // Fallback to IP-based location if browser geolocation unavailable
       try {
         await fetchJson(`${API_BASE}/analytics/update-location`, { method: 'POST' });
       } catch {

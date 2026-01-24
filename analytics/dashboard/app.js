@@ -15,12 +15,68 @@ let currentView = 'bubbles'; // 'bubbles' | 'table'
 let chartSearchQuery = '';
 let latencyThreshold = 2000;
 
+// Debounce helper function
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
 // Color scale for latency (green = fast, red = slow)
 const colorScale = d3.scaleSequential(d3.interpolateRdYlGn)
     .domain([500, 0]); // 500ms = red, 0ms = green
 
 // Initialize dashboard
 document.addEventListener('DOMContentLoaded', () => {
+    // Restore previously selected chart tab from localStorage
+    try {
+        const savedChartType = localStorage.getItem('linknest_active_chart');
+        if (savedChartType && chartMetadata[savedChartType]) {
+            activeChartType = savedChartType;
+            // Update tab UI to show the saved chart as active
+            document.querySelectorAll('.chart-tab').forEach(tab => {
+                tab.classList.toggle('is-active', tab.dataset.chart === savedChartType);
+            });
+            // Update chart view visibility
+            document.querySelectorAll('.chart-view').forEach(view => {
+                view.classList.remove('is-active');
+            });
+            const chartMap = {
+                bubble: 'bubble-chart',
+                timeseries: 'timeseries-chart',
+                bar: 'bar-chart',
+                pie: 'pie-chart',
+                histogram: 'histogram-chart',
+                scatter: 'scatter-chart',
+                heatmap: 'heatmap-chart',
+                worldmap: 'worldmap-chart',
+                table: 'bubble-table-container'
+            };
+            const chartId = chartMap[savedChartType];
+            const chartView = document.getElementById(chartId);
+            if (chartView) {
+                chartView.classList.add('is-active');
+            }
+            // Update title and subtitle
+            const metadata = chartMetadata[savedChartType];
+            if (metadata) {
+                document.getElementById('chart-title').textContent = metadata.title;
+                document.getElementById('chart-subtitle').textContent = metadata.subtitle;
+            }
+        }
+    } catch (e) {
+        console.debug('Failed to restore chart preference:', e);
+    }
+    
+    // Restore all filter preferences from localStorage
+    restoreFilterPreferences();
+    
     // Initialize bubble chart first
     initBubbleChart();
 
@@ -30,10 +86,74 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshData();
     }, 100);
 
-    // Event listeners
+    // Event listeners with persistence
     document.getElementById('refresh-btn').addEventListener('click', refreshData);
-    document.getElementById('url-filter').addEventListener('change', refreshData);
-    document.getElementById('granularity-filter').addEventListener('change', refreshData);
+    document.getElementById('url-filter').addEventListener('change', () => {
+        saveFilterPreference('url-filter');
+        refreshData();
+    });
+    document.getElementById('granularity-filter').addEventListener('change', () => {
+        saveFilterPreference('granularity-filter');
+        refreshData();
+    });
+    document.getElementById('username-filter').addEventListener('input', debounce(() => {
+        saveFilterPreference('username-filter');
+        refreshData();
+    }, 500));
+    document.getElementById('ip-filter').addEventListener('input', debounce(() => {
+        saveFilterPreference('ip-filter');
+        refreshData();
+    }, 500));
+    document.getElementById('auth-filter').addEventListener('change', () => {
+        saveFilterPreference('auth-filter');
+        refreshData();
+    });
+
+    // Time Filter Presets
+    const periodInput = document.getElementById('period-filter');
+    const presetBtns = document.querySelectorAll('.time-presets button[data-period]');
+    const customBtn = document.getElementById('custom-range-btn');
+    const customRangeDiv = document.getElementById('custom-range-inputs');
+
+    presetBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            presetBtns.forEach(b => b.classList.remove('is-active'));
+            if (customBtn) customBtn.classList.remove('is-active');
+            btn.classList.add('is-active');
+            if (customRangeDiv) customRangeDiv.style.display = 'none';
+
+            periodInput.value = btn.dataset.period;
+            saveFilterPreference('period-filter');
+            saveFilterPreference('period-preset', btn.dataset.period);
+            periodInput.dispatchEvent(new Event('change'));
+        });
+    });
+
+    if (customBtn) {
+        customBtn.addEventListener('click', () => {
+            presetBtns.forEach(b => b.classList.remove('is-active'));
+            customBtn.classList.add('is-active');
+            if (customRangeDiv) customRangeDiv.style.display = 'flex';
+        });
+    }
+
+    const applyCustomBtn = document.getElementById('apply-custom-range');
+    if (applyCustomBtn) {
+        applyCustomBtn.addEventListener('click', () => {
+            const start = document.getElementById('start-date').value;
+            const end = document.getElementById('end-date').value;
+            if (start && end) {
+                periodInput.value = `custom:${start}:${end}`;
+                saveFilterPreference('period-filter');
+                saveFilterPreference('period-preset', 'custom');
+                saveFilterPreference('start-date');
+                saveFilterPreference('end-date');
+                periodInput.dispatchEvent(new Event('change'));
+            } else {
+                alert('Please select both start and end dates.');
+            }
+        });
+    }
 
     // Chart tab switching
     const chartTabs = document.querySelectorAll('.chart-tab');
@@ -45,14 +165,21 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Reload filters when period or measurement type changes
-    document.getElementById('period-filter').addEventListener('change', async () => {
-        await loadFilters();
-        refreshData();
-    });
-    document.getElementById('measurement-filter').addEventListener('change', async () => {
-        await loadFilters();
-        refreshData();
-    });
+    if (periodInput) {
+        periodInput.addEventListener('change', async () => {
+            await loadFilters();
+            refreshData();
+        });
+    }
+
+    const measurementFilter = document.getElementById('measurement-filter');
+    if (measurementFilter) {
+        measurementFilter.addEventListener('change', async () => {
+            saveFilterPreference('measurement-filter');
+            await loadFilters();
+            refreshData();
+        });
+    }
 
     // Auto-refresh every 30 seconds
     setInterval(refreshData, 30000);
@@ -66,6 +193,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (searchInput) {
         searchInput.addEventListener('input', (e) => {
             chartSearchQuery = e.target.value.toLowerCase();
+            saveFilterPreference('chart-search');
             applyLiveFilters();
         });
     }
@@ -76,6 +204,7 @@ document.addEventListener('DOMContentLoaded', () => {
         thresholdInput.addEventListener('input', (e) => {
             latencyThreshold = parseInt(e.target.value);
             if (thresholdVal) thresholdVal.textContent = latencyThreshold >= 2000 ? 'Off' : latencyThreshold + 'ms';
+            saveFilterPreference('latency-threshold');
             applyLiveFilters();
         });
     }
@@ -102,11 +231,117 @@ function applyLiveFilters() {
     }
 }
 
+// ============================================
+// FILTER PERSISTENCE FUNCTIONS
+// ============================================
+
+function saveFilterPreference(filterId, customValue) {
+    try {
+        const element = document.getElementById(filterId);
+        if (!element) return;
+        
+        const value = customValue !== undefined ? customValue : 
+                      (element.type === 'checkbox' ? element.checked : element.value);
+        
+        localStorage.setItem(`linknest_filter_${filterId}`, JSON.stringify(value));
+    } catch (e) {
+        console.debug('Failed to save filter preference:', filterId, e);
+    }
+}
+
+function restoreFilterPreferences() {
+    try {
+        // Restore all filter values
+        const filterIds = [
+            'period-filter',
+            'url-filter',
+            'granularity-filter',
+            'measurement-filter',
+            'username-filter',
+            'ip-filter',
+            'auth-filter',
+            'start-date',
+            'end-date',
+            'chart-search',
+            'latency-threshold'
+        ];
+        
+        filterIds.forEach(filterId => {
+            const element = document.getElementById(filterId);
+            if (!element) return;
+            
+            const savedValue = localStorage.getItem(`linknest_filter_${filterId}`);
+            if (savedValue !== null) {
+                try {
+                    const value = JSON.parse(savedValue);
+                    if (element.type === 'checkbox') {
+                        element.checked = value;
+                    } else {
+                        element.value = value;
+                    }
+                } catch (e) {
+                    // Invalid JSON, skip
+                }
+            }
+        });
+        
+        // Restore time preset button state
+        const savedPreset = localStorage.getItem('linknest_filter_period-preset');
+        if (savedPreset) {
+            try {
+                const preset = JSON.parse(savedPreset);
+                // Update button active state
+                const presetBtns = document.querySelectorAll('.time-presets button[data-period]');
+                const customBtn = document.getElementById('custom-range-btn');
+                
+                presetBtns.forEach(btn => {
+                    btn.classList.toggle('is-active', btn.dataset.period === preset);
+                });
+                
+                if (preset === 'custom') {
+                    if (customBtn) customBtn.classList.add('is-active');
+                    presetBtns.forEach(btn => btn.classList.remove('is-active'));
+                    const customRangeDiv = document.getElementById('custom-range-inputs');
+                    if (customRangeDiv) customRangeDiv.style.display = 'flex';
+                } else {
+                    if (customBtn) customBtn.classList.remove('is-active');
+                }
+            } catch (e) {
+                // Invalid JSON, skip
+            }
+        }
+        
+        // Restore zoom level
+        const savedZoom = localStorage.getItem('linknest_zoom_level');
+        if (savedZoom) {
+            try {
+                currentZoom = parseFloat(JSON.parse(savedZoom));
+                updateZoomDisplay();
+            } catch (e) {
+                // Invalid value, skip
+            }
+        }
+        
+        // Restore latency threshold display
+        const thresholdVal = document.getElementById('threshold-val');
+        const thresholdInput = document.getElementById('latency-threshold');
+        if (thresholdVal && thresholdInput) {
+            latencyThreshold = parseInt(thresholdInput.value) || 2000;
+            thresholdVal.textContent = latencyThreshold >= 2000 ? 'Off' : latencyThreshold + 'ms';
+        }
+        
+    } catch (e) {
+        console.debug('Failed to restore filter preferences:', e);
+    }
+}
+
 function getFilteredData() {
     return currentData.filter(d => {
         const matchesSearch = !chartSearchQuery ||
             (d.link_url && d.link_url.toLowerCase().includes(chartSearchQuery)) ||
-            (d.location && d.location.toLowerCase().includes(chartSearchQuery));
+            (d.region && d.region.toLowerCase().includes(chartSearchQuery)) ||
+            (d.country_name && d.country_name.toLowerCase().includes(chartSearchQuery)) ||
+            (d.city_name && d.city_name.toLowerCase().includes(chartSearchQuery));
 
         const matchesThreshold = !latencyThreshold || latencyThreshold >= 2000 || (d.avg_latency > latencyThreshold);
 
@@ -156,6 +391,11 @@ const chartMetadata = {
         subtitle: 'Latency patterns by time of day and day of week',
         options: ''
     },
+    worldmap: {
+        title: 'World Map - Geographic Distribution',
+        subtitle: 'Global view with color-coded latency indicators',
+        options: ''
+    },
     table: {
         title: 'Detailed Data Table',
         subtitle: 'Complete performance metrics for all locations',
@@ -166,6 +406,14 @@ const chartMetadata = {
 // Switch between charts
 function switchChart(chartType) {
     activeChartType = chartType;
+    
+    // Save to localStorage for persistence
+    try {
+        localStorage.setItem('linknest_active_chart', chartType);
+    } catch (e) {
+        console.debug('Failed to save chart preference:', e);
+    }
+    
     // Update tabs
     document.querySelectorAll('.chart-tab').forEach(tab => {
         tab.classList.toggle('is-active', tab.dataset.chart === chartType);
@@ -185,6 +433,7 @@ function switchChart(chartType) {
         histogram: 'histogram-chart',
         scatter: 'scatter-chart',
         heatmap: 'heatmap-chart',
+        worldmap: 'worldmap-chart',
         table: 'bubble-table-container'
     };
 
@@ -227,13 +476,18 @@ function switchChart(chartType) {
         }
     }
 
-    // Render chart if needed (for charts that need re-rendering on view)
-    if (chartType === 'timeseries' && currentData.length > 0) {
-        renderTimeSeriesChart();
-    } else if (chartType === 'heatmap' && currentData.length > 0) {
-        renderHeatmap();
-    } else if (chartType === 'table' && currentData.length > 0) {
-        renderBubbleTable(currentData);
+    // Final render with latest data and filters
+    if (currentData.length > 0) {
+        renderCurrentChart();
+    }
+    
+    // If switching to world map, ensure map is properly sized after render
+    if (chartType === 'worldmap') {
+        setTimeout(() => {
+            if (typeof worldMapInstance !== 'undefined' && worldMapInstance) {
+                worldMapInstance.invalidateSize();
+            }
+        }, 150);
     }
 }
 
@@ -286,12 +540,26 @@ function zoomChart(delta) {
     currentZoom = newZoom;
     updateZoomDisplay();
     applyZoom();
+    
+    // Save zoom level to localStorage
+    try {
+        localStorage.setItem('linknest_zoom_level', JSON.stringify(currentZoom));
+    } catch (e) {
+        console.debug('Failed to save zoom level:', e);
+    }
 }
 
 function resetZoom() {
     currentZoom = 1.0;
     updateZoomDisplay();
     applyZoom();
+    
+    // Save reset zoom level
+    try {
+        localStorage.setItem('linknest_zoom_level', JSON.stringify(currentZoom));
+    } catch (e) {
+        console.debug('Failed to save zoom level:', e);
+    }
 }
 
 function updateZoomDisplay() {
@@ -484,7 +752,7 @@ function renderBubbleTable(data) {
     if (!tbody) return;
 
     if (!Array.isArray(data) || data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="13" class="text-center">No data yet</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="15" class="text-center">No data yet</td></tr>';
         return;
     }
 
@@ -510,6 +778,12 @@ function renderBubbleTable(data) {
         const cityDisplay = city && city !== 'Unknown' ? city : '—';
         const hasMap = !!mapsUrl;
 
+        // Display username and IP
+        const username = (item.username || '').trim();
+        const ipAddress = (item.ip_address || '').trim();
+        const usernameDisplay = username || '<span class="text-muted">—</span>';
+        const ipDisplay = ipAddress || '<span class="text-muted">—</span>';
+
         return `
             <tr>
                 <td>
@@ -518,6 +792,8 @@ function renderBubbleTable(data) {
                         <div class="text-muted mono">${escapeHtml(item.url || '')}</div>
                     </div>
                 </td>
+                <td class="mono">${usernameDisplay}</td>
+                <td class="mono">${ipDisplay}</td>
                 <td class="mono">${escapeHtml(avg)}ms</td>
                 <td class="mono">${escapeHtml(p95)}ms</td>
                 <td>${success === null || Number.isNaN(success) ? '<span class="badge-dim">—</span>' : `<span class="badge-dim">${escapeHtml(success)}%</span>`}</td>
@@ -638,6 +914,9 @@ function renderCurrentChart() {
             break;
         case 'heatmap':
             renderHeatmap(filtered);
+            break;
+        case 'worldmap':
+            renderWorldMap(filtered);
             break;
         case 'table':
             renderBubbleTable(filtered);
@@ -845,12 +1124,17 @@ async function loadBubbleData() {
         const granularity = document.getElementById('granularity-filter').value;
         const measurementType = document.getElementById('measurement-filter').value;
         const urlFilter = document.getElementById('url-filter').value;
+        const usernameFilter = document.getElementById('username-filter').value.trim();
+        const ipFilter = document.getElementById('ip-filter').value.trim();
+        const authFilter = document.getElementById('auth-filter').value;
 
         // Update stat label based on granularity
         const statLabel = document.getElementById('stat-label-items');
         if (statLabel) {
             const labels = {
                 'url': 'Total URLs',
+                'username': 'Total Users',
+                'ip': 'Total IPs',
                 'country': 'Total Countries',
                 'region': 'Total Regions',
                 'city': 'Total Cities'
@@ -860,13 +1144,31 @@ async function loadBubbleData() {
 
         // Build query parameters
         const params = new URLSearchParams({
-            period: period,
+            period: period.startsWith('custom:') ? 'custom' : period,
             granularity: granularity,
             type: measurementType
         });
 
+        if (period.startsWith('custom:')) {
+            const parts = period.split(':');
+            params.append('start', parts[1]);
+            params.append('end', parts[2]);
+        }
+
         if (urlFilter) {
             params.append('url', urlFilter);
+        }
+
+        if (usernameFilter) {
+            params.append('username', usernameFilter);
+        }
+
+        if (ipFilter) {
+            params.append('ip', ipFilter);
+        }
+
+        if (authFilter) {
+            params.append('authenticated', authFilter);
         }
 
         // Fetch real data from API
@@ -938,22 +1240,11 @@ async function loadBubbleData() {
         });
 
         console.log('Loaded real bubble data:', currentData.length, 'regions');
-        renderBubbles(currentData);
-
-        if (currentView === 'table') {
-            renderBubbleTable(currentData);
-        }
-
     } catch (error) {
         console.error('Error loading bubble data:', error);
         currentData = [];
-        renderBubbles([]);
-        if (currentView === 'table') {
-            renderBubbleTable([]);
-        }
     }
 }
-
 // Sample data function removed - dashboard now shows only real data
 
 // Render animated bubbles
@@ -1257,7 +1548,16 @@ async function renderTimeSeriesChart(filteredData) {
         let timeSeriesData = [];
 
         try {
-            const metricsResponse = await fetch(`/api/metrics/query?period=${period}&type=${measurementType}${urlFilter ? '&url=' + encodeURIComponent(urlFilter) : ''}`);
+            let queryUrl = `/api/metrics/query?type=${measurementType}${urlFilter ? '&url=' + encodeURIComponent(urlFilter) : ''}`;
+
+            if (period.startsWith('custom:')) {
+                const parts = period.split(':');
+                queryUrl += `&period=custom&start=${parts[1]}&end=${parts[2]}`;
+            } else {
+                queryUrl += `&period=${period}`;
+            }
+
+            const metricsResponse = await fetch(queryUrl);
 
             if (metricsResponse.ok) {
                 const metricsResult = await metricsResponse.json();
@@ -1272,12 +1572,12 @@ async function renderTimeSeriesChart(filteredData) {
         if (timeSeriesData.length === 0 && baseData.length > 0) {
             const urlGroups = {};
             baseData.forEach(item => {
-                const url = item.link_url || 'Unknown';
+                const url = item.url || item.link_url || 'Unknown';
                 if (!urlGroups[url]) {
                     urlGroups[url] = {
                         url: url,
-                        latency: parseInt(item.avg_latency) || 0,
-                        measurements: parseInt(item.measurement_count) || 0
+                        latency: parseInt(item.latency || item.avg_latency) || 0,
+                        measurements: parseInt(item.measurements || item.measurement_count) || 0
                     };
                 }
             });
@@ -1294,7 +1594,7 @@ async function renderTimeSeriesChart(filteredData) {
                     const variation = (Math.random() - 0.5) * 0.3;
                     timeSeriesData.push({
                         timestamp: timestamp.toISOString(),
-                        link_url: urlData.url,
+                        url: urlData.url,
                         avg_latency: Math.max(10, urlData.latency * (1 + variation)),
                         measurement_count: Math.floor(urlData.measurements / pointCount)
                     });
@@ -1305,8 +1605,8 @@ async function renderTimeSeriesChart(filteredData) {
         // Apply filters to real time-series data if fetching was successful
         if (timeSeriesData.length > 0) {
             timeSeriesData = timeSeriesData.filter(d => {
-                const matchesSearch = !chartSearchQuery ||
-                    (d.link_url && d.link_url.toLowerCase().includes(chartSearchQuery));
+                const targetUrl = d.url || d.link_url || '';
+                const matchesSearch = !chartSearchQuery || targetUrl.toLowerCase().includes(chartSearchQuery);
                 const matchesThreshold = !latencyThreshold || latencyThreshold >= 2000 || (d.avg_latency > latencyThreshold);
                 return matchesSearch && matchesThreshold;
             });
@@ -1322,7 +1622,7 @@ async function renderTimeSeriesChart(filteredData) {
         // Group data by URL
         const urlMap = {};
         timeSeriesData.forEach(d => {
-            const url = d.link_url || 'Unknown';
+            const url = d.url || d.link_url || 'Unknown';
             if (!urlMap[url]) {
                 urlMap[url] = [];
             }
@@ -1957,9 +2257,15 @@ async function renderHeatmap(filteredData) {
         const urlFilter = document.getElementById('url-filter').value;
 
         const params = new URLSearchParams({
-            period: period,
+            period: period.startsWith('custom:') ? 'custom' : period,
             type: measurementType
         });
+
+        if (period.startsWith('custom:')) {
+            const parts = period.split(':');
+            params.append('start', parts[1]);
+            params.append('end', parts[2]);
+        }
 
         if (urlFilter) params.append('url', urlFilter);
 
@@ -2154,6 +2460,34 @@ function exportChartDataToCSV() {
             ]);
             break;
 
+        case 'worldmap':
+            // Export geographic data with lat/lon
+            if (currentData.length === 0) {
+                alert('No data available to export');
+                return;
+            }
+
+            headers = ['Location', 'Country', 'Region', 'City', 'Latitude', 'Longitude', 'URL', 'Username', 'IP Address', 'Avg Latency (ms)', 'P95 Latency (ms)', 'Measurements', 'Success Rate'];
+            dataToExport = currentData
+                .filter(d => d.latitude && d.longitude && Math.abs(d.latitude) > 0.0001 && Math.abs(d.longitude) > 0.0001)
+                .map(d => [
+                    d.city_name || d.city || d.region_name || d.region || 'Unknown',
+                    d.country_name || d.country || 'Unknown',
+                    d.region_name || d.region || 'Unknown',
+                    d.city_name || d.city || 'Unknown',
+                    d.latitude || 0,
+                    d.longitude || 0,
+                    d.link_url || 'Unknown',
+                    d.username || 'Anonymous',
+                    d.ip_address || 'N/A',
+                    d.avg_latency || 0,
+                    d.p95_latency || 0,
+                    d.measurement_count || d.measurements || 0,
+                    d.success_rate ? Math.round(d.success_rate) + '%' : 'N/A'
+                ]);
+            filename = `linknest_analytics_worldmap_${new Date().toISOString().split('T')[0]}.csv`;
+            break;
+
         case 'timeseries':
             if (lastTimeSeriesData.length === 0) {
                 alert('No time-series data available to export');
@@ -2210,5 +2544,264 @@ function downloadCSV(content, filename) {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+    }
+}
+
+// ============================================
+// WORLD MAP VISUALIZATION
+// ============================================
+
+let worldMapInstance = null;
+let worldMapMarkers = [];
+
+function renderWorldMap(data) {
+    const container = document.getElementById('worldmap-chart');
+    if (!container) return;
+
+    // Filter out data without valid coordinates
+    const validData = data.filter(d => {
+        const lat = parseFloat(d.latitude);
+        const lon = parseFloat(d.longitude);
+        return !isNaN(lat) && !isNaN(lon) && 
+               lat !== 0 && lon !== 0 &&
+               Math.abs(lat) > 0.0001 && Math.abs(lon) > 0.0001;
+    });
+
+    if (validData.length === 0) {
+        container.innerHTML = `
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding: 40px; text-align: center;">
+                <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5" style="margin-bottom: 16px;">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                </svg>
+                <h3 style="color: #475569; margin: 0 0 8px 0; font-size: 16px; font-weight: 600;">No Geographic Data Available</h3>
+                <p style="color: #94a3b8; margin: 0; font-size: 14px; max-width: 400px;">
+                    No valid location coordinates found in the current dataset. Please ensure geolocation is enabled in your browser and allow location access when prompted.
+                </p>
+                <p style="color: #cbd5e1; margin: 16px 0 0 0; font-size: 13px;">
+                    <strong>Tip:</strong> Open LinkNest and allow location access to start collecting geographic performance data.
+                </p>
+            </div>
+        `;
+        return;
+    }
+
+    // Initialize map if not already created
+    if (!worldMapInstance) {
+        container.innerHTML = '<div id="map-container" style="width: 100%; height: 100%; border-radius: 8px;"></div>';
+        
+        // Initialize Leaflet map
+        worldMapInstance = L.map('map-container', {
+            center: [20, 0],
+            zoom: 2,
+            minZoom: 2,
+            maxZoom: 18,
+            worldCopyJump: true
+        });
+
+        // Add OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            maxZoom: 19
+        }).addTo(worldMapInstance);
+
+        // Add legend
+        const legend = L.control({ position: 'bottomright' });
+        legend.onAdd = function() {
+            const div = L.DomUtil.create('div', 'map-legend');
+            div.style.background = 'white';
+            div.style.padding = '12px';
+            div.style.borderRadius = '8px';
+            div.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+            div.style.fontSize = '12px';
+            div.style.lineHeight = '1.6';
+            
+            div.innerHTML = `
+                <div style="font-weight: 600; margin-bottom: 8px; color: #1e293b;">Latency Scale</div>
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                    <div style="width: 16px; height: 16px; border-radius: 50%; background: #22c55e; border: 2px solid white;"></div>
+                    <span style="color: #475569;">Fast (&lt;100ms)</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                    <div style="width: 16px; height: 16px; border-radius: 50%; background: #eab308; border: 2px solid white;"></div>
+                    <span style="color: #475569;">Moderate (100-300ms)</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                    <div style="width: 16px; height: 16px; border-radius: 50%; background: #f97316; border: 2px solid white;"></div>
+                    <span style="color: #475569;">Slow (300-500ms)</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="width: 16px; height: 16px; border-radius: 50%; background: #ef4444; border: 2px solid white;"></div>
+                    <span style="color: #475569;">Critical (&gt;500ms)</span>
+                </div>
+            `;
+            return div;
+        };
+        legend.addTo(worldMapInstance);
+    }
+
+    // Clear existing markers
+    worldMapMarkers.forEach(marker => marker.remove());
+    worldMapMarkers = [];
+
+    // Function to get color based on latency
+    function getLatencyColor(latency) {
+        if (latency < 100) return '#22c55e';      // Green - Fast
+        if (latency < 300) return '#eab308';      // Yellow - Moderate
+        if (latency < 500) return '#f97316';      // Orange - Slow
+        return '#ef4444';                          // Red - Critical
+    }
+
+    // Function to get marker size based on measurement count
+    function getMarkerSize(measurements) {
+        const baseSize = 8;
+        const maxSize = 30;
+        const scale = Math.log10(measurements + 1) * 5;
+        return Math.min(baseSize + scale, maxSize);
+    }
+
+    // Create markers for each data point
+    validData.forEach(d => {
+        const lat = parseFloat(d.latitude);
+        const lon = parseFloat(d.longitude);
+        const latency = parseFloat(d.avg_latency) || 0;
+        const measurements = parseInt(d.measurement_count || d.measurements || 0);
+        const url = d.link_url || d.url || 'Unknown URL';
+        const location = d.city_name || d.city || d.region_name || d.region || d.country_name || d.country || 'Unknown';
+        const username = d.username || 'Anonymous';
+        const ip = d.ip_address || 'N/A';
+        const p95 = d.p95_latency || 'N/A';
+        const successRate = d.success_rate ? Math.round(d.success_rate) + '%' : 'N/A';
+
+        const color = getLatencyColor(latency);
+        const size = getMarkerSize(measurements);
+
+        // Create circle marker
+        const marker = L.circleMarker([lat, lon], {
+            radius: size,
+            fillColor: color,
+            color: '#ffffff',
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.8
+        });
+
+        // Create popup content
+        const popupContent = `
+            <div style="min-width: 280px; font-family: system-ui, -apple-system, sans-serif;">
+                <div style="font-weight: 600; font-size: 14px; color: #1e293b; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid #e2e8f0;">
+                    📍 ${location}
+                </div>
+                
+                <div style="display: grid; gap: 8px; font-size: 13px;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #64748b; font-weight: 500;">URL:</span>
+                        <span style="color: #0f172a; font-family: monospace; font-size: 11px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(url)}">${escapeHtml(url)}</span>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #64748b; font-weight: 500;">User:</span>
+                        <span style="color: #0f172a; font-weight: 600;">${escapeHtml(username)}</span>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #64748b; font-weight: 500;">IP Address:</span>
+                        <span style="color: #0f172a; font-family: monospace; font-size: 11px;">${escapeHtml(ip)}</span>
+                    </div>
+                    
+                    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #e2e8f0;"></div>
+                    
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #64748b; font-weight: 500;">Avg Latency:</span>
+                        <span style="color: ${color}; font-weight: 700; font-size: 15px;">${Math.round(latency)}ms</span>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #64748b; font-weight: 500;">P95 Latency:</span>
+                        <span style="color: #0f172a; font-weight: 600;">${p95}ms</span>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #64748b; font-weight: 500;">Success Rate:</span>
+                        <span style="color: #0f172a; font-weight: 600;">${successRate}</span>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #64748b; font-weight: 500;">Measurements:</span>
+                        <span style="color: #0f172a; font-weight: 600;">${measurements}</span>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #64748b; font-weight: 500;">Coordinates:</span>
+                        <span style="color: #64748b; font-family: monospace; font-size: 11px;">${lat.toFixed(4)}, ${lon.toFixed(4)}</span>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0;">
+                    <a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" rel="noopener noreferrer" 
+                       style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: #4f46e5; color: white; text-decoration: none; border-radius: 6px; font-size: 12px; font-weight: 500; transition: background 0.2s;"
+                       onmouseover="this.style.background='#4338ca'" onmouseout="this.style.background='#4f46e5'">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                            <circle cx="12" cy="10" r="3"></circle>
+                        </svg>
+                        View in Google Maps
+                    </a>
+                </div>
+            </div>
+        `;
+
+        marker.bindPopup(popupContent, {
+            maxWidth: 320,
+            className: 'custom-popup'
+        });
+
+        marker.addTo(worldMapInstance);
+        worldMapMarkers.push(marker);
+
+        // Highlight marker on hover
+        marker.on('mouseover', function() {
+            this.setStyle({
+                weight: 3,
+                fillOpacity: 1
+            });
+        });
+
+        marker.on('mouseout', function() {
+            this.setStyle({
+                weight: 2,
+                fillOpacity: 0.8
+            });
+        });
+    });
+
+    // Fit map bounds to show all markers
+    if (worldMapMarkers.length > 0) {
+        const group = L.featureGroup(worldMapMarkers);
+        worldMapInstance.fitBounds(group.getBounds().pad(0.1));
+    }
+
+    // Force map to resize properly (important when switching tabs)
+    setTimeout(() => {
+        if (worldMapInstance) {
+            worldMapInstance.invalidateSize();
+        }
+    }, 100);
+    
+    // Also invalidate on next animation frame for better reliability
+    requestAnimationFrame(() => {
+        setTimeout(() => {
+            if (worldMapInstance) {
+                worldMapInstance.invalidateSize();
+            }
+        }, 200);
+    });
+}
+
+// Cleanup when switching away from world map
+function cleanupWorldMap() {
+    if (worldMapInstance) {
+        worldMapMarkers.forEach(marker => marker.remove());
+        worldMapMarkers = [];
     }
 }

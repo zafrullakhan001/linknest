@@ -78,25 +78,59 @@ body {
     background: rgba(255, 255, 255, 0.25);
 }
 
-/* Filters Panel */
-.filters-panel {
-    background: white;
-    border-bottom: 1px solid var(--gray-200);
-    padding: 16px 0;
-    margin-bottom: 24px;
-}
-
-.filters-panel .container {
-    display: flex;
-    gap: 20px;
-    align-items: center;
-    flex-wrap: wrap;
-}
-
+/* Shared Filter Styles */
 .filter-group {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+.time-filter-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.time-presets {
+    display: flex;
+    gap: 4px;
+}
+
+.custom-range-inputs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    background: var(--gray-50);
+    border-radius: 6px;
+    border: 1px solid var(--gray-200);
+}
+
+.custom-range-inputs input {
+    border: 1px solid var(--gray-300);
+    border-radius: 4px;
+    padding: 2px 4px;
+    font-size: 11px;
+    background: white;
+    width: 130px;
+}
+
+.btn-outline {
+    background: transparent;
+    border: 1px solid var(--gray-300);
+    color: var(--gray-600);
+}
+
+.btn-outline:hover {
+    border-color: var(--indigo-500);
+    color: var(--indigo-600);
+}
+
+.btn-outline.is-active {
+    background: var(--indigo-50);
+    border-color: var(--indigo-500);
+    color: var(--indigo-700);
+    font-weight: 600;
 }
 
 .filter-group label {
@@ -174,12 +208,33 @@ body {
     border-color: var(--indigo-700);
 }
 
+.card-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--gray-100);
+}
+
 .chart-header-row {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 0;
+}
+
+.chart-controls {
+    display: flex;
+    align-items: center;
     gap: 12px;
-    flex-wrap: wrap;
+}
+
+.zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px;
+    background: var(--gray-50);
+    border-radius: 8px;
+    border: 1px solid var(--gray-200);
 }
 
 .view-toggle {
@@ -555,14 +610,57 @@ body {
     font-family: ui-monospace, monospace;
 }
 
-/* Advanced Tools in Header */
-.advanced-tools {
+.chart-filters-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 16px;
-    margin-right: auto;
-    padding-left: 20px;
-    border-left: 1px solid var(--gray-200);
+    padding-top: 16px;
+    margin-top: 16px;
+    border-top: 1px solid var(--gray-100);
+}
+
+.chart-filters-row .filter-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.chart-filters-row .filter-group label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--gray-500);
+}
+
+.chart-filters-row select {
+    padding: 4px 8px;
+    font-size: 13px;
+    border: 1px solid var(--gray-200);
+    border-radius: 6px;
+    background: white;
+    cursor: pointer;
+}
+
+.filter-divider {
+    width: 1px;
+    height: 24px;
+    background: var(--gray-200);
+}
+
+.btn-xs {
+    padding: 4px 8px;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.btn-custom-toggle {
+    background: var(--indigo-50);
+}
+
+.time-presets button {
+    font-weight: 500;
 }
 
 .search-box {
@@ -611,6 +709,16 @@ body {
 .threshold-slider b {
     min-width: 40px;
     color: var(--indigo-700);
+}
+
+.chart-filters-row .search-box input {
+    padding: 4px 8px 4px 28px;
+    width: 120px;
+    font-size: 12px;
+}
+
+.chart-filters-row .search-box input:focus {
+    width: 160px;
 }
 
 /* Fullscreen Mode */
@@ -1089,4 +1197,112 @@ tbody tr:last-child td {
     .card {
         padding: 18px;
     }
+}
+
+.chart-options {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+    padding-left: 16px;
+    border-left: 1px solid var(--gray-200);
+}
+
+.chart-options .btn {
+    padding: 2px 8px;
+    font-size: 11px;
+    border-radius: 4px;
+}
+
+/* ============================================
+   WORLD MAP STYLES
+   ============================================ */
+
+#worldmap-chart {
+    background: var(--gray-50);
+}
+
+#map-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+/* Leaflet map overrides for better styling */
+.leaflet-container {
+    background: #aad3df !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+/* Custom popup styling */
+.leaflet-popup-content-wrapper {
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    padding: 0;
+}
+
+.leaflet-popup-content {
+    margin: 0;
+    width: auto !important;
+}
+
+.leaflet-popup-tip {
+    background: white;
+}
+
+/* Map legend styling */
+.map-legend {
+    background: white !important;
+}
+
+/* Marker pulse animation */
+@keyframes marker-pulse {
+    0% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.1);
+        opacity: 0.8;
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* Apply pulse to markers with critical latency */
+.leaflet-marker-icon.critical {
+    animation: marker-pulse 2s ease-in-out infinite;
+}
+
+/* Improve marker visibility */
+.leaflet-marker-icon {
+    transition: all 0.2s ease;
+}
+
+.leaflet-marker-icon:hover {
+    z-index: 1000 !important;
+}
+
+/* Cluster marker styling (if using marker clustering in future) */
+.marker-cluster {
+    background: rgba(79, 70, 229, 0.6);
+    border: 3px solid rgba(79, 70, 229, 0.8);
+    border-radius: 50%;
+    color: white;
+    font-weight: bold;
+    text-align: center;
+    font-size: 14px;
+}
+
+.marker-cluster-small {
+    background: rgba(99, 102, 241, 0.6);
+}
+
+.marker-cluster-medium {
+    background: rgba(79, 70, 229, 0.6);
+}
+
+.marker-cluster-large {
+    background: rgba(67, 56, 202, 0.6);
 }

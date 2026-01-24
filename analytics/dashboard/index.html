@@ -8,6 +8,9 @@
     <link rel="stylesheet" href="dashboard/styles.css">
     <!-- D3.js for animated bubble visualization -->
     <script src="https://d3js.org/d3.v7.min.js"></script>
+    <!-- Leaflet.js for World Map visualization -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <!-- Favicon -->
     <link rel="icon"
         href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%234f46e5%22 width=%22100%22 height=%22100%22 rx=%2212%22/></svg>">
@@ -32,49 +35,7 @@
             </div>
         </header>
 
-        <!-- Filters -->
-        <div class="filters-panel">
-            <div class="container">
-                <div class="filter-group">
-                    <label for="url-filter">URL:</label>
-                    <select id="url-filter">
-                        <option value="">All URLs</option>
-                    </select>
-                </div>
 
-                <div class="filter-group">
-                    <label for="period-filter">Period:</label>
-                    <select id="period-filter">
-                        <option value="1h">Last Hour</option>
-                        <option value="24h" selected>Last 24 Hours</option>
-                        <option value="7d">Last 7 Days</option>
-                        <option value="30d">Last 30 Days</option>
-                    </select>
-                </div>
-
-                <div class="filter-group">
-                    <label for="granularity-filter">Granularity:</label>
-                    <select id="granularity-filter">
-                        <option value="url" selected>By URL</option>
-                        <option value="country">By Country</option>
-                        <option value="region">By Region/State</option>
-                        <option value="city">By City</option>
-                    </select>
-                </div>
-
-                <div class="filter-group">
-                    <label for="measurement-filter">Measurement:</label>
-                    <select id="measurement-filter">
-                        <option value="client" selected>Client-Side</option>
-                        <option value="server">Server-Side</option>
-                    </select>
-                </div>
-
-                <button id="refresh-btn" class="btn btn-primary">
-                    Refresh Data
-                </button>
-            </div>
-        </div>
 
         <!-- Stats Cards -->
         <div class="stats-container container">
@@ -171,26 +132,7 @@ It won’t stop the dashboard itself, but those specific measurements may fail.<
                         <div class="chart-header-row">
                             <div>
                                 <h2 id="chart-title">Performance Visualizations</h2>
-                                <p class="card-subtitle" id="chart-subtitle">Select a chart type to view different
-                                    perspectives</p>
-                            </div>
-                            <!-- Advanced Tools -->
-                            <div class="advanced-tools">
-                                <div class="search-box">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="2.5">
-                                        <circle cx="11" cy="11" r="8" />
-                                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                                    </svg>
-                                    <input type="text" id="chart-search" placeholder="Search URLs...">
-                                </div>
-
-                                <div class="threshold-slider" title="Filter by Latency Threshold">
-                                    <span>Limit:</span>
-                                    <input type="range" id="latency-threshold" min="0" max="2000" step="50"
-                                        value="2000">
-                                    <b id="threshold-val">Off</b>
-                                </div>
+                                <p class="card-subtitle" id="chart-subtitle">Real-time telemetry and insights</p>
                             </div>
 
                             <div class="chart-controls">
@@ -223,30 +165,112 @@ It won’t stop the dashboard itself, but those specific measurements may fail.<
                                     </button>
                                 </div>
 
-                                <button id="fullscreen-toggle" class="btn btn-icon"
-                                    title="Toggle Fullscreen Focus Mode">
+                                <button id="fullscreen-toggle" class="btn btn-icon" title="Toggle Focus Mode">
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                         stroke-width="2">
                                         <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
                                     </svg>
                                 </button>
 
-                                <!-- Export Button -->
-                                <button id="export-csv" class="btn btn-secondary"
-                                    title="Export current chart data to CSV">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                <button id="refresh-btn" class="btn btn-primary btn-sm">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                         stroke-width="2">
-                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                        <polyline points="7 10 12 15 17 10" />
-                                        <line x1="12" y1="15" x2="12" y2="3" />
+                                        <path
+                                            d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
                                     </svg>
-                                    Export
+                                    Update
                                 </button>
-
-                                <div class="chart-options" id="chart-specific-options">
-                                    <!-- Chart-specific controls will appear here -->
-                                </div>
                             </div>
+                        </div>
+
+                        <div class="chart-filters-row">
+                            <div class="filter-group">
+                                <label for="url-filter">URL:</label>
+                                <select id="url-filter">
+                                    <option value="">All URLs</option>
+                                </select>
+                            </div>
+
+                            <div class="filter-group">
+                                <label for="username-filter">Username:</label>
+                                <input type="text" id="username-filter" placeholder="Filter by user..." style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; width: 140px;">
+                            </div>
+
+                            <div class="filter-group">
+                                <label for="ip-filter">IP Address:</label>
+                                <input type="text" id="ip-filter" placeholder="Filter by IP..." style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; width: 140px;">
+                            </div>
+
+                            <div class="filter-group">
+                                <label for="auth-filter">User Type:</label>
+                                <select id="auth-filter" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                                    <option value="">All Users</option>
+                                    <option value="true">Authenticated</option>
+                                    <option value="false">Anonymous</option>
+                                </select>
+                            </div>
+
+                            <div class="filter-group time-filter-group">
+                                <label>Time:</label>
+                                <div class="time-presets">
+                                    <button class="btn btn-sm btn-outline is-active" data-period="1h">1h</button>
+                                    <button class="btn btn-sm btn-outline" data-period="24h">24h</button>
+                                    <button class="btn btn-sm btn-outline" data-period="7d">7d</button>
+                                    <button class="btn btn-sm btn-outline" id="custom-range-btn">Custom</button>
+                                </div>
+                                <div class="custom-range-inputs" id="custom-range-inputs" style="display: none;">
+                                    <input type="datetime-local" id="start-date">
+                                    <input type="datetime-local" id="end-date">
+                                    <button class="btn btn-xs btn-primary" id="apply-custom-range">Go</button>
+                                </div>
+                                <input type="hidden" id="period-filter" value="1h">
+                            </div>
+
+                            <div class="filter-group">
+                                <label for="granularity-filter">Group:</label>
+                                <select id="granularity-filter">
+                                    <option value="url" selected>URL</option>
+                                    <option value="username">Username</option>
+                                    <option value="ip">IP Address</option>
+                                    <option value="country">Country</option>
+                                    <option value="region">Region</option>
+                                </select>
+                            </div>
+
+                            <div class="filter-group">
+                                <label for="measurement-filter">Type:</label>
+                                <select id="measurement-filter">
+                                    <option value="client" selected>Client</option>
+                                    <option value="server">Server</option>
+                                </select>
+                            </div>
+
+                            <div class="filter-divider"></div>
+
+                            <div class="search-box">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2.5">
+                                    <circle cx="11" cy="11" r="8" />
+                                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                                </svg>
+                                <input type="text" id="chart-search" placeholder="Search...">
+                            </div>
+
+                            <div class="threshold-slider" title="Latency Limit">
+                                <input type="range" id="latency-threshold" min="0" max="2000" step="50" value="2000">
+                                <b id="threshold-val">Off</b>
+                            </div>
+
+                            <button id="export-csv" class="btn btn-secondary btn-sm" title="Export CSV">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="7 10 12 15 17 10" />
+                                    <line x1="12" y1="15" x2="12" y2="3" />
+                                </svg>
+                            </button>
+
+                            <div class="chart-options" id="chart-specific-options"></div>
                         </div>
                     </div>
 
@@ -325,6 +349,14 @@ It won’t stop the dashboard itself, but those specific measurements may fail.<
                             </svg>
                             <span>Heatmap</span>
                         </button>
+                        <button class="chart-tab" data-chart="worldmap" title="World Map - Geographic Latency Distribution">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <circle cx="12" cy="12" r="10" />
+                                <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                            </svg>
+                            <span>World Map</span>
+                        </button>
                         <button class="chart-tab" data-chart="table" title="Data Table - Detailed View">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2">
@@ -359,12 +391,17 @@ It won’t stop the dashboard itself, but those specific measurements may fail.<
                         <!-- Heatmap -->
                         <div id="heatmap-chart" class="chart-view"></div>
 
+                        <!-- World Map -->
+                        <div id="worldmap-chart" class="chart-view" style="height: 600px; position: relative;"></div>
+
                         <!-- Table View -->
                         <div id="bubble-table-container" class="chart-view table-view">
                             <table id="bubble-table">
                                 <thead>
                                     <tr>
                                         <th>Location</th>
+                                        <th>Username</th>
+                                        <th>IP Address</th>
                                         <th>Avg (ms)</th>
                                         <th>P95 (ms)</th>
                                         <th>Success %</th>
@@ -381,7 +418,7 @@ It won’t stop the dashboard itself, but those specific measurements may fail.<
                                 </thead>
                                 <tbody id="bubble-table-body">
                                     <tr>
-                                        <td colspan="13" class="text-center">Loading...</td>
+                                        <td colspan="15" class="text-center">Loading...</td>
                                     </tr>
                                 </tbody>
                             </table>

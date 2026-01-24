@@ -44,8 +44,8 @@ echo "  Sleep interval: {$sleepInterval}s\n\n";
 // Prepare insert statement (reused for performance)
 $insertStmt = $db->prepare("
     INSERT INTO performance_metrics (
-        time, link_url, measurement_type, user_id, session_id,
-        country_code, country_name, region_name, city_name,
+        time, link_url, measurement_type, user_id, username, session_id,
+        ip_address, country_code, country_name, region_name, city_name,
         latitude, longitude, timezone, isp,
         full_response_time, dns_lookup_time, tcp_connection_time,
         tls_handshake_time, time_to_first_byte,
@@ -53,8 +53,8 @@ $insertStmt = $db->prepare("
         browser_version, os_name, screen_resolution, connection_type,
         is_authenticated
     ) VALUES (
-        NOW(), :link_url, :measurement_type, :user_id, :session_id,
-        :country_code, :country_name, :region_name, :city_name,
+        COALESCE(:time::timestamptz, NOW()), :link_url, :measurement_type, :user_id, :username, :session_id,
+        :ip_address, :country_code, :country_name, :region_name, :city_name,
         :latitude, :longitude, :timezone, :isp,
         :full_response_time, :dns_lookup_time, :tcp_connection_time,
         :tls_handshake_time, :time_to_first_byte,
@@ -161,10 +161,13 @@ function processBatch($db, $insertStmt, $updateStmt, $batchSize, &$stats) {
                 
                 // Insert into performance_metrics
                 $insertStmt->execute([
+                    'time' => $payload['time'] ?? null,  // Use captured time from collect.php
                     'link_url' => $payload['link_url'],
                     'measurement_type' => $payload['measurement_type'] ?? 'client',
                     'user_id' => $payload['user_id'] ?? null,
+                    'username' => $payload['username'] ?? null,
                     'session_id' => $payload['session_id'] ?? '',
+                    'ip_address' => $payload['ip_address'] ?? null,
                     'country_code' => $countryCode,
                     'country_name' => $countryName,
                     'region_name' => $region,

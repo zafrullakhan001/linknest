@@ -16,10 +16,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     sendJSON(['error' => 'Method not allowed'], 405);
 }
 
-// Require authentication
-if (!isset($_SESSION['user_id'])) {
-    sendJSON(['error' => 'Authentication required'], 401);
-}
+// Get user ID if authenticated (optional - also works for anonymous users)
+$userId = $_SESSION['user_id'] ?? null;
 
 try {
     // Check if coordinates are provided in POST body (from browser geolocation)
@@ -137,7 +135,8 @@ try {
     $_SESSION['timezone'] = $timezone ?? 'UTC';
     
     // Also update analytics database if enabled
-    if (isPerformanceAnalyticsEnabled()) {
+    // Only store in user_geolocations table if user is authenticated
+    if ($userId && isPerformanceAnalyticsEnabled()) {
         try {
             $analyticsDB = getAnalyticsDB();
             if ($analyticsDB) {
@@ -158,7 +157,7 @@ try {
                 ");
                 
                 $stmt->execute([
-                    'user_id' => $_SESSION['user_id'],
+                    'user_id' => $userId,
                     'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
                     'country_code' => $countryCode ?? 'XX',
                     'country_name' => $countryName ?? 'Unknown',

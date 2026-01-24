@@ -468,6 +468,39 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     }, [linkSearchTerm, editTabs]);
 
+    // Auto-check links when tile is opened
+    useEffect(() => {
+        // Automatically check tile links when component mounts
+        // This ensures analytics data is captured as soon as user opens the tile
+        const autoCheckLinks = async () => {
+            try {
+                // Small delay to allow UI to render first
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Get all sections from the tile
+                const sections = tile.tabs && tile.tabs.length > 0
+                    ? tile.tabs.flatMap(tab => tab.sections)
+                    : tile.sections || [];
+                
+                // Check if tile has any links
+                const hasLinks = sections.some(section => 
+                    section.links && section.links.length > 0
+                );
+                
+                // Only auto-check if tile has links and we're not already checking
+                if (hasLinks && !checkingHealth) {
+                    handleCheckTileHealth();
+                }
+            } catch (error) {
+                console.debug('Auto link check skipped:', error);
+            }
+        };
+
+        autoCheckLinks();
+        // Run only once when component mounts
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const styles = COLOR_STYLES[tile.themeColor] || COLOR_STYLES['blue'];
 
     // Helper function to get active messages
@@ -3281,8 +3314,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                 if (!targets.length) return;
 
-                // Try to ensure location (only works for authenticated users)
-                const cfgWithLoc = await performanceAnalyticsService.ensureLocation(cfg, { allowPrompt: false });
+                // Try to ensure location for accurate geographic performance data
+                const cfgWithLoc = await performanceAnalyticsService.ensureLocation(cfg, { allowPrompt: true });
                 if (!cfgWithLoc.enabled) return;
 
                 const batchSize = 4;

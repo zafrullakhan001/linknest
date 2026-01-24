@@ -23,6 +23,8 @@ if (!function_exists('isPerformanceAnalyticsEnabled') || !isPerformanceAnalytics
 
 $trackAnonymous = (getSetting('performance_analytics_track_anonymous', '1') === '1');
 $userId = $_SESSION['user_id'] ?? null;
+$username = $_SESSION['username'] ?? null;
+
 if (!$userId && !$trackAnonymous) {
     sendJSON(['error' => 'Authentication required'], 401);
 }
@@ -107,8 +109,11 @@ foreach ($items as $idx => $item) {
         'link_url' => $url,
         'measurement_type' => $measurementType,
         'user_id' => $userId,
+        'username' => $username,
         'session_id' => session_id(),
         'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+        'is_authenticated' => ($userId !== null),
+        'time' => gmdate('Y-m-d H:i:s'),  // Capture exact collection time in UTC
 
         'full_response_time' => $full,
         'dns_lookup_time' => isset($item['dns_lookup_time']) ? (int)$item['dns_lookup_time'] : (isset($item['dns_time']) ? (int)$item['dns_time'] : null),

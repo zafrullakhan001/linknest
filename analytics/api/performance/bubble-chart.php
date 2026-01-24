@@ -19,8 +19,11 @@ header('Content-Type: application/json');
 
 $url = $_GET['url'] ?? null;
 $period = $_GET['period'] ?? '24h';
-$granularity = $_GET['granularity'] ?? 'region'; // country, region, city, or url
+$granularity = $_GET['granularity'] ?? 'region'; // country, region, city, url, username, or ip
 $measurementType = $_GET['type'] ?? 'client'; // client or server
+$username = $_GET['username'] ?? null;
+$ipAddress = $_GET['ip'] ?? null;
+$authenticated = $_GET['authenticated'] ?? null; // 'true', 'false', or null for all
 
 // Map period to SQL interval
 $periodMap = [
@@ -35,6 +38,8 @@ $periodInterval = $periodMap[$period] ?? '24 hours';
 // Map granularity to GROUP BY clause
 $groupByFields = [
     'url' => 'link_url',
+    'username' => 'username',
+    'ip' => 'ip_address',
     'country' => 'country_code, country_name',
     'region' => 'country_code, country_name, region_name',
     'city' => 'country_code, country_name, region_name, city_name'
@@ -50,6 +55,26 @@ if ($granularity === 'url') {
     $selectFields .= ", MODE() WITHIN GROUP (ORDER BY country_name) as country_name";
     $selectFields .= ", MODE() WITHIN GROUP (ORDER BY region_name) as region_name";
     $selectFields .= ", MODE() WITHIN GROUP (ORDER BY city_name) as city_name";
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY username) as username";
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY ip_address) as ip_address";
+} elseif ($granularity === 'username') {
+    // Group by username
+    $selectFields = 'username';
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY link_url) as link_url";
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY country_code) as country_code";
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY country_name) as country_name";
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY region_name) as region_name";
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY city_name) as city_name";
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY ip_address) as ip_address";
+} elseif ($granularity === 'ip') {
+    // Group by IP address
+    $selectFields = 'ip_address';
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY link_url) as link_url";
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY country_code) as country_code";
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY country_name) as country_name";
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY region_name) as region_name";
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY city_name) as city_name";
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY username) as username";
 } else {
     $selectFields = 'country_code, country_name';
     if ($granularity !== 'country') {
@@ -58,6 +83,9 @@ if ($granularity === 'url') {
     if ($granularity === 'city') {
         $selectFields .= ', city_name';
     }
+    // Always include username and IP for other granularities
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY username) as username";
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY ip_address) as ip_address";
 }
 
 try {
@@ -113,6 +141,25 @@ try {
         $sql .= " AND link_url = :url";
     }
     
+    // Add username filter if provided
+    if ($username) {
+        $sql .= " AND username ILIKE :username";
+    }
+    
+    // Add IP address filter if provided
+    if ($ipAddress) {
+        $sql .= " AND CAST(ip_address AS TEXT) ILIKE :ip_address";
+    }
+    
+    // Add authentication filter if provided
+    if ($authenticated !== null && $authenticated !== '') {
+        if ($authenticated === 'true') {
+            $sql .= " AND is_authenticated = TRUE";
+        } elseif ($authenticated === 'false') {
+            $sql .= " AND is_authenticated = FALSE";
+        }
+    }
+    
     $sql .= "
         GROUP BY {$groupBy}
         HAVING COUNT(*) >= 1
@@ -125,6 +172,14 @@ try {
     
     if ($url) {
         $stmt->bindValue(':url', $url);
+    }
+    
+    if ($username) {
+        $stmt->bindValue(':username', '%' . $username . '%');
+    }
+    
+    if ($ipAddress) {
+        $stmt->bindValue(':ip_address', '%' . $ipAddress . '%');
     }
     
     $stmt->execute();

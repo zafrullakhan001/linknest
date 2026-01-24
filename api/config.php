@@ -2018,6 +2018,12 @@ function getAuthenticatedUser() {
         $user['is_admin'] = (bool)$user['is_admin'];
         $user['is_approved'] = (bool)$user['is_approved'];
         
+        // Ensure username is in session (fix for analytics)
+        // This ensures $_SESSION['username'] is always populated when user is authenticated
+        if (empty($_SESSION['username']) && !empty($user['username'])) {
+            $_SESSION['username'] = $user['username'];
+        }
+        
         // Add impersonation info if applicable
         if (isset($_SESSION['impersonating_user_id']) && isset($_SESSION['impersonating_admin_id'])) {
             $user['impersonating'] = true;
