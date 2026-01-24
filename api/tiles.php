@@ -4419,55 +4419,72 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
 }
 
 function areTilesEqual($a, $b) {
-    $normA = normalizeForComparison($a);
-    $normB = normalizeForComparison($b);
-    return serialize($normA) === serialize($normB);
+    try {
+        if (!is_array($a) || !is_array($b)) {
+            return false; // Can't compare non-arrays
+        }
+        $normA = normalizeForComparison($a);
+        $normB = normalizeForComparison($b);
+        return serialize($normA) === serialize($normB);
+    } catch (Exception $e) {
+        error_log("areTilesEqual error: " . $e->getMessage());
+        return false; // On error, assume they're different (safer)
+    }
 }
 
 function normalizeForComparison($data) {
-    if (is_array($data)) {
-        // Metadata and transient fields to exclude from comparison
-        $excludeKeys = [
-            'createdAt', 'created_at',
-            'updatedAt', 'updated_at',
-            'deletedAt', 'deleted_at',
-            'archivedAt', 'archived_at',
-            'user_id', 'userId',
-            'canView', 'can_view',
-            'canEdit', 'can_edit',
-            'canDelete', 'can_delete',
-            'hasRoleAccess', 'has_role_access',
-            'isFavorite', 'is_favorite',
-            'health' // Transient link health data
-        ];
+    try {
+        if (is_array($data)) {
+            // Metadata and transient fields to exclude from comparison
+            $excludeKeys = [
+                'createdAt', 'created_at',
+                'updatedAt', 'updated_at',
+                'deletedAt', 'deleted_at',
+                'archivedAt', 'archived_at',
+                'user_id', 'userId',
+                'canView', 'can_view',
+                'canEdit', 'can_edit',
+                'canDelete', 'can_delete',
+                'hasRoleAccess', 'has_role_access',
+                'isFavorite', 'is_favorite',
+                'health' // Transient link health data
+            ];
 
-        $result = [];
-        foreach ($data as $k => $v) {
-            if (in_array($k, $excludeKeys)) continue;
+            $result = [];
+            foreach ($data as $k => $v) {
+                if (in_array($k, $excludeKeys)) continue;
 
-            if (is_array($v)) {
-                $child = normalizeForComparison($v);
-                // Only include non-empty arrays or arrays that exist in both versions
-                if (!empty($child) || array_key_exists($k, $data)) {
-                    $result[$k] = $child;
-                }
-            } else {
-                // Convert to string for loose comparison (DB sometimes returns string for int)
-                // Normalize booleans to strings "0" or "1" to ensure match
-                // Include empty strings and null values as they represent meaningful differences
-                if (is_bool($v)) {
-                    $result[$k] = $v ? "1" : "0";
-                } elseif (is_null($v)) {
-                    $result[$k] = ""; // Normalize null to empty string
+                if (is_array($v)) {
+                    $child = normalizeForComparison($v);
+                    // Only include non-empty arrays or arrays that exist in both versions
+                    if (!empty($child) || array_key_exists($k, $data)) {
+                        $result[$k] = $child;
+                    }
                 } else {
-                    $result[$k] = (string)$v;
+                    // Convert to string for loose comparison (DB sometimes returns string for int)
+                    // Normalize booleans to strings "0" or "1" to ensure match
+                    // Include empty strings and null values as they represent meaningful differences
+                    if (is_bool($v)) {
+                        $result[$k] = $v ? "1" : "0";
+                    } elseif (is_null($v)) {
+                        $result[$k] = ""; // Normalize null to empty string
+                    } else {
+                        $result[$k] = (string)$v;
+                    }
                 }
             }
+            if (function_exists('internal_recursive_ksort')) {
+                internal_recursive_ksort($result);
+            } else {
+                ksort($result);
+            }
+            return $result;
         }
-        internal_recursive_ksort($result);
-        return $result;
+        return (string)$data;
+    } catch (Exception $e) {
+        error_log("normalizeForComparison error: " . $e->getMessage());
+        return is_array($data) ? [] : (string)$data;
     }
-    return (string)$data;
 }
 
 function internal_recursive_ksort(&$array) {
@@ -4800,58 +4817,85 @@ function handleDeleteEmptyVersions($tileId) {
 }
 
 function handleCleanupEmptyVersions($tileId) {
-    $user = requireAuth();
-    $db = getDB();
-    
-    // Check view permission (cleanup can run on view)
-    if (!canUserViewTile($user['id'], $tileId, $db)) {
-        sendJSON(['error' => 'Permission denied'], 403);
+    try {
+        $user = requireAuth();
+        $db = getDB();
+        
+        // Check view permission (cleanup can run on view)
+        if (!canUserViewTile($user['id'], $tileId, $db)) {
+            sendJSON(['error' => 'Permission denied'], 403);
+            return;
+        }
+        
+        $deleted = deleteEmptyDiffVersions($tileId, $db);
+        
+        sendJSON(['success' => true, 'deleted' => $deleted]);
+    } catch (Exception $e) {
+        error_log("Cleanup empty versions error: " . $e->getMessage());
+        sendJSON(['error' => 'Cleanup failed: ' . $e->getMessage()], 500);
     }
-    
-    $deleted = deleteEmptyDiffVersions($tileId, $db);
-    
-    sendJSON(['success' => true, 'deleted' => $deleted]);
 }
 
 function deleteEmptyDiffVersions($tileId, $db) {
-    // Get all versions for this tile (excluding temp and locked)
-    $stmt = $db->prepare('SELECT id, version_number, tile_data FROM tile_versions WHERE tile_id = ? AND is_temp = 0 AND is_locked = 0 ORDER BY version_number DESC');
-    $stmt->execute([$tileId]);
-    $versions = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    if (count($versions) < 2) {
-        return 0; // Need at least 2 versions to compare
-    }
-    
-    $deleted = 0;
-    $versionsToDelete = [];
-    
-    // Compare each version with the next one (going from newest to oldest)
-    // Keep the older version, delete the newer one if they're identical
-    for ($i = 0; $i < count($versions) - 1; $i++) {
-        $currentVersion = $versions[$i];
-        $previousVersion = $versions[$i + 1];
+    try {
+        // Get all versions for this tile (excluding temp and locked)
+        $stmt = $db->prepare('SELECT id, version_number, tile_data FROM tile_versions WHERE tile_id = ? AND is_temp = 0 AND is_locked = 0 ORDER BY version_number DESC');
+        $stmt->execute([$tileId]);
+        $versions = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
-        $currentData = json_decode($currentVersion['tile_data'], true);
-        $previousData = json_decode($previousVersion['tile_data'], true);
-        
-        // Check if they are equal (no diff)
-        if ($currentData && $previousData && areTilesEqual($currentData, $previousData)) {
-            // This version has no changes from the previous one - mark for deletion
-            // Delete the newer version (current), keep the older one (previous)
-            $versionsToDelete[] = $currentVersion['id'];
+        if (count($versions) < 2) {
+            return 0; // Need at least 2 versions to compare
         }
+        
+        $deleted = 0;
+        $versionsToDelete = [];
+        
+        // Compare each version with the next one (going from newest to oldest)
+        // Keep the older version, delete the newer one if they're identical
+        for ($i = 0; $i < count($versions) - 1; $i++) {
+            $currentVersion = $versions[$i];
+            $previousVersion = $versions[$i + 1];
+            
+            // Skip if tile_data is null or empty
+            if (empty($currentVersion['tile_data']) || empty($previousVersion['tile_data'])) {
+                continue;
+            }
+            
+            $currentData = json_decode($currentVersion['tile_data'], true);
+            $previousData = json_decode($previousVersion['tile_data'], true);
+            
+            // Skip if JSON decode failed
+            if ($currentData === null || $previousData === null) {
+                continue;
+            }
+            
+            // Check if they are equal (no diff)
+            try {
+                if (areTilesEqual($currentData, $previousData)) {
+                    // This version has no changes from the previous one - mark for deletion
+                    // Delete the newer version (current), keep the older one (previous)
+                    $versionsToDelete[] = $currentVersion['id'];
+                }
+            } catch (Exception $e) {
+                // Skip comparison if areTilesEqual throws an error
+                error_log("Error comparing versions: " . $e->getMessage());
+                continue;
+            }
+        }
+        
+        // Delete the empty diff versions
+        if (!empty($versionsToDelete)) {
+            $placeholders = implode(',', array_fill(0, count($versionsToDelete), '?'));
+            $delStmt = $db->prepare("DELETE FROM tile_versions WHERE id IN ($placeholders)");
+            $delStmt->execute($versionsToDelete);
+            $deleted = $delStmt->rowCount();
+        }
+        
+        return $deleted;
+    } catch (Exception $e) {
+        error_log("deleteEmptyDiffVersions error: " . $e->getMessage());
+        return 0; // Return 0 on error to prevent breaking the request
     }
-    
-    // Delete the empty diff versions
-    if (!empty($versionsToDelete)) {
-        $placeholders = implode(',', array_fill(0, count($versionsToDelete), '?'));
-        $delStmt = $db->prepare("DELETE FROM tile_versions WHERE id IN ($placeholders)");
-        $delStmt->execute($versionsToDelete);
-        $deleted = $delStmt->rowCount();
-    }
-    
-    return $deleted;
 }
 
 function deleteDuplicateVersions($tileId, $db) {

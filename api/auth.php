@@ -731,6 +731,9 @@ function handleLogin() {
         $_SESSION['user_id'] = $user['id'];
         $_SESSION['username'] = $user['username'];
         
+        // Track user login for performance analytics (if enabled)
+        trackUserLogin($user['id'], $user['username']);
+        
         // Set session cookie expiration based on remember me
         // Note: ini_set for session.cookie_lifetime must be set before session_start(),
         // so we update the cookie directly using setcookie()
@@ -818,6 +821,9 @@ function handleLogin() {
     // Login success - set session with remember me support
     $_SESSION['user_id'] = $user['id'];
     $_SESSION['username'] = $user['username'];
+    
+    // Track user login for performance analytics (if enabled)
+    trackUserLogin($user['id'], $user['username']);
     
     // Set session cookie expiration based on remember me
     // Note: ini_set for session.cookie_lifetime must be set before session_start(),

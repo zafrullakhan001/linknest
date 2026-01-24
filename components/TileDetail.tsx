@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, POPULAR_EMOJIS, LINK_EMOJIS, ALL_LINK_EMOJIS, TileMessage } from '../types';
 import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
+import { performanceAnalyticsService } from '../services/performanceAnalyticsService';
 import { authService, UserListItem, User } from '../services/authService';
 import { exportTileToFile } from '../services/spaceTransferService';
 import { cloneTile, getTiles, saveTile, toggleLinkFavorite, createTempVersion } from '../services/storageService';
@@ -3119,6 +3120,78 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             const results = await linkHealthService.checkTileLinks(tile.id);
             if (results && typeof results === 'object') {
                 setLinkHealth(prev => ({ ...prev, ...results }));
+
+                // Best-effort: also record per-URL client/server latency into Performance Analytics (if enabled).
+                // This is intentionally fire-and-forget: health check UX must remain fast.
+                void (async () => {
+                    try {
+                        const cfg = await performanceAnalyticsService.ensureLocation(undefined, { allowPrompt: true });
+                        if (!cfg.enabled) return;
+
+                        const sections = getAllSections();
+                        const allLinks = sections.flatMap(s => (s?.links || []));
+
+                        const shouldTest = (url: string) => {
+                            const patterns = cfg.beaconUrls || [];
+                            if (!patterns.length) return true;
+                            return patterns.some(p => url.includes(p));
+                        };
+
+                        const targets = allLinks
+                            .filter(l => typeof l?.url === 'string' && (l.url.startsWith('http://') || l.url.startsWith('https://')))
+                            .filter(l => shouldTest(l.url));
+
+                        if (!targets.length) return;
+
+                        const batchSize = 4;
+                        const metrics: Array<{
+                            url: string;
+                            measurement_type: 'client' | 'server';
+                            full_response_time: number;
+                            http_status_code?: number | null;
+                        }> = [];
+
+                        for (let i = 0; i < targets.length; i += batchSize) {
+                            const batch = targets.slice(i, i + batchSize);
+                            const measured = await Promise.all(
+                                batch.map(async (l) => {
+                                    const m = await performanceAnalyticsService.measureUrlLatency(l.url);
+                                    return { link: l, measured: m };
+                                })
+                            );
+
+                            for (const item of measured) {
+                                const linkId = item.link.id;
+                                const health = (results as LinkHealthMap)[linkId];
+
+                                // Client metric: always record (even if request failed or URL is invalid)
+                                metrics.push({
+                                    url: item.link.url,
+                                    measurement_type: 'client',
+                                    full_response_time: item.measured.durationMs,
+                                    http_status_code: item.measured.httpStatus ?? 0
+                                });
+
+                                // Server metric derived from LinkNest's check (cURL timing)
+                                const serverLatency = (health as any)?.serverLatency;
+                                if (typeof serverLatency === 'number' && Number.isFinite(serverLatency) && serverLatency >= 0) {
+                                    metrics.push({
+                                        url: item.link.url,
+                                        measurement_type: 'server',
+                                        full_response_time: Math.round(serverLatency),
+                                        http_status_code: (health as any)?.httpCode ?? 0
+                                    });
+                                }
+                            }
+                        }
+
+                        // Force send on explicit user action ("Check Links") so it never gets skipped by sampling.
+                        await performanceAnalyticsService.sendMetrics(metrics, { force: true });
+                    } catch (err) {
+                        // Never let analytics failures affect the user experience
+                        console.debug('Performance analytics capture skipped:', err);
+                    }
+                })();
             } else {
                 console.warn('Unexpected results format:', results);
             }
@@ -3177,6 +3250,82 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
         return tile.sections || [];
     };
+
+    // Performance Analytics: automatic (sampled) scan when opening a tile with links.
+    // This seeds URLs into analytics even if they fail/are invalid.
+    const lastAutoScanRef = useRef<number>(0);
+    useEffect(() => {
+        void (async () => {
+            try {
+                const now = Date.now();
+                // Avoid spamming if user navigates quickly
+                if (now - lastAutoScanRef.current < 60_000) return;
+                lastAutoScanRef.current = now;
+
+                const cfg = await performanceAnalyticsService.getConfig();
+                if (!cfg.enabled) return;
+
+                const sections = getAllSections();
+                const allLinks = sections.flatMap(s => (s?.links || []));
+                if (!allLinks.length) return;
+
+                const shouldTest = (url: string) => {
+                    const patterns = cfg.beaconUrls || [];
+                    if (!patterns.length) return true;
+                    return patterns.some(p => url.includes(p));
+                };
+
+                const targets = allLinks
+                    .filter(l => typeof l?.url === 'string' && l.url.trim().length > 0)
+                    .filter(l => shouldTest(l.url));
+
+                if (!targets.length) return;
+
+                // Try to ensure location (only works for authenticated users)
+                const cfgWithLoc = await performanceAnalyticsService.ensureLocation(cfg, { allowPrompt: false });
+                if (!cfgWithLoc.enabled) return;
+
+                const batchSize = 4;
+                const metrics: Array<{
+                    url: string;
+                    measurement_type: 'client';
+                    full_response_time: number;
+                    http_status_code?: number | null;
+                }> = [];
+
+                for (let i = 0; i < targets.length; i += batchSize) {
+                    const batch = targets.slice(i, i + batchSize);
+                    const measured = await Promise.all(
+                        batch.map(async (l) => {
+                            const url = l.url;
+                            if (url.startsWith('http://') || url.startsWith('https://')) {
+                                const m = await performanceAnalyticsService.measureUrlLatency(url);
+                                return { url, durationMs: m.durationMs, status: m.httpStatus ?? 0 };
+                            }
+                            // Non-http(s): record as failure (0ms, status 0)
+                            return { url, durationMs: 0, status: 0 };
+                        })
+                    );
+
+                    measured.forEach(m => {
+                        metrics.push({
+                            url: m.url,
+                            measurement_type: 'client',
+                            full_response_time: m.durationMs,
+                            http_status_code: m.status
+                        });
+                    });
+                }
+
+                // Sampled send for background scans (respects sampleRate).
+                await performanceAnalyticsService.sendMetrics(metrics);
+            } catch {
+                // ignore
+            }
+        })();
+        // Intentionally only rescan when tile changes
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tile.id]);
 
     // Helper to check if content is visible based on schedule
     const isContentVisible = (item: { visibleFrom?: string; expiresAt?: string }) => {

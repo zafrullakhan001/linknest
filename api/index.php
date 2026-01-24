@@ -164,6 +164,27 @@ if ($path === '/') {
     }
     require __DIR__ . '/broadcast.php';
     exit;
+} elseif (strpos($path, '/analytics/config') === 0) {
+    require __DIR__ . '/analytics/config.php';
+    exit;
+} elseif (strpos($path, '/analytics/collect') === 0) {
+    require __DIR__ . '/analytics/collect.php';
+    exit;
+} elseif (strpos($path, '/analytics/update-location') === 0) {
+    require __DIR__ . '/analytics/update-location.php';
+    exit;
+} elseif (strpos($path, '/analytics/reverse-geocode') === 0) {
+    require __DIR__ . '/analytics/reverse-geocode.php';
+    exit;
+} elseif (strpos($path, '/addons') === 0) {
+    $remainingPath = substr($path, 7); // Remove '/addons'
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    require __DIR__ . '/addons.php';
+    exit;
 } elseif (strpos($path, '/monitor-notifications') === 0) {
     // Remove '/monitor-notifications' prefix (22 characters)
     $prefixLength = strlen('/monitor-notifications');

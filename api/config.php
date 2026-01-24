@@ -120,15 +120,17 @@ if (!file_exists(DB_DIR)) {
     }
 }
 
-// CORS headers for development
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
-
-// Handle preflight requests
-if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit;
+// CORS headers for development (skip if in analytics API mode)
+if (!defined('ANALYTICS_API_MODE') || !ANALYTICS_API_MODE) {
+    header('Access-Control-Allow-Origin: *');
+    header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+    header('Access-Control-Allow-Headers: Content-Type, Authorization');
+    
+    // Handle preflight requests
+    if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+        http_response_code(200);
+        exit;
+    }
 }
 
 // Check if PDO SQLite is available
@@ -893,6 +895,43 @@ function initDatabase() {
             value TEXT NOT NULL,
             updated_at INTEGER NOT NULL
         )');
+        
+        // Create addon_status table for tracking add-on availability
+        $db->exec('CREATE TABLE IF NOT EXISTS addon_status (
+            addon_name TEXT PRIMARY KEY,
+            is_enabled INTEGER DEFAULT 0,
+            is_available INTEGER DEFAULT 0,
+            last_check_at INTEGER,
+            config TEXT,
+            error_message TEXT
+        )');
+        
+        // Initialize Performance Analytics addon status
+        $db->exec("INSERT OR IGNORE INTO addon_status (addon_name, is_enabled, is_available, last_check_at) 
+                   VALUES ('performance_analytics', 0, 0, " . time() . ")");
+        
+        // Initialize default Performance Analytics settings
+        $defaultSettings = [
+            'performance_analytics_enabled' => '0',
+            'performance_analytics_pg_host' => '',
+            'performance_analytics_pg_port' => '5432',
+            'performance_analytics_pg_database' => '',
+            'performance_analytics_pg_user' => '',
+            'performance_analytics_pg_password' => '',
+            'performance_analytics_sample_rate' => '0.1',
+            'performance_analytics_track_anonymous' => '1',
+            'performance_analytics_track_logins' => '1',
+            'performance_analytics_beacon_urls' => '',
+            'performance_analytics_worker_enabled' => '0',
+            'performance_analytics_retention_days' => '90',
+            'performance_analytics_dashboard_url' => ''
+        ];
+        
+        $stmt = $db->prepare("INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)");
+        $currentTime = time();
+        foreach ($defaultSettings as $key => $value) {
+            $stmt->execute([$key, $value, $currentTime]);
+        }
         
         // Create tile_arrangements table for global tile ordering
         // user_id is 0 for global arrangements, or user_id for user-specific (if needed in future)
@@ -2444,5 +2483,288 @@ function getAppName() {
         return ($row && !empty($row['value'])) ? $row['value'] : null;
     } catch (Exception $e) {
         return null;
+    }
+}
+
+/**
+ * Performance Analytics Add-on Helper Functions
+ */
+
+/**
+ * Check if performance analytics addon is enabled
+ * Cached for performance - only queries DB once per request
+ * 
+ * @return bool
+ */
+function isPerformanceAnalyticsEnabled(): bool {
+    static $enabled = null;
+    
+    if ($enabled === null) {
+        try {
+            $db = getDB();
+            $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'performance_analytics_enabled'");
+            $stmt->execute();
+            $value = $stmt->fetchColumn();
+            $enabled = ($value === '1' || $value === 1 || $value === true);
+        } catch (Exception $e) {
+            error_log("Failed to check performance analytics status: " . $e->getMessage());
+            $enabled = false; // Fail gracefully
+        }
+    }
+    
+    return $enabled;
+}
+
+/**
+ * Get analytics database connection (PostgreSQL)
+ * Returns null if addon is disabled or connection fails
+ * 
+ * @return PDO|null
+ */
+function getAnalyticsDB(): ?PDO {
+    static $analyticsDB = null;
+    static $attempted = false;
+    
+    // Early exit if disabled
+    if (!isPerformanceAnalyticsEnabled()) {
+        return null;
+    }
+    
+    // Return cached connection or failure
+    if ($attempted) {
+        return $analyticsDB;
+    }
+    
+    $attempted = true;
+    
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("
+            SELECT key, value FROM settings 
+            WHERE key LIKE 'performance_analytics_pg_%'
+        ");
+        $stmt->execute();
+        $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+        
+        if (empty($settings['performance_analytics_pg_host']) || 
+            empty($settings['performance_analytics_pg_database'])) {
+            error_log("Performance analytics: Database connection settings not configured");
+            return null;
+        }
+        
+        $dsn = sprintf(
+            "pgsql:host=%s;port=%d;dbname=%s",
+            $settings['performance_analytics_pg_host'] ?? 'localhost',
+            $settings['performance_analytics_pg_port'] ?? 5432,
+            $settings['performance_analytics_pg_database'] ?? ''
+        );
+        
+        $analyticsDB = new PDO(
+            $dsn,
+            $settings['performance_analytics_pg_user'] ?? '',
+            $settings['performance_analytics_pg_password'] ?? '',
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_TIMEOUT => 3, // Fast timeout to avoid blocking main app
+                PDO::ATTR_PERSISTENT => false
+            ]
+        );
+        
+        return $analyticsDB;
+        
+    } catch (Exception $e) {
+        // Log error but don't break main app
+        error_log("Performance analytics DB connection failed: " . $e->getMessage());
+        $analyticsDB = null;
+        return null;
+    }
+}
+
+/**
+ * Send performance metric to analytics queue (non-blocking)
+ * Automatically exits if addon is disabled
+ * 
+ * @param array $metric
+ * @return void
+ */
+function trackPerformanceMetric(array $metric): void {
+    // Early exit if disabled - zero overhead
+    if (!isPerformanceAnalyticsEnabled()) {
+        return;
+    }
+    
+    try {
+        $db = getAnalyticsDB();
+        if (!$db) {
+            return; // Connection failed, skip silently
+        }
+        
+        // Quick insert into queue
+        $stmt = $db->prepare("
+            INSERT INTO metrics_queue (payload, created_at) 
+            VALUES (:payload::jsonb, NOW())
+        ");
+        $stmt->execute([
+            'payload' => json_encode($metric)
+        ]);
+        
+        // Optional: Trigger notification for worker (non-blocking)
+        try {
+            // Worker listens on this channel (see analytics/process-metrics-queue.php)
+            $db->exec("NOTIFY metrics_inserted");
+        } catch (Exception $e) {
+            // Ignore NOTIFY failures
+        }
+        
+    } catch (Exception $e) {
+        // Never let analytics failures affect main app
+        error_log("Performance analytics tracking failed: " . $e->getMessage());
+    }
+}
+
+/**
+ * Track user login location (called after successful authentication)
+ * Automatically exits if addon is disabled or login tracking is off
+ * 
+ * @param int $userId
+ * @param string $username
+ * @return void
+ */
+function trackUserLogin(int $userId, string $username): void {
+    // Early exit if disabled
+    if (!isPerformanceAnalyticsEnabled()) {
+        return;
+    }
+    
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("
+            SELECT value FROM settings 
+            WHERE key = 'performance_analytics_track_logins'
+        ");
+        $stmt->execute();
+        $trackLogins = $stmt->fetchColumn();
+        
+        if ($trackLogins !== '1' && $trackLogins !== 1) {
+            return; // Login tracking disabled
+        }
+        
+        // Get user's IP address
+        $ip = $_SERVER['REMOTE_ADDR'] ?? null;
+        
+        // Get geolocation from IP
+        $geo = null;
+        if ($ip) {
+            // Load GeoIP function
+            $geoipPath = __DIR__ . '/../analytics/geoip/geoip.php';
+            if (file_exists($geoipPath)) {
+                require_once $geoipPath;
+                if (function_exists('getGeoFromIP')) {
+                    $geo = getGeoFromIP($ip);
+                }
+            }
+        }
+        
+        // Store location in session for client-side use
+        if ($geo) {
+            $_SESSION['country_code'] = $geo['country_code'] ?? 'XX';
+            $_SESSION['country_name'] = $geo['country_name'] ?? 'Unknown';
+            $_SESSION['region'] = $geo['region_name'] ?? 'Unknown';
+            $_SESSION['city'] = $geo['city_name'] ?? 'Unknown';
+            $_SESSION['latitude'] = $geo['latitude'] ?? 0.0;
+            $_SESSION['longitude'] = $geo['longitude'] ?? 0.0;
+            $_SESSION['timezone'] = $geo['timezone'] ?? 'UTC';
+        } else {
+            // Set defaults if geolocation failed
+            $_SESSION['country_code'] = 'XX';
+            $_SESSION['country_name'] = 'Unknown';
+            $_SESSION['region'] = 'Unknown';
+            $_SESSION['city'] = 'Unknown';
+            $_SESSION['latitude'] = 0.0;
+            $_SESSION['longitude'] = 0.0;
+            $_SESSION['timezone'] = 'UTC';
+        }
+        
+        // Prepare metric payload with geolocation
+        $metric = [
+            'type' => 'user_login',
+            'user_id' => $userId,
+            'username' => $username,
+            'ip' => $ip,
+            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+            'timestamp' => time(),
+            'session_id' => session_id(),
+            'geolocation' => $geo ? [
+                'country_code' => $geo['country_code'] ?? 'XX',
+                'country_name' => $geo['country_name'] ?? 'Unknown',
+                'region_name' => $geo['region_name'] ?? 'Unknown',
+                'city_name' => $geo['city_name'] ?? 'Unknown',
+                'latitude' => $geo['latitude'] ?? 0.0,
+                'longitude' => $geo['longitude'] ?? 0.0,
+                'timezone' => $geo['timezone'] ?? 'UTC'
+            ] : null
+        ];
+        
+        // Send to analytics queue
+        trackPerformanceMetric($metric);
+        
+        // Also store in user_geolocations table for analytics
+        try {
+            $analyticsDB = getAnalyticsDB();
+            if ($analyticsDB && $geo) {
+                $stmt = $analyticsDB->prepare("
+                    INSERT INTO user_geolocations (user_id, ip_address, country_code, country_name, region_name, city_name, latitude, longitude, timezone, last_seen)
+                    VALUES (:user_id, :ip_address, :country_code, :country_name, :region_name, :city_name, :latitude, :longitude, :timezone, NOW())
+                    ON CONFLICT (user_id) 
+                    DO UPDATE SET 
+                        ip_address = EXCLUDED.ip_address,
+                        country_code = EXCLUDED.country_code,
+                        country_name = EXCLUDED.country_name,
+                        region_name = EXCLUDED.region_name,
+                        city_name = EXCLUDED.city_name,
+                        latitude = EXCLUDED.latitude,
+                        longitude = EXCLUDED.longitude,
+                        timezone = EXCLUDED.timezone,
+                        last_seen = NOW()
+                ");
+                
+                $stmt->execute([
+                    'user_id' => $userId,
+                    'ip_address' => $ip,
+                    'country_code' => $geo['country_code'] ?? 'XX',
+                    'country_name' => $geo['country_name'] ?? 'Unknown',
+                    'region_name' => $geo['region_name'] ?? 'Unknown',
+                    'city_name' => $geo['city_name'] ?? 'Unknown',
+                    'latitude' => $geo['latitude'] ?? 0.0,
+                    'longitude' => $geo['longitude'] ?? 0.0,
+                    'timezone' => $geo['timezone'] ?? 'UTC'
+                ]);
+            }
+        } catch (Exception $e) {
+            // Log but don't fail login if analytics DB update fails
+            error_log("Failed to store user geolocation in analytics DB: " . $e->getMessage());
+        }
+        
+    } catch (Exception $e) {
+        error_log("Login tracking failed: " . $e->getMessage());
+    }
+}
+
+/**
+ * Get a setting value with default fallback
+ * 
+ * @param string $key
+ * @param mixed $default
+ * @return mixed
+ */
+function getSetting(string $key, $default = null) {
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT value FROM settings WHERE key = ?");
+        $stmt->execute([$key]);
+        $value = $stmt->fetchColumn();
+        return ($value !== false) ? $value : $default;
+    } catch (Exception $e) {
+        return $default;
     }
 }

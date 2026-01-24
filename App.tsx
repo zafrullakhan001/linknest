@@ -40,6 +40,7 @@ import { WidgetQuickAccess } from './components/WidgetQuickAccess';
 import { FloatingWidgetQuickAccess } from './components/FloatingWidgetQuickAccess';
 import { useMobile } from './hooks/useMobile';
 import { getAllowedWidgets } from './services/widgetService';
+import { performanceAnalyticsService } from './services/performanceAnalyticsService';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -255,6 +256,23 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     themeService.initialize();
   }, []);
+
+  // Performance Analytics: ensure we capture the user's best-available location
+  // (browser geolocation with IP fallback). This unblocks regional dashboards.
+  useEffect(() => {
+    // Don't prompt guests unless anonymous tracking is enabled server-side
+    void (async () => {
+      try {
+        const cfg = await performanceAnalyticsService.getConfig();
+        if (!cfg.enabled) return;
+        // Location endpoints require an authenticated session (privacy + avoids guest prompts)
+        if (!isAuthenticated) return;
+        await performanceAnalyticsService.ensureLocation(cfg, { allowPrompt: false });
+      } catch {
+        // ignore - analytics must never affect app UX
+      }
+    })();
+  }, [isAuthenticated]);
 
   // Fetch allowed widgets when user logs in or auth state changes
   useEffect(() => {

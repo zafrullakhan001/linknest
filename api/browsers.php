@@ -67,14 +67,25 @@ if (!isset($_SESSION['user_id'])) {
 
 // For POST and DELETE, require admin access
 if (in_array($method, ['POST', 'DELETE'])) {
-    $stmt = $db->prepare('SELECT is_admin FROM users WHERE id = ?');
-    $stmt->execute([$_SESSION['user_id']]);
-    $user = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if (!$user || !$user['is_admin']) {
-        http_response_code(403);
+    try {
+        $stmt = $db->prepare('SELECT is_admin FROM users WHERE id = ?');
+        $stmt->execute([$_SESSION['user_id']]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$user || !$user['is_admin']) {
+            http_response_code(403);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Admin access required']);
+            exit;
+        }
+    } catch (Exception $e) {
+        error_log('Failed to check admin status: ' . $e->getMessage());
+        http_response_code(500);
         header('Content-Type: application/json');
-        echo json_encode(['error' => 'Admin access required']);
+        echo json_encode([
+            'error' => 'Failed to verify admin access',
+            'details' => $e->getMessage()
+        ]);
         exit;
     }
 }
@@ -83,19 +94,42 @@ if (in_array($method, ['POST', 'DELETE'])) {
 try {
     if ($method === 'GET') {
         // Get saved browser list
-        $stmt = $db->query('SELECT browser_id, browser_name, browser_path, browser_version FROM browser_list ORDER BY browser_name');
-        $browsers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $browsers = [];
+        try {
+            $stmt = $db->query('SELECT browser_id, browser_name, browser_path, browser_version FROM browser_list ORDER BY browser_name');
+            if ($stmt) {
+                $browsers = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            }
+        } catch (PDOException $e) {
+            error_log('Browser list query failed: ' . $e->getMessage());
+            // Continue with empty array
+            $browsers = [];
+        }
         
-        // Get metadata
-        $metaStmt = $db->query('SELECT last_updated, source FROM browser_list_metadata WHERE id = 1');
-        $metadata = $metaStmt->fetch(PDO::FETCH_ASSOC);
+        // Get metadata (may not exist yet)
+        $metadata = null;
+        try {
+            $metaStmt = $db->query('SELECT last_updated, source FROM browser_list_metadata WHERE id = 1');
+            if ($metaStmt) {
+                $metadata = $metaStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+            }
+        } catch (PDOException $e) {
+            // Metadata table might not have a row yet - that's okay
+            error_log('Browser metadata query failed (non-critical): ' . $e->getMessage());
+            $metadata = null;
+        }
         
         header('Content-Type: application/json');
-        echo json_encode([
+        $response = [
             'success' => true,
             'browsers' => $browsers,
-            'metadata' => $metadata ?: null
-        ]);
+            'metadata' => $metadata
+        ];
+        $json = json_encode($response);
+        if ($json === false) {
+            throw new Exception('Failed to encode JSON: ' . json_last_error_msg());
+        }
+        echo $json;
         
     } elseif ($method === 'POST') {
         // Save browser list from extension
@@ -179,7 +213,16 @@ try {
         echo json_encode(['error' => 'Method not allowed']);
     }
     
+} catch (PDOException $e) {
+    error_log('Browser API PDO error: ' . $e->getMessage());
+    http_response_code(500);
+    header('Content-Type: application/json');
+    echo json_encode([
+        'error' => 'Database error',
+        'details' => $e->getMessage()
+    ]);
 } catch (Exception $e) {
+    error_log('Browser API error: ' . $e->getMessage() . ' | File: ' . $e->getFile() . ' | Line: ' . $e->getLine());
     http_response_code(500);
     header('Content-Type: application/json');
     echo json_encode([

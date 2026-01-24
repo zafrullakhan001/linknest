@@ -567,62 +567,131 @@ function handleGetDatabasePath() {
 }
 
 function handleGetUserPreferences() {
-    $user = requireAuth(); // User must be authenticated
-    
-    $userId = $user['id'];
-    $db = getDB();
-    $stmt = $db->prepare('SELECT preference_key, preference_value FROM user_preferences WHERE user_id = ?');
-    $stmt->execute([$userId]);
-    $rows = $stmt->fetchAll();
-    
-    $preferences = [];
-    foreach ($rows as $row) {
-        $preferences[$row['preference_key']] = $row['preference_value'];
+    try {
+        $user = requireAuth(); // User must be authenticated
+        
+        $userId = $user['id'];
+        $db = getDB();
+        
+        // Ensure table exists
+        try {
+            $db->exec('CREATE TABLE IF NOT EXISTS user_preferences (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                preference_key TEXT NOT NULL,
+                preference_value TEXT,
+                updated_at INTEGER NOT NULL,
+                UNIQUE(user_id, preference_key),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )');
+        } catch (Exception $e) {
+            // Table might already exist, continue
+            error_log("User preferences table creation: " . $e->getMessage());
+        }
+        
+        $stmt = $db->prepare('SELECT preference_key, preference_value FROM user_preferences WHERE user_id = ?');
+        $stmt->execute([$userId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        $preferences = [];
+        foreach ($rows as $row) {
+            $preferences[$row['preference_key']] = $row['preference_value'];
+        }
+        
+        sendJSON(['preferences' => $preferences]);
+        
+    } catch (PDOException $e) {
+        error_log('User preferences API PDO error: ' . $e->getMessage());
+        sendJSON([
+            'error' => 'Database error',
+            'details' => $e->getMessage()
+        ], 500);
+    } catch (Exception $e) {
+        error_log('User preferences API error: ' . $e->getMessage() . ' | File: ' . $e->getFile() . ' | Line: ' . $e->getLine());
+        sendJSON([
+            'error' => 'Failed to get user preferences',
+            'details' => $e->getMessage()
+        ], 500);
     }
-    
-    sendJSON(['preferences' => $preferences]);
 }
 
 function handleUpdateUserPreferences() {
-    $user = requireAuth(); // User must be authenticated
-    
-    $userId = $user['id'];
-    $data = getJSONInput();
-    
-    if (!isset($data['preferences']) || !is_array($data['preferences'])) {
-        sendJSON(['error' => 'Preferences data is required'], 400);
-        return;
-    }
-    
-    $db = getDB();
-    $db->beginTransaction();
-    
     try {
-        foreach ($data['preferences'] as $key => $value) {
-            // Validate preference key (only allow alphanumeric, underscore, and hyphen)
-            if (!preg_match('/^[a-zA-Z0-9_-]+$/', $key)) {
-                continue; // Skip invalid keys
-            }
-            
-            // Store preference value - handle different types correctly
-            if (is_array($value) || is_object($value)) {
-                $preferenceValue = json_encode($value);
-            } elseif (is_bool($value)) {
-                // Convert boolean to string "true" or "false" (not "1" or "")
-                $preferenceValue = $value ? 'true' : 'false';
-            } else {
-                $preferenceValue = (string)$value;
-            }
-            
-            $stmt = $db->prepare('INSERT OR REPLACE INTO user_preferences (user_id, preference_key, preference_value, updated_at) VALUES (?, ?, ?, ?)');
-            $stmt->execute([$userId, $key, $preferenceValue, time()]);
+        $user = requireAuth(); // User must be authenticated
+        
+        $userId = $user['id'];
+        $data = getJSONInput();
+        
+        if (!isset($data['preferences']) || !is_array($data['preferences'])) {
+            sendJSON(['error' => 'Preferences data is required'], 400);
+            return;
         }
         
-        $db->commit();
-        sendJSON(['success' => true, 'message' => 'Preferences updated successfully']);
+        $db = getDB();
+        
+        // Ensure table exists
+        try {
+            $db->exec('CREATE TABLE IF NOT EXISTS user_preferences (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                preference_key TEXT NOT NULL,
+                preference_value TEXT,
+                updated_at INTEGER NOT NULL,
+                UNIQUE(user_id, preference_key),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )');
+        } catch (Exception $e) {
+            // Table might already exist, continue
+        }
+        
+        $db->beginTransaction();
+        
+        try {
+            foreach ($data['preferences'] as $key => $value) {
+                // Validate preference key (only allow alphanumeric, underscore, and hyphen)
+                if (!preg_match('/^[a-zA-Z0-9_-]+$/', $key)) {
+                    continue; // Skip invalid keys
+                }
+                
+                // Store preference value - handle different types correctly
+                if (is_array($value) || is_object($value)) {
+                    $preferenceValue = json_encode($value);
+                } elseif (is_bool($value)) {
+                    // Convert boolean to string "true" or "false" (not "1" or "")
+                    $preferenceValue = $value ? 'true' : 'false';
+                } else {
+                    $preferenceValue = (string)$value;
+                }
+                
+                $stmt = $db->prepare('INSERT OR REPLACE INTO user_preferences (user_id, preference_key, preference_value, updated_at) VALUES (?, ?, ?, ?)');
+                $stmt->execute([$userId, $key, $preferenceValue, time()]);
+            }
+            
+            $db->commit();
+            sendJSON(['success' => true, 'message' => 'Preferences updated successfully']);
+            
+        } catch (PDOException $e) {
+            $db->rollBack();
+            error_log('User preferences update PDO error: ' . $e->getMessage());
+            sendJSON([
+                'error' => 'Database error',
+                'details' => $e->getMessage()
+            ], 500);
+        } catch (Exception $e) {
+            $db->rollBack();
+            error_log('User preferences update error: ' . $e->getMessage());
+            sendJSON([
+                'error' => 'Failed to update preferences',
+                'details' => $e->getMessage()
+            ], 500);
+        }
+        
     } catch (Exception $e) {
-        $db->rollBack();
-        sendJSON(['error' => 'Failed to update preferences: ' . $e->getMessage()], 500);
+        error_log('User preferences update error: ' . $e->getMessage() . ' | File: ' . $e->getFile() . ' | Line: ' . $e->getLine());
+        sendJSON([
+            'error' => 'Failed to update user preferences',
+            'details' => $e->getMessage()
+        ], 500);
     }
 }
 

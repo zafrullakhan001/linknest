@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Performance Analytics Dashboard | LinkNest</title>
+    <link rel="stylesheet" href="dashboard/styles.css">
+    <!-- D3.js for animated bubble visualization -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%234f46e5%22 width=%22100%22 height=%22100%22 rx=%2212%22/></svg>">
+</head>
+<body>
+    <div class="dashboard">
+        <!-- Header -->
+        <header class="dashboard-header">
+            <div class="container">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+                    <div>
+                        <h1>Performance Analytics</h1>
+                        <p class="subtitle">Regional URL performance · Real-time insights</p>
+                    </div>
+                    <div>
+                        <a href="../diagnostic.html" target="_blank">Diagnostics</a>
+                        <a href="../test-beacon.html" target="_blank">Test Beacon</a>
+                    </div>
+                </div>
+            </div>
+        </header>
+        
+        <!-- Filters -->
+        <div class="filters-panel">
+            <div class="container">
+                <div class="filter-group">
+                    <label for="url-filter">URL:</label>
+                    <select id="url-filter">
+                        <option value="">All URLs</option>
+                    </select>
+                </div>
+                
+                <div class="filter-group">
+                    <label for="period-filter">Period:</label>
+                    <select id="period-filter">
+                        <option value="1h">Last Hour</option>
+                        <option value="24h" selected>Last 24 Hours</option>
+                        <option value="7d">Last 7 Days</option>
+                        <option value="30d">Last 30 Days</option>
+                    </select>
+                </div>
+                
+                <div class="filter-group">
+                    <label for="granularity-filter">Granularity:</label>
+                    <select id="granularity-filter">
+                        <option value="url" selected>By URL</option>
+                        <option value="country">By Country</option>
+                        <option value="region">By Region/State</option>
+                        <option value="city">By City</option>
+                    </select>
+                </div>
+                
+                <div class="filter-group">
+                    <label for="measurement-filter">Measurement:</label>
+                    <select id="measurement-filter">
+                        <option value="client" selected>Client-Side</option>
+                        <option value="server">Server-Side</option>
+                    </select>
+                </div>
+                
+                <button id="refresh-btn" class="btn btn-primary">
+                    Refresh Data
+                </button>
+            </div>
+        </div>
+        
+        <!-- Stats Cards -->
+        <div class="stats-container container">
+            <div class="stat-card">
+                <div class="stat-label" id="stat-label-items">Total Items</div>
+                <div class="stat-value" id="stat-regions">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Avg Client Latency</div>
+                <div class="stat-value" id="stat-client-latency">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Avg Server Latency</div>
+                <div class="stat-value" id="stat-server-latency">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Avg Delta</div>
+                <div class="stat-value" id="stat-delta">-</div>
+            </div>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="container">
+            <div class="content-grid">
+                <!-- Queue Status -->
+                <div class="card queue-status-card">
+                    <div class="card-header">
+                        <h2>Metrics Queue</h2>
+                        <p class="card-subtitle">Live ingestion & processing status</p>
+                    </div>
+                    <div class="queue-status-body">
+                        <div class="queue-status-top">
+                            <span class="queue-status-pill status-unknown" id="queue-status-pill">Loading</span>
+                            <a class="queue-status-link" href="/api/metrics/queue-status?format=html" target="_blank" rel="noopener">Open</a>
+                        </div>
+                        <div class="queue-kpis">
+                            <div class="queue-kpi">
+                                <div class="queue-kpi-label">Pending</div>
+                                <div class="queue-kpi-value" id="queue-pending">-</div>
+                            </div>
+                            <div class="queue-kpi">
+                                <div class="queue-kpi-label">Rate</div>
+                                <div class="queue-kpi-value" id="queue-rate">-</div>
+                            </div>
+                            <div class="queue-kpi">
+                                <div class="queue-kpi-label">Est. wait</div>
+                                <div class="queue-kpi-value" id="queue-wait">-</div>
+                            </div>
+                            <div class="queue-kpi">
+                                <div class="queue-kpi-label">Last processed</div>
+                                <div class="queue-kpi-value queue-kpi-mono" id="queue-last-processed">-</div>
+                            </div>
+                        </div>
+                        <div class="queue-status-footer">
+                            <span class="text-muted">Updated:</span>
+                            <span class="queue-kpi-mono" id="queue-updated-at">-</span>
+                        </div>
+
+                        <details class="help-details">
+                            <summary>How to process the queue</summary>
+                            <pre class="help-pre mono">Why the dashboard shows “No data yet”
+The dashboard lists URLs from performance_metrics.
+If performance_metrics.total = 0 while metrics_queue.pending > 0, metrics are being collected but not processed.
+Processing is done by the worker: analytics/process-metrics-queue.php
+
+Fix (what to do now)
+Start the workers and leave them running:
+C:\xampp\htdocs\linknest\analytics\start-workers-xampp.bat
+Keep BOTH command windows open:
+- Metrics Queue Processor (required to move metrics_queue → performance_metrics)
+- Server Checker Worker
+
+Confirm it’s working
+Refresh:
+http://localhost:9333/api/metrics/queue-status
+You should see:
+- pending dropping toward 0
+- processed increasing
+- metrics.total increasing
+
+Then come back here and click “Refresh Data”. The URL dropdown will populate.
+
+About console errors (ERR_NAME_NOT_RESOLVED)
+This usually means some link/URL being measured can’t be resolved (bad hostname, DNS, VPN, or offline host).
+It won’t stop the dashboard itself, but those specific measurements may fail.</pre>
+                        </details>
+                    </div>
+                </div>
+
+                <!-- Bubble Chart -->
+                <div class="card chart-card">
+                    <div class="card-header">
+                        <div class="chart-header-row">
+                            <div>
+                                <h2>Regional Performance Map</h2>
+                                <p class="card-subtitle">Bubble size = measurement volume, Color = average latency</p>
+                            </div>
+                            <div class="view-toggle" role="tablist" aria-label="Chart view">
+                                <button id="view-bubbles" class="btn btn-secondary is-active" type="button" role="tab" aria-selected="true">
+                                    Bubbles
+                                </button>
+                                <button id="view-table" class="btn btn-secondary" type="button" role="tab" aria-selected="false">
+                                    Table
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="bubble-chart" class="chart-container"></div>
+                    <div id="bubble-table-container" class="table-container is-hidden" aria-hidden="true">
+                        <table id="bubble-table">
+                            <thead>
+                                <tr>
+                                    <th>Location</th>
+                                    <th>Avg (ms)</th>
+                                    <th>P95 (ms)</th>
+                                    <th>Success %</th>
+                                    <th>Measurements</th>
+                                    <th>Users</th>
+                                    <th>Country</th>
+                                    <th>Region</th>
+                                    <th>City</th>
+                                    <th>Latitude</th>
+                                    <th>Longitude</th>
+                                    <th>Status</th>
+                                    <th>Map</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bubble-table-body">
+                                <tr>
+                                    <td colspan="13" class="text-center">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Time Series Chart -->
+                <div class="card chart-card">
+                    <div class="card-header">
+                        <h2>Latency Trends Over Time</h2>
+                        <p class="card-subtitle">Track performance changes across different time periods</p>
+                    </div>
+                    <div id="timeseries-chart" class="chart-container"></div>
+                </div>
+                
+                <!-- Bar Chart Comparison -->
+                <div class="card chart-card">
+                    <div class="card-header">
+                        <div class="chart-header-row">
+                            <div>
+                                <h2>Performance Comparison</h2>
+                                <p class="card-subtitle">Compare average latency across top locations</p>
+                            </div>
+                            <div class="view-toggle">
+                                <button id="bar-sort-latency" class="btn btn-secondary is-active">By Latency</button>
+                                <button id="bar-sort-volume" class="btn btn-secondary">By Volume</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="bar-chart" class="chart-container"></div>
+                </div>
+                
+                <!-- Distribution Charts Row -->
+                <div class="charts-row">
+                    <!-- Pie Chart -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h2>Measurement Distribution</h2>
+                            <p class="card-subtitle">Breakdown by performance status</p>
+                        </div>
+                        <div id="pie-chart" class="chart-container-small"></div>
+                    </div>
+                    
+                    <!-- Histogram -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h2>Latency Distribution</h2>
+                            <p class="card-subtitle">Frequency of latency ranges</p>
+                        </div>
+                        <div id="histogram-chart" class="chart-container-small"></div>
+                    </div>
+                </div>
+                
+                <!-- Scatter Plot -->
+                <div class="card chart-card">
+                    <div class="card-header">
+                        <h2>Volume vs Performance</h2>
+                        <p class="card-subtitle">Correlation between measurement volume and latency</p>
+                    </div>
+                    <div id="scatter-chart" class="chart-container"></div>
+                </div>
+                
+                <!-- Heatmap -->
+                <div class="card chart-card">
+                    <div class="card-header">
+                        <h2>Performance Heatmap</h2>
+                        <p class="card-subtitle">Latency patterns by time of day and day of week</p>
+                    </div>
+                    <div id="heatmap-chart" class="chart-container"></div>
+                </div>
+                
+                <!-- Comparison Table -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Performance by Region</h2>
+                        <p class="card-subtitle">Client vs Server Latency Comparison</p>
+                    </div>
+                    <div class="table-container">
+                        <table id="comparison-table">
+                            <thead>
+                                <tr>
+                                    <th>Region</th>
+                                    <th>Client (ms)</th>
+                                    <th>Server (ms)</th>
+                                    <th>Delta</th>
+                                    <th>Measurements</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-body">
+                                <tr>
+                                    <td colspan="6" class="text-center">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Alerts Panel -->
+                <div class="card alerts-card">
+                    <div class="card-header">
+                        <h2>Performance Alerts</h2>
+                        <p class="card-subtitle">Regions exceeding thresholds</p>
+                    </div>
+                    <div id="alerts-container">
+                        <p class="text-muted">No alerts</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="dashboard/app.js"></script>
+</body>
+</html>

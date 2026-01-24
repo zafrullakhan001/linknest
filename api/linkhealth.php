@@ -2,6 +2,9 @@
 // Set execution time limit early to prevent hangs
 set_time_limit(10); // Maximum 10 seconds for entire script
 
+// Start output buffering to prevent any accidental output
+ob_start();
+
 require_once __DIR__ . '/config.php';
 
 if (session_status() === PHP_SESSION_NONE) {
@@ -400,61 +403,164 @@ function updateLinkHealthBatch($updates) {
  * GET /api/linkhealth.php - Get health status for all links
  */
 function handleGetHealthStatus() {
-    $db = getDB();
-    
-    // Get all links with their health status
-    $stmt = $db->prepare('
-        SELECT l.id, l.url, l.health_status, l.health_http_code, l.health_error, l.health_checked_at,
-               s.tile_id
-        FROM links l
-        JOIN sections s ON l.section_id = s.id
-    ');
-    $stmt->execute();
-    $links = $stmt->fetchAll();
-    
-    $result = [];
-    foreach ($links as $link) {
-        $result[$link['id']] = [
-            'status' => $link['health_status'] ?? 'unknown',
-            'httpCode' => $link['health_http_code'] ? (int)$link['health_http_code'] : null,
-            'error' => $link['health_error'],
-            'checkedAt' => $link['health_checked_at'] ? (int)$link['health_checked_at'] : null,
-            'tileId' => $link['tile_id']
-        ];
+    try {
+        // Clean any existing output
+        if (ob_get_level() > 0) {
+            ob_clean();
+        }
+        
+        $db = getDB();
+        
+        if (!$db) {
+            throw new Exception('Database connection failed');
+        }
+        
+        // Check if links table exists
+        try {
+            $tableCheck = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='links'");
+            if (!$tableCheck || !$tableCheck->fetch()) {
+                // Clean output before sending
+                if (ob_get_level() > 0) {
+                    ob_clean();
+                }
+                sendJSON(['health' => []]);
+                return;
+            }
+        } catch (Exception $e) {
+            // Table check failed, try query anyway
+            error_log('Table check failed: ' . $e->getMessage());
+        }
+        
+        // Get all links with their health status
+        // Use LEFT JOIN to handle links without sections
+        $stmt = $db->prepare('
+            SELECT l.id, l.url, l.health_status, l.health_http_code, l.health_error, l.health_checked_at,
+                   s.tile_id
+            FROM links l
+            LEFT JOIN sections s ON l.section_id = s.id
+        ');
+        
+        if (!$stmt) {
+            throw new Exception('Failed to prepare query');
+        }
+        
+        $stmt->execute();
+        $links = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        if ($links === false) {
+            $links = [];
+        }
+        
+        $result = [];
+        foreach ($links as $link) {
+            if (!isset($link['id'])) {
+                continue; // Skip invalid rows
+            }
+            
+            $result[$link['id']] = [
+                'status' => $link['health_status'] ?? 'unknown',
+                'httpCode' => isset($link['health_http_code']) && $link['health_http_code'] !== '' ? (int)$link['health_http_code'] : null,
+                'error' => $link['health_error'] ?? null,
+                'checkedAt' => isset($link['health_checked_at']) && $link['health_checked_at'] ? (int)$link['health_checked_at'] : null,
+                'tileId' => $link['tile_id'] ?? null
+            ];
+        }
+        
+        // Clean output buffer before sending JSON
+        if (ob_get_level() > 0) {
+            ob_clean();
+        }
+        
+        sendJSON(['health' => $result]);
+        
+    } catch (PDOException $e) {
+        error_log('LinkHealth API PDO error: ' . $e->getMessage() . ' | SQL State: ' . $e->getCode());
+        // Clean output buffer before sending error
+        if (ob_get_level() > 0) {
+            ob_clean();
+        }
+        // Try to send error response
+        if (!headers_sent()) {
+            sendJSON([
+                'error' => 'Database error',
+                'details' => $e->getMessage()
+            ], 500);
+        } else {
+            error_log('Cannot send JSON response - headers already sent');
+        }
+    } catch (Exception $e) {
+        error_log('LinkHealth API error: ' . $e->getMessage() . ' | File: ' . $e->getFile() . ' | Line: ' . $e->getLine());
+        // Clean output buffer before sending error
+        if (ob_get_level() > 0) {
+            ob_clean();
+        }
+        // Try to send error response
+        if (!headers_sent()) {
+            sendJSON([
+                'error' => 'Failed to get health status',
+                'details' => $e->getMessage()
+            ], 500);
+        } else {
+            error_log('Cannot send JSON response - headers already sent');
+        }
     }
-    
-    sendJSON(['health' => $result]);
 }
 
 /**
  * GET /api/linkhealth.php/stats - Get health statistics
  */
 function handleGetHealthStats() {
-    $db = getDB();
-    
-    $stmt = $db->prepare('
-        SELECT 
-            COUNT(*) as total,
-            SUM(CASE WHEN health_status = "healthy" THEN 1 ELSE 0 END) as healthy,
-            SUM(CASE WHEN health_status = "broken" THEN 1 ELSE 0 END) as broken,
-            SUM(CASE WHEN health_status = "timeout" THEN 1 ELSE 0 END) as timeout,
-            SUM(CASE WHEN health_status = "restricted" OR health_status = "accessible" THEN 1 ELSE 0 END) as accessible,
-            SUM(CASE WHEN health_status = "unknown" OR health_status IS NULL THEN 1 ELSE 0 END) as unknown
-        FROM links
-    ');
-    $stmt->execute();
-    $stats = $stmt->fetch();
-    
-    sendJSON([
-        'stats' => [
-            'total' => (int)$stats['total'],
-            'healthy' => (int)$stats['healthy'],
-            'broken' => (int)$stats['broken'],
-            'timeout' => (int)$stats['timeout'],
-            'accessible' => (int)($stats['accessible'] ?? 0),
-            'unknown' => (int)$stats['unknown']
-        ]
-    ]);
+    try {
+        $db = getDB();
+        
+        $stmt = $db->prepare('
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN health_status = "healthy" THEN 1 ELSE 0 END) as healthy,
+                SUM(CASE WHEN health_status = "broken" THEN 1 ELSE 0 END) as broken,
+                SUM(CASE WHEN health_status = "timeout" THEN 1 ELSE 0 END) as timeout,
+                SUM(CASE WHEN health_status = "restricted" OR health_status = "accessible" THEN 1 ELSE 0 END) as accessible,
+                SUM(CASE WHEN health_status = "unknown" OR health_status IS NULL THEN 1 ELSE 0 END) as unknown
+            FROM links
+        ');
+        $stmt->execute();
+        $stats = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$stats) {
+            $stats = [
+                'total' => 0,
+                'healthy' => 0,
+                'broken' => 0,
+                'timeout' => 0,
+                'accessible' => 0,
+                'unknown' => 0
+            ];
+        }
+        
+        sendJSON([
+            'stats' => [
+                'total' => (int)($stats['total'] ?? 0),
+                'healthy' => (int)($stats['healthy'] ?? 0),
+                'broken' => (int)($stats['broken'] ?? 0),
+                'timeout' => (int)($stats['timeout'] ?? 0),
+                'accessible' => (int)($stats['accessible'] ?? 0),
+                'unknown' => (int)($stats['unknown'] ?? 0)
+            ]
+        ]);
+        
+    } catch (PDOException $e) {
+        error_log('LinkHealth Stats API error: ' . $e->getMessage());
+        sendJSON([
+            'error' => 'Database error',
+            'details' => $e->getMessage()
+        ], 500);
+    } catch (Exception $e) {
+        error_log('LinkHealth Stats API error: ' . $e->getMessage() . ' | File: ' . $e->getFile() . ' | Line: ' . $e->getLine());
+        sendJSON([
+            'error' => 'Failed to get health stats',
+            'details' => $e->getMessage()
+        ], 500);
+    }
 }
 
 /**

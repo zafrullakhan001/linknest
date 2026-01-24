@@ -21,6 +21,7 @@ import SamlConfigModal from './SamlConfigModal';
 import { useMobile } from '../hooks/useMobile';
 import { getCustomWidgets, createWidget, updateWidget, deleteWidget, CustomWidget, CreateWidgetRequest, UpdateWidgetRequest } from '../services/widgetService';
 import { GranularPermissionsModal } from './GranularPermissionsModal';
+import { AddonsManagement } from './AddonsManagement';
 
 // Resolve API base dynamically based on current location
 // This ensures API calls work in both dev mode and runtime mode with any base path
@@ -68,9 +69,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const { refreshSettings } = useSettings();
   const isMobile = useMobile();
   // Initialize activeTab from localStorage or default to 'pending'
-  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenance' | 'widgets'>(() => {
+  const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenance' | 'widgets' | 'addons'>(() => {
     const savedTab = localStorage.getItem('adminPanelActiveTab');
-    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenance' | 'widgets'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer', 'tabVisibility', 'access', 'clone', 'browser', 'broadcast', 'maintenance', 'widgets'];
+    const validTabs: Array<'pending' | 'all' | 'settings' | 'database' | 'spaces' | 'ldap' | 'saml' | 'footer' | 'tabVisibility' | 'access' | 'clone' | 'browser' | 'broadcast' | 'maintenance' | 'widgets' | 'addons'> = ['pending', 'all', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer', 'tabVisibility', 'access', 'clone', 'browser', 'broadcast', 'maintenance', 'widgets', 'addons'];
     return (savedTab && validTabs.includes(savedTab as any)) ? savedTab as any : 'pending';
   });
   // Initialize tab layout from localStorage or default to 'horizontal'
@@ -3081,6 +3082,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                 >
                   Custom Widgets
                 </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('addons');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-sm font-medium transition-colors rounded-lg text-left touch-manipulation ${activeTab === 'addons'
+                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                  }`}
+                  style={{ minHeight: '44px' }}
+                >
+                  Add-ons
+                </button>
               </div>
             </div>
           </>
@@ -3319,6 +3333,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
               }
             >
               Custom Widgets
+            </button>
+            <button
+              onClick={() => setActiveTab('addons')}
+              className={tabLayout === 'horizontal'
+                ? `px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'addons'
+                  ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`
+                : `px-4 py-2.5 text-sm font-medium transition-colors rounded-lg text-left ${activeTab === 'addons'
+                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-l-4 border-brand-500'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-l-4 border-transparent'
+                }`
+              }
+            >
+              Add-ons
             </button>
           </div>
         )}
@@ -10592,6 +10621,13 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* Add-ons Tab */}
+              {activeTab === 'addons' && (
+                <div className="mt-6">
+                  <AddonsManagement />
                 </div>
               )}
             </>

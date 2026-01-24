@@ -117,6 +117,335 @@ try {
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
     <meta name="format-detection" content="telephone=no">
     <title><?php echo htmlspecialchars($appName, ENT_QUOTES, 'UTF-8'); ?> - Landing Page</title>
+    
+    <?php if (isPerformanceAnalyticsEnabled()): ?>
+        <!-- Performance Analytics Add-on -->
+        <script>
+            window.ANALYTICS_CONFIG = {
+                enabled: true,
+                sampleRate: <?php echo getSetting('performance_analytics_sample_rate', 0.1); ?>,
+                // Use same-origin collector to avoid CORS/mixed-content issues
+                collectUrl: '<?php echo $basePath; ?>/api/analytics/collect',
+                apiUrl: '<?php echo getSetting('performance_analytics_dashboard_url', 'http://localhost:8080'); ?>/api',
+                userId: <?php echo json_encode($_SESSION['user_id'] ?? null); ?>,
+                sessionId: '<?php echo session_id(); ?>',
+                beaconUrls: <?php echo json_encode(array_filter(explode(',', getSetting('performance_analytics_beacon_urls', '')))); ?>,
+                // Geo location (placeholder - to be set by server or client)
+                countryCode: '<?php echo $_SESSION['country_code'] ?? 'XX'; ?>',
+                region: '<?php echo $_SESSION['region'] ?? 'Unknown'; ?>',
+                city: '<?php echo $_SESSION['city'] ?? 'Unknown'; ?>',
+                latitude: <?php echo $_SESSION['latitude'] ?? 0; ?>,
+                longitude: <?php echo $_SESSION['longitude'] ?? 0; ?>
+            };
+        </script>
+        <script src="<?php echo $basePath; ?>/public/js/performance-beacon.js" defer></script>
+        <script src="<?php echo $basePath; ?>/public/js/link-latency-scanner.js" defer></script>
+        
+        <!-- Location Update Script -->
+        <script>
+        (function() {
+            // Update location in ANALYTICS_CONFIG if missing or unknown
+            if (window.ANALYTICS_CONFIG && window.ANALYTICS_CONFIG.enabled) {
+                const config = window.ANALYTICS_CONFIG;
+                
+                // Check if location is missing or unknown
+                const needsLocation = !config.countryCode || 
+                                     config.countryCode === 'XX' || 
+                                     config.region === 'Unknown' || 
+                                     config.city === 'Unknown' ||
+                                     config.latitude === 0 ||
+                                     config.longitude === 0;
+                
+                if (needsLocation && config.userId) {
+                    // First, try browser geolocation API (more accurate, shows pin in browser)
+                    if (navigator.geolocation) {
+                        console.log('[Analytics] Requesting browser geolocation...');
+                        navigator.geolocation.getCurrentPosition(
+                            function(position) {
+                                // Got browser location - update config with coordinates
+                                const lat = position.coords.latitude;
+                                const lng = position.coords.longitude;
+                                
+                                console.log('[Analytics] Browser geolocation obtained:', lat, lng);
+                                
+                                // Update config with coordinates
+                                config.latitude = lat;
+                                config.longitude = lng;
+                                
+                                // Reverse geocode to get address details
+                                fetch('<?php echo $basePath; ?>/api/analytics/reverse-geocode?lat=' + lat + '&lng=' + lng, {
+                                    method: 'GET',
+                                    credentials: 'same-origin'
+                                }).then(response => {
+                                    if (response.ok) {
+                                        return response.json();
+                                    }
+                                }).then(data => {
+                                    if (data && data.location) {
+                                        // Update config with reverse geocoded location
+                                        config.countryCode = data.location.country_code || config.countryCode;
+                                        config.region = data.location.region || config.region;
+                                        config.city = data.location.city || config.city;
+                                        console.log('[Analytics] Location reverse geocoded:', data.location);
+                                        
+                                        // Send to server to store
+                                        sendLocationToServer({
+                                            latitude: lat,
+                                            longitude: lng,
+                                            country_code: data.location.country_code,
+                                            region: data.location.region,
+                                            city: data.location.city
+                                        });
+                                    } else {
+                                        // Fallback: send coordinates to server for IP-based lookup
+                                        sendLocationToServer({
+                                            latitude: lat,
+                                            longitude: lng
+                                        });
+                                    }
+                                }).catch(e => {
+                                    console.log('[Analytics] Reverse geocode failed, using IP fallback:', e);
+                                    // Fallback to IP-based location
+                                    updateLocationFromIP();
+                                });
+                            },
+                            function(error) {
+                                // Browser geolocation failed or denied - fallback to IP
+                                console.log('[Analytics] Browser geolocation not available or denied, using IP fallback');
+                                updateLocationFromIP();
+                            },
+                            {
+                                enableHighAccuracy: true,
+                                timeout: 5000,
+                                maximumAge: 3600000 // Cache for 1 hour
+                            }
+                        );
+                    } else {
+                        // Browser geolocation not supported - use IP
+                        console.log('[Analytics] Browser geolocation not supported, using IP fallback');
+                        updateLocationFromIP();
+                    }
+                }
+                
+                // Fallback function to get location from IP
+                function updateLocationFromIP() {
+                    fetch('<?php echo $basePath; ?>/api/analytics/update-location', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        credentials: 'same-origin'
+                    }).then(response => {
+                        if (response.ok) {
+                            return response.json();
+                        }
+                    }).then(data => {
+                        if (data && data.location) {
+                            // Update config with server-provided location
+                            config.countryCode = data.location.country_code || config.countryCode;
+                            config.region = data.location.region || config.region;
+                            config.city = data.location.city || config.city;
+                            config.latitude = data.location.latitude || config.latitude;
+                            config.longitude = data.location.longitude || config.longitude;
+                            console.log('[Analytics] Location updated from IP:', data.location);
+                        }
+                    }).catch(e => {
+                        console.log('[Analytics] IP location update failed:', e);
+                    });
+                }
+                
+                // Send location to server for storage
+                function sendLocationToServer(locationData) {
+                    fetch('<?php echo $basePath; ?>/api/analytics/update-location', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        credentials: 'same-origin',
+                        body: JSON.stringify(locationData)
+                    }).then(response => {
+                        if (response.ok) {
+                            return response.json();
+                        }
+                    }).then(data => {
+                        if (data && data.location) {
+                            console.log('[Analytics] Location saved to server:', data.location);
+                        }
+                    }).catch(e => {
+                        console.log('[Analytics] Failed to save location to server:', e);
+                    });
+                }
+            }
+        })();
+        </script>
+        
+        <!-- Analytics Status Widget -->
+        <style>
+            #analytics-status-widget {
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: rgba(255, 255, 255, 0.95);
+                border-radius: 12px;
+                padding: 12px 16px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                font-size: 13px;
+                z-index: 10000;
+                min-width: 200px;
+                backdrop-filter: blur(10px);
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                transition: all 0.3s ease;
+            }
+            
+            #analytics-status-widget:hover {
+                box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+                transform: translateY(-2px);
+            }
+            
+            #analytics-status-widget .status-header {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 8px;
+                font-weight: 600;
+                color: #333;
+            }
+            
+            #analytics-status-widget .status-icon {
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                display: inline-block;
+            }
+            
+            #analytics-status-widget .status-icon.idle {
+                background: #ccc;
+            }
+            
+            #analytics-status-widget .status-icon.scanning {
+                background: #ffa500;
+                animation: pulse 1.5s ease-in-out infinite;
+            }
+            
+            #analytics-status-widget .status-icon.complete {
+                background: #4caf50;
+            }
+            
+            #analytics-status-widget .status-icon.error {
+                background: #f44336;
+            }
+            
+            @keyframes pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.5; }
+            }
+            
+            #analytics-status-widget .status-stats {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                font-size: 12px;
+                color: #666;
+            }
+            
+            #analytics-status-widget .stat-row {
+                display: flex;
+                justify-content: space-between;
+            }
+            
+            #analytics-status-widget .stat-value {
+                font-weight: 600;
+                color: #333;
+            }
+            
+            #analytics-status-widget .stat-value.success {
+                color: #4caf50;
+            }
+            
+            #analytics-status-widget .stat-value.error {
+                color: #f44336;
+            }
+        </style>
+        <div id="analytics-status-widget" style="display: none;">
+            <div class="status-header">
+                <span class="status-icon idle" id="status-icon"></span>
+                <span>Analytics</span>
+            </div>
+            <div class="status-stats">
+                <div class="stat-row">
+                    <span>URLs Sent:</span>
+                    <span class="stat-value success" id="urls-sent">0</span>
+                </div>
+                <div class="stat-row">
+                    <span>Total Links:</span>
+                    <span class="stat-value" id="total-links">0</span>
+                </div>
+                <div class="stat-row" id="failed-row" style="display: none;">
+                    <span>Failed:</span>
+                    <span class="stat-value error" id="urls-failed">0</span>
+                </div>
+            </div>
+        </div>
+        <script>
+            // Analytics Status Widget Handler
+            (function() {
+                const widget = document.getElementById('analytics-status-widget');
+                const statusIcon = document.getElementById('status-icon');
+                const urlsSentEl = document.getElementById('urls-sent');
+                const totalLinksEl = document.getElementById('total-links');
+                const urlsFailedEl = document.getElementById('urls-failed');
+                const failedRow = document.getElementById('failed-row');
+                
+                function updateWidget(stats) {
+                    if (!widget) return;
+                    
+                    // Show widget if analytics is enabled
+                    if (window.ANALYTICS_CONFIG && window.ANALYTICS_CONFIG.enabled) {
+                        widget.style.display = 'block';
+                    } else {
+                        widget.style.display = 'none';
+                        return;
+                    }
+                    
+                    // Update status icon
+                    statusIcon.className = 'status-icon ' + (stats.status || 'idle');
+                    
+                    // Update stats
+                    urlsSentEl.textContent = stats.urlsSent || 0;
+                    totalLinksEl.textContent = stats.totalLinks || 0;
+                    
+                    // Show failed count if any
+                    if (stats.urlsFailed > 0) {
+                        urlsFailedEl.textContent = stats.urlsFailed;
+                        failedRow.style.display = 'flex';
+                    } else {
+                        failedRow.style.display = 'none';
+                    }
+                }
+                
+                // Listen for stats updates
+                window.addEventListener('analyticsStatsUpdate', function(e) {
+                    updateWidget(e.detail);
+                });
+                
+                // Check for scanner instance periodically (in case it loads after this script)
+                let checkCount = 0;
+                const checkInterval = setInterval(function() {
+                    checkCount++;
+                    if (window.LinkLatencyScanner) {
+                        // Try to get stats from scanner instance if available
+                        if (window.analyticsScanner) {
+                            updateWidget(window.analyticsScanner.getStats());
+                        }
+                    }
+                    if (checkCount > 20) {
+                        clearInterval(checkInterval);
+                    }
+                }, 500);
+            })();
+        </script>
+    <?php endif; ?>
+    
     <style>
         * {
             margin: 0;
