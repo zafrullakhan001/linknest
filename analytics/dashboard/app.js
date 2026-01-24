@@ -30,13 +30,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('url-filter').addEventListener('change', refreshData);
     document.getElementById('granularity-filter').addEventListener('change', refreshData);
 
-    // View toggle (bubble/table)
-    const bubblesBtn = document.getElementById('view-bubbles');
-    const tableBtn = document.getElementById('view-table');
-    if (bubblesBtn && tableBtn) {
-        bubblesBtn.addEventListener('click', () => setView('bubbles'));
-        tableBtn.addEventListener('click', () => setView('table'));
-    }
+    // Chart tab switching
+    const chartTabs = document.querySelectorAll('.chart-tab');
+    chartTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const chartType = tab.dataset.chart;
+            switchChart(chartType);
+        });
+    });
 
     // Reload filters when period or measurement type changes
     document.getElementById('period-filter').addEventListener('change', async () => {
@@ -52,34 +53,301 @@ document.addEventListener('DOMContentLoaded', () => {
     setInterval(refreshData, 30000);
 });
 
-function setView(view) {
-    currentView = view === 'table' ? 'table' : 'bubbles';
-    const chartEl = document.getElementById('bubble-chart');
-    const tableContainer = document.getElementById('bubble-table-container');
-    const bubblesBtn = document.getElementById('view-bubbles');
-    const tableBtn = document.getElementById('view-table');
-
-    if (!chartEl || !tableContainer || !bubblesBtn || !tableBtn) return;
-
-    if (currentView === 'table') {
-        chartEl.classList.add('is-hidden');
-        tableContainer.classList.remove('is-hidden');
-        tableContainer.setAttribute('aria-hidden', 'false');
-        bubblesBtn.classList.remove('is-active');
-        bubblesBtn.setAttribute('aria-selected', 'false');
-        tableBtn.classList.add('is-active');
-        tableBtn.setAttribute('aria-selected', 'true');
-        renderBubbleTable(currentData);
-    } else {
-        chartEl.classList.remove('is-hidden');
-        tableContainer.classList.add('is-hidden');
-        tableContainer.setAttribute('aria-hidden', 'true');
-        tableBtn.classList.remove('is-active');
-        tableBtn.setAttribute('aria-selected', 'false');
-        bubblesBtn.classList.add('is-active');
-        bubblesBtn.setAttribute('aria-selected', 'true');
-        // Bubble chart already rendered by loadBubbleData
+// Chart metadata
+const chartMetadata = {
+    bubble: {
+        title: 'Regional Performance Map',
+        subtitle: 'Bubble size = measurement volume, Color = average latency',
+        options: ''
+    },
+    timeseries: {
+        title: 'Latency Trends Over Time',
+        subtitle: 'Track performance changes across different time periods',
+        options: ''
+    },
+    bar: {
+        title: 'Performance Comparison',
+        subtitle: 'Compare average latency across top locations',
+        options: `
+            <div class="view-toggle">
+                <button id="bar-sort-latency" class="btn btn-secondary is-active">By Latency</button>
+                <button id="bar-sort-volume" class="btn btn-secondary">By Volume</button>
+            </div>
+        `
+    },
+    pie: {
+        title: 'Measurement Distribution',
+        subtitle: 'Breakdown by performance status',
+        options: ''
+    },
+    histogram: {
+        title: 'Latency Distribution',
+        subtitle: 'Frequency of latency ranges',
+        options: ''
+    },
+    scatter: {
+        title: 'Volume vs Performance',
+        subtitle: 'Correlation between measurement volume and latency',
+        options: ''
+    },
+    heatmap: {
+        title: 'Performance Heatmap',
+        subtitle: 'Latency patterns by time of day and day of week',
+        options: ''
+    },
+    table: {
+        title: 'Detailed Data Table',
+        subtitle: 'Complete performance metrics for all locations',
+        options: ''
     }
+};
+
+// Switch between charts
+function switchChart(chartType) {
+    // Update tabs
+    document.querySelectorAll('.chart-tab').forEach(tab => {
+        tab.classList.toggle('is-active', tab.dataset.chart === chartType);
+    });
+
+    // Update chart views
+    document.querySelectorAll('.chart-view').forEach(view => {
+        view.classList.remove('is-active');
+    });
+
+    // Show selected chart
+    const chartMap = {
+        bubble: 'bubble-chart',
+        timeseries: 'timeseries-chart',
+        bar: 'bar-chart',
+        pie: 'pie-chart',
+        histogram: 'histogram-chart',
+        scatter: 'scatter-chart',
+        heatmap: 'heatmap-chart',
+        table: 'bubble-table-container'
+    };
+
+    const chartId = chartMap[chartType];
+    const chartView = document.getElementById(chartId);
+    if (chartView) {
+        chartView.classList.add('is-active');
+    }
+
+    // Update title and subtitle
+    const metadata = chartMetadata[chartType];
+    if (metadata) {
+        document.getElementById('chart-title').textContent = metadata.title;
+        document.getElementById('chart-subtitle').textContent = metadata.subtitle;
+
+        // Update chart-specific options
+        const optionsContainer = document.getElementById('chart-specific-options');
+        optionsContainer.innerHTML = metadata.options;
+
+        // Re-attach event listeners for bar chart buttons if needed
+        if (chartType === 'bar') {
+            const barLatencyBtn = document.getElementById('bar-sort-latency');
+            const barVolumeBtn = document.getElementById('bar-sort-volume');
+
+            if (barLatencyBtn && barVolumeBtn) {
+                barLatencyBtn.addEventListener('click', () => {
+                    barSortMode = 'latency';
+                    barLatencyBtn.classList.add('is-active');
+                    barVolumeBtn.classList.remove('is-active');
+                    if (currentData.length > 0) renderBarChart(currentData);
+                });
+
+                barVolumeBtn.addEventListener('click', () => {
+                    barSortMode = 'volume';
+                    barVolumeBtn.classList.add('is-active');
+                    barLatencyBtn.classList.remove('is-active');
+                    if (currentData.length > 0) renderBarChart(currentData);
+                });
+            }
+        }
+    }
+
+    // Render chart if needed (for charts that need re-rendering on view)
+    if (chartType === 'timeseries' && currentData.length > 0) {
+        renderTimeSeriesChart();
+    } else if (chartType === 'heatmap' && currentData.length > 0) {
+        renderHeatmap();
+    } else if (chartType === 'table' && currentData.length > 0) {
+        renderBubbleTable(currentData);
+    }
+}
+
+// ============================================
+// ZOOM FUNCTIONALITY
+// ============================================
+
+let currentZoom = 1.0;
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 3.0;
+const ZOOM_STEP = 0.2;
+
+// Initialize zoom controls
+document.addEventListener('DOMContentLoaded', () => {
+    const zoomInBtn = document.getElementById('zoom-in');
+    const zoomOutBtn = document.getElementById('zoom-out');
+    const zoomResetBtn = document.getElementById('zoom-reset');
+
+    if (zoomInBtn) zoomInBtn.addEventListener('click', () => zoomChart(ZOOM_STEP));
+    if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => zoomChart(-ZOOM_STEP));
+    if (zoomResetBtn) zoomResetBtn.addEventListener('click', resetZoom);
+
+    // Mouse wheel zoom (Ctrl + Wheel)
+    const chartContainer = document.querySelector('.unified-chart-container');
+    if (chartContainer) {
+        chartContainer.addEventListener('wheel', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+                zoomChart(delta);
+            }
+        }, { passive: false });
+    }
+
+    // Enable pan on all chart views
+    enablePanOnCharts();
+});
+
+function zoomChart(delta) {
+    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom + delta));
+
+    if (newZoom === currentZoom) return;
+
+    currentZoom = newZoom;
+    updateZoomDisplay();
+    applyZoom();
+}
+
+function resetZoom() {
+    currentZoom = 1.0;
+    updateZoomDisplay();
+    applyZoom();
+}
+
+function updateZoomDisplay() {
+    const zoomLevelEl = document.getElementById('zoom-level');
+    if (zoomLevelEl) {
+        zoomLevelEl.textContent = `${Math.round(currentZoom * 100)}%`;
+    }
+
+    // Update button states
+    const zoomInBtn = document.getElementById('zoom-in');
+    const zoomOutBtn = document.getElementById('zoom-out');
+
+    if (zoomInBtn) zoomInBtn.disabled = currentZoom >= MAX_ZOOM;
+    if (zoomOutBtn) zoomOutBtn.disabled = currentZoom <= MIN_ZOOM;
+}
+
+function applyZoom() {
+    // Apply zoom to all chart views
+    document.querySelectorAll('.chart-view').forEach(view => {
+        const svg = view.querySelector('svg');
+        if (svg) {
+            svg.style.transform = `scale(${currentZoom})`;
+            svg.style.transformOrigin = 'top left';
+
+            // Adjust container size to accommodate zoom
+            const originalWidth = view.clientWidth;
+            const originalHeight = view.clientHeight;
+            svg.style.width = `${originalWidth}px`;
+            svg.style.height = `${originalHeight}px`;
+        }
+
+        // For table view, zoom the entire content
+        if (view.classList.contains('table-view')) {
+            const table = view.querySelector('table');
+            if (table) {
+                table.style.transform = `scale(${currentZoom})`;
+                table.style.transformOrigin = 'top left';
+            }
+        }
+
+        // Enable scrolling when zoomed in
+        if (currentZoom > 1.0) {
+            view.classList.add('zoomable');
+        } else {
+            view.classList.remove('zoomable');
+        }
+    });
+}
+
+// Pan functionality - works at all zoom levels
+function enablePanOnCharts() {
+    document.querySelectorAll('.chart-view').forEach(view => {
+        let isPanning = false;
+        let startX, startY, scrollLeft, scrollTop;
+
+        // Make all chart views pannable
+        view.style.overflow = 'auto';
+        view.classList.add('pannable');
+
+        view.addEventListener('mousedown', (e) => {
+            // Don't pan if clicking on interactive elements
+            if (e.target.closest('button, a, input, select, textarea')) return;
+
+            isPanning = true;
+            startX = e.pageX - view.offsetLeft;
+            startY = e.pageY - view.offsetTop;
+            scrollLeft = view.scrollLeft;
+            scrollTop = view.scrollTop;
+            view.style.cursor = 'grabbing';
+            e.preventDefault();
+        });
+
+        view.addEventListener('mouseleave', () => {
+            isPanning = false;
+            view.style.cursor = 'grab';
+        });
+
+        view.addEventListener('mouseup', () => {
+            isPanning = false;
+            view.style.cursor = 'grab';
+        });
+
+        view.addEventListener('mousemove', (e) => {
+            if (!isPanning) return;
+            e.preventDefault();
+
+            const x = e.pageX - view.offsetLeft;
+            const y = e.pageY - view.offsetTop;
+            const walkX = (x - startX) * 2; // Increased sensitivity
+            const walkY = (y - startY) * 2;
+
+            view.scrollLeft = scrollLeft - walkX;
+            view.scrollTop = scrollTop - walkY;
+        });
+
+        // Touch support for mobile
+        let touchStartX, touchStartY;
+
+        view.addEventListener('touchstart', (e) => {
+            if (e.target.closest('button, a, input, select, textarea')) return;
+
+            touchStartX = e.touches[0].pageX - view.offsetLeft;
+            touchStartY = e.touches[0].pageY - view.offsetTop;
+            scrollLeft = view.scrollLeft;
+            scrollTop = view.scrollTop;
+        }, { passive: true });
+
+        view.addEventListener('touchmove', (e) => {
+            if (!touchStartX) return;
+
+            const x = e.touches[0].pageX - view.offsetLeft;
+            const y = e.touches[0].pageY - view.offsetTop;
+            const walkX = (x - touchStartX) * 2;
+            const walkY = (y - touchStartY) * 2;
+
+            view.scrollLeft = scrollLeft - walkX;
+            view.scrollTop = scrollTop - walkY;
+        }, { passive: true });
+
+        view.addEventListener('touchend', () => {
+            touchStartX = null;
+            touchStartY = null;
+        }, { passive: true });
+    });
 }
 
 function escapeHtml(str) {
