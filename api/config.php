@@ -2604,6 +2604,27 @@ function trackPerformanceMetric(array $metric): void {
         if (!$db) {
             return; // Connection failed, skip silently
         }
+
+        // De-dupe immediate duplicates (common in dev due to React StrictMode double effects,
+        // or accidental double submits). This keeps time-series intact while suppressing back-to-back duplicates.
+        $dedupeKey = $metric['dedupe_key'] ?? null;
+        if (is_string($dedupeKey) && $dedupeKey !== '') {
+            try {
+                $check = $db->prepare("
+                    SELECT 1
+                    FROM metrics_queue
+                    WHERE payload->>'dedupe_key' = :k
+                      AND created_at > NOW() - INTERVAL '10 seconds'
+                    LIMIT 1
+                ");
+                $check->execute(['k' => $dedupeKey]);
+                if ($check->fetchColumn()) {
+                    return; // duplicate detected, skip insert
+                }
+            } catch (Exception $e) {
+                // If the de-dupe check fails, continue with insert (best-effort)
+            }
+        }
         
         // Quick insert into queue
         $stmt = $db->prepare("

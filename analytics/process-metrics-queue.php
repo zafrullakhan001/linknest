@@ -49,18 +49,20 @@ $insertStmt = $db->prepare("
         latitude, longitude, timezone, isp,
         full_response_time, dns_lookup_time, tcp_connection_time,
         tls_handshake_time, time_to_first_byte,
+        dom_content_loaded_time, page_size_bytes, page_url,
         http_status_code, device_type, browser_name,
         browser_version, os_name, screen_resolution, connection_type,
-        is_authenticated
+        is_authenticated, error_message
     ) VALUES (
         COALESCE(:time::timestamptz, NOW()), :link_url, :measurement_type, :user_id, :username, :session_id,
         :ip_address, :country_code, :country_name, :region_name, :city_name,
         :latitude, :longitude, :timezone, :isp,
         :full_response_time, :dns_lookup_time, :tcp_connection_time,
         :tls_handshake_time, :time_to_first_byte,
+        :dom_content_loaded_time, :page_size_bytes, :page_url,
         :http_status_code, :device_type, :browser_name,
         :browser_version, :os_name, :screen_resolution, :connection_type,
-        :is_authenticated
+        :is_authenticated, :error_message
     )
 ");
 
@@ -118,45 +120,50 @@ function processBatch($db, $insertStmt, $updateStmt, $batchSize, &$stats) {
                     continue;
                 }
                 
-                // Extract location data from client payload first
-                // Client sends: country_code, region, city, latitude, longitude
-                $countryCode = $payload['country_code'] ?? 'XX';
-                $region = $payload['region'] ?? 'Unknown';
-                $city = $payload['city'] ?? 'Unknown';
-                $latitude = (float)($payload['latitude'] ?? 0);
-                $longitude = (float)($payload['longitude'] ?? 0);
-                
-                // If location is missing or unknown, try to get it from IP
-                if ($countryCode === 'XX' || $region === 'Unknown' || $city === 'Unknown') {
-                    $ipAddress = $payload['ip_address'] ?? null;
-                    if ($ipAddress) {
-                        $geo = getGeoFromIP($ipAddress);
-                        $countryCode = $geo['country_code'] ?? $countryCode;
-                        $region = $geo['region_name'] ?? $region;
-                        $city = $geo['city_name'] ?? $city;
-                        $latitude = $geo['latitude'] ?? $latitude;
-                        $longitude = $geo['longitude'] ?? $longitude;
-                    }
-                }
-                
-                // Get country name (for display)
-                $countryName = $payload['country_name'] ?? 'Unknown';
-                if ($countryName === 'Unknown' && $countryCode !== 'XX') {
-                    $ipAddress = $payload['ip_address'] ?? null;
-                    if ($ipAddress) {
-                        $geo = getGeoFromIP($ipAddress);
-                        $countryName = $geo['country_name'] ?? 'Unknown';
-                    }
-                }
-                
-                // Get timezone and ISP from IP if available
+                // Extract location data - prioritize IP-based lookup for accuracy
+                $ipAddress = $payload['ip_address'] ?? null;
+                $countryCode = 'XX';
+                $countryName = 'Unknown';
+                $region = 'Unknown';
+                $city = 'Unknown';
+                $latitude = 0.0;
+                $longitude = 0.0;
                 $timezone = 'UTC';
                 $isp = null;
-                $ipAddress = $payload['ip_address'] ?? null;
-                if ($ipAddress) {
+                
+                // Try to get location from IP address first (most reliable)
+                if ($ipAddress && filter_var($ipAddress, FILTER_VALIDATE_IP)) {
                     $geo = getGeoFromIP($ipAddress);
+                    $countryCode = $geo['country_code'] ?? 'XX';
+                    $countryName = $geo['country_name'] ?? 'Unknown';
+                    $region = $geo['region_name'] ?? 'Unknown';
+                    $city = $geo['city_name'] ?? 'Unknown';
+                    $latitude = (float)($geo['latitude'] ?? 0.0);
+                    $longitude = (float)($geo['longitude'] ?? 0.0);
                     $timezone = $geo['timezone'] ?? 'UTC';
                     $isp = $geo['isp'] ?? null;
+                }
+                
+                // If IP lookup failed or returned default values, try client payload
+                if ($countryCode === 'XX' || ($latitude === 0.0 && $longitude === 0.0)) {
+                    // Check if client provided valid location data
+                    $clientCountryCode = $payload['country_code'] ?? null;
+                    $clientLatitude = (float)($payload['latitude'] ?? 0);
+                    $clientLongitude = (float)($payload['longitude'] ?? 0);
+                    
+                    // Use client data if it looks valid (not default values)
+                    if ($clientCountryCode && $clientCountryCode !== 'XX') {
+                        $countryCode = $clientCountryCode;
+                        $countryName = $payload['country_name'] ?? $countryName;
+                        $region = $payload['region'] ?? $region;
+                        $city = $payload['city'] ?? $city;
+                        
+                        // Only use client coordinates if they're not 0,0 (default value)
+                        if ($clientLatitude !== 0.0 || $clientLongitude !== 0.0) {
+                            $latitude = $clientLatitude;
+                            $longitude = $clientLongitude;
+                        }
+                    }
                 }
                 
                 // Insert into performance_metrics
@@ -181,6 +188,9 @@ function processBatch($db, $insertStmt, $updateStmt, $batchSize, &$stats) {
                     'tcp_connection_time' => $payload['tcp_connection_time'] ?? null,
                     'tls_handshake_time' => $payload['tls_handshake_time'] ?? null,
                     'time_to_first_byte' => $payload['time_to_first_byte'] ?? null,
+                    'dom_content_loaded_time' => $payload['dom_content_loaded_time'] ?? null,
+                    'page_size_bytes' => $payload['page_size_bytes'] ?? null,
+                    'page_url' => $payload['page_url'] ?? null,
                     'http_status_code' => $payload['http_status_code'] ?? 200,
                     'device_type' => $payload['device_type'] ?? 'unknown',
                     'browser_name' => $payload['browser_name'] ?? '',
@@ -188,7 +198,8 @@ function processBatch($db, $insertStmt, $updateStmt, $batchSize, &$stats) {
                     'os_name' => $payload['os_name'] ?? '',
                     'screen_resolution' => $payload['screen_resolution'] ?? '',
                     'connection_type' => $payload['connection_type'] ?? '',
-                    'is_authenticated' => !empty($payload['user_id'])
+                    'is_authenticated' => !empty($payload['user_id']),
+                    'error_message' => $payload['error_message'] ?? null
                 ]);
                 
                 // Mark as processed
@@ -286,8 +297,8 @@ while (true) {
             $db = getAnalyticsPDO();
             $insertStmt = $db->prepare("
                 INSERT INTO performance_metrics (
-                    time, link_url, measurement_type, user_id, session_id,
-                    country_code, country_name, region_name, city_name,
+                    time, link_url, measurement_type, user_id, username, session_id,
+                    ip_address, country_code, country_name, region_name, city_name,
                     latitude, longitude, timezone, isp,
                     full_response_time, dns_lookup_time, tcp_connection_time,
                     tls_handshake_time, time_to_first_byte,
@@ -295,8 +306,8 @@ while (true) {
                     browser_version, os_name, screen_resolution, connection_type,
                     is_authenticated
                 ) VALUES (
-                    NOW(), :link_url, :measurement_type, :user_id, :session_id,
-                    :country_code, :country_name, :region_name, :city_name,
+                    COALESCE(:time::timestamptz, NOW()), :link_url, :measurement_type, :user_id, :username, :session_id,
+                    :ip_address, :country_code, :country_name, :region_name, :city_name,
                     :latitude, :longitude, :timezone, :isp,
                     :full_response_time, :dns_lookup_time, :tcp_connection_time,
                     :tls_handshake_time, :time_to_first_byte,

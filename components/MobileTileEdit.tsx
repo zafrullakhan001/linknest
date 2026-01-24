@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Tile, Tab, LinkSection, Link, LinkVisibility, TileVisibility, ThemeColor, THEME_COLORS, COLOR_STYLES } from '../types';
 import { User } from '../services/authService';
+import { AppSettings } from '../services/settingsService';
 import { MobileRichTextEditor } from './MobileRichTextEditor';
 
 interface MobileTileEditProps {
@@ -30,7 +31,7 @@ interface MobileTileEditProps {
     setShowEmojiPicker: (show: boolean) => void;
     showTileUserSelector: boolean;
     setShowTileUserSelector: (show: boolean) => void;
-    settings?: any;
+    settings?: Partial<AppSettings>;
     availableBrowsers?: string[];
     user?: User | null;
 }

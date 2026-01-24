@@ -22,6 +22,7 @@ $enabled = function_exists('isPerformanceAnalyticsEnabled') && isPerformanceAnal
 // Respect "track anonymous" setting if user is not authenticated
 $trackAnonymous = (getSetting('performance_analytics_track_anonymous', '1') === '1');
 $userId = $_SESSION['user_id'] ?? null;
+$username = $_SESSION['username'] ?? null;
 if (!$userId && !$trackAnonymous) {
     // Return disabled config to avoid client-side collection for anonymous users
     sendJSON([
@@ -60,6 +61,7 @@ sendJSON([
     'dashboardUrl' => (string)getSetting('performance_analytics_dashboard_url', ''),
     // User/session context
     'userId' => $userId,
+    'username' => $username,
     'sessionId' => session_id(),
     // Best-known location (session, can be updated by /api/analytics/update-location)
     'location' => [

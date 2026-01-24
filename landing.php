@@ -128,6 +128,7 @@ try {
                 collectUrl: '<?php echo $basePath; ?>/api/analytics/collect',
                 apiUrl: '<?php echo getSetting('performance_analytics_dashboard_url', 'http://localhost:8080'); ?>/api',
                 userId: <?php echo json_encode($_SESSION['user_id'] ?? null); ?>,
+                username: <?php echo json_encode($_SESSION['username'] ?? null); ?>,
                 sessionId: '<?php echo session_id(); ?>',
                 beaconUrls: <?php echo json_encode(array_filter(explode(',', getSetting('performance_analytics_beacon_urls', '')))); ?>,
                 // Geo location (placeholder - to be set by server or client)

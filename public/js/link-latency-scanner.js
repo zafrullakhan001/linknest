@@ -203,6 +203,7 @@
                     screen_resolution: screen.width + 'x' + screen.height,
                     connection_type: navigator.connection ? (navigator.connection.effectiveType || 'unknown') : 'unknown',
                     user_id: this.config.userId || null,
+                    username: this.config.username || null,
                     session_id: this.config.sessionId || '',
                     // Include location data from config
                     country_code: this.config.countryCode || 'XX',

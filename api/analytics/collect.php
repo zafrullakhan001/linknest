@@ -122,6 +122,10 @@ foreach ($items as $idx => $item) {
         'time_to_first_byte' => isset($item['time_to_first_byte']) ? (int)$item['time_to_first_byte'] : (isset($item['ttfb']) ? (int)$item['ttfb'] : null),
         'download_time' => isset($item['download_time']) ? (int)$item['download_time'] : null,
         'http_status_code' => (int)($item['http_status_code'] ?? $item['http_status'] ?? 0),
+        'error_message' => isset($item['error_message']) ? (string)$item['error_message'] : (isset($item['error']) ? (string)$item['error'] : null),
+        'page_url' => isset($item['page_url']) ? (string)$item['page_url'] : null,
+        'dom_content_loaded_time' => isset($item['dom_content_loaded_time']) ? (int)$item['dom_content_loaded_time'] : (isset($item['dom_load']) ? (int)$item['dom_load'] : null),
+        'page_size_bytes' => isset($item['page_size_bytes']) ? (int)$item['page_size_bytes'] : (isset($item['page_size']) ? (int)$item['page_size'] : null),
 
         'device_type' => (string)($item['device_type'] ?? 'unknown'),
         'browser_name' => (string)($item['browser_name'] ?? ''),
@@ -139,6 +143,22 @@ foreach ($items as $idx => $item) {
         'latitude' => (float)($item['latitude'] ?? $sessionLocation['latitude']),
         'longitude' => (float)($item['longitude'] ?? $sessionLocation['longitude']),
     ];
+
+    // Dedupe key to avoid double inserts from double-run effects (e.g. React StrictMode)
+    // Bucket by 5s to allow time-series while suppressing immediate duplicates.
+    $bucket = (int)floor(time() / 5);
+    $metric['dedupe_key'] = hash(
+        'sha256',
+        implode('|', [
+            $bucket,
+            (string)$metric['measurement_type'],
+            (string)$metric['link_url'],
+            (string)($metric['user_id'] ?? '0'),
+            (string)($metric['ip_address'] ?? ''),
+            (string)($metric['session_id'] ?? ''),
+            (string)((int)$metric['full_response_time']),
+        ])
+    );
 
     try {
         trackPerformanceMetric($metric);

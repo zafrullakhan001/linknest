@@ -21,6 +21,7 @@ export interface AnalyticsClientConfig {
   collectUrl?: string;
   dashboardUrl?: string;
   userId?: number | null;
+  username?: string | null;
   sessionId?: string;
   location?: AnalyticsLocation;
   needsLocation?: boolean;
@@ -288,6 +289,8 @@ export const performanceAnalyticsService = {
 
     const payload = metrics.map(m => ({
       ...ua,
+      user_id: cfg.userId,
+      username: cfg.username,
       ...(locToUse ? {
         country_code: locToUse.country_code,
         country_name: locToUse.country_name,

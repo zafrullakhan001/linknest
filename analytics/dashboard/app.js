@@ -751,32 +751,47 @@ function renderBubbleTable(data) {
     const tbody = document.getElementById('bubble-table-body');
     if (!tbody) return;
 
+    // This table is now a RAW metrics view (one row per measurement),
+    // loaded separately via /api/performance/table.
     if (!Array.isArray(data) || data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="15" class="text-center">No data yet</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="23" class="text-center">No data yet</td></tr>';
         return;
     }
 
-    // Order: most impactful first
-    const sorted = [...data].sort((a, b) => (b.measurements || 0) - (a.measurements || 0));
+    const sorted = [...data];
 
     tbody.innerHTML = sorted.map(item => {
-        const label = buildLocationLabel(item);
-        const avg = typeof item.latency === 'number' ? item.latency : (parseInt(item.avg_latency, 10) || 0);
-        const p95 = typeof item.p95 === 'number' ? item.p95 : (parseInt(item.p95, 10) || 0);
-        const success = (typeof item.success_rate_pct === 'number') ? item.success_rate_pct : (item.success_rate_pct ? Number(item.success_rate_pct) : null);
-        const status = item.status || 'unknown';
-        const mapsUrl = buildMapsUrl(item);
-        const lat = Number(item.lat);
-        const lon = Number(item.lon);
+        const time = item.time ? new Date(item.time) : null;
+        const timeDisplay = time ? time.toLocaleString() : '—';
+
+        const linkUrl = (item.link_url || item.url || '').trim();
+        const urlDisplay = linkUrl || '—';
+
+        const lat = Number(item.latitude ?? item.lat);
+        const lon = Number(item.longitude ?? item.lon);
         const latDisplay = Number.isFinite(lat) && Math.abs(lat) > 0.0001 ? lat.toFixed(5) : '—';
         const lonDisplay = Number.isFinite(lon) && Math.abs(lon) > 0.0001 ? lon.toFixed(5) : '—';
+
+        const full = (item.full_response_time ?? item.full_load ?? item.latency_ms ?? item.avg_latency);
+        const dns = item.dns_lookup_time ?? item.dns_time;
+        const tcp = item.tcp_connection_time ?? item.tcp_time;
+        const tls = item.tls_handshake_time ?? item.tls_time;
+        const ttfb = item.time_to_first_byte ?? item.ttfb;
+        const http = item.http_status_code ?? item.http_status;
+
+        const device = (item.device_type || '').trim() || '—';
+        const browser = ((item.browser_name || '').trim() ? `${item.browser_name}${item.browser_version ? ' ' + item.browser_version : ''}` : '—');
+        const os = (item.os_name || '').trim() || '—';
+        const screen = (item.screen_resolution || '').trim() || '—';
+        const conn = (item.connection_type || '').trim() || '—';
+        const auth = (item.is_authenticated === true || item.is_authenticated === 't' || item.is_authenticated === 1) ? 'auth' : 'anon';
+
         const country = (item.country_name || item.country || '').trim();
         const region = (item.region_name || item.region || '').trim();
-        const city = (item.city_name || '').trim();
+        const city = (item.city_name || item.city || '').trim();
         const countryDisplay = country && country !== 'Unknown' ? country : '—';
         const regionDisplay = region && region !== 'Unknown' ? region : '—';
         const cityDisplay = city && city !== 'Unknown' ? city : '—';
-        const hasMap = !!mapsUrl;
 
         // Display username and IP
         const username = (item.username || '').trim();
@@ -784,29 +799,50 @@ function renderBubbleTable(data) {
         const usernameDisplay = username || '<span class="text-muted">—</span>';
         const ipDisplay = ipAddress || '<span class="text-muted">—</span>';
 
+        const sessionId = (item.session_id || '').trim();
+        const sessionDisplay = sessionId ? escapeHtml(sessionId) : '—';
+
+        // Compact JSON detail for power users (payload fields)
+        const detailObj = {
+            page_url: item.page_url ?? null,
+            dom_content_loaded_time: item.dom_content_loaded_time ?? null,
+            page_size_bytes: item.page_size_bytes ?? null,
+            timezone: item.timezone ?? null,
+            isp: item.isp ?? null,
+            error_message: item.error_message ?? null
+        };
+        const detailJson = escapeHtml(JSON.stringify(detailObj));
+
         return `
             <tr>
+                <td class="mono">${escapeHtml(timeDisplay)}</td>
                 <td>
-                    <div style="display:flex; flex-direction:column; gap:4px;">
-                        <div><strong>${escapeHtml(label)}</strong></div>
-                        <div class="text-muted mono">${escapeHtml(item.url || '')}</div>
+                    <div style="display:flex; flex-direction:column; gap:2px;">
+                        <div class="mono" style="max-width: 360px; overflow:hidden; text-overflow: ellipsis; white-space:nowrap;" title="${escapeHtml(urlDisplay)}">${escapeHtml(urlDisplay)}</div>
                     </div>
                 </td>
                 <td class="mono">${usernameDisplay}</td>
                 <td class="mono">${ipDisplay}</td>
-                <td class="mono">${escapeHtml(avg)}ms</td>
-                <td class="mono">${escapeHtml(p95)}ms</td>
-                <td>${success === null || Number.isNaN(success) ? '<span class="badge-dim">—</span>' : `<span class="badge-dim">${escapeHtml(success)}%</span>`}</td>
-                <td class="mono">${escapeHtml(item.measurements ?? item.measurement_count ?? 0)}</td>
-                <td class="mono">${escapeHtml(item.user_count ?? item.users ?? 0)}</td>
+                <td class="mono">${escapeHtml(latDisplay)}</td>
+                <td class="mono">${escapeHtml(lonDisplay)}</td>
+                <td class="mono">${Number.isFinite(Number(full)) ? escapeHtml(Math.round(Number(full))) : '—'}</td>
+                <td class="mono">${Number.isFinite(Number(dns)) ? escapeHtml(Number(dns)) : '—'}</td>
+                <td class="mono">${Number.isFinite(Number(tcp)) ? escapeHtml(Number(tcp)) : '—'}</td>
+                <td class="mono">${Number.isFinite(Number(tls)) ? escapeHtml(Number(tls)) : '—'}</td>
+                <td class="mono">${Number.isFinite(Number(ttfb)) ? escapeHtml(Number(ttfb)) : '—'}</td>
+                <td class="mono">${Number.isFinite(Number(http)) ? escapeHtml(Number(http)) : '—'}</td>
+                <td>${escapeHtml(device)}</td>
+                <td>${escapeHtml(browser)}</td>
+                <td>${escapeHtml(os)}</td>
+                <td class="mono">${escapeHtml(screen)}</td>
+                <td>${escapeHtml(conn)}</td>
+                <td><span class="badge-dim">${escapeHtml(auth)}</span></td>
                 <td>${escapeHtml(countryDisplay)}</td>
                 <td>${escapeHtml(regionDisplay)}</td>
                 <td>${escapeHtml(cityDisplay)}</td>
-                <td class="mono">${escapeHtml(latDisplay)}</td>
-                <td class="mono">${escapeHtml(lonDisplay)}</td>
-                <td><span class="status-badge status-${escapeHtml(status)}">${escapeHtml(status)}</span></td>
+                <td class="mono" title="${escapeHtml(sessionId)}" style="max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${sessionDisplay}</td>
                 <td>
-                    <a class="map-link ${hasMap ? '' : 'is-disabled'}" ${hasMap ? `href="${escapeHtml(mapsUrl)}" target="_blank" rel="noopener noreferrer"` : 'href="#"'} title="${hasMap ? 'Open in Google Maps' : 'No geolocation available (lat/lon missing)'}">Open</a>
+                    <button class="btn btn-xs btn-outline" type="button" onclick="navigator.clipboard?.writeText('${detailJson}');" title="Copy JSON details">Copy</button>
                 </td>
             </tr>
         `;
@@ -873,6 +909,7 @@ async function refreshData() {
         // Load data first
         await loadBubbleData();
         await loadComparisonTable();
+        await loadTableData();
 
         // Initial render of current chart with filtered data
         renderCurrentChart();
@@ -887,6 +924,63 @@ async function refreshData() {
             btn.textContent = 'Update Dashboard';
             btn.disabled = false;
         }
+    }
+}
+
+// Load raw table data (one row per measurement)
+async function loadTableData() {
+    const tbody = document.getElementById('bubble-table-body');
+    if (!tbody) return;
+
+    try {
+        const period = document.getElementById('period-filter').value;
+        const measurementType = document.getElementById('measurement-filter').value;
+        const urlFilter = document.getElementById('url-filter').value;
+        const usernameFilter = document.getElementById('username-filter').value.trim();
+        const ipFilter = document.getElementById('ip-filter').value.trim();
+        const authFilter = document.getElementById('auth-filter').value;
+
+        const params = new URLSearchParams({
+            period: period.startsWith('custom:') ? 'custom' : period,
+            type: measurementType,
+            limit: '500',
+            offset: '0'
+        });
+
+        if (period.startsWith('custom:')) {
+            const parts = period.split(':');
+            params.append('start', parts[1]);
+            params.append('end', parts[2]);
+        }
+        if (urlFilter) params.append('url', urlFilter);
+        if (usernameFilter) params.append('username', usernameFilter);
+        if (ipFilter) params.append('ip', ipFilter);
+        if (authFilter) params.append('authenticated', authFilter);
+
+        const res = await fetch(`${API_BASE}/table?${params}`);
+        if (!res.ok) {
+            tbody.innerHTML = '<tr><td colspan="23" class="text-center">Failed to load table data</td></tr>';
+            return;
+        }
+
+        const json = await res.json();
+        if (!json || !json.success || !Array.isArray(json.data)) {
+            tbody.innerHTML = '<tr><td colspan="23" class="text-center">No data yet</td></tr>';
+            return;
+        }
+
+        // Apply local search / threshold filters on top of server filters
+        const filtered = json.data.filter(row => {
+            const targetUrl = (row.link_url || '').toLowerCase();
+            const matchesSearch = !chartSearchQuery || targetUrl.includes(chartSearchQuery);
+            const value = Number(row.full_response_time ?? 0);
+            const matchesThreshold = !latencyThreshold || latencyThreshold >= 2000 || value > latencyThreshold;
+            return matchesSearch && matchesThreshold;
+        });
+
+        renderBubbleTable(filtered);
+    } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="23" class="text-center">Failed to load table data</td></tr>';
     }
 }
 
@@ -1544,70 +1638,46 @@ async function renderTimeSeriesChart(filteredData) {
         const measurementType = document.getElementById('measurement-filter').value;
         const urlFilter = document.getElementById('url-filter').value;
 
-        // Try to fetch actual time-series metrics
+        // Fetch actual time-series metrics (real data)
         let timeSeriesData = [];
-
         try {
-            let queryUrl = `/api/metrics/query?type=${measurementType}${urlFilter ? '&url=' + encodeURIComponent(urlFilter) : ''}`;
+            const params = new URLSearchParams({
+                type: measurementType,
+                metric: 'p95',
+                bucket: 'auto',
+                limitUrls: '8'
+            });
 
             if (period.startsWith('custom:')) {
                 const parts = period.split(':');
-                queryUrl += `&period=custom&start=${parts[1]}&end=${parts[2]}`;
+                params.append('period', 'custom');
+                params.append('start', parts[1]);
+                params.append('end', parts[2]);
             } else {
-                queryUrl += `&period=${period}`;
+                params.append('period', period);
             }
 
-            const metricsResponse = await fetch(queryUrl);
+            if (urlFilter) {
+                params.append('url', urlFilter);
+                params.delete('limitUrls');
+            }
 
+            const metricsResponse = await fetch(`${API_BASE}/timeseries?${params.toString()}`);
             if (metricsResponse.ok) {
                 const metricsResult = await metricsResponse.json();
                 timeSeriesData = metricsResult.data || [];
             }
-        } catch (error) { }
+        } catch (error) { /* ignore */ }
 
-        // If we have passed filtered data, use that for simulation
-        const baseData = filteredData || getFilteredData();
-
-        // If no time series endpoint, create simulated data
-        if (timeSeriesData.length === 0 && baseData.length > 0) {
-            const urlGroups = {};
-            baseData.forEach(item => {
-                const url = item.url || item.link_url || 'Unknown';
-                if (!urlGroups[url]) {
-                    urlGroups[url] = {
-                        url: url,
-                        latency: parseInt(item.latency || item.avg_latency) || 0,
-                        measurements: parseInt(item.measurements || item.measurement_count) || 0
-                    };
-                }
-            });
-
-            // Create sample time points (last 24 hours)
-            const now = new Date();
-            const hoursBack = period === '1h' ? 1 : period === '24h' ? 24 : period === '7d' ? 168 : 720;
-            const pointCount = Math.min(hoursBack, 24); // Max 24 points
-
-            Object.values(urlGroups).forEach(urlData => {
-                for (let i = pointCount - 1; i >= 0; i--) {
-                    const timestamp = new Date(now - i * (hoursBack / pointCount) * 60 * 60 * 1000);
-                    // Add some variation to make it look realistic
-                    const variation = (Math.random() - 0.5) * 0.3;
-                    timeSeriesData.push({
-                        timestamp: timestamp.toISOString(),
-                        url: urlData.url,
-                        avg_latency: Math.max(10, urlData.latency * (1 + variation)),
-                        measurement_count: Math.floor(urlData.measurements / pointCount)
-                    });
-                }
-            });
-        }
+        // No longer simulate data; show empty state instead.
 
         // Apply filters to real time-series data if fetching was successful
         if (timeSeriesData.length > 0) {
             timeSeriesData = timeSeriesData.filter(d => {
-                const targetUrl = d.url || d.link_url || '';
+                const targetUrl = d.link_url || d.url || '';
                 const matchesSearch = !chartSearchQuery || targetUrl.toLowerCase().includes(chartSearchQuery);
-                const matchesThreshold = !latencyThreshold || latencyThreshold >= 2000 || (d.avg_latency > latencyThreshold);
+                const value = Number(d.value ?? d.avg_latency ?? d.latency_ms ?? 0);
+                const matchesThreshold = !latencyThreshold || latencyThreshold >= 2000 || (value > latencyThreshold);
                 return matchesSearch && matchesThreshold;
             });
         }
@@ -1622,13 +1692,13 @@ async function renderTimeSeriesChart(filteredData) {
         // Group data by URL
         const urlMap = {};
         timeSeriesData.forEach(d => {
-            const url = d.url || d.link_url || 'Unknown';
+            const url = d.link_url || d.url || 'Unknown';
             if (!urlMap[url]) {
                 urlMap[url] = [];
             }
             urlMap[url].push({
                 date: new Date(d.timestamp || d.created_at),
-                latency: parseFloat(d.avg_latency) || parseFloat(d.latency_ms) || 0,
+                latency: Number(d.value ?? d.avg_latency ?? d.latency_ms) || 0,
                 measurements: parseInt(d.measurement_count) || 1
             });
         });

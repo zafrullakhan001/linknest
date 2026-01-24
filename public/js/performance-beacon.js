@@ -65,6 +65,7 @@
             
             // User context
             user_id: config.userId || null,
+            username: config.username || null,
             session_id: config.sessionId || getSessionId(),
             is_authenticated: !!config.userId,
             

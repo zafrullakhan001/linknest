@@ -3,7 +3,13 @@
  * Time-Series Performance API
  * Returns performance metrics over time for charting
  * 
- * GET /api/performance/timeseries?url=&region=&metric=p95&start=&end=
+ * GET /api/performance/timeseries?period=1h&type=client&url=&metric=p95&bucket=auto&limitUrls=6
+ * Custom range:
+ * GET /api/performance/timeseries?period=custom&start=YYYY-MM-DD HH:MM:SS&end=YYYY-MM-DD HH:MM:SS
+ *
+ * Notes
+ * - This endpoint is optimized for dashboard time-series. It uses time_bucket on performance_metrics
+ *   to provide higher resolution than the hourly continuous aggregate.
  */
 
 require_once __DIR__ . '/../config_analytics.php';
@@ -17,81 +23,159 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 header('Access-Control-Allow-Origin: *');
 header('Content-Type: application/json');
 
-$url = $_GET['url'] ?? null;
-$region = $_GET['region'] ?? null; // country_code or "country_code/region_name"
-$metric = $_GET['metric'] ?? 'p95'; // avg, p50, p95, p99, min, max
-$start = $_GET['start'] ?? date('Y-m-d H:i:s', strtotime('-24 hours'));
-$end = $_GET['end'] ?? date('Y-m-d H:i:s');
-$measurementType = $_GET['type'] ?? 'client';
+$period = (string)($_GET['period'] ?? '1h');
+$url = isset($_GET['url']) ? trim((string)$_GET['url']) : '';
+$metric = (string)($_GET['metric'] ?? 'p95'); // avg, p50, p95, p99, min, max
+$bucket = (string)($_GET['bucket'] ?? 'auto'); // auto | 1m | 5m | 15m | 1h | 6h
+$measurementType = (string)($_GET['type'] ?? 'client');
+$limitUrls = isset($_GET['limitUrls']) ? (int)$_GET['limitUrls'] : 6;
+if ($limitUrls < 1) $limitUrls = 1;
+if ($limitUrls > 20) $limitUrls = 20;
+
+// Validate measurement type
+if ($measurementType !== 'client' && $measurementType !== 'server') {
+    $measurementType = 'client';
+}
+
+// Resolve time range
+$start = null;
+$end = null;
+$periodMap = [
+    '1h' => '1 hour',
+    '24h' => '24 hours',
+    '7d' => '7 days',
+    '30d' => '30 days'
+];
+
+if ($period === 'custom') {
+    $start = (string)($_GET['start'] ?? '');
+    $end = (string)($_GET['end'] ?? '');
+    if ($start === '' || $end === '') {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'start and end are required for period=custom']);
+        exit;
+    }
+} else {
+    $interval = $periodMap[$period] ?? '1 hour';
+    // Let Postgres compute NOW()-interval for start; still return a computed ISO string for response.
+    $end = date('Y-m-d H:i:s');
+    $start = date('Y-m-d H:i:s', strtotime('-' . $interval));
+}
 
 // Validate metric
-$validMetrics = ['avg_latency', 'p50_latency', 'p95_latency', 'p99_latency', 'min_latency', 'max_latency'];
-if (!in_array($metric . '_latency', $validMetrics) && !in_array($metric, ['avg', 'p50', 'p95', 'p99', 'min', 'max'])) {
+$metric = strtolower($metric);
+$allowedMetric = ['avg', 'p50', 'p95', 'p99', 'min', 'max'];
+if (!in_array($metric, $allowedMetric, true)) {
     $metric = 'p95';
 }
 
-$metricColumn = in_array($metric, ['avg', 'p50', 'p95', 'p99', 'min', 'max']) 
-    ? $metric . '_latency' 
-    : $metric;
+// Choose bucket size (validated & safe)
+$bucket = strtolower($bucket);
+$bucketMap = [
+    '1m' => "1 minute",
+    '5m' => "5 minutes",
+    '15m' => "15 minutes",
+    '1h' => "1 hour",
+    '6h' => "6 hours",
+];
+
+if ($bucket === 'auto') {
+    $rangeSeconds = max(1, strtotime($end) - strtotime($start));
+    if ($rangeSeconds <= 2 * 3600) {
+        $bucketInterval = $bucketMap['1m'];
+        $bucket = '1m';
+    } elseif ($rangeSeconds <= 24 * 3600) {
+        $bucketInterval = $bucketMap['5m'];
+        $bucket = '5m';
+    } elseif ($rangeSeconds <= 7 * 24 * 3600) {
+        $bucketInterval = $bucketMap['1h'];
+        $bucket = '1h';
+    } else {
+        $bucketInterval = $bucketMap['6h'];
+        $bucket = '6h';
+    }
+} else {
+    $bucketInterval = $bucketMap[$bucket] ?? $bucketMap['5m'];
+    if (!isset($bucketMap[$bucket])) {
+        $bucket = '5m';
+    }
+}
 
 try {
     $db = getAnalyticsPDO();
-    
+
+    // If URL not provided, return series for top N URLs in range
+    $urlFilterSql = '';
+    $params = [
+        ':start' => $start,
+        ':end' => $end,
+        ':measurement_type' => $measurementType,
+    ];
+
+    if ($url !== '') {
+        $urlFilterSql = 'AND pm.link_url = :url';
+        $params[':url'] = $url;
+    } else {
+        $urlFilterSql = "
+            AND pm.link_url IN (
+                SELECT link_url
+                FROM performance_metrics
+                WHERE time BETWEEN :start AND :end
+                  AND measurement_type = :measurement_type
+                  AND link_url IS NOT NULL
+                  AND link_url <> ''
+                GROUP BY link_url
+                ORDER BY COUNT(*) DESC
+                LIMIT {$limitUrls}
+            )
+        ";
+    }
+
+    // Metric expression
+    $metricExpr = match ($metric) {
+        'avg' => 'AVG(pm.full_response_time)',
+        'p50' => 'PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY pm.full_response_time)',
+        'p95' => 'PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY pm.full_response_time)',
+        'p99' => 'PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY pm.full_response_time)',
+        'min' => 'MIN(pm.full_response_time)',
+        'max' => 'MAX(pm.full_response_time)',
+        default => 'PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY pm.full_response_time)',
+    };
+
     $sql = "
-        SELECT 
-            bucket as timestamp,
-            {$metricColumn} as value,
-            measurement_count
-        FROM performance_by_region_hourly
-        WHERE bucket BETWEEN :start AND :end
-        AND measurement_type = :measurement_type
+        SELECT
+            time_bucket(INTERVAL '{$bucketInterval}', pm.time) AS timestamp,
+            pm.link_url,
+            CAST(ROUND(($metricExpr)::numeric, 0) AS INTEGER) AS value,
+            COUNT(*) AS measurement_count
+        FROM performance_metrics pm
+        WHERE pm.time BETWEEN :start AND :end
+          AND pm.measurement_type = :measurement_type
+          {$urlFilterSql}
+        GROUP BY timestamp, pm.link_url
+        ORDER BY timestamp ASC, pm.link_url ASC
     ";
-    
-    if ($url) {
-        $sql .= " AND link_url = :url";
-    }
-    
-    if ($region) {
-        // Parse region (format: "US" or "US/California")
-        $parts = explode('/', $region);
-        $sql .= " AND country_code = :country_code";
-        if (count($parts) > 1) {
-            $sql .= " AND region_name = :region_name";
-        }
-    }
-    
-    $sql .= " ORDER BY bucket ASC";
-    
+
     $stmt = $db->prepare($sql);
-    $stmt->bindValue(':start', $start);
-    $stmt->bindValue(':end', $end);
-    $stmt->bindValue(':measurement_type', $measurementType);
-    
-    if ($url) {
-        $stmt->bindValue(':url', $url);
+    foreach ($params as $k => $v) {
+        $stmt->bindValue($k, $v);
     }
-    
-    if ($region) {
-        $parts = explode('/', $region);
-        $stmt->bindValue(':country_code', $parts[0]);
-        if (count($parts) > 1) {
-            $stmt->bindValue(':region_name', $parts[1]);
-        }
-    }
-    
     $stmt->execute();
     $results = $stmt->fetchAll();
-    
+
     echo json_encode([
-        'url' => $url,
-        'region' => $region,
+        'success' => true,
+        'period' => $period,
         'metric' => $metric,
+        'bucket' => $bucket,
         'start' => $start,
         'end' => $end,
+        'measurement_type' => $measurementType,
+        'url' => $url !== '' ? $url : null,
         'data' => $results
     ]);
     
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['error' => $e->getMessage()]);
+    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }
