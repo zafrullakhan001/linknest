@@ -174,6 +174,25 @@ It won’t stop the dashboard itself, but those specific measurements may fail.<
                                 <p class="card-subtitle" id="chart-subtitle">Select a chart type to view different
                                     perspectives</p>
                             </div>
+                            <!-- Advanced Tools -->
+                            <div class="advanced-tools">
+                                <div class="search-box">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2.5">
+                                        <circle cx="11" cy="11" r="8" />
+                                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                                    </svg>
+                                    <input type="text" id="chart-search" placeholder="Search URLs...">
+                                </div>
+
+                                <div class="threshold-slider" title="Filter by Latency Threshold">
+                                    <span>Limit:</span>
+                                    <input type="range" id="latency-threshold" min="0" max="2000" step="50"
+                                        value="2000">
+                                    <b id="threshold-val">Off</b>
+                                </div>
+                            </div>
+
                             <div class="chart-controls">
                                 <!-- Zoom Controls -->
                                 <div class="zoom-controls">
@@ -203,6 +222,27 @@ It won’t stop the dashboard itself, but those specific measurements may fail.<
                                         </svg>
                                     </button>
                                 </div>
+
+                                <button id="fullscreen-toggle" class="btn btn-icon"
+                                    title="Toggle Fullscreen Focus Mode">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2">
+                                        <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                                    </svg>
+                                </button>
+
+                                <!-- Export Button -->
+                                <button id="export-csv" class="btn btn-secondary"
+                                    title="Export current chart data to CSV">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                        <polyline points="7 10 12 15 17 10" />
+                                        <line x1="12" y1="15" x2="12" y2="3" />
+                                    </svg>
+                                    Export
+                                </button>
+
                                 <div class="chart-options" id="chart-specific-options">
                                     <!-- Chart-specific controls will appear here -->
                                 </div>

@@ -63,6 +63,19 @@ Your PostgreSQL analytics dashboard at `http://localhost:9333/` has been complet
 
 ---
 
+## 📥 Enhancement 4: CSV Data Export (NEW!)
+
+### Seamless Data Integration
+Analyze your dashboard data in Excel, Google Sheets, or any other system.
+
+### Features
+- 📊 **Context-Aware Export** - Exports data specifically for the currently active chart
+- 🧹 **Automatic Formatting** - Handles proper CSV quoting and character escaping
+- 🎯 **Smart Filenaming** - Generates descriptive names (e.g., `linknest_analytics_timeseries_2024-01-24.csv`)
+- ✅ **All Data included** - Timestamps, URLs, Latencies, and Measurement counts
+
+---
+
 ## 🎯 Complete Feature Set
 
 ### Chart Types (8 Total)
@@ -82,6 +95,7 @@ Your PostgreSQL analytics dashboard at `http://localhost:9333/` has been complet
 | **Zoom In/Out** | ✅ Buttons | ✅ Buttons | ✅ Ctrl+Wheel |
 | **Pan** | ✅ Drag | ✅ Touch Drag | ❌ |
 | **Reset Zoom** | ✅ Button | ✅ Button | ✅ |
+| **Export Data** | ✅ CSV Button | ✅ CSV Button | ✅ |
 
 ### Visual Feedback
 - 🎨 **Active Tab** - Indigo highlight (#4f46e5)
@@ -115,6 +129,7 @@ Your PostgreSQL analytics dashboard at `http://localhost:9333/` has been complet
 - ✅ Universal pan functionality
 - ✅ Touch gesture support
 - ✅ Smart element detection (avoid buttons)
+- ✅ **CSV Export engine** (data mapping & formatting)
 
 ---
 
