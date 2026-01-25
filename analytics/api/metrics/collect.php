@@ -158,7 +158,23 @@ try {
         'region' => $data['region'] ?? 'Unknown',
         'city' => $data['city'] ?? 'Unknown',
         'latitude' => (float)($data['latitude'] ?? 0),
-        'longitude' => (float)($data['longitude'] ?? 0)
+        'longitude' => (float)($data['longitude'] ?? 0),
+
+        // Optional link-specific context / classification (client-side)
+        'tile_id' => isset($data['tile_id']) ? substr((string)$data['tile_id'], 0, 64) : null,
+        'link_id' => isset($data['link_id']) ? substr((string)$data['link_id'], 0, 64) : null,
+        'link_url_normalized' => isset($data['link_url_normalized']) ? substr((string)$data['link_url_normalized'], 0, 2048) : null,
+        'ok' => isset($data['ok']) ? (bool)$data['ok'] : null,
+        'error_category' => isset($data['error_category']) ? substr((string)$data['error_category'], 0, 64) : null,
+        'response_type' => isset($data['response_type']) ? substr((string)$data['response_type'], 0, 32) : null,
+        'redirected' => isset($data['redirected']) ? (bool)$data['redirected'] : null,
+        'final_url' => isset($data['final_url']) ? substr((string)$data['final_url'], 0, 2048) : null,
+        'method' => isset($data['method']) ? substr((string)$data['method'], 0, 16) : null,
+        'cache_mode' => isset($data['cache_mode']) ? substr((string)$data['cache_mode'], 0, 32) : null,
+        'timeout_ms' => isset($data['timeout_ms']) ? (int)$data['timeout_ms'] : null,
+        'attempted_at' => isset($data['attempted_at']) ? (int)$data['attempted_at'] : null,
+        'error_message' => isset($data['error_message']) ? substr((string)$data['error_message'], 0, 500) : null,
+        'page_url' => isset($data['page_url']) ? substr((string)$data['page_url'], 0, 2048) : null,
     ];
     
     // Insert into metrics queue (fast, non-blocking) - payload is stored as JSONB

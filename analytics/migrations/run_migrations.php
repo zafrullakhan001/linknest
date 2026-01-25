@@ -49,7 +49,8 @@ try {
     // Get list of migration files
     $migrations = [
         'add_username_column.sql' => 'Add username column and index',
-        'add_ip_indexes.sql' => 'Add IP address indexes for anonymous users'
+        'add_ip_indexes.sql' => 'Add IP address indexes for anonymous users',
+        'add_link_metrics_columns.sql' => 'Add link-level metrics columns (tile/link ids, error classification)'
     ];
     
     foreach ($migrations as $file => $description) {
@@ -86,7 +87,12 @@ try {
         SELECT column_name, data_type 
         FROM information_schema.columns 
         WHERE table_name = 'performance_metrics' 
-        AND column_name IN ('username', 'ip_address', 'is_authenticated', 'time')
+        AND column_name IN (
+            'username', 'ip_address', 'is_authenticated', 'time',
+            'tile_id', 'link_id', 'link_url_normalized',
+            'ok', 'error_category', 'response_type', 'redirected', 'final_url',
+            'method', 'cache_mode', 'timeout_ms', 'attempted_at'
+        )
         ORDER BY column_name
     ");
     $columns = $stmt->fetchAll();

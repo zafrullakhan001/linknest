@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, POPULAR_EMOJIS, LINK_EMOJIS, ALL_LINK_EMOJIS, TileMessage } from '../types';
 import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
-import { performanceAnalyticsService } from '../services/performanceAnalyticsService';
+import { performanceAnalyticsService, type AnalyticsMetric } from '../services/performanceAnalyticsService';
 import { authService, UserListItem, User } from '../services/authService';
 import { exportTileToFile } from '../services/spaceTransferService';
 import { cloneTile, getTiles, saveTile, toggleLinkFavorite, createTempVersion } from '../services/storageService';
@@ -3177,12 +3177,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         if (!targets.length) return;
 
                         const batchSize = 4;
-                        const metrics: Array<{
-                            url: string;
-                            measurement_type: 'client';
-                            full_response_time: number;
-                            http_status_code?: number | null;
-                        }> = [];
+                        const metrics: AnalyticsMetric[] = [];
 
                         for (let i = 0; i < targets.length; i += batchSize) {
                             const batch = targets.slice(i, i + batchSize);
@@ -3202,7 +3197,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     url: item.link.url,
                                     measurement_type: 'client',
                                     full_response_time: item.measured.durationMs,
-                                    http_status_code: item.measured.httpStatus ?? 0
+                                    http_status_code: item.measured.httpStatus ?? 0,
+                                    error_message: item.measured.error ?? null,
+                                    ok: item.measured.ok,
+                                    error_category: item.measured.errorCategory,
+                                    response_type: item.measured.responseType,
+                                    redirected: item.measured.redirected,
+                                    final_url: item.measured.finalUrl,
+                                    method: item.measured.method,
+                                    cache_mode: item.measured.cacheMode,
+                                    timeout_ms: item.measured.timeoutMs,
+                                    attempted_at: item.measured.attemptedAt,
+                                    tile_id: tile.id,
+                                    link_id: item.link.id
                                 });
                             }
                         }
@@ -3308,12 +3315,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 if (!cfgWithLoc.enabled) return;
 
                 const batchSize = 4;
-                const metrics: Array<{
-                    url: string;
-                    measurement_type: 'client';
-                    full_response_time: number;
-                    http_status_code?: number | null;
-                }> = [];
+                const metrics: AnalyticsMetric[] = [];
 
                 for (let i = 0; i < targets.length; i += batchSize) {
                     const batch = targets.slice(i, i + batchSize);
@@ -3322,19 +3324,47 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             const url = l.url;
                             if (url.startsWith('http://') || url.startsWith('https://')) {
                                 const m = await performanceAnalyticsService.measureUrlLatency(url);
-                                return { url, durationMs: m.durationMs, status: m.httpStatus ?? 0 };
+                                return { link: l, measured: m };
                             }
                             // Non-http(s): record as failure (0ms, status 0)
-                            return { url, durationMs: 0, status: 0 };
+                            return {
+                                link: l,
+                                measured: {
+                                    ok: false,
+                                    durationMs: 0,
+                                    httpStatus: 0,
+                                    responseType: null,
+                                    redirected: false,
+                                    finalUrl: null,
+                                    errorCategory: 'invalid_url',
+                                    error: 'Non-http(s) URL',
+                                    attemptedAt: Date.now(),
+                                    method: 'HEAD',
+                                    cacheMode: 'no-store',
+                                    timeoutMs: 0
+                                }
+                            };
                         })
                     );
 
-                    measured.forEach(m => {
+                    measured.forEach(item => {
                         metrics.push({
-                            url: m.url,
+                            url: item.link.url,
                             measurement_type: 'client',
-                            full_response_time: m.durationMs,
-                            http_status_code: m.status
+                            full_response_time: item.measured.durationMs,
+                            http_status_code: item.measured.httpStatus ?? 0,
+                            error_message: item.measured.error ?? null,
+                            ok: item.measured.ok,
+                            error_category: item.measured.errorCategory,
+                            response_type: item.measured.responseType,
+                            redirected: item.measured.redirected,
+                            final_url: item.measured.finalUrl,
+                            method: item.measured.method,
+                            cache_mode: item.measured.cacheMode,
+                            timeout_ms: item.measured.timeoutMs,
+                            attempted_at: item.measured.attemptedAt,
+                            tile_id: tile.id,
+                            link_id: item.link.id
                         });
                     });
                 }

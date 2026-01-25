@@ -146,7 +146,19 @@ try {
             browser_version,
             os_name,
             screen_resolution,
-            page_url
+            page_url,
+            tile_id,
+            link_id,
+            link_url_normalized,
+            ok,
+            error_category,
+            response_type,
+            redirected,
+            final_url,
+            method,
+            cache_mode,
+            timeout_ms,
+            attempted_at
         FROM performance_metrics
         WHERE {$whereSql}
         ORDER BY time DESC

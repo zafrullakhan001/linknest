@@ -149,6 +149,20 @@ foreach ($items as $idx => $item) {
         'city' => (string)($item['city'] ?? $sessionLocation['city']),
         'latitude' => (float)($item['latitude'] ?? $sessionLocation['latitude']),
         'longitude' => (float)($item['longitude'] ?? $sessionLocation['longitude']),
+
+        // Link-specific context / classification (client-side)
+        'tile_id' => isset($item['tile_id']) ? substr((string)$item['tile_id'], 0, 64) : null,
+        'link_id' => isset($item['link_id']) ? substr((string)$item['link_id'], 0, 64) : null,
+        'link_url_normalized' => isset($item['link_url_normalized']) ? substr((string)$item['link_url_normalized'], 0, 2048) : null,
+        'ok' => isset($item['ok']) ? (bool)$item['ok'] : null,
+        'error_category' => isset($item['error_category']) ? substr((string)$item['error_category'], 0, 64) : null,
+        'response_type' => isset($item['response_type']) ? substr((string)$item['response_type'], 0, 32) : null,
+        'redirected' => isset($item['redirected']) ? (bool)$item['redirected'] : null,
+        'final_url' => isset($item['final_url']) ? substr((string)$item['final_url'], 0, 2048) : null,
+        'method' => isset($item['method']) ? substr((string)$item['method'], 0, 16) : null,
+        'cache_mode' => isset($item['cache_mode']) ? substr((string)$item['cache_mode'], 0, 32) : null,
+        'timeout_ms' => isset($item['timeout_ms']) ? (int)$item['timeout_ms'] : null,
+        'attempted_at' => isset($item['attempted_at']) ? (int)$item['attempted_at'] : null,
     ];
 
     // Dedupe key to avoid double inserts from double-run effects (e.g. React StrictMode)

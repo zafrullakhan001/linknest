@@ -39,6 +39,23 @@ export interface AnalyticsMetric {
   time_to_first_byte?: number | null;
   download_time?: number | null;
   http_status_code?: number | null;
+  error_message?: string | null;
+  page_url?: string | null;
+  // LinkNest context
+  tile_id?: string;
+  link_id?: string;
+  link_url_normalized?: string;
+  // Result classification
+  ok?: boolean;
+  error_category?: string | null;
+  response_type?: string | null;
+  redirected?: boolean;
+  final_url?: string | null;
+  // Request metadata
+  method?: string;
+  cache_mode?: string;
+  timeout_ms?: number;
+  attempted_at?: number; // epoch ms
   device_type?: string;
   browser_name?: string;
   browser_version?: string;
@@ -168,6 +185,25 @@ function getUAInfo() {
   return { device_type, browser_name, browser_version, os_name, screen_resolution, connection_type };
 }
 
+function normalizeLinkUrl(url: string): string {
+  const raw = (url || '').trim();
+  if (!raw) return '';
+  try {
+    const u = new URL(raw);
+    // Avoid cardinality explosion: drop fragment + query by default.
+    u.hash = '';
+    u.search = '';
+    u.hostname = u.hostname.toLowerCase();
+    // Normalize trailing slash (except root)
+    if (u.pathname.length > 1) {
+      u.pathname = u.pathname.replace(/\/+$/, '');
+    }
+    return u.toString();
+  } catch {
+    return raw;
+  }
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { credentials: 'include', ...init });
   if (!res.ok) {
@@ -242,25 +278,80 @@ export const performanceAnalyticsService = {
    * Measure a URL from the browser (best-effort).
    * Uses a HEAD request with mode:no-cors to avoid preflight/CORS issues.
    */
-  async measureUrlLatency(url: string, timeoutMs = 5000): Promise<{ ok: boolean; durationMs: number; httpStatus: number | null; error?: string }> {
+  async measureUrlLatency(
+    url: string,
+    timeoutMs = 5000
+  ): Promise<{
+    ok: boolean;
+    durationMs: number;
+    httpStatus: number | null;
+    responseType: string | null;
+    redirected: boolean;
+    finalUrl: string | null;
+    errorCategory: string | null;
+    error?: string;
+    attemptedAt: number;
+    method: string;
+    cacheMode: string;
+    timeoutMs: number;
+  }> {
+    const attemptedAt = Date.now();
     const start = performance.now();
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+    const method = 'HEAD';
+    const cacheMode: RequestCache = 'no-store';
 
     try {
       const res = await fetch(url, {
-        method: 'HEAD',
+        method,
         mode: 'no-cors',
-        cache: 'no-store',
+        cache: cacheMode,
         signal: controller.signal
       });
 
       const durationMs = Math.round(performance.now() - start);
       // In no-cors, status is often 0 (opaque). Still useful as "request completed".
-      return { ok: true, durationMs, httpStatus: typeof res.status === 'number' ? res.status : null };
+      const responseType = (res as any)?.type ? String((res as any).type) : null;
+      const redirected = !!(res as any)?.redirected;
+      const finalUrl = (res as any)?.url ? String((res as any).url) : null;
+      const httpStatus = typeof (res as any)?.status === 'number' ? (res as any).status : null;
+      const errorCategory = responseType === 'opaque' ? 'cors_opaque' : null;
+
+      return {
+        ok: true,
+        durationMs,
+        httpStatus,
+        responseType,
+        redirected,
+        finalUrl,
+        errorCategory,
+        attemptedAt,
+        method,
+        cacheMode: String(cacheMode),
+        timeoutMs
+      };
     } catch (e: any) {
       const durationMs = Math.round(performance.now() - start);
-      return { ok: false, durationMs, httpStatus: null, error: e?.message || 'Request failed' };
+      const name = String(e?.name || '');
+      const msg = e?.message || 'Request failed';
+      let errorCategory: string = 'network';
+      if (name === 'AbortError') errorCategory = 'timeout';
+
+      return {
+        ok: false,
+        durationMs,
+        httpStatus: null,
+        responseType: null,
+        redirected: false,
+        finalUrl: null,
+        errorCategory,
+        error: msg,
+        attemptedAt,
+        method,
+        cacheMode: String(cacheMode),
+        timeoutMs
+      };
     } finally {
       window.clearTimeout(timeoutId);
     }
@@ -314,6 +405,7 @@ export const performanceAnalyticsService = {
       ...ua,
       user_id: cfg.userId,
       username: cfg.username,
+      page_url: (typeof window !== 'undefined' && window.location ? window.location.href : null),
       ...(locToUse ? {
         country_code: locToUse.country_code,
         country_name: locToUse.country_name,
@@ -322,7 +414,8 @@ export const performanceAnalyticsService = {
         latitude: locToUse.latitude,
         longitude: locToUse.longitude
       } : {}),
-      ...m
+      ...m,
+      link_url_normalized: m.link_url_normalized || normalizeLinkUrl(m.url)
     }));
 
     await fetchJson(`${API_BASE}/analytics/collect`, {

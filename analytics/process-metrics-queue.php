@@ -53,7 +53,10 @@ $insertStmt = $db->prepare("
         dom_content_loaded_time, page_size_bytes, page_url,
         http_status_code, device_type, browser_name,
         browser_version, os_name, screen_resolution, connection_type,
-        is_authenticated, error_message
+        is_authenticated, error_message,
+        tile_id, link_id, link_url_normalized,
+        ok, error_category, response_type, redirected, final_url,
+        method, cache_mode, timeout_ms, attempted_at
     ) VALUES (
         COALESCE(:time::timestamptz, NOW()), :link_url, :measurement_type, :user_id, :username, :session_id,
         :ip_address, :country_code, :country_name, :region_name, :city_name,
@@ -63,7 +66,10 @@ $insertStmt = $db->prepare("
         :dom_content_loaded_time, :page_size_bytes, :page_url,
         :http_status_code, :device_type, :browser_name,
         :browser_version, :os_name, :screen_resolution, :connection_type,
-        :is_authenticated, :error_message
+        :is_authenticated, :error_message,
+        :tile_id, :link_id, :link_url_normalized,
+        :ok, :error_category, :response_type, :redirected, :final_url,
+        :method, :cache_mode, :timeout_ms, :attempted_at
     )
 ");
 
@@ -288,7 +294,21 @@ function processBatch($db, $insertStmt, $updateStmt, $batchSize, &$stats) {
                     'screen_resolution' => $payload['screen_resolution'] ?? '',
                     'connection_type' => $payload['connection_type'] ?? '',
                     'is_authenticated' => !empty($payload['user_id']),
-                    'error_message' => $payload['error_message'] ?? null
+                    'error_message' => $payload['error_message'] ?? null,
+
+                    // Link-specific context / classification
+                    'tile_id' => $payload['tile_id'] ?? null,
+                    'link_id' => $payload['link_id'] ?? null,
+                    'link_url_normalized' => $payload['link_url_normalized'] ?? null,
+                    'ok' => isset($payload['ok']) ? (bool)$payload['ok'] : null,
+                    'error_category' => $payload['error_category'] ?? null,
+                    'response_type' => $payload['response_type'] ?? null,
+                    'redirected' => isset($payload['redirected']) ? (bool)$payload['redirected'] : null,
+                    'final_url' => $payload['final_url'] ?? null,
+                    'method' => $payload['method'] ?? null,
+                    'cache_mode' => $payload['cache_mode'] ?? null,
+                    'timeout_ms' => isset($payload['timeout_ms']) ? (int)$payload['timeout_ms'] : null,
+                    'attempted_at' => isset($payload['attempted_at']) ? (int)$payload['attempted_at'] : null,
                 ]);
                 
                 // Mark as processed
@@ -391,18 +411,26 @@ while (true) {
                     latitude, longitude, timezone, isp,
                     full_response_time, dns_lookup_time, tcp_connection_time,
                     tls_handshake_time, time_to_first_byte,
+                    dom_content_loaded_time, page_size_bytes, page_url,
                     http_status_code, device_type, browser_name,
                     browser_version, os_name, screen_resolution, connection_type,
-                    is_authenticated
+                    is_authenticated, error_message,
+                    tile_id, link_id, link_url_normalized,
+                    ok, error_category, response_type, redirected, final_url,
+                    method, cache_mode, timeout_ms, attempted_at
                 ) VALUES (
                     COALESCE(:time::timestamptz, NOW()), :link_url, :measurement_type, :user_id, :username, :session_id,
                     :ip_address, :country_code, :country_name, :region_name, :city_name,
                     :latitude, :longitude, :timezone, :isp,
                     :full_response_time, :dns_lookup_time, :tcp_connection_time,
                     :tls_handshake_time, :time_to_first_byte,
+                    :dom_content_loaded_time, :page_size_bytes, :page_url,
                     :http_status_code, :device_type, :browser_name,
                     :browser_version, :os_name, :screen_resolution, :connection_type,
-                    :is_authenticated
+                    :is_authenticated, :error_message,
+                    :tile_id, :link_id, :link_url_normalized,
+                    :ok, :error_category, :response_type, :redirected, :final_url,
+                    :method, :cache_mode, :timeout_ms, :attempted_at
                 )
             ");
             $updateStmt = $db->prepare("
