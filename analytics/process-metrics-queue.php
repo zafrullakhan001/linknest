@@ -17,6 +17,7 @@ set_time_limit(0);
 // Load dependencies
 require_once __DIR__ . '/api/config_analytics.php';
 require_once __DIR__ . '/geoip/geoip.php';
+require_once __DIR__ . '/geoip/reverse-geocode-offline.php';
 
 echo "=== Performance Analytics Queue Processor ===\n";
 echo "Started at: " . date('Y-m-d H:i:s') . "\n\n";
@@ -120,7 +121,7 @@ function processBatch($db, $insertStmt, $updateStmt, $batchSize, &$stats) {
                     continue;
                 }
                 
-                // Extract location data - prioritize IP-based lookup for accuracy
+                // Extract location data - PRIORITIZE CLIENT DATA FIRST (client geolocation is more accurate)
                 $ipAddress = $payload['ip_address'] ?? null;
                 $countryCode = 'XX';
                 $countryName = 'Unknown';
@@ -131,37 +132,103 @@ function processBatch($db, $insertStmt, $updateStmt, $batchSize, &$stats) {
                 $timezone = 'UTC';
                 $isp = null;
                 
-                // Try to get location from IP address first (most reliable)
-                if ($ipAddress && filter_var($ipAddress, FILTER_VALIDATE_IP)) {
-                    $geo = getGeoFromIP($ipAddress);
-                    $countryCode = $geo['country_code'] ?? 'XX';
-                    $countryName = $geo['country_name'] ?? 'Unknown';
-                    $region = $geo['region_name'] ?? 'Unknown';
-                    $city = $geo['city_name'] ?? 'Unknown';
-                    $latitude = (float)($geo['latitude'] ?? 0.0);
-                    $longitude = (float)($geo['longitude'] ?? 0.0);
-                    $timezone = $geo['timezone'] ?? 'UTC';
-                    $isp = $geo['isp'] ?? null;
+                // Get coordinates from payload (browser geolocation is most accurate)
+                $clientLatitude = (float)($payload['latitude'] ?? 0);
+                $clientLongitude = (float)($payload['longitude'] ?? 0);
+                $clientCountryCode = $payload['country_code'] ?? null;
+                $clientCountryName = $payload['country_name'] ?? null;
+                $clientRegion = $payload['region'] ?? null;
+                $clientCity = $payload['city'] ?? null;
+                
+                // STEP 1: Check if client provided location data (coordinates + country)
+                $hasClientCoordinates = ($clientLatitude !== 0.0 && $clientLongitude !== 0.0 &&
+                                        abs($clientLatitude) > 0.0001 && abs($clientLongitude) > 0.0001);
+                $hasClientCountry = ($clientCountryCode && $clientCountryCode !== 'XX');
+                
+                if ($hasClientCoordinates && $hasClientCountry) {
+                    // Use client data (browser geolocation is more accurate than IP)
+                    $countryCode = $clientCountryCode;
+                    $countryName = $clientCountryName ?? 'Unknown';
+                    $region = $clientRegion ?? 'Unknown';
+                    $city = $clientCity ?? 'Unknown';
+                    $latitude = $clientLatitude;
+                    $longitude = $clientLongitude;
+                    // Don't override timezone/ISP from client, we'll get from IP if needed
                 }
                 
-                // If IP lookup failed or returned default values, try client payload
-                if ($countryCode === 'XX' || ($latitude === 0.0 && $longitude === 0.0)) {
-                    // Check if client provided valid location data
-                    $clientCountryCode = $payload['country_code'] ?? null;
-                    $clientLatitude = (float)($payload['latitude'] ?? 0);
-                    $clientLongitude = (float)($payload['longitude'] ?? 0);
+                // STEP 2: If client data is missing, try IP-based lookup
+                if (!$hasClientCoordinates && $ipAddress && filter_var($ipAddress, FILTER_VALIDATE_IP)) {
+                    $geo = getGeoFromIP($ipAddress);
+                    if ($geo['country_code'] !== 'XX') {
+                        $countryCode = $geo['country_code'];
+                        $countryName = $geo['country_name'] ?? 'Unknown';
+                        $region = $geo['region_name'] ?? 'Unknown';
+                        $city = $geo['city_name'] ?? 'Unknown';
+                        $latitude = (float)($geo['latitude'] ?? 0.0);
+                        $longitude = (float)($geo['longitude'] ?? 0.0);
+                        $timezone = $geo['timezone'] ?? 'UTC';
+                        $isp = $geo['isp'] ?? null;
+                    }
+                }
+                
+                // Get timezone and ISP from IP if we don't have them yet
+                if ((!$timezone || $timezone === 'UTC' || !$isp) && $ipAddress && filter_var($ipAddress, FILTER_VALIDATE_IP)) {
+                    $geo = getGeoFromIP($ipAddress);
+                    if (!$timezone || $timezone === 'UTC') {
+                        if (isset($geo['timezone']) && $geo['timezone'] !== 'UTC') {
+                            $timezone = $geo['timezone'];
+                        }
+                    }
+                    if (!$isp && isset($geo['isp'])) {
+                        $isp = $geo['isp'];
+                    }
+                }
+                
+                // STEP 3: ALWAYS use reverse geocoding if city is "Unknown" and we have coordinates
+                // This ensures consistent city population for all metrics
+                $hasMissingCity = ($city === 'Unknown' || empty($city) || !$city);
+                $hasValidCoordinates = ($latitude !== 0.0 && $longitude !== 0.0 &&
+                                       abs($latitude) > 0.0001 && abs($longitude) > 0.0001);
+                
+                if ($hasMissingCity && $hasValidCoordinates) {
+                    // ALWAYS reverse geocode when city is Unknown to ensure consistency
+                    $reverseGeo = getLocationFromCoordinates($latitude, $longitude);
                     
-                    // Use client data if it looks valid (not default values)
-                    if ($clientCountryCode && $clientCountryCode !== 'XX') {
-                        $countryCode = $clientCountryCode;
-                        $countryName = $payload['country_name'] ?? $countryName;
-                        $region = $payload['region'] ?? $region;
-                        $city = $payload['city'] ?? $city;
-                        
-                        // Only use client coordinates if they're not 0,0 (default value)
-                        if ($clientLatitude !== 0.0 || $clientLongitude !== 0.0) {
-                            $latitude = $clientLatitude;
-                            $longitude = $clientLongitude;
+                    // Update fields from reverse geocoding
+                    if ($reverseGeo && $reverseGeo['country_code'] !== 'XX') {
+                        // Update country only if still Unknown
+                        if ($countryCode === 'XX' || $countryName === 'Unknown') {
+                            $countryCode = $reverseGeo['country_code'];
+                            $countryName = $reverseGeo['country_name'];
+                        }
+                        // Update region only if still Unknown
+                        $reverseRegion = $reverseGeo['region_name'] ?? '';
+                        if (!empty($reverseRegion) && $reverseRegion !== 'Unknown') {
+                            if ($region === 'Unknown' || empty($region)) {
+                                $region = $reverseRegion;
+                            }
+                        }
+                        // ALWAYS update city from reverse geocoding when it's Unknown
+                        $reverseCity = $reverseGeo['city_name'] ?? '';
+                        if (!empty($reverseCity) && $reverseCity !== 'Unknown') {
+                            $city = $reverseCity; // Unconditionally update
+                        }
+                    }
+                }
+                
+                // Also check for other missing location fields even if city is populated
+                $needsMoreLocation = ($countryCode === 'XX' || $countryName === 'Unknown' || 
+                                     $region === 'Unknown' || empty($region));
+                if ($needsMoreLocation && $hasValidCoordinates && !$hasMissingCity) {
+                    // Fill in other missing fields
+                    $reverseGeo = getLocationFromCoordinates($latitude, $longitude);
+                    if ($reverseGeo && $reverseGeo['country_code'] !== 'XX') {
+                        if ($countryCode === 'XX' || $countryName === 'Unknown') {
+                            $countryCode = $reverseGeo['country_code'];
+                            $countryName = $reverseGeo['country_name'];
+                        }
+                        if (($region === 'Unknown' || empty($region)) && !empty($reverseGeo['region_name']) && $reverseGeo['region_name'] !== 'Unknown') {
+                            $region = $reverseGeo['region_name'];
                         }
                     }
                 }

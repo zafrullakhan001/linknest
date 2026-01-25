@@ -10,6 +10,7 @@ let bubbleSimulation = null;
 let currentData = [];
 let lastTimeSeriesData = [];
 let lastHeatmapData = [];
+let lastTableData = []; // Store raw table data for CSV export
 let activeChartType = 'bubble';
 let currentView = 'bubbles'; // 'bubbles' | 'table'
 let chartSearchQuery = '';
@@ -978,6 +979,9 @@ async function loadTableData() {
             return matchesSearch && matchesThreshold;
         });
 
+        // Store raw table data for CSV export
+        lastTableData = filtered;
+
         renderBubbleTable(filtered);
     } catch (e) {
         tbody.innerHTML = '<tr><td colspan="23" class="text-center">Failed to load table data</td></tr>';
@@ -985,6 +989,13 @@ async function loadTableData() {
 }
 
 function renderCurrentChart() {
+    // Table uses raw measurement rows from /api/performance/table (not bubble aggregates).
+    // Do NOT reuse currentData here, or headers/data will not align.
+    if (activeChartType === 'table') {
+        void loadTableData();
+        return;
+    }
+
     const filtered = getFilteredData();
 
     switch (activeChartType) {
@@ -1011,9 +1022,6 @@ function renderCurrentChart() {
             break;
         case 'worldmap':
             renderWorldMap(filtered);
-            break;
-        case 'table':
-            renderBubbleTable(filtered);
             break;
     }
 }
@@ -1286,7 +1294,7 @@ async function loadBubbleData() {
 
         // Transform API data for bubble chart + table
         currentData = data.data.map(item => {
-            // For URL granularity, show the URL as the main label
+            // Determine display name and ID based on granularity
             let displayName, id;
 
             if (granularity === 'url') {
@@ -1299,10 +1307,18 @@ async function loadBubbleData() {
                     displayName = item.link_url;
                     id = item.link_url;
                 }
+            } else if (granularity === 'username') {
+                // For username granularity, show the username
+                displayName = item.username || 'Unknown';
+                id = item.username || 'unknown';
+            } else if (granularity === 'ip') {
+                // For IP granularity, show the IP address
+                displayName = item.ip_address || 'Unknown';
+                id = item.ip_address || 'unknown';
             } else {
                 // For geographic granularity, show region/country
-                displayName = item.city_name || item.region_name || item.country_name;
-                id = `${item.country_name}-${item.region_name || ''}-${item.city_name || ''}`;
+                displayName = item.city_name || item.region_name || item.country_name || 'Unknown';
+                id = `${item.country_name || ''}-${item.region_name || ''}-${item.city_name || ''}`;
             }
 
             return {
@@ -1319,6 +1335,8 @@ async function loadBubbleData() {
                 country_name: item.country_name || '',
                 region_name: item.region_name || '',
                 city_name: item.city_name || '',
+                username: item.username || null, // Include username from payload
+                ip_address: item.ip_address || null, // Include IP address from payload
                 avg_latency: parseInt(item.avg_latency) || 0,
                 p50: parseInt(item.p50) || 0,
                 p95: parseInt(item.p95) || 0,
@@ -1455,17 +1473,22 @@ function renderBubbles(data) {
                 .attr('stroke-width', 3)
                 .attr('stroke', '#4f46e5');
 
+            const usernameDisplay = d.username ? escapeHtml(d.username) : '<span style="color:#94a3b8;">—</span>';
+            const ipDisplay = d.ip_address ? escapeHtml(d.ip_address) : '<span style="color:#94a3b8;">—</span>';
             tooltip
                 .style('visibility', 'visible')
                 .html(`
                     <div style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
-                        <strong style="font-size:14px;">${d.region}</strong>
+                        <strong style="font-size:14px;">${escapeHtml(d.region)}</strong>
                         <span class="status-badge status-${d.status}" style="font-size:10px; padding:2px 6px;">${d.status}</span>
                     </div>
                     <div style="font-size:12px; color:#475569; margin-bottom:8px;">
-                        URL: ${d.link_url || 'Unknown'}<br/>
+                        URL: ${escapeHtml(d.url || d.link_url || 'Unknown')}<br/>
+                        ${d.username ? `Username: <span style="font-family:mono; font-weight:600;">${usernameDisplay}</span><br/>` : ''}
+                        ${d.ip_address ? `IP: <span style="font-family:mono;">${ipDisplay}</span><br/>` : ''}
                         Latency: <span style="font-family:mono; color:var(--indigo-700); font-weight:bold;">${d.latency}ms</span><br/>
                         Tests: <span style="font-family:mono;">${d.measurements.toLocaleString()}</span>
+                        ${d.user_count > 0 ? `<br/>Users: <span style="font-family:mono;">${d.user_count}</span>` : ''}
                     </div>
                     <div style="text-align:center; font-size:11px; border-top:1px solid #e2e8f0; padding-top:6px; color:var(--indigo-600); font-weight:bold;">
                         Click to focus all charts here
@@ -1637,6 +1660,10 @@ async function renderTimeSeriesChart(filteredData) {
         const period = document.getElementById('period-filter').value;
         const measurementType = document.getElementById('measurement-filter').value;
         const urlFilter = document.getElementById('url-filter').value;
+        const usernameFilter = document.getElementById('username-filter').value.trim();
+        const ipFilter = document.getElementById('ip-filter').value.trim();
+        const authFilter = document.getElementById('auth-filter').value;
+        const granularity = document.getElementById('granularity-filter').value; // This is the "GROUP BY" filter
 
         // Fetch actual time-series metrics (real data)
         let timeSeriesData = [];
@@ -1645,7 +1672,8 @@ async function renderTimeSeriesChart(filteredData) {
                 type: measurementType,
                 metric: 'p95',
                 bucket: 'auto',
-                limitUrls: '8'
+                limitUrls: '8',
+                groupBy: granularity // Pass the group by selection
             });
 
             if (period.startsWith('custom:')) {
@@ -1662,12 +1690,28 @@ async function renderTimeSeriesChart(filteredData) {
                 params.delete('limitUrls');
             }
 
+            if (usernameFilter) {
+                params.append('username', usernameFilter);
+            }
+
+            if (ipFilter) {
+                params.append('ip', ipFilter);
+            }
+
+            if (authFilter && authFilter !== 'all') {
+                params.append('authenticated', authFilter);
+            }
+
             const metricsResponse = await fetch(`${API_BASE}/timeseries?${params.toString()}`);
             if (metricsResponse.ok) {
                 const metricsResult = await metricsResponse.json();
                 timeSeriesData = metricsResult.data || [];
+            } else {
+                console.error('Time series API error:', metricsResponse.status, await metricsResponse.text());
             }
-        } catch (error) { /* ignore */ }
+        } catch (error) {
+            console.error('Error fetching time series data:', error);
+        }
 
         // No longer simulate data; show empty state instead.
 
@@ -1689,22 +1733,23 @@ async function renderTimeSeriesChart(filteredData) {
             return;
         }
 
-        // Group data by URL
-        const urlMap = {};
+        // Group data by label (which depends on groupBy: url, username, ip, etc.)
+        const seriesMap = {};
         timeSeriesData.forEach(d => {
-            const url = d.link_url || d.url || 'Unknown';
-            if (!urlMap[url]) {
-                urlMap[url] = [];
+            // Use the label field from API response, or fallback to link_url
+            const label = d.label || d.link_url || d.username || d.ip_address || d.city_name || d.region_name || d.country_name || 'Unknown';
+            if (!seriesMap[label]) {
+                seriesMap[label] = [];
             }
-            urlMap[url].push({
-                date: new Date(d.timestamp || d.created_at),
+            seriesMap[label].push({
+                date: new Date(d.timestamp || d.created_at || d.time),
                 latency: Number(d.value ?? d.avg_latency ?? d.latency_ms) || 0,
                 measurements: parseInt(d.measurement_count) || 1
             });
         });
 
-        // Sort each URL's data by date
-        Object.values(urlMap).forEach(data => {
+        // Sort each series' data by date
+        Object.values(seriesMap).forEach(data => {
             data.sort((a, b) => a.date - b.date);
         });
 
@@ -1724,8 +1769,8 @@ async function renderTimeSeriesChart(filteredData) {
         const innerHeight = height - margin.top - margin.bottom;
 
         // Get all dates for x-axis
-        const allDates = Object.values(urlMap).flat().map(d => d.date);
-        const allLatencies = Object.values(urlMap).flat().map(d => d.latency);
+        const allDates = Object.values(seriesMap).flat().map(d => d.date);
+        const allLatencies = Object.values(seriesMap).flat().map(d => d.latency);
 
         // Scales
         const xScale = d3.scaleTime()
@@ -1770,10 +1815,10 @@ async function renderTimeSeriesChart(filteredData) {
             .y(d => yScale(d.latency))
             .curve(d3.curveMonotoneX);
 
-        // Draw lines for each URL
-        const urls = Object.keys(urlMap);
-        urls.forEach((url, index) => {
-            const data = urlMap[url];
+        // Draw lines for each series (URL, username, IP, etc.)
+        const series = Object.keys(seriesMap);
+        series.forEach((label, index) => {
+            const data = seriesMap[label];
             const color = colorScale(index);
 
             // Draw line
@@ -1802,8 +1847,8 @@ async function renderTimeSeriesChart(filteredData) {
                 .style('opacity', 0)
                 .on('mouseover', function (event, d) {
                     d3.select(this).attr('r', 5);
-                    const urlDisplay = url.length > 30 ? url.substring(0, 30) + '...' : url;
-                    showTooltip(event, `<strong>${urlDisplay}</strong><br/>Time: ${d.date.toLocaleString()}<br/>Latency: ${Math.round(d.latency)}ms<br/>Measurements: ${d.measurements}`);
+                    const labelDisplay = label.length > 30 ? label.substring(0, 30) + '...' : label;
+                    showTooltip(event, `<strong>${escapeHtml(labelDisplay)}</strong><br/>Time: ${d.date.toLocaleString()}<br/>Latency: ${Math.round(d.latency)}ms<br/>Measurements: ${d.measurements}`);
                 })
                 .on('mouseout', function () {
                     d3.select(this).attr('r', 3);
@@ -1819,7 +1864,7 @@ async function renderTimeSeriesChart(filteredData) {
         const legend = svg.append('g')
             .attr('transform', `translate(${width - margin.right + 10}, ${margin.top})`);
 
-        urls.forEach((url, index) => {
+        series.forEach((label, index) => {
             const legendRow = legend.append('g')
                 .attr('transform', `translate(0, ${index * 20})`);
 
@@ -1831,13 +1876,17 @@ async function renderTimeSeriesChart(filteredData) {
                 .attr('stroke', colorScale(index))
                 .attr('stroke-width', 2);
 
-            // Truncate long URLs
-            let displayUrl = url;
-            try {
-                const urlObj = new URL(url);
-                displayUrl = urlObj.hostname.replace('www.', '');
-            } catch (e) {
-                displayUrl = url.length > 20 ? url.substring(0, 20) + '...' : url;
+            // Format label based on groupBy type
+            let displayLabel = label;
+            if (granularity === 'url') {
+                try {
+                    const urlObj = new URL(label);
+                    displayLabel = urlObj.hostname.replace('www.', '');
+                } catch (e) {
+                    displayLabel = label.length > 20 ? label.substring(0, 20) + '...' : label;
+                }
+            } else {
+                displayLabel = label.length > 25 ? label.substring(0, 25) + '...' : label;
             }
 
             legendRow.append('text')
@@ -1845,9 +1894,9 @@ async function renderTimeSeriesChart(filteredData) {
                 .attr('y', 4)
                 .style('font-size', '11px')
                 .style('fill', '#334155')
-                .text(displayUrl)
+                .text(displayLabel)
                 .append('title')
-                .text(url);
+                .text(label);
         });
 
         // Y-axis label
@@ -2508,24 +2557,82 @@ function exportChartDataToCSV() {
     let headers = [];
 
     switch (activeChartType) {
+        case 'table':
+            // For table chart, export raw payload data with all fields
+            if (lastTableData.length === 0) {
+                alert('No table data available to export. Please load the table view first.');
+                return;
+            }
+
+            // Export all payload fields from the table
+            headers = [
+                'Time', 'URL', 'Username', 'IP Address', 'Latitude', 'Longitude',
+                'Full Response Time (ms)', 'DNS Lookup (ms)', 'TCP Connection (ms)',
+                'TLS Handshake (ms)', 'Time to First Byte (ms)', 'HTTP Status Code',
+                'Device Type', 'Browser Name', 'Browser Version', 'OS Name',
+                'Screen Resolution', 'Connection Type', 'Is Authenticated',
+                'Country', 'Region', 'City', 'Session ID', 'User ID',
+                'Measurement Type', 'Page URL', 'DOM Content Loaded (ms)',
+                'Page Size (bytes)', 'Timezone', 'ISP', 'Error Message'
+            ];
+
+            dataToExport = lastTableData.map(row => [
+                row.time || '',
+                row.link_url || '',
+                row.username || '',
+                row.ip_address || '',
+                row.latitude || '',
+                row.longitude || '',
+                row.full_response_time || '',
+                row.dns_lookup_time || '',
+                row.tcp_connection_time || '',
+                row.tls_handshake_time || '',
+                row.time_to_first_byte || '',
+                row.http_status_code || '',
+                row.device_type || '',
+                row.browser_name || '',
+                row.browser_version || '',
+                row.os_name || '',
+                row.screen_resolution || '',
+                row.connection_type || '',
+                row.is_authenticated ? 'Yes' : 'No',
+                row.country_name || '',
+                row.region_name || '',
+                row.city_name || '',
+                row.session_id || '',
+                row.user_id || '',
+                row.measurement_type || '',
+                row.page_url || '',
+                row.dom_content_loaded_time || '',
+                row.page_size_bytes || '',
+                row.timezone || '',
+                row.isp || '',
+                row.error_message || ''
+            ]);
+            filename = `linknest_analytics_table_${new Date().toISOString().split('T')[0]}.csv`;
+            break;
+
         case 'bubble':
         case 'bar':
         case 'pie':
         case 'histogram':
         case 'scatter':
-        case 'table':
-            // Use currentData for most charts
+            // Use currentData for aggregated charts
             if (currentData.length === 0) {
                 alert('No data available to export');
                 return;
             }
 
-            headers = ['Location', 'URL', 'Avg Latency (ms)', 'Measurements', 'Status'];
+            headers = ['Location', 'URL', 'Username', 'IP Address', 'Avg Latency (ms)', 'P95 Latency (ms)', 'Measurements', 'Users', 'Status'];
             dataToExport = currentData.map(d => [
-                d.location || 'Unknown',
-                d.link_url || 'Unknown',
+                d.region || 'Unknown',
+                d.url || d.link_url || 'Unknown',
+                d.username || '',
+                d.ip_address || '',
                 d.avg_latency || 0,
-                d.measurement_count || 0,
+                d.p95 || 0,
+                d.measurements || d.measurement_count || 0,
+                d.user_count || 0,
                 d.status || 'unknown'
             ]);
             break;

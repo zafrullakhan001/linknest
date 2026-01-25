@@ -25,6 +25,10 @@ header('Content-Type: application/json');
 
 $period = (string)($_GET['period'] ?? '1h');
 $url = isset($_GET['url']) ? trim((string)$_GET['url']) : '';
+$username = isset($_GET['username']) ? trim((string)$_GET['username']) : '';
+$ipAddress = isset($_GET['ip']) ? trim((string)$_GET['ip']) : '';
+$authenticated = isset($_GET['authenticated']) ? (string)$_GET['authenticated'] : '';
+$groupBy = (string)($_GET['groupBy'] ?? 'url'); // url, username, ip, country, region, city
 $metric = (string)($_GET['metric'] ?? 'p95'); // avg, p50, p95, p99, min, max
 $bucket = (string)($_GET['bucket'] ?? 'auto'); // auto | 1m | 5m | 15m | 1h | 6h
 $measurementType = (string)($_GET['type'] ?? 'client');
@@ -104,19 +108,83 @@ if ($bucket === 'auto') {
 try {
     $db = getAnalyticsPDO();
 
-    // If URL not provided, return series for top N URLs in range
-    $urlFilterSql = '';
+    // Build filter conditions
+    $filterSql = '';
     $params = [
         ':start' => $start,
         ':end' => $end,
         ':measurement_type' => $measurementType,
     ];
 
+    // URL filter
     if ($url !== '') {
-        $urlFilterSql = 'AND pm.link_url = :url';
+        $filterSql .= ' AND pm.link_url = :url';
         $params[':url'] = $url;
-    } else {
-        $urlFilterSql = "
+    }
+
+    // Username filter
+    if ($username !== '') {
+        $filterSql .= ' AND pm.username ILIKE :username';
+        $params[':username'] = '%' . $username . '%';
+    }
+
+    // IP address filter
+    if ($ipAddress !== '') {
+        $filterSql .= ' AND CAST(pm.ip_address AS TEXT) ILIKE :ip_address';
+        $params[':ip_address'] = '%' . $ipAddress . '%';
+    }
+
+    // Authentication filter
+    if ($authenticated !== '' && $authenticated !== 'all') {
+        if ($authenticated === 'true' || $authenticated === '1') {
+            $filterSql .= ' AND pm.is_authenticated = TRUE';
+        } elseif ($authenticated === 'false' || $authenticated === '0') {
+            $filterSql .= ' AND pm.is_authenticated = FALSE';
+        }
+    }
+
+    // Determine GROUP BY field based on groupBy parameter
+    $groupByField = 'pm.link_url';
+    $groupByLabel = 'link_url';
+    $selectGroupBy = 'pm.link_url';
+    
+    switch ($groupBy) {
+        case 'username':
+            $groupByField = 'pm.username';
+            $groupByLabel = 'username';
+            $selectGroupBy = 'COALESCE(pm.username, \'Unknown\') as username';
+            break;
+        case 'ip':
+            $groupByField = 'pm.ip_address';
+            $groupByLabel = 'ip_address';
+            $selectGroupBy = 'CAST(pm.ip_address AS TEXT) as ip_address';
+            break;
+        case 'country':
+            $groupByField = 'pm.country_code, pm.country_name';
+            $groupByLabel = 'country_name';
+            $selectGroupBy = 'pm.country_code, pm.country_name';
+            break;
+        case 'region':
+            $groupByField = 'pm.country_code, pm.country_name, pm.region_name';
+            $groupByLabel = 'region_name';
+            $selectGroupBy = 'pm.country_code, pm.country_name, pm.region_name';
+            break;
+        case 'city':
+            $groupByField = 'pm.country_code, pm.country_name, pm.region_name, pm.city_name';
+            $groupByLabel = 'city_name';
+            $selectGroupBy = 'pm.country_code, pm.country_name, pm.region_name, pm.city_name';
+            break;
+        default: // 'url'
+            $groupByField = 'pm.link_url';
+            $groupByLabel = 'link_url';
+            $selectGroupBy = 'pm.link_url';
+            break;
+    }
+
+    // If URL not provided and grouping by URL, return series for top N URLs
+    $topNFilter = '';
+    if ($url === '' && $groupBy === 'url') {
+        $topNFilter = "
             AND pm.link_url IN (
                 SELECT link_url
                 FROM performance_metrics
@@ -145,15 +213,16 @@ try {
     $sql = "
         SELECT
             time_bucket(INTERVAL '{$bucketInterval}', pm.time) AS timestamp,
-            pm.link_url,
+            {$selectGroupBy},
             CAST(ROUND(($metricExpr)::numeric, 0) AS INTEGER) AS value,
             COUNT(*) AS measurement_count
         FROM performance_metrics pm
         WHERE pm.time BETWEEN :start AND :end
           AND pm.measurement_type = :measurement_type
-          {$urlFilterSql}
-        GROUP BY timestamp, pm.link_url
-        ORDER BY timestamp ASC, pm.link_url ASC
+          {$filterSql}
+          {$topNFilter}
+        GROUP BY timestamp, {$groupByField}
+        ORDER BY timestamp ASC, {$groupByField} ASC
     ";
 
     $stmt = $db->prepare($sql);
@@ -163,16 +232,49 @@ try {
     $stmt->execute();
     $results = $stmt->fetchAll();
 
+    // Format results to include groupBy label
+    $formattedResults = [];
+    foreach ($results as $row) {
+        $label = '';
+        if ($groupBy === 'url') {
+            $label = $row['link_url'] ?? 'Unknown';
+        } elseif ($groupBy === 'username') {
+            $label = $row['username'] ?? 'Unknown';
+        } elseif ($groupBy === 'ip') {
+            $label = $row['ip_address'] ?? 'Unknown';
+        } elseif ($groupBy === 'country') {
+            $label = $row['country_name'] ?? 'Unknown';
+        } elseif ($groupBy === 'region') {
+            $label = $row['region_name'] ?? ($row['country_name'] ?? 'Unknown');
+        } elseif ($groupBy === 'city') {
+            $label = $row['city_name'] ?? ($row['region_name'] ?? ($row['country_name'] ?? 'Unknown'));
+        }
+        
+        $formattedResults[] = [
+            'timestamp' => $row['timestamp'],
+            'link_url' => $row['link_url'] ?? null,
+            'username' => $row['username'] ?? null,
+            'ip_address' => $row['ip_address'] ?? null,
+            'country_name' => $row['country_name'] ?? null,
+            'region_name' => $row['region_name'] ?? null,
+            'city_name' => $row['city_name'] ?? null,
+            'label' => $label,
+            'value' => (int)$row['value'],
+            'measurement_count' => (int)$row['measurement_count']
+        ];
+    }
+
     echo json_encode([
         'success' => true,
         'period' => $period,
         'metric' => $metric,
         'bucket' => $bucket,
+        'groupBy' => $groupBy,
         'start' => $start,
         'end' => $end,
         'measurement_type' => $measurementType,
         'url' => $url !== '' ? $url : null,
-        'data' => $results
+        'data' => $formattedResults
     ]);
     
 } catch (Exception $e) {

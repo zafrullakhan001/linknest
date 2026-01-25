@@ -90,10 +90,42 @@ try {
     }
     
     // Prepare payload with all metric data
+    // If username is missing (or mistakenly numeric), try to resolve it from main SQLite using user_id.
+    $resolvedUsername = null;
+    $incomingUsername = $data['username'] ?? null;
+    $incomingUserId = $data['user_id'] ?? null;
+    if (is_string($incomingUsername)) {
+        $incomingUsername = trim($incomingUsername);
+    }
+
+    $looksNumericUsername = false;
+    if (is_int($incomingUsername) || is_float($incomingUsername)) {
+        $looksNumericUsername = true;
+    } elseif (is_string($incomingUsername) && $incomingUsername !== '' && ctype_digit($incomingUsername)) {
+        $looksNumericUsername = true;
+    }
+
+    if (is_string($incomingUsername) && $incomingUsername !== '' && !$looksNumericUsername) {
+        $resolvedUsername = $incomingUsername;
+    } elseif ($incomingUserId !== null && (is_int($incomingUserId) || (is_string($incomingUserId) && ctype_digit($incomingUserId)))) {
+        try {
+            $mainDb = getDB();
+            $stmtU = $mainDb->prepare("SELECT username FROM users WHERE id = ? LIMIT 1");
+            $stmtU->execute([(int)$incomingUserId]);
+            $u = $stmtU->fetchColumn();
+            if (is_string($u) && trim($u) !== '') {
+                $resolvedUsername = trim($u);
+            }
+        } catch (Exception $e) {
+            // Best-effort only
+        }
+    }
+
     $payload = [
         'link_url' => $data['url'] ?? '',
         'measurement_type' => $data['measurement_type'] ?? 'client',
-        'user_id' => $data['user_id'] ?? null,
+        'user_id' => $incomingUserId ?? null,
+        'username' => $resolvedUsername,
         'session_id' => $sessionId,
         'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
         'full_response_time' => (int)($data['full_response_time'] ?? $data['full_load'] ?? 0),
@@ -110,7 +142,7 @@ try {
         'os_name' => $data['os_name'] ?? '',
         'screen_resolution' => $data['screen_resolution'] ?? '',
         'connection_type' => $data['connection_type'] ?? '',
-        'is_authenticated' => !empty($data['user_id']),
+        'is_authenticated' => !empty($incomingUserId),
         // Location data from client
         'country_code' => $data['country_code'] ?? 'XX',
         'region' => $data['region'] ?? 'Unknown',
