@@ -120,7 +120,8 @@ foreach ($items as $idx => $item) {
         'session_id' => session_id(),
         'ip_address' => function_exists('getClientIpAddress') ? getClientIpAddress() : ($_SERVER['REMOTE_ADDR'] ?? null),
         'is_authenticated' => ($userId !== null),
-        'time' => gmdate('Y-m-d H:i:s'),  // Capture exact collection time in UTC
+        // Include timezone offset to avoid confusion (e.g. 2026-01-25T10:40:00-05:00)
+        'time' => date('c'),
 
         'full_response_time' => $full,
         'dns_lookup_time' => isset($item['dns_lookup_time']) ? (int)$item['dns_lookup_time'] : (isset($item['dns_time']) ? (int)$item['dns_time'] : null),

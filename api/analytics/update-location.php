@@ -35,23 +35,34 @@ try {
     $city = null;
     $timezone = 'UTC';
     
-    // If coordinates provided, use reverse geocoding
+    // If coordinates provided, use same DB lookup as performance_metrics (location_lookup), then fallback to online
     if ($postData && isset($postData['latitude']) && isset($postData['longitude'])) {
         $lat = (float)$postData['latitude'];
         $lng = (float)$postData['longitude'];
         
         // Validate coordinates
         if ($lat >= -90 && $lat <= 90 && $lng >= -180 && $lng <= 180) {
-            // Use reverse geocoding to get address
-            $reverseGeoPath = __DIR__ . '/reverse-geocode.php';
-            if (file_exists($reverseGeoPath)) {
-                // Simulate reverse geocode call
+            // 1. Try PostgreSQL location_lookup first (same as process-metrics-queue)
+            $reverseOfflinePath = __DIR__ . '/../../analytics/geoip/reverse-geocode-offline.php';
+            if (file_exists($reverseOfflinePath) && function_exists('isPerformanceAnalyticsEnabled') && isPerformanceAnalyticsEnabled()) {
+                require_once $reverseOfflinePath;
+                if (function_exists('getLocationFromCoordinates')) {
+                    $dbLocation = getLocationFromCoordinates($lat, $lng);
+                    if (!empty($dbLocation['city_name']) && $dbLocation['city_name'] !== 'Unknown') {
+                        $countryCode = $dbLocation['country_code'] ?? 'XX';
+                        $countryName = $dbLocation['country_name'] ?? 'Unknown';
+                        $region = $dbLocation['region_name'] ?? 'Unknown';
+                        $city = $dbLocation['city_name'];
+                    }
+                }
+            }
+            // 2. Fallback to Nominatim if DB didn't return a city
+            if (!isset($city) || $city === 'Unknown') {
                 $url = sprintf(
                     'https://nominatim.openstreetmap.org/reverse?format=json&lat=%s&lon=%s&zoom=10&addressdetails=1',
                     urlencode($lat),
                     urlencode($lng)
                 );
-                
                 $context = stream_context_create([
                     'http' => [
                         'method' => 'GET',
@@ -63,7 +74,6 @@ try {
                         'ignore_errors' => true
                     ]
                 ]);
-                
                 $response = @file_get_contents($url, false, $context);
                 if ($response !== false) {
                     $data = json_decode($response, true);
@@ -76,12 +86,11 @@ try {
                     }
                 }
             }
-            
-            // If reverse geocode failed but we have location data from client, use it
-            if (!$countryCode && isset($postData['country_code'])) {
+            // 3. If still unknown, use client-provided location
+            if ((!isset($countryCode) || $countryCode === 'XX') && isset($postData['country_code'])) {
                 $countryCode = $postData['country_code'];
-                $region = $postData['region'] ?? 'Unknown';
-                $city = $postData['city'] ?? 'Unknown';
+                $region = $postData['region'] ?? $region ?? 'Unknown';
+                $city = $postData['city'] ?? $city ?? 'Unknown';
             }
         }
     }

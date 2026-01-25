@@ -19,6 +19,32 @@ require_once __DIR__ . '/api/config_analytics.php';
 require_once __DIR__ . '/geoip/geoip.php';
 require_once __DIR__ . '/geoip/reverse-geocode-offline.php';
 
+/**
+ * Normalize link URL for grouping (drop query/fragment).
+ */
+function normalizeLinkUrlForAnalytics(?string $url): ?string {
+    if (!is_string($url)) return null;
+    $raw = trim($url);
+    if ($raw === '') return null;
+    $parts = @parse_url($raw);
+    if (!is_array($parts) || empty($parts['scheme']) || empty($parts['host'])) {
+        return $raw;
+    }
+    $scheme = strtolower($parts['scheme']);
+    $host = strtolower($parts['host']);
+    $port = isset($parts['port']) ? (int)$parts['port'] : null;
+    $path = $parts['path'] ?? '/';
+    if ($path !== '/' && is_string($path)) {
+        $path = rtrim($path, '/');
+        if ($path === '') $path = '/';
+    }
+    $base = $scheme . '://' . $host;
+    if ($port && !(($scheme === 'http' && $port === 80) || ($scheme === 'https' && $port === 443))) {
+        $base .= ':' . $port;
+    }
+    return $base . $path;
+}
+
 echo "=== Performance Analytics Queue Processor ===\n";
 echo "Started at: " . date('Y-m-d H:i:s') . "\n\n";
 
@@ -262,6 +288,24 @@ function processBatch($db, $insertStmt, $updateStmt, $batchSize, &$stats) {
                 }
                 
                 // Insert into performance_metrics
+                // Note: PDO (pgsql) can serialize PHP booleans as empty string, which Postgres rejects.
+                // Use 't'/'f' (or NULL) for boolean columns.
+                $isAuthenticatedText = !empty($payload['user_id']) ? 't' : 'f';
+                $okBool = null;
+                if (array_key_exists('ok', $payload)) {
+                    // payload may contain true/false, 1/0, "true"/"false", or "" from older clients
+                    $okBool = filter_var($payload['ok'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+                } else {
+                    $okBool = empty($payload['error_message']); // best-effort default
+                }
+                $okText = ($okBool === null) ? null : ($okBool ? 't' : 'f');
+
+                $redirectedBool = null;
+                if (array_key_exists('redirected', $payload)) {
+                    $redirectedBool = filter_var($payload['redirected'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+                }
+                $redirectedText = ($redirectedBool === null) ? null : ($redirectedBool ? 't' : 'f');
+
                 $insertStmt->execute([
                     'time' => $payload['time'] ?? null,  // Use captured time from collect.php
                     'link_url' => $payload['link_url'],
@@ -293,22 +337,23 @@ function processBatch($db, $insertStmt, $updateStmt, $batchSize, &$stats) {
                     'os_name' => $payload['os_name'] ?? '',
                     'screen_resolution' => $payload['screen_resolution'] ?? '',
                     'connection_type' => $payload['connection_type'] ?? '',
-                    'is_authenticated' => !empty($payload['user_id']),
+                    'is_authenticated' => $isAuthenticatedText,
                     'error_message' => $payload['error_message'] ?? null,
 
                     // Link-specific context / classification
                     'tile_id' => $payload['tile_id'] ?? null,
                     'link_id' => $payload['link_id'] ?? null,
-                    'link_url_normalized' => $payload['link_url_normalized'] ?? null,
-                    'ok' => isset($payload['ok']) ? (bool)$payload['ok'] : null,
-                    'error_category' => $payload['error_category'] ?? null,
+                    'link_url_normalized' => $payload['link_url_normalized'] ?? normalizeLinkUrlForAnalytics($payload['link_url'] ?? null),
+                    'ok' => $okText,
+                    'error_category' => $payload['error_category']
+                        ?? (empty($payload['error_message']) ? null : 'unknown'),
                     'response_type' => $payload['response_type'] ?? null,
-                    'redirected' => isset($payload['redirected']) ? (bool)$payload['redirected'] : null,
+                    'redirected' => $redirectedText,
                     'final_url' => $payload['final_url'] ?? null,
-                    'method' => $payload['method'] ?? null,
-                    'cache_mode' => $payload['cache_mode'] ?? null,
-                    'timeout_ms' => isset($payload['timeout_ms']) ? (int)$payload['timeout_ms'] : null,
-                    'attempted_at' => isset($payload['attempted_at']) ? (int)$payload['attempted_at'] : null,
+                    'method' => $payload['method'] ?? 'HEAD',
+                    'cache_mode' => $payload['cache_mode'] ?? 'no-store',
+                    'timeout_ms' => isset($payload['timeout_ms']) ? (int)$payload['timeout_ms'] : 5000,
+                    'attempted_at' => isset($payload['attempted_at']) ? (int)$payload['attempted_at'] : (int)(microtime(true) * 1000),
                 ]);
                 
                 // Mark as processed
@@ -325,6 +370,9 @@ function processBatch($db, $insertStmt, $updateStmt, $batchSize, &$stats) {
         
         return $processed;
         
+    } catch (PDOException $e) {
+        // Let connection errors propagate so the main loop can reconnect
+        throw $e;
     } catch (Exception $e) {
         error_log("Queue processor batch error: " . $e->getMessage());
         return 0;
@@ -347,8 +395,56 @@ function setupNotifyListener($db) {
     }
 }
 
+/**
+ * Return fresh PDO and re-prepared statements (used after reconnect).
+ */
+function reconnectAnalyticsAndStatements($batchSize) {
+    // Force new connection (clears cached dead PDO in getAnalyticsPDO)
+    $db = getAnalyticsPDO(true);
+    $db->query("SELECT 1");
+    $insertStmt = $db->prepare("
+        INSERT INTO performance_metrics (
+            time, link_url, measurement_type, user_id, username, session_id,
+            ip_address, country_code, country_name, region_name, city_name,
+            latitude, longitude, timezone, isp,
+            full_response_time, dns_lookup_time, tcp_connection_time,
+            tls_handshake_time, time_to_first_byte,
+            dom_content_loaded_time, page_size_bytes, page_url,
+            http_status_code, device_type, browser_name,
+            browser_version, os_name, screen_resolution, connection_type,
+            is_authenticated, error_message,
+            tile_id, link_id, link_url_normalized,
+            ok, error_category, response_type, redirected, final_url,
+            method, cache_mode, timeout_ms, attempted_at
+        ) VALUES (
+            COALESCE(:time::timestamptz, NOW()), :link_url, :measurement_type, :user_id, :username, :session_id,
+            :ip_address, :country_code, :country_name, :region_name, :city_name,
+            :latitude, :longitude, :timezone, :isp,
+            :full_response_time, :dns_lookup_time, :tcp_connection_time,
+            :tls_handshake_time, :time_to_first_byte,
+            :dom_content_loaded_time, :page_size_bytes, :page_url,
+            :http_status_code, :device_type, :browser_name,
+            :browser_version, :os_name, :screen_resolution, :connection_type,
+            :is_authenticated, :error_message,
+            :tile_id, :link_id, :link_url_normalized,
+            :ok, :error_category, :response_type, :redirected, :final_url,
+            :method, :cache_mode, :timeout_ms, :attempted_at
+        )
+    ");
+    $updateStmt = $db->prepare("
+        UPDATE metrics_queue 
+        SET processed = TRUE, processed_at = NOW() 
+        WHERE id = :id
+    ");
+    return [$db, $insertStmt, $updateStmt];
+}
+
 // Set up NOTIFY listener if possible
 $hasNotify = setupNotifyListener($db);
+
+// Reconnect backoff: seconds to wait after DB error (capped, incremented on consecutive failures)
+$reconnectDelay = 10;
+$reconnectDelayMax = 60;
 
 // Main processing loop
 echo "Starting main processing loop...\n";
@@ -360,14 +456,22 @@ while (true) {
     try {
         // Check for NOTIFY events (non-blocking)
         if ($hasNotify) {
-            $result = $db->pgsqlGetNotify(PDO::FETCH_ASSOC, 0);
-            if ($result) {
-                echo "[" . date('H:i:s') . "] NOTIFY received: {$result['message']}\n";
+            try {
+                $result = $db->pgsqlGetNotify(PDO::FETCH_ASSOC, 0);
+                if ($result) {
+                    echo "[" . date('H:i:s') . "] NOTIFY received: {$result['message']}\n";
+                }
+            } catch (PDOException $e) {
+                // NOTIFY check can fail when connection is dead
+                throw $e;
             }
         }
         
         // Process batch
         $processed = processBatch($db, $insertStmt, $updateStmt, $batchSize, $stats);
+        
+        // Connection is healthy – reset backoff for next time
+        $reconnectDelay = 10;
         
         if ($processed > 0) {
             $stats['total_processed'] += $processed;
@@ -396,53 +500,20 @@ while (true) {
         }
         
     } catch (PDOException $e) {
-        // Database connection error - wait and retry
+        // Database connection error – get a fresh connection and re-prepare statements
         error_log("Queue processor PDO error: " . $e->getMessage());
-        echo "[" . date('H:i:s') . "] Database error, retrying in 10 seconds...\n";
-        sleep(10);
+        echo "[" . date('H:i:s') . "] Database error (" . $e->getMessage() . "), retrying in {$reconnectDelay}s...\n";
+        sleep($reconnectDelay);
         
-        // Try to reconnect
         try {
-            $db = getAnalyticsPDO();
-            $insertStmt = $db->prepare("
-                INSERT INTO performance_metrics (
-                    time, link_url, measurement_type, user_id, username, session_id,
-                    ip_address, country_code, country_name, region_name, city_name,
-                    latitude, longitude, timezone, isp,
-                    full_response_time, dns_lookup_time, tcp_connection_time,
-                    tls_handshake_time, time_to_first_byte,
-                    dom_content_loaded_time, page_size_bytes, page_url,
-                    http_status_code, device_type, browser_name,
-                    browser_version, os_name, screen_resolution, connection_type,
-                    is_authenticated, error_message,
-                    tile_id, link_id, link_url_normalized,
-                    ok, error_category, response_type, redirected, final_url,
-                    method, cache_mode, timeout_ms, attempted_at
-                ) VALUES (
-                    COALESCE(:time::timestamptz, NOW()), :link_url, :measurement_type, :user_id, :username, :session_id,
-                    :ip_address, :country_code, :country_name, :region_name, :city_name,
-                    :latitude, :longitude, :timezone, :isp,
-                    :full_response_time, :dns_lookup_time, :tcp_connection_time,
-                    :tls_handshake_time, :time_to_first_byte,
-                    :dom_content_loaded_time, :page_size_bytes, :page_url,
-                    :http_status_code, :device_type, :browser_name,
-                    :browser_version, :os_name, :screen_resolution, :connection_type,
-                    :is_authenticated, :error_message,
-                    :tile_id, :link_id, :link_url_normalized,
-                    :ok, :error_category, :response_type, :redirected, :final_url,
-                    :method, :cache_mode, :timeout_ms, :attempted_at
-                )
-            ");
-            $updateStmt = $db->prepare("
-                UPDATE metrics_queue 
-                SET processed = TRUE, processed_at = NOW() 
-                WHERE id = :id
-            ");
-            if ($hasNotify) {
-                setupNotifyListener($db);
-            }
+            list($db, $insertStmt, $updateStmt) = reconnectAnalyticsAndStatements($batchSize);
+            $hasNotify = setupNotifyListener($db);
+            echo "[" . date('H:i:s') . "] Reconnected to database. NOTIFY " . ($hasNotify ? "enabled" : "disabled (polling only)") . "\n";
+            $reconnectDelay = 10;
         } catch (Exception $reconnectError) {
-            // Reconnection failed, will retry in next loop
+            error_log("Queue processor reconnect failed: " . $reconnectError->getMessage());
+            echo "[" . date('H:i:s') . "] Reconnect failed, will retry in " . min($reconnectDelay, $reconnectDelayMax) . "s\n";
+            $reconnectDelay = min($reconnectDelay + 10, $reconnectDelayMax);
         }
         
     } catch (Exception $e) {

@@ -2809,10 +2809,32 @@ function trackUserLogin(int $userId, string $username): void {
         // Send to analytics queue
         trackPerformanceMetric($metric);
         
-        // Also store in user_geolocations table for analytics
+        // Also store in user_geolocations table for analytics (use same DB city_name lookup as other tables)
         try {
             $analyticsDB = getAnalyticsDB();
             if ($analyticsDB && $geo) {
+                $countryCode = $geo['country_code'] ?? 'XX';
+                $countryName = $geo['country_name'] ?? 'Unknown';
+                $regionName = $geo['region_name'] ?? 'Unknown';
+                $cityName = $geo['city_name'] ?? 'Unknown';
+                $lat = (float)($geo['latitude'] ?? 0.0);
+                $lng = (float)($geo['longitude'] ?? 0.0);
+                // When we have coordinates but city is unknown, look up from location_lookup (same as process-metrics-queue)
+                if ($lat && $lng && ($cityName === '' || $cityName === 'Unknown')) {
+                    $reverseOfflinePath = __DIR__ . '/../analytics/geoip/reverse-geocode-offline.php';
+                    if (file_exists($reverseOfflinePath)) {
+                        require_once $reverseOfflinePath;
+                        if (function_exists('getLocationFromCoordinates')) {
+                            $dbLocation = getLocationFromCoordinates($lat, $lng);
+                            if (!empty($dbLocation['city_name']) && $dbLocation['city_name'] !== 'Unknown') {
+                                $countryCode = $dbLocation['country_code'] ?? $countryCode;
+                                $countryName = $dbLocation['country_name'] ?? $countryName;
+                                $regionName = $dbLocation['region_name'] ?? $regionName;
+                                $cityName = $dbLocation['city_name'];
+                            }
+                        }
+                    }
+                }
                 $stmt = $analyticsDB->prepare("
                     INSERT INTO user_geolocations (user_id, ip_address, country_code, country_name, region_name, city_name, latitude, longitude, timezone, last_seen)
                     VALUES (:user_id, :ip_address, :country_code, :country_name, :region_name, :city_name, :latitude, :longitude, :timezone, NOW())
@@ -2828,16 +2850,15 @@ function trackUserLogin(int $userId, string $username): void {
                         timezone = EXCLUDED.timezone,
                         last_seen = NOW()
                 ");
-                
                 $stmt->execute([
                     'user_id' => $userId,
                     'ip_address' => $ip,
-                    'country_code' => $geo['country_code'] ?? 'XX',
-                    'country_name' => $geo['country_name'] ?? 'Unknown',
-                    'region_name' => $geo['region_name'] ?? 'Unknown',
-                    'city_name' => $geo['city_name'] ?? 'Unknown',
-                    'latitude' => $geo['latitude'] ?? 0.0,
-                    'longitude' => $geo['longitude'] ?? 0.0,
+                    'country_code' => $countryCode,
+                    'country_name' => $countryName,
+                    'region_name' => $regionName,
+                    'city_name' => $cityName,
+                    'latitude' => $lat,
+                    'longitude' => $lng,
                     'timezone' => $geo['timezone'] ?? 'UTC'
                 ]);
             }

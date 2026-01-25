@@ -138,6 +138,8 @@ try {
         'username' => $resolvedUsername,
         'session_id' => $sessionId,
         'ip_address' => function_exists('getClientIpAddress') ? getClientIpAddress() : ($_SERVER['REMOTE_ADDR'] ?? null),
+        // Include timezone offset (unambiguous timestamptz input)
+        'time' => date('c'),
         'full_response_time' => (int)($data['full_response_time'] ?? $data['full_load'] ?? 0),
         'dns_lookup_time' => (int)($data['dns_lookup_time'] ?? $data['dns_time'] ?? 0),
         'tcp_connection_time' => (int)($data['tcp_connection_time'] ?? $data['tcp_time'] ?? 0),

@@ -50,7 +50,11 @@ try {
     $migrations = [
         'add_username_column.sql' => 'Add username column and index',
         'add_ip_indexes.sql' => 'Add IP address indexes for anonymous users',
-        'add_link_metrics_columns.sql' => 'Add link-level metrics columns (tile/link ids, error classification)'
+        'add_link_metrics_columns.sql' => 'Add link-level metrics columns (tile/link ids, error classification)',
+        'fix_link_id_text.sql' => 'Fix performance_metrics.link_id column type to TEXT (compat with LinkNest IDs)',
+        'fix_link_latency_summary_link_id_text.sql' => 'Fix link_latency_summary.link_id column type to TEXT (compat with LinkNest IDs)',
+        'add_user_geolocations_last_seen.sql' => 'Add last_seen column to user_geolocations for upsert updates',
+        'add_user_geolocations_unique_user_id.sql' => 'Add UNIQUE(user_id) on user_geolocations for ON CONFLICT upserts'
     ];
     
     foreach ($migrations as $file => $description) {

@@ -38,74 +38,58 @@ try {
         sendJSON(['error' => 'Invalid coordinates'], 400);
     }
     
-    // Use OpenStreetMap Nominatim API for reverse geocoding
-    $url = sprintf(
-        'https://nominatim.openstreetmap.org/reverse?format=json&lat=%s&lon=%s&zoom=10&addressdetails=1',
-        urlencode($lat),
-        urlencode($lng)
-    );
-    
-    $context = stream_context_create([
-        'http' => [
-            'method' => 'GET',
-            'header' => [
-                'User-Agent: LinkNest Analytics/1.0',
-                'Accept: application/json'
-            ],
-            'timeout' => 5,
-            'ignore_errors' => true
-        ]
-    ]);
-    
-    $response = @file_get_contents($url, false, $context);
-    
-    if ($response === false) {
-        // Fallback: return coordinates only
-        sendJSON([
-            'success' => true,
-            'location' => [
-                'latitude' => $lat,
-                'longitude' => $lng,
-                'country_code' => 'XX',
-                'country_name' => 'Unknown',
-                'region' => 'Unknown',
-                'city' => 'Unknown'
-            ]
-        ]);
-    }
-    
-    $data = json_decode($response, true);
-    
-    if (empty($data) || !isset($data['address'])) {
-        // Fallback: return coordinates only
-        sendJSON([
-            'success' => true,
-            'location' => [
-                'latitude' => $lat,
-                'longitude' => $lng,
-                'country_code' => 'XX',
-                'country_name' => 'Unknown',
-                'region' => 'Unknown',
-                'city' => 'Unknown'
-            ]
-        ]);
-    }
-    
-    $address = $data['address'];
-    
-    // Extract location details from OpenStreetMap response
     $countryCode = 'XX';
-    $countryName = $address['country'] ?? 'Unknown';
+    $countryName = 'Unknown';
+    $region = 'Unknown';
+    $city = 'Unknown';
     
-    // Try to get country code from country_code field or ISO code
-    if (isset($address['country_code'])) {
-        $countryCode = strtoupper($address['country_code']);
-    } elseif (isset($data['address']['iso3166-1:alpha2'])) {
-        $countryCode = strtoupper($data['address']['iso3166-1:alpha2']);
+    // 1. Try PostgreSQL location_lookup first (same as process-metrics-queue and other tables)
+    if (function_exists('isPerformanceAnalyticsEnabled') && isPerformanceAnalyticsEnabled()) {
+        $reverseOfflinePath = __DIR__ . '/../../analytics/geoip/reverse-geocode-offline.php';
+        if (file_exists($reverseOfflinePath)) {
+            require_once $reverseOfflinePath;
+            if (function_exists('getLocationFromCoordinates')) {
+                $dbLocation = getLocationFromCoordinates($lat, $lng);
+                if (!empty($dbLocation['city_name']) && $dbLocation['city_name'] !== 'Unknown') {
+                    $countryCode = $dbLocation['country_code'] ?? 'XX';
+                    $countryName = $dbLocation['country_name'] ?? 'Unknown';
+                    $region = $dbLocation['region_name'] ?? 'Unknown';
+                    $city = $dbLocation['city_name'];
+                }
+            }
+        }
     }
     
-    $region = $address['state'] ?? $address['region'] ?? $address['county'] ?? 'Unknown';
-    $city = $address['city'] ?? $address['town'] ?? $address['village'] ?? $address['municipality'] ?? 'Unknown';
+    // 2. Fallback to OpenStreetMap Nominatim if DB didn't return a city
+    if ($city === 'Unknown') {
+        $url = sprintf(
+            'https://nominatim.openstreetmap.org/reverse?format=json&lat=%s&lon=%s&zoom=10&addressdetails=1',
+            urlencode($lat),
+            urlencode($lng)
+        );
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'GET',
+                'header' => [
+                    'User-Agent: LinkNest Analytics/1.0',
+                    'Accept: application/json'
+                ],
+                'timeout' => 5,
+                'ignore_errors' => true
+            ]
+        ]);
+        $response = @file_get_contents($url, false, $context);
+        if ($response !== false) {
+            $data = json_decode($response, true);
+            if (!empty($data['address'])) {
+                $address = $data['address'];
+                $countryCode = isset($address['country_code']) ? strtoupper($address['country_code']) : (isset($data['address']['iso3166-1:alpha2']) ? strtoupper($data['address']['iso3166-1:alpha2']) : 'XX');
+                $countryName = $address['country'] ?? 'Unknown';
+                $region = $address['state'] ?? $address['region'] ?? $address['county'] ?? 'Unknown';
+                $city = $address['city'] ?? $address['town'] ?? $address['village'] ?? $address['municipality'] ?? 'Unknown';
+            }
+        }
+    }
     
     // Store location in session
     $_SESSION['country_code'] = $countryCode;

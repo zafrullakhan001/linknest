@@ -16,12 +16,17 @@ ob_end_clean();
 /**
  * Get PostgreSQL connection for analytics
  * Reads connection settings from main SQLite database
- * 
+ *
+ * @param bool $forceNew If true, discard cached connection and create a new one (use after DB was down).
  * @return PDO
  * @throws Exception if connection fails
  */
-function getAnalyticsPDO(): PDO {
+function getAnalyticsPDO(bool $forceNew = false): PDO {
     static $pdo = null;
+    
+    if ($forceNew && $pdo !== null) {
+        $pdo = null;
+    }
     
     if ($pdo !== null) {
         return $pdo;

@@ -35,6 +35,24 @@
                 lastUpdate: null
             };
         }
+
+        /**
+         * Normalize URL for grouping (avoid query/fragment cardinality explosion)
+         */
+        normalizeUrl(url) {
+            try {
+                const u = new URL(String(url || '').trim());
+                u.hash = '';
+                u.search = '';
+                u.hostname = u.hostname.toLowerCase();
+                if (u.pathname && u.pathname.length > 1) {
+                    u.pathname = u.pathname.replace(/\/+$/, '');
+                }
+                return u.toString();
+            } catch {
+                return String(url || '').trim();
+            }
+        }
         
         /**
          * Find all links on the page to test
@@ -63,20 +81,24 @@
          */
         async testLink(url) {
             const start = performance.now();
+            const attemptedAt = Date.now();
+            const method = 'HEAD';
+            const cacheMode = 'no-cache';
+            const timeoutMs = 5000;
             
             try {
                 // Use fetch with abort controller for timeout
                 const controller = new AbortController();
-                const timeout = setTimeout(() => controller.abort(), 5000);
+                const timeout = setTimeout(() => controller.abort(), timeoutMs);
                 
                 const fetchStart = performance.now();
                 
                 // Try HEAD request first (faster)
                 const response = await fetch(url, {
-                    method: 'HEAD',
+                    method: method,
                     mode: 'no-cors', // Allow cross-origin requests
                     signal: controller.signal,
-                    cache: 'no-cache'
+                    cache: cacheMode
                 });
                 
                 clearTimeout(timeout);
@@ -100,21 +122,38 @@
                 return {
                     url: url,
                     success: true,
+                    ok: true,
                     total_time: totalTime,
                     dns_time: dns,
                     tcp_time: tcp,
                     tls_time: tls,
                     ttfb: ttfb,
-                    http_status: response.status || 200,
+                    http_status: (typeof response.status === 'number' ? response.status : 0),
+                    response_type: response && response.type ? String(response.type) : null,
+                    redirected: !!(response && response.redirected),
+                    final_url: response && response.url ? String(response.url) : null,
+                    error_category: (response && response.type === 'opaque') ? 'cors_opaque' : null,
+                    method: method,
+                    cache_mode: cacheMode,
+                    timeout_ms: timeoutMs,
+                    attempted_at: attemptedAt,
                     timestamp: Math.floor(Date.now() / 1000)
                 };
                 
             } catch (error) {
+                const name = String(error && error.name ? error.name : '');
+                const errorCategory = (name === 'AbortError') ? 'timeout' : 'network';
                 return {
                     url: url,
                     success: false,
-                    error: error.message,
+                    ok: false,
+                    error: (error && error.message) ? String(error.message) : 'Request failed',
+                    error_category: errorCategory,
                     total_time: Math.round(performance.now() - start),
+                    method: method,
+                    cache_mode: cacheMode,
+                    timeout_ms: timeoutMs,
+                    attempted_at: attemptedAt,
                     timestamp: Math.floor(Date.now() / 1000)
                 };
             }
@@ -175,11 +214,6 @@
             
             // Send each result as a separate metric
             for (const result of results) {
-                if (!result.success) {
-                    failed++;
-                    continue; // Skip failed tests
-                }
-                
                 // Detect browser and device info
                 const ua = navigator.userAgent;
                 const isMobile = /Mobile|Android|iPhone|iPad/.test(ua);
@@ -195,7 +229,22 @@
                     tls_handshake_time: result.tls_time || 0,
                     time_to_first_byte: result.ttfb || 0,
                     download_time: 0, // Not available from HEAD request
-                    http_status_code: result.http_status || 200,
+                    http_status_code: (typeof result.http_status === 'number' ? result.http_status : 0),
+                    error_message: result.success ? null : (result.error || 'Request failed'),
+                    page_url: (window && window.location) ? window.location.href : null,
+
+                    // New link-level fields for dashboards
+                    ok: (typeof result.ok === 'boolean') ? result.ok : !!result.success,
+                    error_category: result.error_category || null,
+                    response_type: result.response_type || null,
+                    redirected: (typeof result.redirected === 'boolean') ? result.redirected : null,
+                    final_url: result.final_url || null,
+                    method: result.method || 'HEAD',
+                    cache_mode: result.cache_mode || 'no-cache',
+                    timeout_ms: (typeof result.timeout_ms === 'number') ? result.timeout_ms : 5000,
+                    attempted_at: (typeof result.attempted_at === 'number') ? result.attempted_at : Date.now(),
+                    link_url_normalized: this.normalizeUrl(result.url),
+
                     device_type: isMobile ? 'mobile' : 'desktop',
                     browser_name: browserMatch ? browserMatch[1] : 'Unknown',
                     browser_version: browserMatch ? browserMatch[2] : '',
