@@ -120,6 +120,13 @@ function processBatch($db, $insertStmt, $updateStmt, $batchSize, &$stats) {
                     $errors++;
                     continue;
                 }
+
+                // Only store client measurements in Postgres (ignore server metrics)
+                $measurementTypeNorm = strtolower(trim((string)($payload['measurement_type'] ?? 'client')));
+                if ($measurementTypeNorm !== 'client') {
+                    $updateStmt->execute(['id' => $item['id']]);
+                    continue;
+                }
                 
                 // Extract location data - PRIORITIZE CLIENT DATA FIRST (client geolocation is more accurate)
                 $ipAddress = $payload['ip_address'] ?? null;
@@ -140,24 +147,39 @@ function processBatch($db, $insertStmt, $updateStmt, $batchSize, &$stats) {
                 $clientRegion = $payload['region'] ?? null;
                 $clientCity = $payload['city'] ?? null;
                 
-                // STEP 1: Check if client provided location data (coordinates + country)
+                // STEP 1: Prefer client-provided coordinates when present.
+                // Even if country/region/city are Unknown, we can offline reverse-geocode from lat/lon.
                 $hasClientCoordinates = ($clientLatitude !== 0.0 && $clientLongitude !== 0.0 &&
                                         abs($clientLatitude) > 0.0001 && abs($clientLongitude) > 0.0001);
-                $hasClientCountry = ($clientCountryCode && $clientCountryCode !== 'XX');
-                
-                if ($hasClientCoordinates && $hasClientCountry) {
-                    // Use client data (browser geolocation is more accurate than IP)
-                    $countryCode = $clientCountryCode;
-                    $countryName = $clientCountryName ?? 'Unknown';
-                    $region = $clientRegion ?? 'Unknown';
-                    $city = $clientCity ?? 'Unknown';
+                $hasClientCountry = ($clientCountryCode && $clientCountryCode !== 'XX'); // optional
+
+                if ($hasClientCoordinates) {
+                    // Use client coordinates (browser geolocation is more accurate than IP).
+                    // Don't require country to be present; we'll fill Unknowns via offline reverse geocoding.
                     $latitude = $clientLatitude;
                     $longitude = $clientLongitude;
+
+                    if ($hasClientCountry) {
+                        $countryCode = $clientCountryCode;
+                    }
+                    if (!empty($clientCountryName) && $clientCountryName !== 'Unknown') {
+                        $countryName = $clientCountryName;
+                    }
+                    if (!empty($clientRegion) && $clientRegion !== 'Unknown') {
+                        $region = $clientRegion;
+                    }
+                    if (!empty($clientCity) && $clientCity !== 'Unknown') {
+                        $city = $clientCity;
+                    }
                     // Don't override timezone/ISP from client, we'll get from IP if needed
                 }
                 
                 // STEP 2: If client data is missing, try IP-based lookup
-                if (!$hasClientCoordinates && $ipAddress && filter_var($ipAddress, FILTER_VALIDATE_IP)) {
+                if (
+                    !$hasClientCoordinates &&
+                    $ipAddress &&
+                    filter_var($ipAddress, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)
+                ) {
                     $geo = getGeoFromIP($ipAddress);
                     if ($geo['country_code'] !== 'XX') {
                         $countryCode = $geo['country_code'];

@@ -140,37 +140,8 @@ class ServerLinkChecker {
      * @return void
      */
     private function storeResult(array $result): void {
-        try {
-            // Insert directly into performance_metrics table
-            $stmt = $this->analyticsDB->prepare("
-                INSERT INTO performance_metrics (
-                    time, link_url, measurement_type,
-                    dns_lookup_time, tcp_connection_time, tls_handshake_time,
-                    time_to_first_byte, full_response_time,
-                    http_status_code, error_message,
-                    country_code, country_name, region_name
-                ) VALUES (
-                    NOW(), :link_url, 'server',
-                    :dns_lookup_time, :tcp_connection_time, :tls_handshake_time,
-                    :time_to_first_byte, :full_response_time,
-                    :http_status_code, :error_message,
-                    'SV', 'Server', 'Data Center'
-                )
-            ");
-            
-            $stmt->execute([
-                'link_url' => $result['url'],
-                'dns_lookup_time' => $result['dns_time'] ?? null,
-                'tcp_connection_time' => $result['tcp_time'] ?? null,
-                'tls_handshake_time' => $result['tls_time'] ?? null,
-                'time_to_first_byte' => $result['ttfb'] ?? null,
-                'full_response_time' => $result['total_time'] ?? 0,
-                'http_status_code' => $result['http_status'] ?? null,
-                'error_message' => $result['error'] ?? null
-            ]);
-            
-        } catch (Exception $e) {
-            error_log("Failed to store server measurement: " . $e->getMessage());
-        }
+        // Server measurements are no longer stored in Postgres.
+        // Only client-side measurements should be persisted.
+        return;
     }
 }

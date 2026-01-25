@@ -88,7 +88,7 @@ try {
     
     // Fallback to IP-based geolocation if coordinates not provided or reverse geocode failed
     if (!$lat || !$lng) {
-        $ip = $_SERVER['REMOTE_ADDR'] ?? null;
+        $ip = function_exists('getClientIpAddress') ? getClientIpAddress() : ($_SERVER['REMOTE_ADDR'] ?? null);
         
         if (!$ip) {
             sendJSON(['error' => 'IP address not available'], 400);
@@ -158,7 +158,7 @@ try {
                 
                 $stmt->execute([
                     'user_id' => $userId,
-                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                    'ip_address' => function_exists('getClientIpAddress') ? getClientIpAddress() : ($_SERVER['REMOTE_ADDR'] ?? null),
                     'country_code' => $countryCode ?? 'XX',
                     'country_name' => $countryName ?? 'Unknown',
                     'region_name' => $region ?? 'Unknown',

@@ -2390,6 +2390,80 @@ function getJSONInput() {
     return $data;
 }
 
+/**
+ * Best-effort client IP resolver.
+ *
+ * Browsers cannot reliably expose the user's public IP, so we resolve it server-side.
+ * This function prefers a public REMOTE_ADDR, and falls back to common reverse-proxy headers
+ * (Cloudflare / X-Real-IP / X-Forwarded-For) when REMOTE_ADDR is private/loopback.
+ *
+ * IMPORTANT: Proxy headers can be spoofed if your app is directly exposed to the internet.
+ * In production, you should only trust these headers when behind a trusted proxy/load balancer.
+ */
+function getClientIpAddress(): ?string {
+    $server = $_SERVER;
+
+    $normalize = static function ($raw): ?string {
+        if (!is_string($raw)) return null;
+        $v = trim($raw);
+        if ($v === '') return null;
+
+        // Remove IPv6 brackets: [::1]:1234
+        if ($v[0] === '[' && str_contains($v, ']')) {
+            $v = substr($v, 1);
+            $v = strstr($v, ']', true) ?: $v;
+        }
+
+        // Remove IPv4 :port
+        if (substr_count($v, ':') === 1 && str_contains($v, '.')) {
+            $parts = explode(':', $v, 2);
+            $v = $parts[0];
+        }
+
+        return trim($v);
+    };
+
+    $isValidIp = static function (?string $ip): bool {
+        if (!$ip) return false;
+        return filter_var($ip, FILTER_VALIDATE_IP) !== false;
+    };
+
+    $isPublicIp = static function (?string $ip) use ($isValidIp): bool {
+        if (!$isValidIp($ip)) return false;
+        return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false;
+    };
+
+    $remote = $normalize($server['REMOTE_ADDR'] ?? null);
+    if ($isPublicIp($remote)) {
+        return $remote;
+    }
+
+    $candidates = [
+        $normalize($server['HTTP_CF_CONNECTING_IP'] ?? null),
+        $normalize($server['HTTP_X_REAL_IP'] ?? null),
+        $normalize($server['HTTP_CLIENT_IP'] ?? null),
+    ];
+
+    // X-Forwarded-For can be a chain: client, proxy1, proxy2
+    $xff = $server['HTTP_X_FORWARDED_FOR'] ?? null;
+    if (is_string($xff) && trim($xff) !== '') {
+        foreach (explode(',', $xff) as $part) {
+            $candidates[] = $normalize($part);
+        }
+    }
+
+    foreach ($candidates as $ip) {
+        if ($isPublicIp($ip)) return $ip;
+    }
+
+    // If nothing public found, fall back to any valid IP (can be private in local/dev)
+    foreach ($candidates as $ip) {
+        if ($isValidIp($ip)) return $ip;
+    }
+
+    return $isValidIp($remote) ? $remote : null;
+}
+
 // Encryption secret key for LDAP password encryption
 // In production, this should be stored securely (environment variable, secure vault, etc.)
 // For now, we'll use a key derived from the database path and a constant salt
@@ -2676,8 +2750,8 @@ function trackUserLogin(int $userId, string $username): void {
             return; // Login tracking disabled
         }
         
-        // Get user's IP address
-        $ip = $_SERVER['REMOTE_ADDR'] ?? null;
+        // Get user's IP address (proxy-aware)
+        $ip = function_exists('getClientIpAddress') ? getClientIpAddress() : ($_SERVER['REMOTE_ADDR'] ?? null);
         
         // Get geolocation from IP
         $geo = null;

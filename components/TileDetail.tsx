@@ -3179,7 +3179,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         const batchSize = 4;
                         const metrics: Array<{
                             url: string;
-                            measurement_type: 'client' | 'server';
+                            measurement_type: 'client';
                             full_response_time: number;
                             http_status_code?: number | null;
                         }> = [];
@@ -3204,17 +3204,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     full_response_time: item.measured.durationMs,
                                     http_status_code: item.measured.httpStatus ?? 0
                                 });
-
-                                // Server metric derived from LinkNest's check (cURL timing)
-                                const serverLatency = (health as any)?.serverLatency;
-                                if (typeof serverLatency === 'number' && Number.isFinite(serverLatency) && serverLatency >= 0) {
-                                    metrics.push({
-                                        url: item.link.url,
-                                        measurement_type: 'server',
-                                        full_response_time: Math.round(serverLatency),
-                                        http_status_code: (health as any)?.httpCode ?? 0
-                                    });
-                                }
                             }
                         }
 

@@ -577,14 +577,16 @@ function handleCheckTileLinks() {
         // Set busy timeout to handle concurrent access
         $db->exec('PRAGMA busy_timeout = 3000');
         
-        // Get all links for this tile, including last health check info
+        // Get all links for this tile (tabbed + legacy sections), including last health check info
+        // NOTE: Some installations store sections under tabs with s.tile_id unset; those must be resolved via tabs.tile_id.
         $stmt = $db->prepare('
             SELECT l.id, l.url, l.health_status, l.health_http_code, l.health_error, l.health_checked_at
             FROM links l
             JOIN sections s ON l.section_id = s.id
-            WHERE s.tile_id = ?
+            LEFT JOIN tabs t ON s.tab_id = t.id
+            WHERE (t.tile_id = ? OR s.tile_id = ?)
         ');
-        $stmt->execute([$data['tileId']]);
+        $stmt->execute([$data['tileId'], $data['tileId']]);
         $links = $stmt->fetchAll();
         
         if (empty($links)) {

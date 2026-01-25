@@ -68,6 +68,16 @@ try {
     if (!isset($data['measurement_type'])) {
         $data['measurement_type'] = 'client';
     }
+    // Only store client measurements in Postgres
+    $measurementTypeNorm = strtolower(trim((string)$data['measurement_type']));
+    if ($measurementTypeNorm !== 'client') {
+        sendJSONWithCORS([
+            'success' => true,
+            'queued' => 0,
+            'skipped' => true,
+            'reason' => 'measurement_type_not_client'
+        ]);
+    }
     
     // Ensure full_response_time exists
     if (!isset($data['full_response_time'])) {
@@ -127,7 +137,7 @@ try {
         'user_id' => $incomingUserId ?? null,
         'username' => $resolvedUsername,
         'session_id' => $sessionId,
-        'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+        'ip_address' => function_exists('getClientIpAddress') ? getClientIpAddress() : ($_SERVER['REMOTE_ADDR'] ?? null),
         'full_response_time' => (int)($data['full_response_time'] ?? $data['full_load'] ?? 0),
         'dns_lookup_time' => (int)($data['dns_lookup_time'] ?? $data['dns_time'] ?? 0),
         'tcp_connection_time' => (int)($data['tcp_connection_time'] ?? $data['tcp_time'] ?? 0),

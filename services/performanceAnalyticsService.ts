@@ -30,7 +30,8 @@ export interface AnalyticsClientConfig {
 
 export interface AnalyticsMetric {
   url: string;
-  measurement_type: 'client' | 'server';
+  // Client only: the browser should never emit server measurements
+  measurement_type: 'client';
   full_response_time: number;
   dns_lookup_time?: number | null;
   tcp_connection_time?: number | null;
@@ -268,9 +269,31 @@ export const performanceAnalyticsService = {
   async sendMetrics(metrics: AnalyticsMetric[], opts?: { force?: boolean }): Promise<void> {
     if (!metrics.length) return;
 
-    const cfg = await this.getConfig();
+    let cfg = await this.getConfig();
     if (!cfg.enabled) return;
     if (!opts?.force && !shouldSample(cfg.sampleRate)) return;
+
+    // Safety net: only allow client measurements to be sent from the browser.
+    metrics = metrics.filter(m => (m.measurement_type || 'client') === 'client');
+    if (!metrics.length) return;
+
+    // Ensure we attach best-available location.
+    // - For explicit user actions (force), we can prompt for geolocation.
+    // - For background sends, do not prompt; rely on cached/session/IP fallback.
+    try {
+      const loc = cfg.location;
+      const hasLoc =
+        !!loc &&
+        Number.isFinite(loc.latitude) &&
+        Number.isFinite(loc.longitude) &&
+        Math.abs(loc.latitude) > 0.0001 &&
+        Math.abs(loc.longitude) > 0.0001;
+      if (!hasLoc || cfg.needsLocation) {
+        cfg = await this.ensureLocation(cfg, { allowPrompt: opts?.force === true });
+      }
+    } catch {
+      // ignore
+    }
 
     const ua = getUAInfo();
     const cachedGeo = readCachedGeo();

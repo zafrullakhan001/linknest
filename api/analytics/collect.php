@@ -100,6 +100,13 @@ foreach ($items as $idx => $item) {
     if ($measurementType === 'page_performance') {
         $measurementType = 'client';
     }
+    // Only store client measurements in Postgres
+    $measurementTypeNorm = strtolower(trim((string)$measurementType));
+    if ($measurementTypeNorm !== 'client') {
+        $rejected++;
+        $errors[] = ['index' => $idx, 'error' => 'Only client measurement_type is accepted'];
+        continue;
+    }
 
     // Normalize numeric fields
     $full = (int)($item['full_response_time'] ?? $item['full_load'] ?? 0);
@@ -111,7 +118,7 @@ foreach ($items as $idx => $item) {
         'user_id' => $userId,
         'username' => $username,
         'session_id' => session_id(),
-        'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+        'ip_address' => function_exists('getClientIpAddress') ? getClientIpAddress() : ($_SERVER['REMOTE_ADDR'] ?? null),
         'is_authenticated' => ($userId !== null),
         'time' => gmdate('Y-m-d H:i:s'),  // Capture exact collection time in UTC
 
