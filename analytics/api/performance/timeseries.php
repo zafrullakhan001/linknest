@@ -28,7 +28,7 @@ $url = isset($_GET['url']) ? trim((string)$_GET['url']) : '';
 $username = isset($_GET['username']) ? trim((string)$_GET['username']) : '';
 $ipAddress = isset($_GET['ip']) ? trim((string)$_GET['ip']) : '';
 $authenticated = isset($_GET['authenticated']) ? (string)$_GET['authenticated'] : '';
-$groupBy = (string)($_GET['groupBy'] ?? 'url'); // url, username, ip, country, region, city
+$groupBy = (string)($_GET['groupBy'] ?? 'url'); // url, username, ip, country, region, city, device_type, browser_name, os_name, connection_type, link_id, error
 $metric = (string)($_GET['metric'] ?? 'p95'); // avg, p50, p95, p99, min, max
 $bucket = (string)($_GET['bucket'] ?? 'auto'); // auto | 1m | 5m | 15m | 1h | 6h
 $measurementType = (string)($_GET['type'] ?? 'client');
@@ -174,6 +174,36 @@ try {
             $groupByLabel = 'city_name';
             $selectGroupBy = 'pm.country_code, pm.country_name, pm.region_name, pm.city_name';
             break;
+        case 'device_type':
+            $groupByField = 'pm.device_type';
+            $groupByLabel = 'device_type';
+            $selectGroupBy = 'COALESCE(pm.device_type, \'Unknown\') as device_type';
+            break;
+        case 'browser_name':
+            $groupByField = 'pm.browser_name';
+            $groupByLabel = 'browser_name';
+            $selectGroupBy = 'COALESCE(pm.browser_name, \'Unknown\') as browser_name';
+            break;
+        case 'os_name':
+            $groupByField = 'pm.os_name';
+            $groupByLabel = 'os_name';
+            $selectGroupBy = 'COALESCE(pm.os_name, \'Unknown\') as os_name';
+            break;
+        case 'connection_type':
+            $groupByField = 'pm.connection_type';
+            $groupByLabel = 'connection_type';
+            $selectGroupBy = 'COALESCE(pm.connection_type, \'Unknown\') as connection_type';
+            break;
+        case 'link_id':
+            $groupByField = 'pm.link_id';
+            $groupByLabel = 'link_id';
+            $selectGroupBy = 'COALESCE(pm.link_id, \'(none)\') as link_id';
+            break;
+        case 'error':
+            $groupByField = 'COALESCE(pm.error_message, \'No error\')';
+            $groupByLabel = 'error_message';
+            $selectGroupBy = 'COALESCE(pm.error_message, \'No error\') as error_message';
+            break;
         default: // 'url'
             $groupByField = 'pm.link_url';
             $groupByLabel = 'link_url';
@@ -181,7 +211,7 @@ try {
             break;
     }
 
-    // If URL not provided and grouping by URL, return series for top N URLs
+    // If URL not provided and grouping by URL (or link_id), return series for top N
     $topNFilter = '';
     if ($url === '' && $groupBy === 'url') {
         $topNFilter = "
@@ -248,6 +278,18 @@ try {
             $label = $row['region_name'] ?? ($row['country_name'] ?? 'Unknown');
         } elseif ($groupBy === 'city') {
             $label = $row['city_name'] ?? ($row['region_name'] ?? ($row['country_name'] ?? 'Unknown'));
+        } elseif ($groupBy === 'device_type') {
+            $label = $row['device_type'] ?? 'Unknown';
+        } elseif ($groupBy === 'browser_name') {
+            $label = $row['browser_name'] ?? 'Unknown';
+        } elseif ($groupBy === 'os_name') {
+            $label = $row['os_name'] ?? 'Unknown';
+        } elseif ($groupBy === 'connection_type') {
+            $label = $row['connection_type'] ?? 'Unknown';
+        } elseif ($groupBy === 'link_id') {
+            $label = $row['link_id'] ?? '(none)';
+        } elseif ($groupBy === 'error') {
+            $label = $row['error_message'] ?? 'No error';
         }
         
         $formattedResults[] = [
@@ -258,6 +300,12 @@ try {
             'country_name' => $row['country_name'] ?? null,
             'region_name' => $row['region_name'] ?? null,
             'city_name' => $row['city_name'] ?? null,
+            'device_type' => $row['device_type'] ?? null,
+            'browser_name' => $row['browser_name'] ?? null,
+            'os_name' => $row['os_name'] ?? null,
+            'connection_type' => $row['connection_type'] ?? null,
+            'link_id' => $row['link_id'] ?? null,
+            'error_message' => $row['error_message'] ?? null,
             'label' => $label,
             'value' => (int)$row['value'],
             'measurement_count' => (int)$row['measurement_count']

@@ -230,7 +230,6 @@ export const getCategoryArrangement = async (): Promise<Array<{ categoryName: st
 
     return await response.json();
   } catch (e) {
-    console.error("Failed to load category arrangement", e);
     return [];
   }
 };
@@ -508,7 +507,6 @@ export const getRecycleBin = async (): Promise<Tile[]> => {
     const apiTiles = await response.json();
     return apiTiles.map(transformTile);
   } catch (e) {
-    console.error("Failed to get recycle bin", e);
     throw e;
   }
 };
@@ -539,14 +537,12 @@ export const getArchive = async (): Promise<Tile[]> => {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
       const errorMsg = errorData.details || errorData.error || 'Failed to fetch archive';
-      console.error("Failed to get archive:", errorData);
       throw new Error(errorMsg);
     }
 
     const apiTiles = await response.json();
     return apiTiles.map(transformTile);
   } catch (e) {
-    console.error("Failed to get archive", e);
     throw e;
   }
 };

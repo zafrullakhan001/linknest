@@ -69,33 +69,28 @@ echo "  Batch size: $batchSize\n";
 echo "  Sleep interval: {$sleepInterval}s\n\n";
 
 // Prepare insert statement (reused for performance)
+// Columns must match analytics schema: performance_metrics (no tile_id, link_url_normalized, ok, etc.)
 $insertStmt = $db->prepare("
     INSERT INTO performance_metrics (
-        time, link_url, measurement_type, user_id, username, session_id,
-        ip_address, country_code, country_name, region_name, city_name,
+        time, link_url, link_id, page_url, measurement_type, user_id, username, session_id,
+        ip_address, continent_code, country_code, country_name, region_name, city_name,
         latitude, longitude, timezone, isp,
         full_response_time, dns_lookup_time, tcp_connection_time,
         tls_handshake_time, time_to_first_byte,
-        dom_content_loaded_time, page_size_bytes, page_url,
+        dom_content_loaded_time, page_size_bytes,
         http_status_code, device_type, browser_name,
         browser_version, os_name, screen_resolution, connection_type,
-        is_authenticated, error_message,
-        tile_id, link_id, link_url_normalized,
-        ok, error_category, response_type, redirected, final_url,
-        method, cache_mode, timeout_ms, attempted_at
+        is_authenticated, error_message
     ) VALUES (
-        COALESCE(:time::timestamptz, NOW()), :link_url, :measurement_type, :user_id, :username, :session_id,
-        :ip_address, :country_code, :country_name, :region_name, :city_name,
+        COALESCE(:time::timestamptz, NOW()), :link_url, :link_id, :page_url, :measurement_type, :user_id, :username, :session_id,
+        :ip_address, :continent_code, :country_code, :country_name, :region_name, :city_name,
         :latitude, :longitude, :timezone, :isp,
         :full_response_time, :dns_lookup_time, :tcp_connection_time,
         :tls_handshake_time, :time_to_first_byte,
-        :dom_content_loaded_time, :page_size_bytes, :page_url,
+        :dom_content_loaded_time, :page_size_bytes,
         :http_status_code, :device_type, :browser_name,
         :browser_version, :os_name, :screen_resolution, :connection_type,
-        :is_authenticated, :error_message,
-        :tile_id, :link_id, :link_url_normalized,
-        :ok, :error_category, :response_type, :redirected, :final_url,
-        :method, :cache_mode, :timeout_ms, :attempted_at
+        :is_authenticated, :error_message
     )
 ");
 
@@ -153,14 +148,15 @@ function processBatch($db, $insertStmt, $updateStmt, $batchSize, &$stats) {
                     continue;
                 }
 
-                // Only store client measurements in Postgres (ignore server metrics)
+                // Store both client and server measurements (schema allows measurement_type IN ('client', 'server'))
                 $measurementTypeNorm = strtolower(trim((string)($payload['measurement_type'] ?? 'client')));
-                if ($measurementTypeNorm !== 'client') {
+                if (!in_array($measurementTypeNorm, ['client', 'server'], true)) {
                     $updateStmt->execute(['id' => $item['id']]);
                     continue;
                 }
-                
-                // Extract location data - PRIORITIZE CLIENT DATA FIRST (client geolocation is more accurate)
+                $isServer = ($measurementTypeNorm === 'server');
+
+                // Extract location data - PRIORITIZE CLIENT DATA FIRST (server has no geo; client geolocation is more accurate)
                 $ipAddress = $payload['ip_address'] ?? null;
                 $countryCode = 'XX';
                 $countryName = 'Unknown';
@@ -287,33 +283,34 @@ function processBatch($db, $insertStmt, $updateStmt, $batchSize, &$stats) {
                     }
                 }
                 
-                // Insert into performance_metrics
+                // Insert into performance_metrics (columns must match schema – no tile_id, link_url_normalized, ok, etc.)
                 // Note: PDO (pgsql) can serialize PHP booleans as empty string, which Postgres rejects.
-                // Use 't'/'f' (or NULL) for boolean columns.
                 $isAuthenticatedText = !empty($payload['user_id']) ? 't' : 'f';
-                $okBool = null;
-                if (array_key_exists('ok', $payload)) {
-                    // payload may contain true/false, 1/0, "true"/"false", or "" from older clients
-                    $okBool = filter_var($payload['ok'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-                } else {
-                    $okBool = empty($payload['error_message']); // best-effort default
-                }
-                $okText = ($okBool === null) ? null : ($okBool ? 't' : 'f');
 
-                $redirectedBool = null;
-                if (array_key_exists('redirected', $payload)) {
-                    $redirectedBool = filter_var($payload['redirected'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+                $linkUrl = $payload['link_url'];
+                if (isset($payload['link_url_normalized']) && $payload['link_url_normalized'] !== '') {
+                    $linkUrl = $payload['link_url_normalized'];
+                } elseif (function_exists('normalizeLinkUrlForAnalytics')) {
+                    $linkUrl = normalizeLinkUrlForAnalytics($payload['link_url'] ?? null) ?? $linkUrl;
                 }
-                $redirectedText = ($redirectedBool === null) ? null : ($redirectedBool ? 't' : 'f');
 
-                $insertStmt->execute([
-                    'time' => $payload['time'] ?? null,  // Use captured time from collect.php
-                    'link_url' => $payload['link_url'],
+                // Normalize for PostgreSQL: INET wants valid IP or null; CHAR(2) better with null than ''
+                $rawIp = $payload['ip_address'] ?? null;
+                $ipAddressBind = (is_string($rawIp) && trim($rawIp) !== '' && filter_var(trim($rawIp), FILTER_VALIDATE_IP)) ? trim($rawIp) : null;
+                $rawContinent = $payload['continent_code'] ?? null;
+                $continentBind = (is_string($rawContinent) && trim($rawContinent) !== '') ? trim($rawContinent) : null;
+
+                $insertParams = [
+                    'time' => $payload['time'] ?? null,
+                    'link_url' => $linkUrl,
+                    'link_id' => $payload['link_id'] ?? null,
+                    'page_url' => $payload['page_url'] ?? null,
                     'measurement_type' => $payload['measurement_type'] ?? 'client',
                     'user_id' => $payload['user_id'] ?? null,
                     'username' => $payload['username'] ?? null,
-                    'session_id' => $payload['session_id'] ?? '',
-                    'ip_address' => $payload['ip_address'] ?? null,
+                    'session_id' => (string)($payload['session_id'] ?? ''),
+                    'ip_address' => $ipAddressBind,
+                    'continent_code' => $continentBind,
                     'country_code' => $countryCode,
                     'country_name' => $countryName,
                     'region_name' => $region,
@@ -322,15 +319,14 @@ function processBatch($db, $insertStmt, $updateStmt, $batchSize, &$stats) {
                     'longitude' => $longitude,
                     'timezone' => $timezone,
                     'isp' => $isp,
-                    'full_response_time' => $payload['full_response_time'] ?? 0,
-                    'dns_lookup_time' => $payload['dns_lookup_time'] ?? null,
-                    'tcp_connection_time' => $payload['tcp_connection_time'] ?? null,
-                    'tls_handshake_time' => $payload['tls_handshake_time'] ?? null,
-                    'time_to_first_byte' => $payload['time_to_first_byte'] ?? null,
-                    'dom_content_loaded_time' => $payload['dom_content_loaded_time'] ?? null,
-                    'page_size_bytes' => $payload['page_size_bytes'] ?? null,
-                    'page_url' => $payload['page_url'] ?? null,
-                    'http_status_code' => $payload['http_status_code'] ?? 200,
+                    'full_response_time' => (int)($payload['full_response_time'] ?? 0),
+                    'dns_lookup_time' => isset($payload['dns_lookup_time']) ? (int)$payload['dns_lookup_time'] : null,
+                    'tcp_connection_time' => isset($payload['tcp_connection_time']) ? (int)$payload['tcp_connection_time'] : null,
+                    'tls_handshake_time' => isset($payload['tls_handshake_time']) ? (int)$payload['tls_handshake_time'] : null,
+                    'time_to_first_byte' => isset($payload['time_to_first_byte']) ? (int)$payload['time_to_first_byte'] : null,
+                    'dom_content_loaded_time' => isset($payload['dom_content_loaded_time']) ? (int)$payload['dom_content_loaded_time'] : null,
+                    'page_size_bytes' => isset($payload['page_size_bytes']) ? (int)$payload['page_size_bytes'] : null,
+                    'http_status_code' => (int)($payload['http_status_code'] ?? 200),
                     'device_type' => $payload['device_type'] ?? 'unknown',
                     'browser_name' => $payload['browser_name'] ?? '',
                     'browser_version' => $payload['browser_version'] ?? '',
@@ -338,23 +334,22 @@ function processBatch($db, $insertStmt, $updateStmt, $batchSize, &$stats) {
                     'screen_resolution' => $payload['screen_resolution'] ?? '',
                     'connection_type' => $payload['connection_type'] ?? '',
                     'is_authenticated' => $isAuthenticatedText,
-                    'error_message' => $payload['error_message'] ?? null,
+                    'error_message' => isset($payload['error_message']) && $payload['error_message'] !== '' ? (string)$payload['error_message'] : null,
+                ];
 
-                    // Link-specific context / classification
-                    'tile_id' => $payload['tile_id'] ?? null,
-                    'link_id' => $payload['link_id'] ?? null,
-                    'link_url_normalized' => $payload['link_url_normalized'] ?? normalizeLinkUrlForAnalytics($payload['link_url'] ?? null),
-                    'ok' => $okText,
-                    'error_category' => $payload['error_category']
-                        ?? (empty($payload['error_message']) ? null : 'unknown'),
-                    'response_type' => $payload['response_type'] ?? null,
-                    'redirected' => $redirectedText,
-                    'final_url' => $payload['final_url'] ?? null,
-                    'method' => $payload['method'] ?? 'HEAD',
-                    'cache_mode' => $payload['cache_mode'] ?? 'no-store',
-                    'timeout_ms' => isset($payload['timeout_ms']) ? (int)$payload['timeout_ms'] : 5000,
-                    'attempted_at' => isset($payload['attempted_at']) ? (int)$payload['attempted_at'] : (int)(microtime(true) * 1000),
-                ]);
+                try {
+                    $insertStmt->execute($insertParams);
+                } catch (Exception $insertEx) {
+                    error_log(sprintf(
+                        "Queue processor: insert failed (measurement_type=%s link_url=%s): %s",
+                        $insertParams['measurement_type'],
+                        substr($insertParams['link_url'], 0, 80),
+                        $insertEx->getMessage()
+                    ));
+                    $stats['total_errors']++;
+                    $updateStmt->execute(['id' => $item['id']]);
+                    continue;
+                }
                 
                 // Mark as processed
                 $updateStmt->execute(['id' => $item['id']]);
@@ -404,31 +399,25 @@ function reconnectAnalyticsAndStatements($batchSize) {
     $db->query("SELECT 1");
     $insertStmt = $db->prepare("
         INSERT INTO performance_metrics (
-            time, link_url, measurement_type, user_id, username, session_id,
-            ip_address, country_code, country_name, region_name, city_name,
+            time, link_url, link_id, page_url, measurement_type, user_id, username, session_id,
+            ip_address, continent_code, country_code, country_name, region_name, city_name,
             latitude, longitude, timezone, isp,
             full_response_time, dns_lookup_time, tcp_connection_time,
             tls_handshake_time, time_to_first_byte,
-            dom_content_loaded_time, page_size_bytes, page_url,
+            dom_content_loaded_time, page_size_bytes,
             http_status_code, device_type, browser_name,
             browser_version, os_name, screen_resolution, connection_type,
-            is_authenticated, error_message,
-            tile_id, link_id, link_url_normalized,
-            ok, error_category, response_type, redirected, final_url,
-            method, cache_mode, timeout_ms, attempted_at
+            is_authenticated, error_message
         ) VALUES (
-            COALESCE(:time::timestamptz, NOW()), :link_url, :measurement_type, :user_id, :username, :session_id,
-            :ip_address, :country_code, :country_name, :region_name, :city_name,
+            COALESCE(:time::timestamptz, NOW()), :link_url, :link_id, :page_url, :measurement_type, :user_id, :username, :session_id,
+            :ip_address, :continent_code, :country_code, :country_name, :region_name, :city_name,
             :latitude, :longitude, :timezone, :isp,
             :full_response_time, :dns_lookup_time, :tcp_connection_time,
             :tls_handshake_time, :time_to_first_byte,
-            :dom_content_loaded_time, :page_size_bytes, :page_url,
+            :dom_content_loaded_time, :page_size_bytes,
             :http_status_code, :device_type, :browser_name,
             :browser_version, :os_name, :screen_resolution, :connection_type,
-            :is_authenticated, :error_message,
-            :tile_id, :link_id, :link_url_normalized,
-            :ok, :error_category, :response_type, :redirected, :final_url,
-            :method, :cache_mode, :timeout_ms, :attempted_at
+            :is_authenticated, :error_message
         )
     ");
     $updateStmt = $db->prepare("

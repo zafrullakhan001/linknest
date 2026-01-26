@@ -32,7 +32,6 @@ export const getMessages = async (limit: number = 100, offset: number = 0, recip
 
     return await response.json();
   } catch (e) {
-    console.error("Failed to fetch chat messages", e);
     throw e;
   }
 };

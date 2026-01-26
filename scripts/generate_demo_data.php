@@ -67,6 +67,85 @@ try {
     $adminUserId = $adminUser['id'];
     echo "  Admin user ID: $adminUserId\n";
     
+    // ============================================
+    // DEMO ROLES AND USERS (10 roles, 10 users, password: "password")
+    // ============================================
+    $demoPasswordHash = password_hash('password', PASSWORD_DEFAULT);
+    $demoRoles = [
+        ['name' => 'Manager', 'description' => 'Team and project management'],
+        ['name' => 'Developer', 'description' => 'Development and engineering'],
+        ['name' => 'Designer', 'description' => 'UI/UX and design'],
+        ['name' => 'Support', 'description' => 'Customer and IT support'],
+        ['name' => 'Viewer', 'description' => 'Read-only access'],
+        ['name' => 'Editor', 'description' => 'Content editing and updates'],
+        ['name' => 'HR', 'description' => 'Human resources'],
+        ['name' => 'Finance', 'description' => 'Finance and accounting'],
+        ['name' => 'Guest', 'description' => 'Limited guest access'],
+        ['name' => 'Auditor', 'description' => 'Audit and compliance'],
+    ];
+    $demoUsers = [
+        ['username' => 'demo1', 'email' => 'demo1@demo.local', 'role' => 'Manager'],
+        ['username' => 'demo2', 'email' => 'demo2@demo.local', 'role' => 'Developer'],
+        ['username' => 'demo3', 'email' => 'demo3@demo.local', 'role' => 'Designer'],
+        ['username' => 'demo4', 'email' => 'demo4@demo.local', 'role' => 'Support'],
+        ['username' => 'demo5', 'email' => 'demo5@demo.local', 'role' => 'Viewer'],
+        ['username' => 'demo6', 'email' => 'demo6@demo.local', 'role' => 'Editor'],
+        ['username' => 'demo7', 'email' => 'demo7@demo.local', 'role' => 'HR'],
+        ['username' => 'demo8', 'email' => 'demo8@demo.local', 'role' => 'Finance'],
+        ['username' => 'demo9', 'email' => 'demo9@demo.local', 'role' => 'Guest'],
+        ['username' => 'demo10', 'email' => 'demo10@demo.local', 'role' => 'Auditor'],
+    ];
+    
+    echo "Creating demo roles...\n";
+    $roleIds = [];
+    $roleStmt = $db->prepare('SELECT id FROM roles WHERE name = ?');
+    $roleInsertStmt = $db->prepare('INSERT INTO roles (name, description, created_at, updated_at) VALUES (?, ?, ?, ?)');
+    foreach ($demoRoles as $r) {
+        $roleStmt->execute([$r['name']]);
+        $row = $roleStmt->fetch(PDO::FETCH_ASSOC);
+        if ($row) {
+            $roleIds[$r['name']] = (int)$row['id'];
+        } else {
+            $roleInsertStmt->execute([$r['name'], $r['description'], $currentTime, $currentTime]);
+            $roleIds[$r['name']] = (int)$db->lastInsertId();
+        }
+    }
+    echo "  Roles: " . count($roleIds) . "\n";
+    
+    echo "Creating demo users (password: password)...\n";
+    $userIds = [];
+    $userSelectStmt = $db->prepare('SELECT id FROM users WHERE email = ?');
+    $userInsertStmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, created_at) VALUES (?, ?, ?, 0, 1, ?, ?)');
+    $userUpdateStmt = $db->prepare('UPDATE users SET password_hash = ?, is_approved = 1 WHERE email = ?');
+    foreach ($demoUsers as $u) {
+        $userSelectStmt->execute([$u['email']]);
+        $row = $userSelectStmt->fetch(PDO::FETCH_ASSOC);
+        if ($row) {
+            $userIds[$u['email']] = (int)$row['id'];
+            $userUpdateStmt->execute([$demoPasswordHash, $u['email']]);
+        } else {
+            $userInsertStmt->execute([$u['username'], $u['email'], $demoPasswordHash, 'local', $currentTime]);
+            $userIds[$u['email']] = (int)$db->lastInsertId();
+        }
+    }
+    echo "  Users: " . count($userIds) . "\n";
+    
+    echo "Assigning roles to demo users...\n";
+    $demoUserIdList = array_values($userIds);
+    if (!empty($demoUserIdList)) {
+        $placeholders = implode(',', array_fill(0, count($demoUserIdList), '?'));
+        $db->prepare("DELETE FROM user_roles WHERE user_id IN ($placeholders)")->execute($demoUserIdList);
+        $urStmt = $db->prepare('INSERT INTO user_roles (user_id, role_id, created_at) VALUES (?, ?, ?)');
+        foreach ($demoUsers as $u) {
+            $uid = $userIds[$u['email']];
+            $rid = $roleIds[$u['role']] ?? null;
+            if ($rid !== null) {
+                $urStmt->execute([$uid, $rid, $currentTime]);
+            }
+        }
+    }
+    echo "  Assignments done.\n\n";
+    
     // Define decoration presets with gradient configurations
     $decorationPresets = [
         'gold' => [
@@ -917,6 +996,70 @@ try {
         ]);
     }
     
+    // ============================================
+    // ASSIGN TILES, LINKS, WIDGETS TO ROLES (varied per role); ALL TABS EXCEPT PUBLIC
+    // ============================================
+    echo "Assigning varied tiles/links and widgets to demo roles (all tabs except Public)...\n";
+    $sectionToTile = [];
+    foreach ($tileStructure as $tileId => $tabs) {
+        foreach ($tabs as $sections) {
+            foreach ($sections as $sec) {
+                $sectionToTile[$sec['id']] = $tileId;
+            }
+        }
+    }
+    $roleTiles = [
+        'Manager'   => ['tile_dashboard', 'tile_analytics', 'tile_hr_portal', 'tile_finance', 'tile_customer_portal', 'tile_communication', 'tile_project_mgmt', 'tile_file_sharing', 'tile_whiteboard', 'tile_calendar'],
+        'Developer' => ['tile_dev_tools', 'tile_code_repos', 'tile_cicd', 'tile_testing', 'tile_api_gateway', 'tile_cloud_services', 'tile_servers', 'tile_databases', 'tile_networking', 'tile_security'],
+        'Designer'  => ['tile_dev_tools', 'tile_code_repos', 'tile_cicd', 'tile_communication', 'tile_project_mgmt', 'tile_file_sharing', 'tile_whiteboard', 'tile_documentation'],
+        'Support'   => ['tile_dashboard', 'tile_customer_portal', 'tile_communication', 'tile_calendar', 'tile_documentation', 'tile_support'],
+        'Viewer'    => ['tile_dashboard', 'tile_analytics', 'tile_hr_portal', 'tile_finance', 'tile_customer_portal', 'tile_documentation', 'tile_training', 'tile_library'],
+        'Editor'    => ['tile_dashboard', 'tile_analytics', 'tile_hr_portal', 'tile_finance', 'tile_customer_portal', 'tile_communication', 'tile_project_mgmt', 'tile_file_sharing', 'tile_whiteboard', 'tile_calendar', 'tile_documentation', 'tile_forms'],
+        'HR'        => ['tile_dashboard', 'tile_analytics', 'tile_hr_portal', 'tile_calendar', 'tile_documentation', 'tile_training'],
+        'Finance'   => ['tile_dashboard', 'tile_analytics', 'tile_finance', 'tile_documentation', 'tile_forms'],
+        'Guest'     => ['tile_dashboard', 'tile_customer_portal', 'tile_documentation', 'tile_support'],
+        'Auditor'   => ['tile_dashboard', 'tile_analytics', 'tile_hr_portal', 'tile_finance', 'tile_customer_portal', 'tile_dev_tools', 'tile_code_repos', 'tile_documentation', 'tile_training', 'tile_library', 'tile_forms', 'tile_support'],
+    ];
+    $allowedTabsForDemoRoles = ['your-apps', 'favorites', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+    $builtInWidgetIds = [
+        'clock', 'weather', 'calculator', 'notes', 'password-generator',
+        'phonetic-alphabet', 'zoom-control', 'theme', 'fav-organizer', 'chat', 'snake-game'
+    ];
+    $rtpStmt = $db->prepare('INSERT INTO role_tile_permissions (role_id, tile_id, can_view, created_at, updated_at) VALUES (?, ?, 1, ?, ?)');
+    $rlpStmt = $db->prepare('INSERT INTO role_link_permissions (role_id, link_id, can_view, created_at, updated_at) VALUES (?, ?, 1, ?, ?)');
+    $rtabDeleteStmt = $db->prepare('DELETE FROM role_tab_permissions WHERE role_id = ?');
+    $rtpDeleteStmt = $db->prepare('DELETE FROM role_tile_permissions WHERE role_id = ?');
+    $rlpDeleteStmt = $db->prepare('DELETE FROM role_link_permissions WHERE role_id = ?');
+    $rwpDeleteStmt = $db->prepare('DELETE FROM role_widget_permissions WHERE role_id = ?');
+    $rtabStmt = $db->prepare('INSERT INTO role_tab_permissions (role_id, tab_id, can_view, created_at, updated_at) VALUES (?, ?, 1, ?, ?)');
+    $rwpStmt = $db->prepare('INSERT INTO role_widget_permissions (role_id, widget_id, can_view, created_at, updated_at) VALUES (?, ?, 1, ?, ?)');
+    foreach ($roleIds as $roleName => $roleId) {
+        $rtpDeleteStmt->execute([$roleId]);
+        $rlpDeleteStmt->execute([$roleId]);
+        $rwpDeleteStmt->execute([$roleId]);
+        $rtabDeleteStmt->execute([$roleId]);
+        $tileSet = $roleTiles[$roleName] ?? array_column($tiles, 'id');
+        foreach ($tileSet as $tileId) {
+            $rtpStmt->execute([$roleId, $tileId, $currentTime, $currentTime]);
+        }
+        $roleTileSet = array_flip($tileSet);
+        foreach ($links as $linkRow) {
+            $linkId = $linkRow[0];
+            $sectionId = $linkRow[1];
+            $linkTileId = $sectionToTile[$sectionId] ?? null;
+            if ($linkTileId !== null && isset($roleTileSet[$linkTileId])) {
+                $rlpStmt->execute([$roleId, $linkId, $currentTime, $currentTime]);
+            }
+        }
+        foreach ($allowedTabsForDemoRoles as $tabId) {
+            $rtabStmt->execute([$roleId, $tabId, $currentTime, $currentTime]);
+        }
+        foreach ($builtInWidgetIds as $widgetId) {
+            $rwpStmt->execute([$roleId, $widgetId, $currentTime, $currentTime]);
+        }
+    }
+    echo "  Varied tile/link sets per role; all tabs except Public; all widgets assigned.\n\n";
+    
     // Re-enable foreign keys
     $db->exec('PRAGMA foreign_keys = ON');
     
@@ -924,6 +1067,9 @@ try {
     
     echo "\n✅ Demo data generated successfully!\n";
     echo "\nSummary:\n";
+    echo "  - Roles: 10 (Manager, Developer, Designer, Support, Viewer, Editor, HR, Finance, Guest, Auditor)\n";
+    echo "  - Demo users: 10 (demo1–demo10, password: password)\n";
+    echo "  - Role permissions: varied tile/link sets per role; all tabs except Public; all widgets.\n";
     echo "  - Tiles: " . count($tiles) . "\n";
     echo "  - Links: " . count($links) . "\n";
     echo "  - Monitors: " . count($monitors) . "\n";

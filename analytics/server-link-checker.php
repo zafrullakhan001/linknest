@@ -9,10 +9,138 @@ require_once __DIR__ . '/api/config_analytics.php';
 class ServerLinkChecker {
     private $db;
     private $analyticsDB;
-    
+
+    /** Cached server public IP for geolocation (resolved by queue processor) */
+    private $serverPublicIp;
+
     public function __construct() {
         $this->db = getDB(); // Main SQLite DB
         $this->analyticsDB = getAnalyticsPDO(); // PostgreSQL analytics DB
+    }
+
+    /**
+     * Get this server's public IP for geolocation in payloads.
+     * Tries: (1) configured setting, (2) HTTP then HTTPS IP services. Cached per process.
+     *
+     * @return string|null Public IP or null if unable to resolve
+     */
+    private function getServerPublicIp(): ?string {
+        if ($this->serverPublicIp !== null) {
+            return $this->serverPublicIp ?: null;
+        }
+        // 1) Optional override from app settings (Settings → Performance Analytics)
+        try {
+            $stmt = $this->db->prepare("SELECT value FROM settings WHERE key = 'performance_analytics_server_public_ip' LIMIT 1");
+            $stmt->execute();
+            $configured = $stmt->fetchColumn();
+            if (is_string($configured)) {
+                $configured = trim($configured);
+                if ($configured !== '' && filter_var($configured, FILTER_VALIDATE_IP)) {
+                    $this->serverPublicIp = $configured;
+                    return $configured;
+                }
+            }
+        } catch (Exception $e) {
+            // ignore
+        }
+        // 2) Try HTTP first (avoids SSL/cacert issues on XAMPP/Windows), then HTTPS
+        $urls = [
+            'http://api.ipify.org',           // HTTP plain
+            'http://api.ipify.org?format=json',
+            'http://icanhazip.com',
+            'https://api.ipify.org',
+            'https://api.ipify.org?format=json',
+            'https://icanhazip.com',
+        ];
+        $ip = $this->fetchIpWithCurl($urls);
+        if ($ip === null && function_exists('file_get_contents') && ini_get('allow_url_fopen')) {
+            $ip = $this->fetchIpWithFileGetContents([
+                'http://api.ipify.org',
+                'http://icanhazip.com',
+            ]);
+        }
+        if ($ip !== null) {
+            $this->serverPublicIp = $ip;
+            return $ip;
+        }
+        $this->serverPublicIp = '';
+        error_log('Server link checker: could not resolve server public IP for geolocation. Set settings key performance_analytics_server_public_ip to your server IP to fix.');
+        return null;
+    }
+
+    /**
+     * Try to fetch public IP via cURL (HTTP or HTTPS).
+     * @param array $urls List of URLs returning IP (plain text or JSON with "ip" key)
+     * @return string|null Valid IP or null
+     */
+    private function fetchIpWithCurl(array $urls): ?string {
+        foreach ($urls as $url) {
+            $ch = curl_init($url);
+            if ($ch === false) {
+                continue;
+            }
+            $opts = [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 5,
+                CURLOPT_CONNECTTIMEOUT => 3,
+                CURLOPT_USERAGENT => 'LinkNest-Analytics/1.0 (Server Check)',
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_MAXREDIRS => 2,
+            ];
+            // Relax SSL for HTTPS if cacert is missing (common on XAMPP)
+            if (stripos($url, 'https://') === 0) {
+                $opts[CURLOPT_SSL_VERIFYPEER] = false;
+                $opts[CURLOPT_SSL_VERIFYHOST] = 0;
+            }
+            curl_setopt_array($ch, $opts);
+            $response = curl_exec($ch);
+            $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $err = curl_error($ch);
+            curl_close($ch);
+            if ($code !== 200 || $response === false || $response === '') {
+                continue;
+            }
+            $response = trim($response);
+            if (strpos($url, 'format=json') !== false) {
+                $data = json_decode($response, true);
+                $ip = is_array($data) ? ($data['ip'] ?? null) : null;
+            } else {
+                $ip = $response;
+            }
+            if (is_string($ip) && $ip !== '' && filter_var($ip, FILTER_VALIDATE_IP)) {
+                return $ip;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Fallback: fetch public IP via file_get_contents (when cURL fails or SSL broken).
+     * @param array $urls HTTP URLs only (plain text IP)
+     * @return string|null Valid IP or null
+     */
+    private function fetchIpWithFileGetContents(array $urls): ?string {
+        $ctx = stream_context_create([
+            'http' => [
+                'timeout' => 4,
+                'user_agent' => 'LinkNest-Analytics/1.0 (Server Check)',
+            ],
+        ]);
+        foreach ($urls as $url) {
+            try {
+                $response = @file_get_contents($url, false, $ctx);
+                if ($response === false || $response === '') {
+                    continue;
+                }
+                $ip = trim($response);
+                if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP)) {
+                    return $ip;
+                }
+            } catch (Exception $e) {
+                // next URL
+            }
+        }
+        return null;
     }
     
     /**
@@ -134,14 +262,52 @@ class ServerLinkChecker {
     }
     
     /**
-     * Store server-side measurement result
-     * 
-     * @param array $result
+     * Store server-side measurement result by enqueuing a payload for the metrics processor.
+     * Payload shape matches client metrics so process-metrics-queue.php can insert into performance_metrics.
+     *
+     * @param array $result From checkUrl(): url, measurement_type, success, timestamp, total_time, dns_time, tcp_time, tls_time, ttfb, http_status, error, etc.
      * @return void
      */
     private function storeResult(array $result): void {
-        // Server measurements are no longer stored in Postgres.
-        // Only client-side measurements should be persisted.
-        return;
+        $linkUrl = $result['url'] ?? '';
+        if ($linkUrl === '') {
+            return;
+        }
+        $timestamp = $result['timestamp'] ?? time();
+        $payload = [
+            'link_url' => $linkUrl,
+            'measurement_type' => 'server',
+            'user_id' => null,
+            'username' => null,
+            'session_id' => '',
+            'ip_address' => $this->getServerPublicIp(),
+            'time' => date('c', $timestamp),
+            'full_response_time' => (int)($result['total_time'] ?? 0),
+            'dns_lookup_time' => (int)($result['dns_time'] ?? 0),
+            'tcp_connection_time' => (int)($result['tcp_time'] ?? 0),
+            'tls_handshake_time' => (int)($result['tls_time'] ?? 0),
+            'time_to_first_byte' => (int)($result['ttfb'] ?? 0),
+            'http_status_code' => $result['success'] ? (int)($result['http_status'] ?? 200) : 0,
+            'page_size_bytes' => isset($result['size_download']) ? (int)$result['size_download'] : null,
+            'device_type' => 'server',
+            'browser_name' => '',
+            'browser_version' => '',
+            'os_name' => '',
+            'screen_resolution' => '',
+            'connection_type' => '',
+            'error_message' => $result['success'] ? null : (isset($result['error']) ? substr((string)$result['error'], 0, 500) : 'Check failed'),
+            'link_id' => null,
+            'page_url' => null,
+        ];
+        try {
+            $stmt = $this->analyticsDB->prepare("
+                INSERT INTO metrics_queue (payload, created_at)
+                VALUES (:payload::jsonb, NOW())
+            ");
+            $stmt->execute(['payload' => json_encode($payload)]);
+            $this->analyticsDB->exec('NOTIFY metrics_inserted');
+        } catch (Exception $e) {
+            error_log('Server link checker: failed to enqueue result: ' . $e->getMessage());
+        }
     }
 }

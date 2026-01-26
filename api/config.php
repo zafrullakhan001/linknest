@@ -2809,18 +2809,19 @@ function trackUserLogin(int $userId, string $username): void {
         // Send to analytics queue
         trackPerformanceMetric($metric);
         
-        // Also store in user_geolocations table for analytics (use same DB city_name lookup as other tables)
+        // Also store in user_geolocations table for analytics (insert even when GeoIP fails – use defaults so table gets data)
         try {
             $analyticsDB = getAnalyticsDB();
-            if ($analyticsDB && $geo) {
+            if ($analyticsDB && $ip !== null && $ip !== '') {
                 $countryCode = $geo['country_code'] ?? 'XX';
                 $countryName = $geo['country_name'] ?? 'Unknown';
                 $regionName = $geo['region_name'] ?? 'Unknown';
                 $cityName = $geo['city_name'] ?? 'Unknown';
                 $lat = (float)($geo['latitude'] ?? 0.0);
                 $lng = (float)($geo['longitude'] ?? 0.0);
+                $timezoneVal = $geo['timezone'] ?? 'UTC';
                 // When we have coordinates but city is unknown, look up from location_lookup (same as process-metrics-queue)
-                if ($lat && $lng && ($cityName === '' || $cityName === 'Unknown')) {
+                if ($geo && $lat && $lng && ($cityName === '' || $cityName === 'Unknown')) {
                     $reverseOfflinePath = __DIR__ . '/../analytics/geoip/reverse-geocode-offline.php';
                     if (file_exists($reverseOfflinePath)) {
                         require_once $reverseOfflinePath;
@@ -2836,10 +2837,11 @@ function trackUserLogin(int $userId, string $username): void {
                     }
                 }
                 $stmt = $analyticsDB->prepare("
-                    INSERT INTO user_geolocations (user_id, ip_address, country_code, country_name, region_name, city_name, latitude, longitude, timezone, last_seen)
-                    VALUES (:user_id, :ip_address, :country_code, :country_name, :region_name, :city_name, :latitude, :longitude, :timezone, NOW())
+                    INSERT INTO user_geolocations (user_id, username, ip_address, country_code, country_name, region_name, city_name, latitude, longitude, timezone, last_seen)
+                    VALUES (:user_id, :username, :ip_address, :country_code, :country_name, :region_name, :city_name, :latitude, :longitude, :timezone, NOW())
                     ON CONFLICT (user_id) 
                     DO UPDATE SET 
+                        username = EXCLUDED.username,
                         ip_address = EXCLUDED.ip_address,
                         country_code = EXCLUDED.country_code,
                         country_name = EXCLUDED.country_name,
@@ -2852,6 +2854,7 @@ function trackUserLogin(int $userId, string $username): void {
                 ");
                 $stmt->execute([
                     'user_id' => $userId,
+                    'username' => $username,
                     'ip_address' => $ip,
                     'country_code' => $countryCode,
                     'country_name' => $countryName,
@@ -2859,7 +2862,7 @@ function trackUserLogin(int $userId, string $username): void {
                     'city_name' => $cityName,
                     'latitude' => $lat,
                     'longitude' => $lng,
-                    'timezone' => $geo['timezone'] ?? 'UTC'
+                    'timezone' => $timezoneVal
                 ]);
             }
         } catch (Exception $e) {

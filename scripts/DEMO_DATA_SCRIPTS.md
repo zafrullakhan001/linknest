@@ -34,6 +34,8 @@ php scripts/generate_demo_data.php
 - Creating an impressive, colorful dashboard
 - Professional demonstrations with wow-factor
 
+**Also creates:** 10 roles, 10 demo users (demo1–demo10, password: `password`) with roles assigned.
+
 ---
 
 ### 2. **generate_demo_data_simple.php** (Simple/Clean)
@@ -58,6 +60,30 @@ php scripts/generate_demo_data_simple.php
 - Corporate/enterprise environments preferring subtle styling
 - Baseline testing without decorations
 - Users who prefer simplicity
+
+**Also creates:** 10 roles, 10 demo users (demo1–demo10, password: `password`) with roles assigned.
+
+---
+
+## 👥 Demo Roles and Users (Both PHP Scripts)
+
+Both `generate_demo_data.php` and `generate_demo_data_simple.php` create:
+
+- **10 roles:** Manager, Developer, Designer, Support, Viewer, Editor, HR, Finance, Guest, Auditor  
+  (with short descriptions)
+
+- **10 demo users:** `demo1` … `demo10`  
+  - Emails: `demo1@demo.local` … `demo10@demo.local`  
+  - **Password for all:** `password`  
+  - All users are approved (`is_approved = 1`).  
+  - Each user is assigned one role (demo1→Manager, demo2→Developer, … demo10→Auditor).
+
+- **Role-based access (varied tiles; Public tab blocked):**  
+  - Each role has a **different subset of tiles and links** (e.g. Manager: Main + Collaboration; Developer: Development + Infrastructure; Guest: minimal set).  
+  - **All built-in widgets** are assigned to every role.  
+  - **All tabs are allowed except Public:** Your Apps, Favorites, Private, Scheduled, Expired, Archive, Recycle bin, and Monitoring.
+
+Re-running either script will re-use existing demo users and roles, reset demo user passwords to `password`, reassign the roles, and re-apply tile/link/widget/tab permissions.
 
 ---
 
@@ -200,6 +226,10 @@ For gradient presets, edit `$decorationPresets` array in `generate_demo_data.php
 - **For demos & presentations:** Use `generate_demo_data.php` (with gradients)
 - **For testing & development:** Use `generate_demo_data_simple.php` (simple)
 - **For production seeding:** Modify either script to match your organization's data
+
+### Demo logins (after running either PHP script)
+- **Admin:** Use your existing admin user (e.g. admin / admin123 if default).
+- **Demo users:** demo1 … demo10 with password **password** (e.g. demo1@demo.local / password).
 
 ---
 

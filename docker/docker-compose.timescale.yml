@@ -1,0 +1,40 @@
+# TimescaleDB (PostgreSQL + TimescaleDB) for Performance Analytics add-on
+# Use this when running analytics with a Dockerized PostgreSQL/TimescaleDB.
+#
+# Fix for "invalid value for parameter log_timezone: LOCAL" / "TimeZone: LOCAL":
+# PostgreSQL 18 does not accept "LOCAL" for these parameters. This compose
+# overrides them via command line so the server starts even if the data
+# directory was initialized with an invalid timezone.
+#
+# Start:  docker compose -f docker/docker-compose.timescale.yml up -d
+# Stop:   docker compose -f docker/docker-compose.timescale.yml down
+# Logs:   docker compose -f docker/docker-compose.timescale.yml logs -f PG-timescale
+
+services:
+  PG-timescale:
+    image: timescale/timescaledb:latest-pg18
+    container_name: PG-timescale
+    # Override invalid postgresql.conf timezone (e.g. "LOCAL") so the server starts
+    command: >
+      postgres
+      -c log_timezone=UTC
+      -c TimeZone=UTC
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: linknest_analytics
+      PGTZ: UTC
+    ports:
+      - "5433:5432"
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d linknest_analytics"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  timescale_data:

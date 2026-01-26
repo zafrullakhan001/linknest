@@ -143,17 +143,19 @@ try {
     $_SESSION['longitude'] = $lng ?? 0.0;
     $_SESSION['timezone'] = $timezone ?? 'UTC';
     
-    // Also update analytics database if enabled
-    // Only store in user_geolocations table if user is authenticated
-    if ($userId && isPerformanceAnalyticsEnabled()) {
+    // Also update analytics database if enabled (require non-null IP – schema has ip_address INET NOT NULL)
+    $clientIp = function_exists('getClientIpAddress') ? getClientIpAddress() : ($_SERVER['REMOTE_ADDR'] ?? null);
+    if ($userId && $clientIp !== null && $clientIp !== '' && isPerformanceAnalyticsEnabled()) {
         try {
             $analyticsDB = getAnalyticsDB();
             if ($analyticsDB) {
+                $username = $_SESSION['username'] ?? null;
                 $stmt = $analyticsDB->prepare("
-                    INSERT INTO user_geolocations (user_id, ip_address, country_code, country_name, region_name, city_name, latitude, longitude, timezone, last_seen)
-                    VALUES (:user_id, :ip_address, :country_code, :country_name, :region_name, :city_name, :latitude, :longitude, :timezone, NOW())
+                    INSERT INTO user_geolocations (user_id, username, ip_address, country_code, country_name, region_name, city_name, latitude, longitude, timezone, last_seen)
+                    VALUES (:user_id, :username, :ip_address, :country_code, :country_name, :region_name, :city_name, :latitude, :longitude, :timezone, NOW())
                     ON CONFLICT (user_id) 
                     DO UPDATE SET 
+                        username = EXCLUDED.username,
                         ip_address = EXCLUDED.ip_address,
                         country_code = EXCLUDED.country_code,
                         country_name = EXCLUDED.country_name,
@@ -167,7 +169,8 @@ try {
                 
                 $stmt->execute([
                     'user_id' => $userId,
-                    'ip_address' => function_exists('getClientIpAddress') ? getClientIpAddress() : ($_SERVER['REMOTE_ADDR'] ?? null),
+                    'username' => $username,
+                    'ip_address' => $clientIp,
                     'country_code' => $countryCode ?? 'XX',
                     'country_name' => $countryName ?? 'Unknown',
                     'region_name' => $region ?? 'Unknown',

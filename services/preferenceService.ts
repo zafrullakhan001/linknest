@@ -14,8 +14,7 @@ export const preferenceService = {
 
             const data = await response.json();
             return data.preferences || {};
-        } catch (error) {
-            console.error('Failed to load user preferences:', error);
+        } catch {
             return {};
         }
     },

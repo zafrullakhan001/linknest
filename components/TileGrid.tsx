@@ -1808,8 +1808,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
         .then(tabs => {
           setAllowedTabsByRole(new Set(tabs));
         })
-        .catch(err => {
-          console.error('Failed to fetch allowed tabs:', err);
+        .catch(() => {
           // If fetch fails, allow all tabs (fallback to global settings)
           setAllowedTabsByRole(new Set());
         })
@@ -1875,6 +1874,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [newAllowedGroups, setNewAllowedGroups] = useState<number[]>([]);
   const [availableUsers, setAvailableUsers] = useState<UserListItem[]>([]);
   const [availableGroups, setAvailableGroups] = useState<Array<{ id: number; name: string; description: string | null; memberCount: number }>>([]);
+  const safeAvailableUsers = Array.isArray(availableUsers) ? availableUsers : [];
+  const safeAvailableGroups = Array.isArray(availableGroups) ? availableGroups : [];
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [isLoadingGroups, setIsLoadingGroups] = useState(false);
   const [showUserSelector, setShowUserSelector] = useState(false);
@@ -2248,8 +2249,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
           setCategoryOrder([]);
           setCategoryMetadata({});
         }
-      } catch (error) {
-        console.error('Failed to load category arrangement:', error);
+      } catch {
         // On error, reset to empty to avoid stale data
         setCategoryOrder([]);
         setCategoryMetadata({});
@@ -2327,18 +2327,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
         .then(tiles => {
           setRecycleBinTiles(tiles);
         })
-        .catch(error => {
-          console.error('Failed to load recycle bin:', error);
-        });
+        .catch(() => {});
 
       // Also load archive count on mount
       getArchive()
         .then(tiles => {
           setArchiveTiles(tiles);
         })
-        .catch(error => {
-          console.error('Failed to load archive:', error);
-        });
+        .catch(() => {});
     }
   }, [isAuthenticated]);
 
@@ -2351,8 +2347,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
           setRecycleBinTiles(tiles);
           setIsLoadingRecycleBin(false);
         })
-        .catch(error => {
-          console.error('Failed to load recycle bin:', error);
+        .catch(() => {
           setIsLoadingRecycleBin(false);
         });
     }
@@ -2367,8 +2362,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
           setArchiveTiles(tiles);
           setIsLoadingArchive(false);
         })
-        .catch(error => {
-          console.error('Failed to load archive:', error);
+        .catch(() => {
           setIsLoadingArchive(false);
         });
     }
@@ -2623,9 +2617,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       const timeoutId = setTimeout(() => {
         // Save to user preferences (server-side)
         userPreferencesService.updatePreference('activeTab', activeTab)
-          .catch(error => {
-            console.error('Failed to save active tab preference:', error);
-          });
+          .catch(() => {});
 
         // Also save to localStorage for immediate restoration after login
         localStorage.setItem('linknest_user_active_tab', activeTab);
@@ -3323,34 +3315,36 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
   // Fetch users and groups when modal opens and visibility is private
   useEffect(() => {
-    const shouldFetchUsers = (isModalOpen || isEditModalOpen) && isAuthenticated && newVisibility === 'private' && availableUsers.length === 0 && !isLoadingUsers;
+    const shouldFetchUsers = (isModalOpen || isEditModalOpen) && isAuthenticated && newVisibility === 'private' && safeAvailableUsers.length === 0 && !isLoadingUsers;
     if (shouldFetchUsers) {
       setIsLoadingUsers(true);
       authService.getUsers()
         .then(users => {
-          setAvailableUsers(users);
+          setAvailableUsers(Array.isArray(users) ? users : []);
           setIsLoadingUsers(false);
         })
         .catch(err => {
           console.error('Failed to fetch users:', err);
+          setAvailableUsers([]);
           setIsLoadingUsers(false);
         });
     }
     
-    const shouldFetchGroups = (isModalOpen || isEditModalOpen) && isAuthenticated && newVisibility === 'private' && availableGroups.length === 0 && !isLoadingGroups;
+    const shouldFetchGroups = (isModalOpen || isEditModalOpen) && isAuthenticated && newVisibility === 'private' && safeAvailableGroups.length === 0 && !isLoadingGroups;
     if (shouldFetchGroups) {
       setIsLoadingGroups(true);
       fetch(`${resolveApiBase()}/user-groups`, {
         method: 'GET',
         credentials: 'include',
       })
-        .then(response => response.json())
-        .then(groups => {
-          setAvailableGroups(groups);
+        .then(response => response.json().then(data => ({ ok: response.ok, data })))
+        .then(({ ok, data }) => {
+          setAvailableGroups(ok && Array.isArray(data) ? data : []);
           setIsLoadingGroups(false);
         })
         .catch(err => {
           console.error('Failed to fetch groups:', err);
+          setAvailableGroups([]);
           setIsLoadingGroups(false);
         });
     }
@@ -3709,15 +3703,16 @@ export const TileGrid: React.FC<TileGridProps> = ({
     setIsEditModalOpen(true);
 
     // Load users if needed for private visibility
-    if (tile.visibility === 'private' && isAuthenticated && availableUsers.length === 0 && !isLoadingUsers) {
+    if (tile.visibility === 'private' && isAuthenticated && safeAvailableUsers.length === 0 && !isLoadingUsers) {
       setIsLoadingUsers(true);
       authService.getUsers()
         .then(users => {
-          setAvailableUsers(users);
+          setAvailableUsers(Array.isArray(users) ? users : []);
           setIsLoadingUsers(false);
         })
         .catch(err => {
           console.error('Failed to fetch users:', err);
+          setAvailableUsers([]);
           setIsLoadingUsers(false);
         });
     }
@@ -6667,12 +6662,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
                               {visibilityActiveTab === 'users' && (
                                 isLoadingUsers ? (
                                   <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">Loading users...</div>
-                                ) : availableUsers.length === 0 ? (
+                                ) : safeAvailableUsers.length === 0 ? (
                                   <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users available</div>
                                 ) : (
                                   <div className="space-y-1">
-                                    {availableUsers
-                                      .filter(u => {
+                                    {safeAvailableUsers
+        .filter(u => {
                                         const searchLower = visibilitySearchTerm.toLowerCase();
                                         return u.username.toLowerCase().includes(searchLower) ||
                                           u.email?.toLowerCase().includes(searchLower);
@@ -6724,7 +6719,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                           </label>
                                         );
                                       })}
-                                    {availableUsers.filter(u => {
+                                    {safeAvailableUsers.filter(u => {
                                       const searchLower = visibilitySearchTerm.toLowerCase();
                                       return u.username.toLowerCase().includes(searchLower) ||
                                         u.email?.toLowerCase().includes(searchLower);
@@ -6738,12 +6733,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
                               {visibilityActiveTab === 'groups' && (
                                 isLoadingGroups ? (
                                   <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">Loading groups...</div>
-                                ) : availableGroups.length === 0 ? (
+                                ) : safeAvailableGroups.length === 0 ? (
                                   <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups available</div>
                                 ) : (
                                   <div className="space-y-1">
-                                    {availableGroups
-                                      .filter(g => {
+                                    {safeAvailableGroups
+        .filter(g => {
                                         const searchLower = visibilitySearchTerm.toLowerCase();
                                         return g.name.toLowerCase().includes(searchLower) ||
                                           (g.description || '').toLowerCase().includes(searchLower);
@@ -6776,7 +6771,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                           </span>
                                         </label>
                                       ))}
-                                    {availableGroups.filter(g => {
+                                    {safeAvailableGroups.filter(g => {
                                       const searchLower = visibilitySearchTerm.toLowerCase();
                                       return g.name.toLowerCase().includes(searchLower) ||
                                         (g.description || '').toLowerCase().includes(searchLower);
@@ -7009,12 +7004,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
                             {visibilityActiveTab === 'users' && (
                               isLoadingUsers ? (
                                 <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">Loading users...</div>
-                              ) : availableUsers.length === 0 ? (
+                              ) : safeAvailableUsers.length === 0 ? (
                                 <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users available</div>
                               ) : (
                                 <div className="space-y-1">
-                                  {availableUsers
-                                    .filter(u => {
+                                  {safeAvailableUsers
+        .filter(u => {
                                       const searchLower = visibilitySearchTerm.toLowerCase();
                                       return u.username.toLowerCase().includes(searchLower) ||
                                         u.email?.toLowerCase().includes(searchLower);
@@ -7066,7 +7061,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                         </label>
                                       );
                                     })}
-                                  {availableUsers.filter(u => {
+                                  {safeAvailableUsers.filter(u => {
                                     const searchLower = visibilitySearchTerm.toLowerCase();
                                     return u.username.toLowerCase().includes(searchLower) ||
                                       u.email?.toLowerCase().includes(searchLower);
@@ -7080,12 +7075,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
                             {visibilityActiveTab === 'groups' && (
                               isLoadingGroups ? (
                                 <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">Loading groups...</div>
-                              ) : availableGroups.length === 0 ? (
+                              ) : safeAvailableGroups.length === 0 ? (
                                 <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups available</div>
                               ) : (
                                 <div className="space-y-1">
-                                  {availableGroups
-                                    .filter(g => {
+                                  {safeAvailableGroups
+        .filter(g => {
                                       const searchLower = visibilitySearchTerm.toLowerCase();
                                       return g.name.toLowerCase().includes(searchLower) ||
                                         (g.description || '').toLowerCase().includes(searchLower);
@@ -7118,7 +7113,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                         </span>
                                       </label>
                                     ))}
-                                  {availableGroups.filter(g => {
+                                  {safeAvailableGroups.filter(g => {
                                     const searchLower = visibilitySearchTerm.toLowerCase();
                                     return g.name.toLowerCase().includes(searchLower) ||
                                       (g.description || '').toLowerCase().includes(searchLower);
@@ -8038,12 +8033,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
                               {visibilityActiveTab === 'users' && (
                                 isLoadingUsers ? (
                                   <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">Loading users...</div>
-                                ) : availableUsers.length === 0 ? (
+                                ) : safeAvailableUsers.length === 0 ? (
                                   <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users available</div>
                                 ) : (
                                   <div className="space-y-1">
-                                    {availableUsers
-                                      .filter(u => {
+                                    {safeAvailableUsers
+        .filter(u => {
                                         const searchLower = visibilitySearchTerm.toLowerCase();
                                         return u.username.toLowerCase().includes(searchLower) ||
                                           u.email?.toLowerCase().includes(searchLower);
@@ -8095,7 +8090,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                           </label>
                                         );
                                       })}
-                                    {availableUsers.filter(u => {
+                                    {safeAvailableUsers.filter(u => {
                                       const searchLower = visibilitySearchTerm.toLowerCase();
                                       return u.username.toLowerCase().includes(searchLower) ||
                                         u.email?.toLowerCase().includes(searchLower);
@@ -8109,12 +8104,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
                               {visibilityActiveTab === 'groups' && (
                                 isLoadingGroups ? (
                                   <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">Loading groups...</div>
-                                ) : availableGroups.length === 0 ? (
+                                ) : safeAvailableGroups.length === 0 ? (
                                   <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups available</div>
                                 ) : (
                                   <div className="space-y-1">
-                                    {availableGroups
-                                      .filter(g => {
+                                    {safeAvailableGroups
+        .filter(g => {
                                         const searchLower = visibilitySearchTerm.toLowerCase();
                                         return g.name.toLowerCase().includes(searchLower) ||
                                           (g.description || '').toLowerCase().includes(searchLower);
@@ -8147,7 +8142,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                           </span>
                                         </label>
                                       ))}
-                                    {availableGroups.filter(g => {
+                                    {safeAvailableGroups.filter(g => {
                                       const searchLower = visibilitySearchTerm.toLowerCase();
                                       return g.name.toLowerCase().includes(searchLower) ||
                                         (g.description || '').toLowerCase().includes(searchLower);
@@ -8281,12 +8276,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
                               {visibilityActiveTab === 'users' && (
                                 isLoadingUsers ? (
                                   <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">Loading users...</div>
-                                ) : availableUsers.length === 0 ? (
+                                ) : safeAvailableUsers.length === 0 ? (
                                   <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users available</div>
                                 ) : (
                                   <div className="space-y-1">
-                                    {availableUsers
-                                      .filter(u => {
+                                    {safeAvailableUsers
+        .filter(u => {
                                         const searchLower = visibilitySearchTerm.toLowerCase();
                                         return u.username.toLowerCase().includes(searchLower) ||
                                           u.email?.toLowerCase().includes(searchLower);
@@ -8338,7 +8333,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                           </label>
                                         );
                                       })}
-                                    {availableUsers.filter(u => {
+                                    {safeAvailableUsers.filter(u => {
                                       const searchLower = visibilitySearchTerm.toLowerCase();
                                       return u.username.toLowerCase().includes(searchLower) ||
                                         u.email?.toLowerCase().includes(searchLower);
@@ -8352,12 +8347,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
                               {visibilityActiveTab === 'groups' && (
                                 isLoadingGroups ? (
                                   <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">Loading groups...</div>
-                                ) : availableGroups.length === 0 ? (
+                                ) : safeAvailableGroups.length === 0 ? (
                                   <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups available</div>
                                 ) : (
                                   <div className="space-y-1">
-                                    {availableGroups
-                                      .filter(g => {
+                                    {safeAvailableGroups
+        .filter(g => {
                                         const searchLower = visibilitySearchTerm.toLowerCase();
                                         return g.name.toLowerCase().includes(searchLower) ||
                                           (g.description || '').toLowerCase().includes(searchLower);
@@ -8390,7 +8385,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                           </span>
                                         </label>
                                       ))}
-                                    {availableGroups.filter(g => {
+                                    {safeAvailableGroups.filter(g => {
                                       const searchLower = visibilitySearchTerm.toLowerCase();
                                       return g.name.toLowerCase().includes(searchLower) ||
                                         (g.description || '').toLowerCase().includes(searchLower);

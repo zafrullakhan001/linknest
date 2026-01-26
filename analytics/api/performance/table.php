@@ -113,16 +113,20 @@ try {
     $countStmt->execute();
     $total = (int)$countStmt->fetchColumn();
 
+    // Columns must match performance_metrics schema (no tile_id, link_url_normalized, ok, etc.)
     $sql = "
         SELECT
             time,
             link_url,
+            link_id,
+            page_url,
             measurement_type,
             user_id,
             username,
             session_id,
             is_authenticated,
             CAST(ip_address AS TEXT) as ip_address,
+            continent_code,
             country_code,
             country_name,
             region_name,
@@ -146,19 +150,7 @@ try {
             browser_version,
             os_name,
             screen_resolution,
-            page_url,
-            tile_id,
-            link_id,
-            link_url_normalized,
-            ok,
-            error_category,
-            response_type,
-            redirected,
-            final_url,
-            method,
-            cache_mode,
-            timeout_ms,
-            attempted_at
+            created_at
         FROM performance_metrics
         WHERE {$whereSql}
         ORDER BY time DESC

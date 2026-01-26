@@ -39,21 +39,25 @@ export interface UserPreferences {
 
 export const userPreferencesService = {
   /**
-   * Get all user preferences
+   * Get all user preferences. Returns {} on API error (e.g. 500) to avoid console noise.
    */
   async getPreferences(): Promise<UserPreferences> {
-    const response = await fetch(`${API_BASE}/settings/user-preferences`, {
-      method: 'GET',
-      credentials: 'include',
-    });
+    try {
+      const response = await fetch(`${API_BASE}/settings/user-preferences`, {
+        method: 'GET',
+        credentials: 'include',
+      });
 
-    const data = await response.json();
+      const data = await response.json();
 
-    if (!response.ok) {
-      throw new Error(data.error || 'Failed to fetch user preferences');
+      if (!response.ok) {
+        return {};
+      }
+
+      return data.preferences || {};
+    } catch {
+      return {};
     }
-
-    return data.preferences || {};
   },
 
   /**

@@ -22,7 +22,9 @@ echo "Started at: " . date('Y-m-d H:i:s') . "\n\n";
 
 try {
     $checker = new ServerLinkChecker();
-    echo "Server link checker initialized\n\n";
+    echo "Server link checker initialized\n";
+    echo "Note: Server results are written to the metrics queue. Run the Metrics Queue Processor\n";
+    echo "      (start-workers-xampp.bat 1 or option 3) so they are inserted into performance_metrics.\n\n";
 } catch (Exception $e) {
     die("ERROR: Failed to initialize checker: " . $e->getMessage() . "\n");
 }

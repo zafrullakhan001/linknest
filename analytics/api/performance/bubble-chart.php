@@ -19,7 +19,7 @@ header('Content-Type: application/json');
 
 $url = $_GET['url'] ?? null;
 $period = $_GET['period'] ?? '24h';
-$granularity = $_GET['granularity'] ?? 'region'; // country, region, city, url, username, or ip
+$granularity = $_GET['granularity'] ?? 'region'; // country, region, city, url, username, ip, device_type, browser_name, os_name, connection_type, link_id, error
 $measurementType = $_GET['type'] ?? 'client'; // client or server
 $username = $_GET['username'] ?? null;
 $ipAddress = $_GET['ip'] ?? null;
@@ -42,7 +42,13 @@ $groupByFields = [
     'ip' => 'ip_address',
     'country' => 'country_code, country_name',
     'region' => 'country_code, country_name, region_name',
-    'city' => 'country_code, country_name, region_name, city_name'
+    'city' => 'country_code, country_name, region_name, city_name',
+    'device_type' => 'COALESCE(device_type, \'Unknown\')',
+    'browser_name' => 'COALESCE(browser_name, \'Unknown\')',
+    'os_name' => 'COALESCE(os_name, \'Unknown\')',
+    'connection_type' => 'COALESCE(connection_type, \'Unknown\')',
+    'link_id' => 'COALESCE(link_id, \'(none)\')',
+    'error' => 'COALESCE(error_message, \'No error\')'
 ];
 
 $groupBy = $groupByFields[$granularity] ?? $groupByFields['region'];
@@ -75,6 +81,22 @@ if ($granularity === 'url') {
     $selectFields .= ", MODE() WITHIN GROUP (ORDER BY region_name) as region_name";
     $selectFields .= ", MODE() WITHIN GROUP (ORDER BY city_name) as city_name";
     $selectFields .= ", MODE() WITHIN GROUP (ORDER BY username) as username";
+} elseif (in_array($granularity, ['device_type', 'browser_name', 'os_name', 'connection_type', 'link_id', 'error'], true)) {
+    // Group by device/browser/OS/connection/link_id/error
+    $alias = $granularity === 'error' ? 'error_message' : $granularity;
+    $col = $granularity === 'error' ? 'COALESCE(error_message, \'No error\')' : 'COALESCE(' . $granularity . ', \'Unknown\')';
+    if ($granularity === 'link_id') {
+        $col = 'COALESCE(link_id, \'(none)\')';
+        $alias = 'link_id';
+    }
+    $selectFields = $col . ' as ' . $alias;
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY link_url) as link_url";
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY country_code) as country_code";
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY country_name) as country_name";
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY region_name) as region_name";
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY city_name) as city_name";
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY username) as username";
+    $selectFields .= ", MODE() WITHIN GROUP (ORDER BY ip_address) as ip_address";
 } else {
     $selectFields = 'country_code, country_name';
     if ($granularity !== 'country') {

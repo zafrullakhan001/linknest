@@ -891,11 +891,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 }
                             }
                         }
-                    } else {
-                        console.warn('Failed to load browsers from database');
                     }
-                } catch (error) {
-                    console.error('Failed to load browsers from database:', error);
+                } catch {
+                    // Browsers from database optional; ignore errors
                 }
             };
 
@@ -1404,8 +1402,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     }
                 }
             }
-        } catch (err) {
-            console.error('Error auto-cleaning empty versions:', err);
+        } catch {
+            // Ignore auto-clean errors
         }
     };
 
@@ -3225,7 +3223,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 console.warn('Unexpected results format:', results);
             }
         } catch (error) {
-            console.error('Failed to check tile health:', error);
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             alert(`Failed to check link health: ${errorMessage}. Please try again.`);
         } finally {

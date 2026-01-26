@@ -296,6 +296,39 @@ export const performanceAnalyticsService = {
     timeoutMs: number;
   }> {
     const attemptedAt = Date.now();
+    // Skip hosts that cause console noise: unresolvable placeholders or often-blocked tracking/analytics
+    try {
+      const hostname = typeof url === 'string' ? new URL(url).hostname.toLowerCase() : '';
+      const skipHosts = [
+        'example.com',
+        'analytics.google.com',
+        'www.google-analytics.com',
+        'google-analytics.com',
+        'googletagmanager.com',
+        'www.googletagmanager.com',
+        'doubleclick.net',
+        'googleadservices.com'
+      ];
+      const isExample = hostname === 'example.com' || hostname.endsWith('.example.com');
+      const isBlockedFriendly = skipHosts.some(h => hostname === h || hostname.endsWith('.' + h));
+      if (isExample || isBlockedFriendly) {
+        return {
+          ok: false,
+          durationMs: 0,
+          httpStatus: null,
+          responseType: null,
+          redirected: false,
+          finalUrl: null,
+          errorCategory: isExample ? 'skipped_unresolvable' : 'skipped_blocked',
+          attemptedAt,
+          method: 'HEAD',
+          cacheMode: 'no-store',
+          timeoutMs
+        };
+      }
+    } catch {
+      // Invalid URL; will fail below
+    }
     const start = performance.now();
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);

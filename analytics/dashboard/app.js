@@ -1239,7 +1239,13 @@ async function loadBubbleData() {
                 'ip': 'Total IPs',
                 'country': 'Total Countries',
                 'region': 'Total Regions',
-                'city': 'Total Cities'
+                'city': 'Total Cities',
+                'device_type': 'Total devices',
+                'browser_name': 'Total browsers',
+                'os_name': 'Total OS',
+                'connection_type': 'Total connections',
+                'link_id': 'Total link IDs',
+                'error': 'Total error types'
             };
             statLabel.textContent = labels[granularity] || 'Total Items';
         }
@@ -1312,11 +1318,28 @@ async function loadBubbleData() {
                 displayName = item.username || 'Unknown';
                 id = item.username || 'unknown';
             } else if (granularity === 'ip') {
-                // For IP granularity, show the IP address
                 displayName = item.ip_address || 'Unknown';
                 id = item.ip_address || 'unknown';
+            } else if (granularity === 'device_type') {
+                displayName = item.device_type || 'Unknown';
+                id = (item.device_type || 'unknown').toString();
+            } else if (granularity === 'browser_name') {
+                displayName = item.browser_name || 'Unknown';
+                id = (item.browser_name || 'unknown').toString();
+            } else if (granularity === 'os_name') {
+                displayName = item.os_name || 'Unknown';
+                id = (item.os_name || 'unknown').toString();
+            } else if (granularity === 'connection_type') {
+                displayName = item.connection_type || 'Unknown';
+                id = (item.connection_type || 'unknown').toString();
+            } else if (granularity === 'link_id') {
+                displayName = item.link_id || '(none)';
+                id = (item.link_id || 'none').toString();
+            } else if (granularity === 'error') {
+                displayName = item.error_message || 'No error';
+                id = (item.error_message || 'no_error').toString().replace(/\s+/g, '_').slice(0, 100);
             } else {
-                // For geographic granularity, show region/country
+                // Geographic: country, region, city
                 displayName = item.city_name || item.region_name || item.country_name || 'Unknown';
                 id = `${item.country_name || ''}-${item.region_name || ''}-${item.city_name || ''}`;
             }
@@ -1718,8 +1741,9 @@ async function renderTimeSeriesChart(filteredData) {
         // Apply filters to real time-series data if fetching was successful
         if (timeSeriesData.length > 0) {
             timeSeriesData = timeSeriesData.filter(d => {
-                const targetUrl = d.link_url || d.url || '';
-                const matchesSearch = !chartSearchQuery || targetUrl.toLowerCase().includes(chartSearchQuery);
+                const label = d.label || d.link_url || d.username || d.ip_address || d.city_name || d.region_name || d.country_name || d.device_type || d.browser_name || d.os_name || d.connection_type || d.link_id || d.error_message || '';
+                const searchTarget = (label + ' ' + (d.link_url || '')).toLowerCase();
+                const matchesSearch = !chartSearchQuery || searchTarget.includes(chartSearchQuery);
                 const value = Number(d.value ?? d.avg_latency ?? d.latency_ms ?? 0);
                 const matchesThreshold = !latencyThreshold || latencyThreshold >= 2000 || (value > latencyThreshold);
                 return matchesSearch && matchesThreshold;
@@ -1736,25 +1760,35 @@ async function renderTimeSeriesChart(filteredData) {
         // Group data by label (which depends on groupBy: url, username, ip, etc.)
         const seriesMap = {};
         timeSeriesData.forEach(d => {
-            // Use the label field from API response, or fallback to link_url
-            const label = d.label || d.link_url || d.username || d.ip_address || d.city_name || d.region_name || d.country_name || 'Unknown';
+            const label = d.label || d.link_url || d.username || d.ip_address || d.city_name || d.region_name || d.country_name || d.device_type || d.browser_name || d.os_name || d.connection_type || d.link_id || d.error_message || 'Unknown';
+            const ts = d.timestamp || d.created_at || d.time;
+            const date = ts instanceof Date ? ts : new Date(ts);
+            if (isNaN(date.getTime())) return; // skip invalid dates
             if (!seriesMap[label]) {
                 seriesMap[label] = [];
             }
             seriesMap[label].push({
-                date: new Date(d.timestamp || d.created_at || d.time),
+                date: date,
                 latency: Number(d.value ?? d.avg_latency ?? d.latency_ms) || 0,
                 measurements: parseInt(d.measurement_count) || 1
             });
         });
+
+        Object.keys(seriesMap).forEach(k => { if (seriesMap[k].length === 0) delete seriesMap[k]; });
+
+        const seriesKeys = Object.keys(seriesMap);
+        if (seriesKeys.length === 0) {
+            container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;">No time series data to display. Try changing filters or time range.</div>';
+            return;
+        }
 
         // Sort each series' data by date
         Object.values(seriesMap).forEach(data => {
             data.sort((a, b) => a.date - b.date);
         });
 
-        const width = container.clientWidth;
-        const height = container.clientHeight;
+        const width = Math.max(container.clientWidth || 400, 400);
+        const height = Math.max(container.clientHeight || 300, 300);
         const margin = { top: 20, right: 150, bottom: 50, left: 60 };
 
         const svg = d3.select(container)
@@ -1768,17 +1802,32 @@ async function renderTimeSeriesChart(filteredData) {
         const innerWidth = width - margin.left - margin.right;
         const innerHeight = height - margin.top - margin.bottom;
 
-        // Get all dates for x-axis
+        // Get all dates and latencies for scales
         const allDates = Object.values(seriesMap).flat().map(d => d.date);
         const allLatencies = Object.values(seriesMap).flat().map(d => d.latency);
+        const dateExtent = d3.extent(allDates);
+        const latMax = d3.max(allLatencies);
+        const latMin = d3.min(allLatencies);
 
-        // Scales
+        // X scale: pad domain if single timestamp so line has visible range
+        if (dateExtent[0] == null || dateExtent[1] == null) {
+            dateExtent[0] = new Date(Date.now() - 3600000);
+            dateExtent[1] = new Date();
+        }
+        if (dateExtent[0].getTime() === dateExtent[1].getTime()) {
+            const t = dateExtent[0].getTime();
+            dateExtent[0] = new Date(t - 30 * 60000);
+            dateExtent[1] = new Date(t + 30 * 60000);
+        }
         const xScale = d3.scaleTime()
-            .domain(d3.extent(allDates))
+            .domain(dateExtent)
             .range([0, innerWidth]);
 
+        // Y scale: avoid [0,0] domain (use at least 1 so axis and line render)
+        const yMax = Math.max(latMax != null ? latMax : 1, 1);
+        const yMin = latMin != null && latMin < 0 ? latMin : 0;
         const yScale = d3.scaleLinear()
-            .domain([0, d3.max(allLatencies) * 1.1])
+            .domain([yMin, yMax * 1.1])
             .range([innerHeight, 0]);
 
         // Color scale for different URLs

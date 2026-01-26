@@ -99,16 +99,19 @@ try {
     $_SESSION['latitude'] = $lat;
     $_SESSION['longitude'] = $lng;
     
-    // Also update analytics database if enabled
-    if (function_exists('isPerformanceAnalyticsEnabled') && isPerformanceAnalyticsEnabled()) {
+    // Also update analytics database if enabled (require non-null IP – schema has ip_address INET NOT NULL)
+    $clientIp = $_SERVER['REMOTE_ADDR'] ?? null;
+    if (function_exists('isPerformanceAnalyticsEnabled') && isPerformanceAnalyticsEnabled() && $clientIp !== null && $clientIp !== '') {
         try {
             $analyticsDB = getAnalyticsDB();
             if ($analyticsDB) {
+                $username = $_SESSION['username'] ?? null;
                 $stmt = $analyticsDB->prepare("
-                    INSERT INTO user_geolocations (user_id, ip_address, country_code, country_name, region_name, city_name, latitude, longitude, timezone, last_seen)
-                    VALUES (:user_id, :ip_address, :country_code, :country_name, :region_name, :city_name, :latitude, :longitude, :timezone, NOW())
+                    INSERT INTO user_geolocations (user_id, username, ip_address, country_code, country_name, region_name, city_name, latitude, longitude, timezone, last_seen)
+                    VALUES (:user_id, :username, :ip_address, :country_code, :country_name, :region_name, :city_name, :latitude, :longitude, :timezone, NOW())
                     ON CONFLICT (user_id) 
                     DO UPDATE SET 
+                        username = EXCLUDED.username,
                         ip_address = EXCLUDED.ip_address,
                         country_code = EXCLUDED.country_code,
                         country_name = EXCLUDED.country_name,
@@ -122,7 +125,8 @@ try {
                 
                 $stmt->execute([
                     'user_id' => $_SESSION['user_id'],
-                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                    'username' => $username,
+                    'ip_address' => $clientIp,
                     'country_code' => $countryCode,
                     'country_name' => $countryName,
                     'region_name' => $region,
