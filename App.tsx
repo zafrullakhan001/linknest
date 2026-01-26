@@ -86,6 +86,7 @@ const AppContent: React.FC = () => {
   const [styleManagerOpen, setStyleManagerOpen] = useState(false);
   const [helpAboutOpen, setHelpAboutOpen] = useState(false);
   const [authRequired, setAuthRequired] = useState(false); // Track if we got 401 error
+  const didAutoOpenLoginRef = useRef(false); // Avoid re-opening login when user closed it (guest disabled)
   const [databasePath, setDatabasePath] = useState<string>('');
   const [databasePathAbsolute, setDatabasePathAbsolute] = useState<string>('');
   const { user, isAuthenticated, loading: authLoading } = useAuth();
@@ -630,6 +631,29 @@ const AppContent: React.FC = () => {
     loadDatabasePath();
   }, []);
 
+  // If guest access is disabled and user is not authenticated, we show login dialog (computed here so hooks below run unconditionally).
+  // Require !authLoading so we never show/open login until session check has finished (fixes refresh with existing session).
+  const shouldShowLoginMessage = (!guestAccessEnabled && !isAuthenticated && !settingsLoading && !authLoading) ||
+    (authRequired && !isAuthenticated && !authLoading);
+
+  // Auto-open login dialog once when public view is disabled and user is not authenticated (must be above any early return)
+  useEffect(() => {
+    if (shouldShowLoginMessage && !didAutoOpenLoginRef.current) {
+      didAutoOpenLoginRef.current = true;
+      setAuthModalOpen(true);
+    }
+    if (!shouldShowLoginMessage) {
+      didAutoOpenLoginRef.current = false;
+    }
+  }, [shouldShowLoginMessage]);
+
+  // Close login modal when user becomes authenticated (e.g. after refresh with session, or after successful sign-in)
+  useEffect(() => {
+    if (isAuthenticated && authModalOpen) {
+      setAuthModalOpen(false);
+    }
+  }, [isAuthenticated, authModalOpen]);
+
   const handleUpdateTiles = async (newTiles: Tile[], skipReload: boolean = false, isFinal: boolean = false) => {
     if (!isAuthenticated) {
       // Guest mode: just update local state for viewing
@@ -705,8 +729,8 @@ const AppContent: React.FC = () => {
   };
 
   // Only show loading if settings are loading OR if we're authenticated and loading tiles
-  // Don't show loading if guest access is disabled and user is not authenticated
-  if (settingsLoading || stylesLoading || (loading && (isAuthenticated || guestAccessEnabled))) {
+  // When guest access is disabled, also wait for auth to finish so we don't flash login before session is restored
+  if (settingsLoading || stylesLoading || (authLoading && !guestAccessEnabled) || (loading && (isAuthenticated || guestAccessEnabled))) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white transition-colors duration-300">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500"></div>
@@ -739,68 +763,26 @@ const AppContent: React.FC = () => {
   // Routing Logic
   let content;
 
-  // If guest access is disabled and user is not authenticated, show login message in content area
-  // Also show if we got a 401 error (authRequired flag)
-  const shouldShowLoginMessage = (!guestAccessEnabled && !isAuthenticated && !settingsLoading) ||
-    (authRequired && !isAuthenticated);
-
   if (shouldShowLoginMessage) {
+    // Show login dialog (opened by effect above). If user closed it, show minimal fallback to reopen.
     content = (
-      <div className="w-full max-w-2xl mx-auto">
-        {/* Main Message Card */}
-        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl p-8 mb-6">
-          <div className="text-center">
-            {/* Icon */}
-            <div className="mb-6 flex justify-center">
-              <div className="w-20 h-20 rounded-full bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center">
-                <svg className="h-10 w-10 text-brand-600 dark:text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-              </div>
-            </div>
-
-            {/* Title */}
-            <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-3">
-              Login Required
-            </h2>
-
-            {/* Description */}
-            <p className="text-lg text-slate-600 dark:text-slate-400 mb-2">
-              Guest access has been disabled.
-            </p>
-            <p className="text-base text-slate-500 dark:text-slate-500 mb-8">
-              Please sign in with your account to access and view all spaces.
-            </p>
-
-            {/* Login Button */}
-            <button
-              onClick={() => setAuthModalOpen(true)}
-              className="w-full px-6 py-3.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-semibold text-base transition-colors shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
-              </svg>
-              Sign In to Continue
-            </button>
-          </div>
-        </div>
-
-        {/* Info Box */}
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
-          <div className="flex items-start gap-3">
-            <svg className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      <div className="w-full max-w-2xl mx-auto text-center">
+        {!authModalOpen && (
+          <p className="text-slate-600 dark:text-slate-400 mb-4">
+            Sign in to access and view all spaces.
+          </p>
+        )}
+        {!authModalOpen && (
+          <button
+            onClick={() => setAuthModalOpen(true)}
+            className="px-6 py-3 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-semibold transition-colors inline-flex items-center justify-center gap-2"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
             </svg>
-            <div className="flex-1">
-              <p className="text-sm text-blue-800 dark:text-blue-300 font-medium mb-1">
-                Need an account?
-              </p>
-              <p className="text-xs text-blue-700 dark:text-blue-400">
-                Contact your administrator to create an account or use the registration option in the sign-in dialog.
-              </p>
-            </div>
-          </div>
-        </div>
+            Sign In
+          </button>
+        )}
       </div>
     );
   } else if (route === '#/' || route === '') {

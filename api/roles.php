@@ -856,30 +856,42 @@ function handleGetRoleTabs($roleId) {
 }
 
 function handleGetCurrentUserTabs() {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
     $user = getAuthenticatedUser();
     if (!$user) {
         sendJSON(['error' => 'Authentication required'], 401);
     }
     
-    $db = getDB();
-    
-    // If user has no roles, return empty array (they use global settings only)
-    $roleIds = getUserRoleIds($user['id'], $db);
-    if (empty($roleIds)) {
+    try {
+        $db = getDB();
+        
+        // If user has no roles, return empty array (they use global settings only)
+        $roleIds = getUserRoleIds($user['id'], $db);
+        if (empty($roleIds)) {
+            sendJSON([]);
+        }
+        
+        // Get all tabs allowed by user's roles
+        $placeholders = implode(',', array_fill(0, count($roleIds), '?'));
+        $stmt = $db->prepare("SELECT DISTINCT tab_id FROM role_tab_permissions WHERE role_id IN ($placeholders) AND can_view = 1");
+        $stmt->execute($roleIds);
+        
+        $allowedTabs = [];
+        while ($row = $stmt->fetch()) {
+            $allowedTabs[] = $row['tab_id'];
+        }
+        
+        sendJSON($allowedTabs);
+    } catch (PDOException $e) {
+        error_log('roles/current-user/tabs: ' . $e->getMessage());
+        // Return empty array so admin panel still works if roles/tab tables are missing
         sendJSON([]);
+    } catch (Throwable $e) {
+        error_log('roles/current-user/tabs: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to load tab permissions'], 500);
     }
-    
-    // Get all tabs allowed by user's roles
-    $placeholders = implode(',', array_fill(0, count($roleIds), '?'));
-    $stmt = $db->prepare("SELECT DISTINCT tab_id FROM role_tab_permissions WHERE role_id IN ($placeholders) AND can_view = 1");
-    $stmt->execute($roleIds);
-    
-    $allowedTabs = [];
-    while ($row = $stmt->fetch()) {
-        $allowedTabs[] = $row['tab_id'];
-    }
-    
-    sendJSON($allowedTabs);
 }
 
 function handleAssignTabsToRole($roleId) {

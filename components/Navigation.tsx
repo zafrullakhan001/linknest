@@ -2,6 +2,7 @@ import React from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { getDisabledTabsFromSettings } from '../services/tabVisibilityService';
+import { ProfileMenu } from './ProfileMenu';
 
 interface NavigationProps {
   darkMode: boolean;
@@ -50,7 +51,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
   };
 
   return (
-    <nav className="border-b border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/50 backdrop-blur-md sticky top-0 z-50 transition-colors duration-300">
+    <nav className="border-b border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/50 backdrop-blur-md sticky top-0 z-[100] transition-colors duration-300">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between max-w-6xl">
         <div
           onClick={() => window.location.hash = '#/'}
@@ -107,12 +108,6 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
                     )}
                   </>
                 )}
-                <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1 hidden sm:block"></div>
-                <div className="flex items-center gap-2">
-                  <div className="text-sm text-slate-600 dark:text-slate-400 hidden sm:block font-medium">
-                    {user.username}
-                  </div>
-                </div>
               </>
             ) : (
               <button
@@ -309,15 +304,8 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, toggleTheme: t
             </button>
           </div>
 
-          {/* Logout Button */}
-          {user && (
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-            >
-              Logout
-            </button>
-          )}
+          {/* Profile avatar menu (user icon with dropdown: display name, change password, logout) */}
+          {user && <ProfileMenu onLogout={handleLogout} />}
         </div>
       </div>
     </nav>

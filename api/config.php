@@ -253,6 +253,11 @@ function initDatabase() {
         } catch (PDOException $e) {
             // Column already exists, ignore
         }
+        try {
+            $db->exec('ALTER TABLE users ADD COLUMN display_name TEXT');
+        } catch (PDOException $e) {
+            // Column already exists, ignore
+        }
         
         // Note: New users require admin approval. Existing users in old databases
         // will need to be manually approved by admin through the admin panel.
@@ -2009,7 +2014,7 @@ function getAuthenticatedUser() {
         $userId = $_SESSION['impersonating_user_id'];
     }
     
-    $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved FROM users WHERE id = ?');
+    $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, auth_source, display_name FROM users WHERE id = ?');
     $stmt->execute([$userId]);
     $user = $stmt->fetch();
     
@@ -2017,6 +2022,7 @@ function getAuthenticatedUser() {
         // Convert integer to boolean
         $user['is_admin'] = (bool)$user['is_admin'];
         $user['is_approved'] = (bool)$user['is_approved'];
+        $user['auth_source'] = $user['auth_source'] ?? 'local';
         
         // Ensure username is in session (fix for analytics)
         // This ensures $_SESSION['username'] is always populated when user is authenticated

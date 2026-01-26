@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { SecurePasswordInput } from './SecurePasswordInput';
+import { PasswordCriteriaList } from './PasswordCriteriaList';
+import { validatePassword } from '../services/passwordValidation';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -38,6 +40,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [authMethod, setAuthMethod] = useState<'local' | 'ldap' | 'auto' | 'saml'>('auto');
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
@@ -169,6 +172,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       setUsername('');
       setEmail('');
       setPassword('');
+      setConfirmPassword('');
       setAuthMethod('auto');
       setRememberMe(false);
       setError('');
@@ -327,25 +331,40 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         setUsername('');
         setEmail('');
         setPassword('');
+        setConfirmPassword('');
         setAuthMethod('auto');
         setRememberMe(false);
         setAuthState('idle');
         setProgress(0);
         setCurrentMethod(null);
       } else {
+        // Register: validate password strength and confirmation
+        const pwValidation = validatePassword(password);
+        if (!pwValidation.valid) {
+          setError(pwValidation.message || 'Invalid password');
+          setLoading(false);
+          return;
+        }
+        if (password !== confirmPassword) {
+          setError('Password and confirmation do not match');
+          setLoading(false);
+          return;
+        }
         setAuthState('connecting');
-        const result = await register(username, email, password);
+        const result = await register(username, email, password, confirmPassword);
         if (result.pending) {
           setSuccess(result.message || 'Registration successful! Your account is pending admin approval.');
           setUsername('');
           setEmail('');
           setPassword('');
+          setConfirmPassword('');
           // Don't close modal, show success message
         } else {
           onClose();
           setUsername('');
           setEmail('');
           setPassword('');
+          setConfirmPassword('');
         }
         setAuthState('idle');
         setProgress(0);
@@ -647,21 +666,48 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
           {/* Password field - only show if not using SAML */}
           {authMethod !== 'saml' && (
-            <div>
-              <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
-                Password
-              </label>
-              <SecurePasswordInput
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required={authMethod !== 'saml'}
-                disabled={loading}
-                minLength={mode === 'register' ? 6 : undefined}
-                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                placeholder="Enter your password"
-              />
-            </div>
+            <>
+              <div>
+                <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
+                  Password
+                </label>
+                <SecurePasswordInput
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required={authMethod !== 'saml'}
+                  disabled={loading}
+                  minLength={mode === 'register' ? 8 : undefined}
+                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                  showToggle
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  placeholder={mode === 'register' ? 'Min 8 chars, 1 upper, 1 number, 1 special' : 'Enter your password'}
+                />
+                {mode === 'register' && <PasswordCriteriaList password={password} />}
+              </div>
+              {mode === 'register' && (
+                <div>
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
+                    Confirm Password
+                  </label>
+                  <SecurePasswordInput
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    disabled={loading}
+                    minLength={8}
+                    autoComplete="new-password"
+                    showToggle
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    placeholder="Re-enter your password"
+                  />
+                  {confirmPassword.length > 0 && (
+                    <p className={`mt-1 text-xs ${password === confirmPassword ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                      {password === confirmPassword ? 'Passwords match' : 'Passwords do not match'}
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
           )}
 
           {mode === 'login' && authMethod !== 'saml' && (

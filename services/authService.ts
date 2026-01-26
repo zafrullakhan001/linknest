@@ -4,6 +4,8 @@ export interface User {
   email: string;
   is_admin?: boolean;
   is_approved?: boolean;
+  auth_source?: string;
+  display_name?: string | null;
   impersonating?: boolean;
   impersonating_admin_id?: number;
   impersonating_admin_username?: string;
@@ -40,12 +42,14 @@ export interface UserListItem {
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 export const authService = {
-  async register(username: string, email: string, password: string): Promise<{ pending: boolean; message?: string }> {
+  async register(username: string, email: string, password: string, confirmPassword?: string): Promise<{ pending: boolean; message?: string }> {
+    const body: Record<string, string> = { username, email, password };
+    if (confirmPassword !== undefined) body.confirm_password = confirmPassword;
     const response = await fetch(`${API_BASE}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ username, email, password })
+      body: JSON.stringify(body)
     });
 
     const data = await response.json();
@@ -93,6 +97,35 @@ export const authService = {
     } catch (error) {
       return null;
     }
+  },
+
+  /** Change own password (local accounts only). */
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    const response = await fetch(`${API_BASE}/auth/me/change-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to change password');
+    }
+  },
+
+  /** Update own profile (e.g. display name). Returns updated user. */
+  async updateProfile(params: { display_name?: string | null }): Promise<User> {
+    const response = await fetch(`${API_BASE}/auth/me`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(params)
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to update profile');
+    }
+    return data.user;
   },
 
   // Admin functions

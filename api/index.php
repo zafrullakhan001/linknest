@@ -59,6 +59,11 @@ if (empty($path)) {
 
 error_log("api/index.php: Final normalized path: $path");
 
+// Start session for auth and roles routes so cookies are available
+if ((strpos($path, '/auth') === 0 || strpos($path, '/roles') === 0) && session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 // Route to appropriate handler
 if ($path === '/') {
     http_response_code(404);

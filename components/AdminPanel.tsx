@@ -11,6 +11,8 @@ import { exportAllCategoriesToFile, parseSpaceExportObject, normalizeImportedTil
 import { Tile } from '../types';
 import { getCategoryArrangement } from '../services/storageService';
 import { SecurePasswordInput } from './SecurePasswordInput';
+import { PasswordCriteriaList } from './PasswordCriteriaList';
+import { validatePassword } from '../services/passwordValidation';
 import { accessService, TilePermission } from '../services/accessService';
 import { groupTilePermissionsService, GroupTilePermission } from '../services/groupTilePermissionsService';
 import { APP_TABS, getDisabledTabsFromSettings, setToSortedJsonArray, type AppTabId } from '../services/tabVisibilityService';
@@ -91,6 +93,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [allUsersPerPage, setAllUsersPerPage] = useState(25);
   const [resetPasswordModal, setResetPasswordModal] = useState<{ open: boolean; userId: number | null; username: string }>({ open: false, userId: null, username: '' });
   const [newPassword, setNewPassword] = useState('');
+  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
   const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
   const [editUserModal, setEditUserModal] = useState<{ open: boolean; userId: number | null; username: string; email: string; auth_source: string }>({ open: false, userId: null, username: '', email: '', auth_source: 'local' });
   const [editUsername, setEditUsername] = useState('');
@@ -121,6 +124,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [adminPasswordModal, setAdminPasswordModal] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [adminNewPassword, setAdminNewPassword] = useState('');
+  const [adminConfirmPassword, setAdminConfirmPassword] = useState('');
   const [adminPasswordLoading, setAdminPasswordLoading] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
@@ -166,6 +170,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [localUsername, setLocalUsername] = useState('');
   const [localEmail, setLocalEmail] = useState('');
   const [localPassword, setLocalPassword] = useState('');
+  const [localConfirmPassword, setLocalConfirmPassword] = useState('');
 
   // LDAP user search state
   const [ldapSearchTerm, setLdapSearchTerm] = useState('');
@@ -2475,9 +2480,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setError('Please enter a new password');
       return;
     }
-
-    if (newPassword.length < 6) {
-      setError('Password must be at least 6 characters');
+    const pwVal = validatePassword(newPassword);
+    if (!pwVal.valid) {
+      setError(pwVal.message || 'Invalid password');
+      return;
+    }
+    if (newPassword !== resetConfirmPassword) {
+      setError('Password and confirmation do not match');
       return;
     }
 
@@ -2487,6 +2496,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       await authService.resetUserPassword(resetPasswordModal.userId, newPassword);
       setResetPasswordModal({ open: false, userId: null, username: '' });
       setNewPassword('');
+      setResetConfirmPassword('');
       alert('Password reset successfully!');
     } catch (err: any) {
       setError(err.message || 'Failed to reset password');
@@ -2538,8 +2548,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       return;
     }
 
-    if (adminNewPassword.length < 6) {
-      setError('New password must be at least 6 characters');
+    const pwVal = validatePassword(adminNewPassword);
+    if (!pwVal.valid) {
+      setError(pwVal.message || 'Invalid password');
+      return;
+    }
+    if (adminNewPassword !== adminConfirmPassword) {
+      setError('New password and confirmation do not match');
       return;
     }
 
@@ -2550,6 +2565,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setAdminPasswordModal(false);
       setCurrentPassword('');
       setAdminNewPassword('');
+      setAdminConfirmPassword('');
       alert('Admin password changed successfully!');
     } catch (err: any) {
       setError(err.message || 'Failed to change admin password');
@@ -2588,8 +2604,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       return;
     }
 
-    if (localPassword.length < 6) {
-      setError('Password must be at least 6 characters');
+    const pwVal = validatePassword(localPassword);
+    if (!pwVal.valid) {
+      setError(pwVal.message || 'Invalid password');
+      return;
+    }
+    if (localPassword !== localConfirmPassword) {
+      setError('Password and confirmation do not match');
       return;
     }
 
@@ -2601,6 +2622,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setLocalUsername('');
       setLocalEmail('');
       setLocalPassword('');
+      setLocalConfirmPassword('');
       await loadData();
       alert('Local user created successfully. User is pending admin approval.');
     } catch (err: any) {
@@ -2754,6 +2776,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           setAdminPasswordModal(false);
           setCurrentPassword('');
           setAdminNewPassword('');
+          setAdminConfirmPassword('');
           setError('');
         }
       }
@@ -11002,9 +11025,28 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     <SecurePasswordInput
                       value={localPassword}
                       onChange={(e) => setLocalPassword(e.target.value)}
+                      showToggle
                       className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                      placeholder="Enter password (min 6 characters)"
+                      placeholder="Min 8 chars, 1 upper, 1 number, 1 special"
                     />
+                    <PasswordCriteriaList password={localPassword} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Confirm Password
+                    </label>
+                    <SecurePasswordInput
+                      value={localConfirmPassword}
+                      onChange={(e) => setLocalConfirmPassword(e.target.value)}
+                      showToggle
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                      placeholder="Re-enter password"
+                    />
+                    {localConfirmPassword.length > 0 && (
+                      <p className={`mt-1 text-xs ${localPassword === localConfirmPassword ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                        {localPassword === localConfirmPassword ? 'Passwords match' : 'Passwords do not match'}
+                      </p>
+                    )}
                   </div>
                 </div>
               ) : addUserType === 'saml' ? (
@@ -11109,7 +11151,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                 ) : (
                   <button
                     onClick={addUserType === 'local' ? handleAddLocalUser : handleAddLdapUser}
-                    disabled={addUserLoading || addUserType === 'saml' || (addUserType === 'local' ? (!localUsername.trim() || !localEmail.trim() || !localPassword.trim()) : !selectedLdapUser)}
+                    disabled={addUserLoading || addUserType === 'saml' || (addUserType === 'local' ? (!localUsername.trim() || !localEmail.trim() || !localPassword.trim() || !localConfirmPassword.trim() || !validatePassword(localPassword).valid || localPassword !== localConfirmPassword) : !selectedLdapUser)}
                     className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
                   >
                     {addUserLoading ? 'Adding...' : 'Add User'}
@@ -11133,6 +11175,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     setAdminPasswordModal(false);
                     setCurrentPassword('');
                     setAdminNewPassword('');
+                    setAdminConfirmPassword('');
                     setError('');
                   }}
                   className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
@@ -11158,6 +11201,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                 <SecurePasswordInput
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
+                  showToggle
                   className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
                   placeholder="Enter current password"
                 />
@@ -11170,9 +11214,28 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                 <SecurePasswordInput
                   value={adminNewPassword}
                   onChange={(e) => setAdminNewPassword(e.target.value)}
+                  showToggle
                   className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                  placeholder="Enter new password (min 6 characters)"
+                  placeholder="Min 8 chars, 1 upper, 1 number, 1 special"
                 />
+                <PasswordCriteriaList password={adminNewPassword} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Confirm New Password
+                </label>
+                <SecurePasswordInput
+                  value={adminConfirmPassword}
+                  onChange={(e) => setAdminConfirmPassword(e.target.value)}
+                  showToggle
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                  placeholder="Re-enter new password"
+                />
+                {adminConfirmPassword.length > 0 && (
+                  <p className={`mt-1 text-xs ${adminNewPassword === adminConfirmPassword ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {adminNewPassword === adminConfirmPassword ? 'Passwords match' : 'Passwords do not match'}
+                  </p>
+                )}
               </div>
 
               <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
@@ -11181,6 +11244,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                     setAdminPasswordModal(false);
                     setCurrentPassword('');
                     setAdminNewPassword('');
+                    setAdminConfirmPassword('');
                     setError('');
                   }}
                   className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
@@ -11189,7 +11253,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                 </button>
                 <button
                   onClick={handleChangeAdminPassword}
-                  disabled={adminPasswordLoading || !currentPassword.trim() || !adminNewPassword.trim() || adminNewPassword.length < 6}
+                  disabled={adminPasswordLoading || !currentPassword.trim() || !adminNewPassword.trim() || !adminConfirmPassword.trim() || !validatePassword(adminNewPassword).valid || adminNewPassword !== adminConfirmPassword}
                   className="flex-1 px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
                 >
                   {adminPasswordLoading ? 'Changing...' : 'Change Password'}
@@ -11312,6 +11376,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                   onClick={() => {
                     setResetPasswordModal({ open: false, userId: null, username: '' });
                     setNewPassword('');
+                    setResetConfirmPassword('');
                     setError('');
                   }}
                   className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
@@ -11334,14 +11399,31 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                   New Password for {resetPasswordModal.username}
                 </label>
-                <input
-                  type="password"
+                <SecurePasswordInput
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
+                  showToggle
                   className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
-                  placeholder="Enter new password (min 6 characters)"
-                  autoFocus
+                  placeholder="Min 8 chars, 1 upper, 1 number, 1 special"
                 />
+                <PasswordCriteriaList password={newPassword} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Confirm New Password
+                </label>
+                <SecurePasswordInput
+                  value={resetConfirmPassword}
+                  onChange={(e) => setResetConfirmPassword(e.target.value)}
+                  showToggle
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+                  placeholder="Re-enter new password"
+                />
+                {resetConfirmPassword.length > 0 && (
+                  <p className={`mt-1 text-xs ${newPassword === resetConfirmPassword ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {newPassword === resetConfirmPassword ? 'Passwords match' : 'Passwords do not match'}
+                  </p>
+                )}
               </div>
 
               <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
@@ -11349,6 +11431,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                   onClick={() => {
                     setResetPasswordModal({ open: false, userId: null, username: '' });
                     setNewPassword('');
+                    setResetConfirmPassword('');
                     setError('');
                   }}
                   className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
@@ -11357,7 +11440,7 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                 </button>
                 <button
                   onClick={handleResetPassword}
-                  disabled={resetPasswordLoading || !newPassword.trim() || newPassword.length < 6}
+                  disabled={resetPasswordLoading || !newPassword.trim() || !resetConfirmPassword.trim() || !validatePassword(newPassword).valid || newPassword !== resetConfirmPassword}
                   className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
                 >
                   {resetPasswordLoading ? 'Resetting...' : 'Reset Password'}

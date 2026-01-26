@@ -25,7 +25,10 @@ $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
 
 switch ($method) {
     case 'POST':
-        if ($path === '/register') {
+        if ($path === '/me/change-password') {
+            // Support POST for change-password (same as PUT) for better compatibility with cookies/session
+            handleChangeMyPassword();
+        } elseif ($path === '/register') {
             handleRegister();
         } elseif ($path === '/login') {
             handleLogin();
@@ -97,6 +100,10 @@ switch ($method) {
             handleUpdateUser((int)$matches[1]);
         } elseif ($path === '/change-admin-password') {
             handleChangeAdminPassword();
+        } elseif ($path === '/me') {
+            handleUpdateMyProfile();
+        } elseif ($path === '/me/change-password') {
+            handleChangeMyPassword();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -104,6 +111,23 @@ switch ($method) {
         
     default:
         sendJSON(['error' => 'Method not allowed'], 405);
+}
+
+// Password rules: at least 8 chars, 1 uppercase, 1 number, 1 special character. Returns error message or null if valid.
+function validatePasswordStrength($password) {
+    if (strlen($password) < 8) {
+        return 'Password must be at least 8 characters';
+    }
+    if (!preg_match('/[A-Z]/', $password)) {
+        return 'Password must contain at least one uppercase letter';
+    }
+    if (!preg_match('/[0-9]/', $password)) {
+        return 'Password must contain at least one number';
+    }
+    if (!preg_match('/[!@#$%^&*()_+\-=[\]{};\':"\\\\|,.<>\/?`~]/', $password)) {
+        return 'Password must contain at least one special character (!@#$%^&* etc.)';
+    }
+    return null;
 }
 
 // Helper function to escape LDAP filter values (for PHP < 5.6 compatibility)
@@ -161,8 +185,12 @@ function handleRegister() {
         sendJSON(['error' => 'Invalid email address'], 400);
     }
     
-    if (strlen($password) < 6) {
-        sendJSON(['error' => 'Password must be at least 6 characters'], 400);
+    $err = validatePasswordStrength($password);
+    if ($err !== null) {
+        sendJSON(['error' => $err], 400);
+    }
+    if (!empty($data['confirm_password']) && $data['password'] !== $data['confirm_password']) {
+        sendJSON(['error' => 'Password and confirmation do not match'], 400);
     }
     
     $db = getDB();
@@ -653,12 +681,12 @@ function handleLogin() {
     // Handle LDAP Success
     if ($ldapSuccess && $ldapUser) {
         // Check if user exists in DB (case-insensitive)
-        $stmt = $db->prepare('SELECT id, username, email, password_hash, is_admin, is_approved, COALESCE(is_disabled, 0) as is_disabled, auth_source FROM users WHERE LOWER(username) = LOWER(?)');
+        $stmt = $db->prepare('SELECT id, username, email, password_hash, is_admin, is_approved, COALESCE(is_disabled, 0) as is_disabled, auth_source, display_name FROM users WHERE LOWER(username) = LOWER(?)');
         $stmt->execute([$username]);
         $user = $stmt->fetch();
         
         if ($user) {
-            // User exists, update info if needed (e.g. email, auth_source)
+            // User exists, update info if needed (e.g. email, auth_source, display_name from LDAP)
             // We don't update password hash because we don't have the plain password to hash (we verified it via LDAP)
             // But we could potentially store a dummy hash or keep the old one.
             // Actually, if we want to allow local fallback for this user later, we'd need to know the password, but we don't want to store it if we can avoid it.
@@ -772,7 +800,8 @@ function handleLogin() {
                 'email' => $user['email'],
                 'is_admin' => (bool)$user['is_admin'],
                 'is_approved' => (bool)$user['is_approved'],
-                'source' => 'ldap'
+                'auth_source' => 'ldap',
+                'display_name' => $user['display_name'] ?? null
             ]
         ]);
         return;
@@ -787,7 +816,7 @@ function handleLogin() {
         sendJSON(['error' => $errorMessage], 401);
     }
     
-    $stmt = $db->prepare('SELECT id, username, email, password_hash, is_admin, is_approved, is_disabled, auth_source FROM users WHERE LOWER(username) = LOWER(?) OR email = ?');
+    $stmt = $db->prepare('SELECT id, username, email, password_hash, is_admin, is_approved, is_disabled, auth_source, display_name FROM users WHERE LOWER(username) = LOWER(?) OR email = ?');
     $stmt->execute([$username, $username]);
     $user = $stmt->fetch();
     
@@ -863,7 +892,8 @@ function handleLogin() {
             'email' => $user['email'],
             'is_admin' => (bool)$user['is_admin'],
             'is_approved' => (bool)$user['is_approved'],
-            'source' => 'local'
+            'auth_source' => $user['auth_source'] ?? 'local',
+            'display_name' => $user['display_name'] ?? null
         ]
     ]);
     } catch (Exception $e) {
@@ -1098,8 +1128,12 @@ function handleResetPassword($userId) {
     
     $data = getJSONInput();
     
-    if (!isset($data['new_password']) || strlen($data['new_password']) < 6) {
-        sendJSON(['error' => 'New password is required and must be at least 6 characters'], 400);
+    if (!isset($data['new_password'])) {
+        sendJSON(['error' => 'New password is required'], 400);
+    }
+    $err = validatePasswordStrength($data['new_password']);
+    if ($err !== null) {
+        sendJSON(['error' => $err], 400);
     }
     
     $db = getDB();
@@ -1301,9 +1335,9 @@ function handleChangeAdminPassword() {
     if (!isset($data['current_password']) || !isset($data['new_password'])) {
         sendJSON(['error' => 'Current password and new password are required'], 400);
     }
-    
-    if (strlen($data['new_password']) < 6) {
-        sendJSON(['error' => 'New password must be at least 6 characters'], 400);
+    $err = validatePasswordStrength($data['new_password']);
+    if ($err !== null) {
+        sendJSON(['error' => $err], 400);
     }
     
     $db = getDB();
@@ -1327,6 +1361,89 @@ function handleChangeAdminPassword() {
         sendJSON(['success' => true, 'message' => 'Admin password changed successfully']);
     } else {
         sendJSON(['error' => 'Failed to change password'], 500);
+    }
+}
+
+/**
+ * Authenticated user can change their own password (local accounts only).
+ */
+function handleChangeMyPassword() {
+    $user = getAuthenticatedUser();
+    if (!$user) {
+        sendJSON(['error' => 'Authentication required'], 401);
+        return;
+    }
+
+    $data = getJSONInput();
+    if (!isset($data['current_password']) || !isset($data['new_password'])) {
+        sendJSON(['error' => 'Current password and new password are required'], 400);
+        return;
+    }
+    $err = validatePasswordStrength($data['new_password']);
+    if ($err !== null) {
+        sendJSON(['error' => $err], 400);
+        return;
+    }
+
+    $db = getDB();
+    $stmt = $db->prepare('SELECT id, password_hash, auth_source FROM users WHERE id = ?');
+    $stmt->execute([$user['id']]);
+    $row = $stmt->fetch();
+    if (!$row) {
+        sendJSON(['error' => 'User not found'], 404);
+        return;
+    }
+    if (($row['auth_source'] ?? 'local') !== 'local') {
+        sendJSON(['error' => 'Password can only be changed for local accounts'], 403);
+        return;
+    }
+    if (!password_verify($data['current_password'], $row['password_hash'])) {
+        sendJSON(['error' => 'Current password is incorrect'], 401);
+        return;
+    }
+
+    $passwordHash = password_hash($data['new_password'], PASSWORD_DEFAULT);
+    $stmt = $db->prepare('UPDATE users SET password_hash = ? WHERE id = ?');
+    $stmt->execute([$passwordHash, $user['id']]);
+    if ($stmt->rowCount() > 0) {
+        sendJSON(['success' => true, 'message' => 'Password changed successfully']);
+    } else {
+        sendJSON(['error' => 'Failed to change password'], 500);
+    }
+}
+
+/**
+ * Authenticated user can update their own profile (e.g. display name).
+ */
+function handleUpdateMyProfile() {
+    $user = getAuthenticatedUser();
+    if (!$user) {
+        sendJSON(['error' => 'Authentication required'], 401);
+        return;
+    }
+
+    $data = getJSONInput();
+    $displayName = isset($data['display_name']) ? trim((string) $data['display_name']) : null;
+    // Allow empty string to clear display name
+    if ($displayName !== null && strlen($displayName) > 255) {
+        sendJSON(['error' => 'Display name must be 255 characters or less'], 400);
+        return;
+    }
+
+    $db = getDB();
+    $stmt = $db->prepare('UPDATE users SET display_name = ? WHERE id = ?');
+    $stmt->execute([$displayName === '' ? null : $displayName, $user['id']]);
+    if ($stmt->rowCount() >= 0) {
+        $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, auth_source, display_name FROM users WHERE id = ?');
+        $stmt->execute([$user['id']]);
+        $updated = $stmt->fetch();
+        if ($updated) {
+            $updated['is_admin'] = (bool)$updated['is_admin'];
+            $updated['is_approved'] = (bool)$updated['is_approved'];
+        }
+        sendJSON(['success' => true, 'message' => 'Profile updated', 'user' => $updated]);
+    } else {
+        sendJSON(['error' => 'Failed to update profile'], 500);
     }
 }
 
@@ -1896,9 +2013,9 @@ function handleAddLocalUser() {
     if (empty($password)) {
         sendJSON(['error' => 'Password is required'], 400);
     }
-    
-    if (strlen($password) < 6) {
-        sendJSON(['error' => 'Password must be at least 6 characters'], 400);
+    $err = validatePasswordStrength($password);
+    if ($err !== null) {
+        sendJSON(['error' => $err], 400);
     }
     
     $db = getDB();
@@ -2172,8 +2289,8 @@ function handleBulkImportLocalUsers() {
             continue; // Skip invalid emails
         }
         
-        // Validate password length
-        if (strlen($password) < 6) {
+        // Validate password strength (8+ chars, 1 upper, 1 number, 1 special)
+        if (validatePasswordStrength($password) !== null) {
             continue; // Skip invalid passwords
         }
         

@@ -7,6 +7,7 @@ interface AuthContextType {
   login: (username: string, password: string, authMethod?: 'local' | 'ldap', rememberMe?: boolean) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
   isAuthenticated: boolean;
 }
 
@@ -45,6 +46,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser(null);
   };
 
+  const refreshUser = async () => {
+    const u = await authService.getCurrentUser();
+    setUser(u);
+  };
+
   return (
     <AuthContext.Provider value={{
       user,
@@ -52,6 +58,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       login,
       register,
       logout,
+      refreshUser,
       isAuthenticated: !!user
     }}>
       {children}
