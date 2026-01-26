@@ -63,6 +63,11 @@ export const AddonsManagement: React.FC = () => {
     const [beaconUrlsText, setBeaconUrlsText] = useState('');
     const [setupActions, setSetupActions] = useState<{[key: string]: boolean}>({});
     const [setupResults, setSetupResults] = useState<{[key: string]: any}>({});
+    const [analyticsTab, setAnalyticsTab] = useState<'config' | 'backup-restore' | 'geo-resources'>('config');
+    const [backupLoading, setBackupLoading] = useState(false);
+    const [restoreLoading, setRestoreLoading] = useState(false);
+    const [restoreFile, setRestoreFile] = useState<File | null>(null);
+    const [restoreResult, setRestoreResult] = useState<{ success: boolean; message: string } | null>(null);
     
     // Load configuration on mount
     useEffect(() => {
@@ -324,6 +329,33 @@ export const AddonsManagement: React.FC = () => {
                             </div>
                         )}
                         
+                        {/* Tab navigation */}
+                        <div className="flex gap-1 border-b border-gray-200 bg-white rounded-t-lg overflow-hidden">
+                            <button
+                                type="button"
+                                onClick={() => setAnalyticsTab('config')}
+                                className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${analyticsTab === 'config' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                            >
+                                Configuration
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setAnalyticsTab('backup-restore')}
+                                className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${analyticsTab === 'backup-restore' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                            >
+                                Backup & Restore
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setAnalyticsTab('geo-resources')}
+                                className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${analyticsTab === 'geo-resources' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                            >
+                                Geo-location Resources
+                            </button>
+                        </div>
+                        
+                        {analyticsTab === 'config' && (
+                        <>
                         {/* PostgreSQL Connection */}
                         <div className="bg-white rounded-lg border border-gray-200 p-5">
                             <h3 className="text-lg font-semibold text-gray-800 mb-4">PostgreSQL Connection</h3>
@@ -702,7 +734,7 @@ export const AddonsManagement: React.FC = () => {
                             </div>
                         </div>
                         
-                        {/* Action Buttons */}
+                        {/* Action Buttons - only for Configuration tab */}
                         <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
                             <button
                                 onClick={() => {
@@ -722,6 +754,188 @@ export const AddonsManagement: React.FC = () => {
                                 {saving ? 'Saving...' : 'Save Configuration'}
                             </button>
                         </div>
+                        </>
+                        )}
+                        
+                        {analyticsTab === 'backup-restore' && (
+                        <div className="space-y-6">
+                            <div className="bg-white rounded-lg border border-gray-200 p-5">
+                                <h3 className="text-lg font-semibold text-gray-800 mb-4">Database Backup</h3>
+                                <p className="text-sm text-gray-600 mb-4">
+                                    Download a full backup of the Analytics PostgreSQL database as a ZIP file (contains a plain SQL dump). Use the same connection settings configured above.
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        setBackupLoading(true);
+                                        setError(null);
+                                        try {
+                                            const base = API_BASE.replace(/\/$/, '');
+                                            const url = `${base}/addons/performance-analytics/backup`;
+                                            const res = await fetch(url, { credentials: 'include' });
+                                            if (!res.ok) {
+                                                const data = await res.json().catch(() => ({}));
+                                                throw new Error(data.error || data.hint || `Backup failed (${res.status})`);
+                                            }
+                                            const blob = await res.blob();
+                                            const disp = res.headers.get('Content-Disposition');
+                                            const match = disp && /filename="?([^";\n]+)"?/.exec(disp);
+                                            const name = match ? match[1] : `analytics_backup_${new Date().toISOString().slice(0,10)}.zip`;
+                                            const a = document.createElement('a');
+                                            a.href = URL.createObjectURL(blob);
+                                            a.download = name;
+                                            a.click();
+                                            URL.revokeObjectURL(a.href);
+                                        } catch (err: any) {
+                                            setError(err.message);
+                                        } finally {
+                                            setBackupLoading(false);
+                                        }
+                                    }}
+                                    disabled={backupLoading || !config.pgHost || !config.pgDatabase}
+                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {backupLoading ? 'Creating backup...' : 'Download backup (ZIP)'}
+                                </button>
+                                <p className="text-xs text-gray-500 mt-2">
+                                    Backup uses PHP/PDO only (no <code className="bg-gray-100 px-1 rounded">pg_dump</code> required). Data-only SQL; run <code className="bg-gray-100 px-1 rounded">analytics/schema.sql</code> before restore if the database is empty.
+                                </p>
+                            </div>
+                            <div className="bg-white rounded-lg border border-gray-200 p-5">
+                                <h3 className="text-lg font-semibold text-gray-800 mb-4">Restore from backup</h3>
+                                <p className="text-sm text-gray-600 mb-4">
+                                    Upload a previously downloaded .sql or .zip backup to restore the analytics database. This will run the SQL against the configured database (existing data may be affected).
+                                </p>
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <label className="cursor-pointer">
+                                        <span className="inline-block px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700">Choose file</span>
+                                        <input
+                                            type="file"
+                                            accept=".sql,.zip"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                const f = e.target.files?.[0];
+                                                setRestoreFile(f || null);
+                                                setRestoreResult(null);
+                                                setError(null);
+                                            }}
+                                        />
+                                    </label>
+                                    {restoreFile && <span className="text-sm text-gray-600">{restoreFile.name}</span>}
+                                    <button
+                                        type="button"
+                                        onClick={async () => {
+                                            if (!restoreFile) return;
+                                            setRestoreLoading(true);
+                                            setError(null);
+                                            setRestoreResult(null);
+                                            try {
+                                                const form = new FormData();
+                                                form.append('file', restoreFile);
+                                                const base = API_BASE.replace(/\/$/, '');
+                                                const res = await fetch(`${base}/addons/performance-analytics/restore`, {
+                                                    method: 'POST',
+                                                    credentials: 'include',
+                                                    body: form
+                                                });
+                                                const data = await res.json().catch(() => ({}));
+                                                if (res.ok && data.success) {
+                                                    setRestoreResult({ success: true, message: data.message || 'Restored successfully.' });
+                                                    setRestoreFile(null);
+                                                    checkHealth();
+                                                } else {
+                                                    setRestoreResult({ success: false, message: data.error || 'Restore failed' });
+                                                }
+                                            } catch (err: any) {
+                                                setRestoreResult({ success: false, message: err.message });
+                                            } finally {
+                                                setRestoreLoading(false);
+                                            }
+                                        }}
+                                        disabled={restoreLoading || !restoreFile}
+                                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {restoreLoading ? 'Restoring...' : 'Restore'}
+                                    </button>
+                                </div>
+                                {restoreResult && (
+                                    <div className={`mt-3 p-3 rounded-lg text-sm ${restoreResult.success ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-700'}`}>
+                                        {restoreResult.message}
+                                    </div>
+                                )}
+                                <p className="text-xs text-gray-500 mt-2">
+                                    Restore uses <code className="bg-gray-100 px-1 rounded">psql</code> if available, otherwise runs the SQL via PHP (no CLI tools required).
+                                </p>
+                            </div>
+                        </div>
+                        )}
+                        
+                        {analyticsTab === 'geo-resources' && (
+                        <div className="space-y-6">
+                            <div className="bg-white rounded-lg border border-gray-200 p-5">
+                                <h3 className="text-lg font-semibold text-gray-800 mb-4">Geo-location free resources</h3>
+                                <p className="text-sm text-gray-600 mb-4">
+                                    Use these free datasets and tools for offline reverse geocoding (latitude/longitude → country, region, city). The <code className="bg-gray-100 px-1 rounded">location_lookup</code> table is used by the analytics worker to fill in city/region when only coordinates are available.
+                                </p>
+                                <ul className="space-y-3 text-sm">
+                                    <li className="flex flex-wrap items-start gap-2">
+                                        <strong className="text-gray-800">SimpleMaps World Cities (free, ~40k+ cities):</strong>
+                                        <a href="https://simplemaps.com/data/world-cities" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">simplemaps.com/data/world-cities</a>
+                                    </li>
+                                    <li className="flex flex-wrap items-start gap-2">
+                                        <strong className="text-gray-800">GeoNames country dumps (free):</strong>
+                                        <a href="https://www.geonames.org/export/" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">geonames.org/export/</a>
+                                        <span className="text-gray-500">— US: </span>
+                                        <a href="https://download.geonames.org/export/dump/US.zip" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">US.zip</a>
+                                    </li>
+                                    <li className="flex flex-wrap items-start gap-2">
+                                        <strong className="text-gray-800">MaxMind GeoLite2 (free, IP → location):</strong>
+                                        <a href="https://dev.maxmind.com/geoip/geolite2-free-geolocation-data" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">MaxMind GeoLite2</a>
+                                        <span className="text-gray-500">— place GeoLite2-City.mmdb in analytics/geoip/</span>
+                                    </li>
+                                    <li className="flex flex-wrap items-start gap-2">
+                                        <strong className="text-gray-800">ip-api.com (free tier, online):</strong>
+                                        <span className="text-gray-500">45 requests/minute fallback when GeoLite2 is not used</span>
+                                    </li>
+                                </ul>
+                            </div>
+                            <div className="bg-white rounded-lg border border-gray-200 p-5">
+                                <h3 className="text-lg font-semibold text-gray-800 mb-4">Populated geo region insertion (command line)</h3>
+                                <p className="text-sm text-gray-600 mb-3">
+                                    Run these from the <strong>project root</strong> (e.g. <code className="bg-gray-100 px-1 rounded">c:\xampp\htdocs\linknest</code>). Ensure Analytics PostgreSQL is configured in Add-ons first.
+                                </p>
+                                <div className="space-y-4 font-mono text-sm bg-gray-900 text-gray-100 rounded-lg p-4 overflow-x-auto">
+                                    <div>
+                                        <p className="text-gray-400 mb-1"># Small built-in sample</p>
+                                        <p className="text-green-300">php analytics/geoip/setup-location-lookup-table.php</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-400 mb-1"># World cities CSV (SimpleMaps) – replace path with your CSV</p>
+                                        <p className="text-green-300">php analytics/geoip/import-world-cities.php "C:\path\to\worldcities.csv"</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-400 mb-1"># GeoNames US.txt – full file, populated places only (~194k)</p>
+                                        <p className="text-green-300">php analytics/geoip/import-geonames-us.php "C:\...\US.txt" --truncate --populated --all</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-400 mb-1"># Sampled: 40k populated places (fast, good coverage)</p>
+                                        <p className="text-green-300">php analytics/geoip/import-geonames-us.php "C:\...\US.txt" --populated --limit=40000</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-400 mb-1"># Append 40k populated (no truncate)</p>
+                                        <p className="text-green-300">php analytics/geoip/import-geonames-us.php "C:\...\US.txt" --populated --limit=40000</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-400 mb-1"># Lighter: every 10th populated place (~19k)</p>
+                                        <p className="text-green-300">php analytics/geoip/import-geonames-us.php "C:\...\US.txt" --populated --sample=10 --limit=20000</p>
+                                    </div>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-3">
+                                    Options: <code className="bg-gray-100 px-1 rounded">--truncate</code> clear before import; <code className="bg-gray-100 px-1 rounded">--all</code> no row limit; <code className="bg-gray-100 px-1 rounded">--populated</code> only cities/towns; <code className="bg-gray-100 px-1 rounded">--limit=N</code> <code className="bg-gray-100 px-1 rounded">--sample=N</code> every Nth row.
+                                </p>
+                            </div>
+                        </div>
+                        )}
                     </div>
                 )}
             </div>

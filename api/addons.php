@@ -22,6 +22,8 @@ switch ($method) {
             handleGetAnalyticsConfig();
         } elseif ($path === '/performance-analytics/status' || $path === '/performance-analytics/status/') {
             handleCheckAnalyticsStatus();
+        } elseif ($path === '/performance-analytics/backup' || $path === '/performance-analytics/backup/') {
+            handleBackupAnalyticsDb();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -36,6 +38,8 @@ switch ($method) {
             handlePurgeDatabase();
         } elseif ($path === '/performance-analytics/download-geolite2' || $path === '/performance-analytics/download-geolite2/') {
             handleDownloadGeoLite2();
+        } elseif ($path === '/performance-analytics/restore' || $path === '/performance-analytics/restore/') {
+            handleRestoreAnalyticsDb();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -502,4 +506,394 @@ function handleDownloadGeoLite2() {
     } catch (Exception $e) {
         sendJSON(['error' => 'Download setup failed: ' . $e->getMessage()], 500);
     }
+}
+
+/**
+ * Get analytics PostgreSQL connection params from settings (for backup/restore).
+ * Decrypts password if stored in encrypted format.
+ *
+ * @return array{host:string,port:int,database:string,user:string,password:string}|null
+ */
+function getAnalyticsConnectionParams(): ?array {
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'performance_analytics_pg_%'");
+        $stmt->execute();
+        $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+        $host = $settings['performance_analytics_pg_host'] ?? '';
+        $database = $settings['performance_analytics_pg_database'] ?? '';
+        if (empty($host) || empty($database)) {
+            return null;
+        }
+        $password = $settings['performance_analytics_pg_password'] ?? '';
+        if (!empty($password) && strpos($password, '.') !== false && substr_count($password, '.') === 2) {
+            try {
+                $password = decryptPassword($password);
+            } catch (Exception $e) {
+                // keep as-is if decryption fails
+            }
+        }
+        return [
+            'host' => $host,
+            'port' => (int)($settings['performance_analytics_pg_port'] ?? 5432),
+            'database' => $database,
+            'user' => $settings['performance_analytics_pg_user'] ?? 'postgres',
+            'password' => $password
+        ];
+    } catch (Exception $e) {
+        return null;
+    }
+}
+
+/**
+ * Export analytics database to SQL file using PDO only (no pg_dump).
+ * Produces a data-only backup: TRUNCATE + INSERT for all public tables.
+ * Restore assumes the schema (e.g. analytics/schema.sql) is already applied.
+ */
+function exportAnalyticsDbViaPhp(PDO $pdo, string $sqlPath): void {
+    $fp = fopen($sqlPath, 'wb');
+    if (!$fp) {
+        throw new RuntimeException('Could not create SQL file');
+    }
+    fwrite($fp, "-- Linknest Performance Analytics backup (PHP export)\n");
+    fwrite($fp, "-- " . date('c') . "\n");
+    fwrite($fp, "-- Data-only: run analytics/schema.sql before restore if needed.\n\n");
+    fwrite($fp, "SET session_replication_role = replica;\n\n");
+    $tables = $pdo->query("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename")->fetchAll(PDO::FETCH_COLUMN);
+    if (empty($tables)) {
+        fwrite($fp, "-- No tables in public schema\n");
+        fwrite($fp, "SET session_replication_role = DEFAULT;\n");
+        fclose($fp);
+        return;
+    }
+    $truncateList = implode(', ', array_map(function ($t) { return '"' . str_replace('"', '""', $t) . '"'; }, $tables));
+    fwrite($fp, "TRUNCATE TABLE {$truncateList} CASCADE;\n\n");
+    $batchSize = 100;
+    foreach ($tables as $table) {
+        $safeTable = '"' . str_replace('"', '""', $table) . '"';
+        $cols = $pdo->query("SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = " . $pdo->quote($table) . " ORDER BY ordinal_position")->fetchAll(PDO::FETCH_COLUMN);
+        if (empty($cols)) {
+            continue;
+        }
+        $colList = implode(', ', array_map(function ($c) { return '"' . str_replace('"', '""', $c) . '"'; }, $cols));
+        $stmt = $pdo->query("SELECT * FROM {$safeTable}");
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($rows)) {
+            fwrite($fp, "-- Table {$table}: 0 rows\n");
+            continue;
+        }
+        $rowCount = 0;
+        $batches = array_chunk($rows, $batchSize);
+        foreach ($batches as $batch) {
+            $values = [];
+            foreach ($batch as $row) {
+                $v = [];
+                foreach ($cols as $col) {
+                    $val = $row[$col] ?? null;
+                    if ($val === null) {
+                        $v[] = 'NULL';
+                    } elseif (is_bool($val)) {
+                        $v[] = $val ? 'TRUE' : 'FALSE';
+                    } elseif (is_int($val) || (is_float($val) && (float)(int)$val === $val)) {
+                        $v[] = (string)(int)$val;
+                    } elseif (is_float($val)) {
+                        $v[] = str_replace(',', '.', (string)$val);
+                    } else {
+                        $v[] = $pdo->quote((string)$val);
+                    }
+                }
+                $values[] = '(' . implode(', ', $v) . ')';
+            }
+            fwrite($fp, "INSERT INTO {$safeTable} ({$colList}) VALUES " . implode(",\n ", $values) . ";\n");
+            $rowCount += count($batch);
+        }
+        fwrite($fp, "-- Table {$table}: {$rowCount} rows\n\n");
+    }
+    fwrite($fp, "SET session_replication_role = DEFAULT;\n");
+    fclose($fp);
+}
+
+/**
+ * Create analytics DB backup and send as ZIP download.
+ * Uses PHP/PDO export only (no pg_dump required).
+ */
+function handleBackupAnalyticsDb(): void {
+    $params = getAnalyticsConnectionParams();
+    if (!$params) {
+        sendJSON(['error' => 'Analytics database not configured. Set PostgreSQL connection in add-on settings.'], 400);
+        return;
+    }
+    $tmpDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'ln_backup_' . bin2hex(random_bytes(8));
+    if (!@mkdir($tmpDir, 0700, true)) {
+        sendJSON(['error' => 'Could not create temporary directory'], 500);
+        return;
+    }
+    $timestamp = date('Ymd-His');
+    $sqlFile = $tmpDir . DIRECTORY_SEPARATOR . 'analytics_backup_' . $timestamp . '.sql';
+    $zipFile = $tmpDir . DIRECTORY_SEPARATOR . 'analytics_backup_' . $timestamp . '.zip';
+    try {
+        $dsn = sprintf('pgsql:host=%s;port=%d;dbname=%s', $params['host'], $params['port'], $params['database']);
+        $pdo = new PDO($dsn, $params['user'], $params['password'], [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_TIMEOUT => 300,
+        ]);
+        exportAnalyticsDbViaPhp($pdo, $sqlFile);
+    } catch (Exception $e) {
+        if (is_dir($tmpDir)) {
+            if (file_exists($sqlFile)) @unlink($sqlFile);
+            @rmdir($tmpDir);
+        }
+        sendJSON(['error' => 'Export failed: ' . $e->getMessage()], 500);
+        return;
+    }
+    if (!file_exists($sqlFile) || filesize($sqlFile) === 0) {
+        @unlink($sqlFile);
+        @rmdir($tmpDir);
+        sendJSON(['error' => 'Export produced empty file'], 500);
+        return;
+    }
+    if (!class_exists('ZipArchive')) {
+        @unlink($sqlFile);
+        @rmdir($tmpDir);
+        sendJSON(['error' => 'Zip extension not available. Enable php zip extension.'], 500);
+        return;
+    }
+    $zip = new ZipArchive();
+    if ($zip->open($zipFile, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+        @unlink($sqlFile);
+        @rmdir($tmpDir);
+        sendJSON(['error' => 'Could not create zip file'], 500);
+        return;
+    }
+    $zip->addFile($sqlFile, basename($sqlFile));
+    $zip->close();
+    @unlink($sqlFile);
+    $zipName = 'analytics_backup_' . $timestamp . '.zip';
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . $zipName . '"');
+    header('Content-Length: ' . filesize($zipFile));
+    readfile($zipFile);
+    @unlink($zipFile);
+    @rmdir($tmpDir);
+    exit;
+}
+
+/**
+ * Restore analytics DB from uploaded SQL or ZIP containing SQL.
+ */
+function handleRestoreAnalyticsDb(): void {
+    $params = getAnalyticsConnectionParams();
+    if (!$params) {
+        sendJSON(['error' => 'Analytics database not configured.'], 400);
+        return;
+    }
+    $file = $_FILES['file'] ?? null;
+    if (!$file || ($file['error'] !== UPLOAD_ERR_OK)) {
+        $msg = 'No file uploaded or upload error.';
+        if ($file && $file['error'] !== UPLOAD_ERR_OK) {
+            $msg = 'Upload error: ' . ($file['error'] === UPLOAD_ERR_INI_SIZE ? 'file too large' : 'code ' . $file['error']);
+        }
+        sendJSON(['error' => $msg], 400);
+        return;
+    }
+    $tmpDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'ln_restore_' . bin2hex(random_bytes(8));
+    if (!@mkdir($tmpDir, 0700, true)) {
+        sendJSON(['error' => 'Could not create temporary directory'], 500);
+        return;
+    }
+    $sqlFile = null;
+    $name = $file['name'];
+    $path = $file['tmp_name'];
+    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+    if ($ext === 'zip') {
+        $zip = new ZipArchive();
+        if ($zip->open($path) !== true) {
+            @rmdir($tmpDir);
+            sendJSON(['error' => 'Invalid zip file'], 400);
+            return;
+        }
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $entry = $zip->getNameIndex($i);
+            if (preg_match('/\.sql$/i', $entry)) {
+                $zip->extractTo($tmpDir, $entry);
+                $sqlFile = $tmpDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $entry);
+                break;
+            }
+        }
+        $zip->close();
+        if (!$sqlFile || !file_exists($sqlFile)) {
+            @rmdir($tmpDir);
+            sendJSON(['error' => 'Zip file does not contain a .sql file'], 400);
+            return;
+        }
+    } elseif ($ext === 'sql') {
+        $dest = $tmpDir . DIRECTORY_SEPARATOR . basename($name);
+        if (!@move_uploaded_file($path, $dest)) {
+            @rmdir($tmpDir);
+            sendJSON(['error' => 'Failed to save uploaded file'], 500);
+            return;
+        }
+        $sqlFile = $dest;
+    } else {
+        @rmdir($tmpDir);
+        sendJSON(['error' => 'Upload a .sql or .zip file containing a .sql backup'], 400);
+        return;
+    }
+    $usePhpRestore = false;
+    $psql = 'psql';
+    if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+        $psql = 'psql.exe';
+    }
+    $descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+    $env = $_ENV;
+    $env['PGPASSWORD'] = $params['password'];
+    $cmd = [
+        $psql,
+        '-h', $params['host'],
+        '-p', (string)$params['port'],
+        '-U', $params['user'],
+        '-d', $params['database'],
+        '-f', $sqlFile
+    ];
+    $proc = @proc_open($cmd, $descriptors, $pipes, null, $env);
+    if (!is_resource($proc)) {
+        $usePhpRestore = true;
+    } else {
+        $stderr = stream_get_contents($pipes[2] ?? null);
+        fclose($pipes[1] ?? null);
+        fclose($pipes[2] ?? null);
+        $code = proc_close($proc);
+        if ($code !== 0) {
+            $usePhpRestore = true;
+        }
+    }
+    if ($usePhpRestore) {
+        try {
+            $dsn = sprintf('pgsql:host=%s;port=%d;dbname=%s', $params['host'], $params['port'], $params['database']);
+            $pdo = new PDO($dsn, $params['user'], $params['password'], [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_TIMEOUT => 600,
+            ]);
+            $sql = file_get_contents($sqlFile);
+            if ($sql === false) {
+                throw new RuntimeException('Could not read SQL file');
+            }
+            foreach (restoreSplitSql($sql) as $statement) {
+                if (trim($statement) !== '') {
+                    $pdo->exec($statement);
+                }
+            }
+        } catch (Exception $e) {
+            if (is_dir($tmpDir)) {
+                array_map('unlink', glob($tmpDir . DIRECTORY_SEPARATOR . '*'));
+                @rmdir($tmpDir);
+            }
+            sendJSON(['error' => 'Restore failed (PHP): ' . $e->getMessage()], 500);
+            return;
+        }
+        if (is_dir($tmpDir)) {
+            array_map('unlink', glob($tmpDir . DIRECTORY_SEPARATOR . '*'));
+            @rmdir($tmpDir);
+        }
+        sendJSON(['success' => true, 'message' => 'Database restored successfully (PHP).']);
+        return;
+    }
+    if (is_dir($tmpDir)) {
+        array_map('unlink', glob($tmpDir . DIRECTORY_SEPARATOR . '*'));
+        @rmdir($tmpDir);
+    }
+    sendJSON(['success' => true, 'message' => 'Database restored successfully.']);
+}
+
+/**
+ * Split SQL content into single statements for PHP restore.
+ * Handles our PHP export format (statements end with ;\n).
+ */
+function restoreSplitSql(string $sql): array {
+    $statements = [];
+    $current = '';
+    $len = strlen($sql);
+    $i = 0;
+    $inSingle = false;
+    $inDouble = false;
+    $escape = false;
+    $lineComment = false;
+    $blockComment = false;
+    $blockEnd = 0;
+    while ($i < $len) {
+        $c = $sql[$i];
+        if ($blockComment) {
+            if ($i + 1 < $len && $c === '*' && $sql[$i + 1] === '/') {
+                $blockComment = false;
+                $i += 2;
+                continue;
+            }
+            $i++;
+            continue;
+        }
+        if ($lineComment) {
+            if ($c === "\n") {
+                $lineComment = false;
+            }
+            $i++;
+            continue;
+        }
+        if ($i + 1 < $len && $c === '-' && $sql[$i + 1] === '-') {
+            $lineComment = true;
+            $i += 2;
+            continue;
+        }
+        if ($i + 1 < $len && $c === '/' && $sql[$i + 1] === '*') {
+            $blockComment = true;
+            $i += 2;
+            continue;
+        }
+        if ($inSingle || $inDouble) {
+            if ($escape) {
+                $escape = false;
+                $i++;
+                continue;
+            }
+            if ($c === '\\' && $inSingle) {
+                $escape = true;
+                $i++;
+                continue;
+            }
+            if (($c === "'" && $inSingle) || ($c === '"' && $inDouble)) {
+                $inSingle = false;
+                $inDouble = false;
+                $i++;
+                continue;
+            }
+            $i++;
+            continue;
+        }
+        if ($c === "'" && !$inDouble) {
+            $inSingle = true;
+            $i++;
+            continue;
+        }
+        if ($c === '"' && !$inSingle) {
+            $inDouble = true;
+            $i++;
+            continue;
+        }
+        if ($c === ';' && ($i + 1 >= $len || $sql[$i + 1] === "\n" || $sql[$i + 1] === "\r")) {
+            $statements[] = trim($current);
+            $current = '';
+            $i++;
+            if ($i < $len && $sql[$i] === "\r") $i++;
+            if ($i < $len && $sql[$i] === "\n") $i++;
+            continue;
+        }
+        $current .= $c;
+        $i++;
+    }
+    if (trim($current) !== '') {
+        $statements[] = trim($current);
+    }
+    return $statements;
 }
