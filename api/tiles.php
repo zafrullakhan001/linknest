@@ -5137,13 +5137,15 @@ function handleGetTileInfo($tileId) {
         sendJSON(['error' => 'Tile not found'], 404);
     }
     
-    // Check granular permission for viewing tile info (deny unless explicitly true)
-    // Skip this check for public tiles - anyone can view info on public tiles
+    // Check granular permission for viewing tile info.
+    // Allow: public tiles, creator, admin, or anyone who can see the tile (e.g. allowed_users for private).
+    // Deny only when user is a tile admin and can_view_tile_info is explicitly false.
     if ($user && !$user['is_admin'] && $tileVisibility !== 'public') {
         $isCreator = isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id'];
         if (!$isCreator) {
             $canViewInfo = canTileAdminPerformAction($user['id'], $tileId, 'view_tile_info', $db);
-            if ($canViewInfo !== true) {
+            // null = not a tile admin (e.g. shared via allowed_users) → allow if they can see the tile ($isTileVisible)
+            if ($canViewInfo === false) {
                 sendJSON(['error' => 'You do not have permission to view tile information'], 403);
             }
         }
