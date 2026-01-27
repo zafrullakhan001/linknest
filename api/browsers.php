@@ -9,24 +9,46 @@
 require_once __DIR__ . '/config.php';
 
 
-// Ensure database tables exist
+// Ensure database tables exist (SQLite and MySQL/MariaDB compatible)
 function ensureBrowsersTable($db) {
     try {
-        $db->exec('CREATE TABLE IF NOT EXISTS browser_list (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            browser_id TEXT NOT NULL UNIQUE,
-            browser_name TEXT NOT NULL,
-            browser_path TEXT,
-            browser_version TEXT,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        )');
-        
-        $db->exec('CREATE TABLE IF NOT EXISTS browser_list_metadata (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
-            last_updated INTEGER NOT NULL,
-            source TEXT NOT NULL
-        )');
+        $conn = function_exists('_conn') ? _conn($db) : $db;
+        $isSqlite = method_exists($conn, 'getDatabasePlatform')
+            && $conn->getDatabasePlatform()->getName() === 'sqlite';
+
+        if ($isSqlite) {
+            $db->exec('CREATE TABLE IF NOT EXISTS browser_list (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                browser_id TEXT NOT NULL UNIQUE,
+                browser_name TEXT NOT NULL,
+                browser_path TEXT,
+                browser_version TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )');
+            $db->exec('CREATE TABLE IF NOT EXISTS browser_list_metadata (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                last_updated INTEGER NOT NULL,
+                source TEXT NOT NULL
+            )');
+        } else {
+            // MySQL / MariaDB
+            $db->exec("CREATE TABLE IF NOT EXISTS browser_list (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                browser_id VARCHAR(255) NOT NULL,
+                browser_name VARCHAR(255) NOT NULL,
+                browser_path TEXT,
+                browser_version VARCHAR(255),
+                created_at INT NOT NULL,
+                updated_at INT NOT NULL,
+                UNIQUE KEY uk_browser_id (browser_id)
+            )");
+            $db->exec("CREATE TABLE IF NOT EXISTS browser_list_metadata (
+                id INT PRIMARY KEY,
+                last_updated INT NOT NULL,
+                source VARCHAR(255) NOT NULL
+            )");
+        }
     } catch (Exception $e) {
         error_log('Failed to create browser tables: ' . $e->getMessage());
         // Don't throw - tables might already exist

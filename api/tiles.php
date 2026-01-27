@@ -118,13 +118,19 @@ switch ($method) {
         sendJSON(['error' => 'Method not allowed'], 405);
 }
 
+/** Quoted column name for reserved word "group" (MySQL/MariaDB require backticks). */
+function tilesQuoteGroup($db) {
+    return method_exists($db, 'quoteIdentifier') ? $db->quoteIdentifier('group') : '`group`';
+}
+
 function handleGetTiles() {
     try {
         $user = getAuthenticatedUser();
         $db = getDB();
     
-    // Check if guest access is enabled
-    $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'guest_access_enabled'");
+    // Check if guest access is enabled (quote "key" for MySQL/MariaDB reserved word)
+    $keyCol = method_exists($db, 'quoteIdentifier') ? $db->quoteIdentifier('key') : '`key`';
+    $stmt = $db->prepare("SELECT value FROM settings WHERE " . $keyCol . " = 'guest_access_enabled'");
     $stmt->execute();
     $guestAccessSetting = $stmt->fetchColumn();
     $guestAccessEnabled = ($guestAccessSetting === null || $guestAccessSetting === '1'); // Default to enabled if not set
@@ -263,20 +269,48 @@ function handleGetTiles() {
         $granularPermissions = null;
         
         if ($user) {
-            // Admins have full access to everything
+            // Admins have full access to everything (including browser selection per tile/link)
             if ($user['is_admin']) {
                 $canView = true;
                 $canEdit = true;
                 $canDelete = true;
+                $granularPermissions = [
+                    'canAddLinks' => true,
+                    'canAddSections' => true,
+                    'canAddTabs' => true,
+                    'canEditLinks' => true,
+                    'canDeleteLinks' => true,
+                    'canDeleteSections' => true,
+                    'canDeleteTabs' => true,
+                    'canChangeVisibility' => true,
+                    'canChangeBrowser' => true,
+                    'canCloneTile' => true,
+                    'canViewTileInfo' => true,
+                    'canEditTile' => true,
+                ];
             } else {
                 // Check if user is the creator of the tile
                 $isCreator = isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id'];
                 
                 if ($isCreator) {
-                    // Creators have full access to their own tiles
+                    // Creators have full access to their own tiles (including browser selection)
                     $canView = true;
                     $canEdit = true;
                     $canDelete = true;
+                    $granularPermissions = [
+                        'canAddLinks' => true,
+                        'canAddSections' => true,
+                        'canAddTabs' => true,
+                        'canEditLinks' => true,
+                        'canDeleteLinks' => true,
+                        'canDeleteSections' => true,
+                        'canDeleteTabs' => true,
+                        'canChangeVisibility' => true,
+                        'canChangeBrowser' => true,
+                        'canCloneTile' => true,
+                        'canViewTileInfo' => true,
+                        'canEditTile' => true,
+                    ];
                 } elseif (isset($tilePermissions[$row['id']])) {
                     // Use batched permissions
                     $permission = $tilePermissions[$row['id']];
@@ -784,8 +818,9 @@ function handleGetTile($tileId) {
     $user = getAuthenticatedUser();
     $db = getDB();
     
-    // Check if guest access is enabled
-    $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'guest_access_enabled'");
+    // Check if guest access is enabled (quote "key" for MySQL/MariaDB reserved word)
+    $keyCol = method_exists($db, 'quoteIdentifier') ? $db->quoteIdentifier('key') : '`key`';
+    $stmt = $db->prepare("SELECT value FROM settings WHERE " . $keyCol . " = 'guest_access_enabled'");
     $stmt->execute();
     $guestAccessSetting = $stmt->fetchColumn();
     $guestAccessEnabled = ($guestAccessSetting === null || $guestAccessSetting === '1'); // Default to enabled if not set
@@ -849,10 +884,18 @@ function handleGetTile($tileId) {
         $isFavorite = $favStmt->fetch() !== false;
     }
     
-    // Get user tile permissions for the current user
+    // Get user tile permissions for the current user (match list response: canEdit + granular)
     $canView = true; // Default: everyone can view (unless explicitly denied)
     $canEdit = false; // Default: no edit access (unless explicitly granted)
     $canDelete = false; // Default: no delete access (unless explicitly granted)
+    $granularPermissions = null;
+    
+    $fullGranular = [
+        'canAddLinks' => true, 'canAddSections' => true, 'canAddTabs' => true,
+        'canEditLinks' => true, 'canDeleteLinks' => true, 'canDeleteSections' => true, 'canDeleteTabs' => true,
+        'canChangeVisibility' => true, 'canChangeBrowser' => true, 'canCloneTile' => true,
+        'canViewTileInfo' => true, 'canEditTile' => true,
+    ];
     
     if ($user) {
         // Admins have full access to everything
@@ -860,6 +903,7 @@ function handleGetTile($tileId) {
             $canView = true;
             $canEdit = true;
             $canDelete = true;
+            $granularPermissions = $fullGranular;
         } else {
             // Check if user is the creator of the tile
             $isCreator = isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id'];
@@ -869,9 +913,10 @@ function handleGetTile($tileId) {
                 $canView = true;
                 $canEdit = true;
                 $canDelete = true;
+                $granularPermissions = $fullGranular;
             } else {
-                // Check for explicit permissions
-                $permStmt = $db->prepare('SELECT can_view, can_edit, can_delete FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+                // Check for explicit permissions (include granular columns for tile admins)
+                $permStmt = $db->prepare('SELECT can_view, can_edit, can_delete, can_add_links, can_add_sections, can_add_tabs, can_edit_links, can_delete_links, can_delete_sections, can_delete_tabs, can_change_visibility, can_change_browser, can_clone_tile, can_view_tile_info, can_edit_tile FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
                 $permStmt->execute([$user['id'], $row['id']]);
                 $permission = $permStmt->fetch();
                 
@@ -879,6 +924,27 @@ function handleGetTile($tileId) {
                     $canView = (bool)$permission['can_view'];
                     $canEdit = (bool)$permission['can_edit'];
                     $canDelete = (bool)$permission['can_delete'];
+                    if ($canEdit) {
+                        $granularPerms = getTileAdminPermissions($user['id'], $row['id'], $db);
+                        if ($granularPerms) {
+                            $granularPermissions = $granularPerms;
+                        } elseif (isset($permission['can_add_links'])) {
+                            $granularPermissions = [
+                                'canAddLinks' => (bool)($permission['can_add_links'] ?? true),
+                                'canAddSections' => (bool)($permission['can_add_sections'] ?? true),
+                                'canAddTabs' => (bool)($permission['can_add_tabs'] ?? true),
+                                'canEditLinks' => (bool)($permission['can_edit_links'] ?? true),
+                                'canDeleteLinks' => (bool)($permission['can_delete_links'] ?? false),
+                                'canDeleteSections' => (bool)($permission['can_delete_sections'] ?? false),
+                                'canDeleteTabs' => (bool)($permission['can_delete_tabs'] ?? false),
+                                'canChangeVisibility' => (bool)($permission['can_change_visibility'] ?? false),
+                                'canChangeBrowser' => (bool)($permission['can_change_browser'] ?? false),
+                                'canCloneTile' => (bool)($permission['can_clone_tile'] ?? false),
+                                'canViewTileInfo' => (bool)($permission['can_view_tile_info'] ?? true),
+                                'canEditTile' => (bool)($permission['can_edit_tile'] ?? true)
+                            ];
+                        }
+                    }
                 }
                 // If no permission record exists, use defaults (view only)
             }
@@ -922,6 +988,18 @@ function handleGetTile($tileId) {
         'canView' => $canView,
         'canEdit' => $canEdit,
         'canDelete' => $canDelete,
+        'canAddLinks' => $granularPermissions ? $granularPermissions['canAddLinks'] : null,
+        'canAddSections' => $granularPermissions ? $granularPermissions['canAddSections'] : null,
+        'canAddTabs' => $granularPermissions ? $granularPermissions['canAddTabs'] : null,
+        'canEditLinks' => $granularPermissions ? $granularPermissions['canEditLinks'] : null,
+        'canDeleteLinks' => $granularPermissions ? $granularPermissions['canDeleteLinks'] : null,
+        'canDeleteSections' => $granularPermissions ? $granularPermissions['canDeleteSections'] : null,
+        'canDeleteTabs' => $granularPermissions ? $granularPermissions['canDeleteTabs'] : null,
+        'canChangeVisibility' => $granularPermissions ? $granularPermissions['canChangeVisibility'] : null,
+        'canChangeBrowser' => $granularPermissions ? $granularPermissions['canChangeBrowser'] : null,
+        'canCloneTile' => $granularPermissions ? $granularPermissions['canCloneTile'] : null,
+        'canViewTileInfo' => $granularPermissions ? $granularPermissions['canViewTileInfo'] : null,
+        'canEditTile' => $granularPermissions ? $granularPermissions['canEditTile'] : null,
         'visibleFrom' => $row['visible_from'] ?? null,
         'expiresAt' => $row['expires_at'] ?? null,
         'tileBackgroundColor' => !empty($row['tile_background_color']) ? $row['tile_background_color'] : null,
@@ -1238,7 +1316,8 @@ function handleCreateTile() {
     $tileBorderRadius = array_key_exists('tileBorderRadius', $data) && $data['tileBorderRadius'] !== null ? (int)$data['tileBorderRadius'] : null;
     $tileTextColor = isset($data['tileTextColor']) && $data['tileTextColor'] !== null && $data['tileTextColor'] !== '' ? $data['tileTextColor'] : null;
     
-    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $g = tilesQuoteGroup($db);
+    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, ' . $g . ', visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     
     if (!$stmt->execute([
         $tileId,
@@ -1513,6 +1592,9 @@ function handleUpdateTile($tileId) {
         
         error_log('Error in handleUpdateTile: ' . $e->getMessage());
         sendJSON(['error' => $e->getMessage()], $code);
+    } catch (\Throwable $e) {
+        error_log('Error in handleUpdateTile (Throwable): ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+        sendJSON(['error' => $e->getMessage(), 'hint' => 'Check server error log for details'], 500);
     }
 }
 
@@ -1707,7 +1789,8 @@ function handleCloneTile($tileId) {
         $tileBorderRadius = isset($originalTile['tile_border_radius']) && $originalTile['tile_border_radius'] !== null ? (int)$originalTile['tile_border_radius'] : null;
         $tileTextColor = !empty($originalTile['tile_text_color']) ? $originalTile['tile_text_color'] : null;
         
-        $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $g = tilesQuoteGroup($db);
+        $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, ' . $g . ', visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         if (!$insertStmt->execute([
             $newTileId,
@@ -1968,14 +2051,15 @@ function handleCloneCategory($categoryName) {
     // Log the attempt for debugging
     error_log('Clone category attempt: User ' . $user['id'] . ' (' . $user['username'] . '), is_admin=' . ($user['is_admin'] ? 'true' : 'false') . ', category="' . $categoryName . '"');
     
+    $g = tilesQuoteGroup($db);
     // Get all tiles in this category (exclude deleted and archived tiles)
-    $stmt = $db->prepare('SELECT * FROM tiles WHERE "group" = ? AND deleted_at IS NULL AND archived_at IS NULL ORDER BY position ASC');
+    $stmt = $db->prepare('SELECT * FROM tiles WHERE ' . $g . ' = ? AND deleted_at IS NULL AND archived_at IS NULL ORDER BY position ASC');
     $stmt->execute([$categoryName]);
     $tiles = $stmt->fetchAll();
     
     if (empty($tiles)) {
         // Log for debugging - check if category exists with different encoding
-        $debugStmt = $db->prepare('SELECT DISTINCT "group" FROM tiles WHERE "group" LIKE ? LIMIT 10');
+        $debugStmt = $db->prepare('SELECT DISTINCT ' . $g . ' FROM tiles WHERE ' . $g . ' LIKE ? LIMIT 10');
         $searchPattern = '%' . str_replace([' ', '%'], ['%', '%%'], $categoryName) . '%';
         $debugStmt->execute([$searchPattern]);
         $similarCategories = $debugStmt->fetchAll(PDO::FETCH_COLUMN);
@@ -2021,7 +2105,7 @@ function handleCloneCategory($categoryName) {
     $counter = 1;
     $finalCategoryName = $newCategoryName;
     while (true) {
-        $checkStmt = $db->prepare('SELECT COUNT(*) FROM tiles WHERE "group" = ?');
+        $checkStmt = $db->prepare('SELECT COUNT(*) FROM tiles WHERE ' . $g . ' = ?');
         $checkStmt->execute([$finalCategoryName]);
         $count = $checkStmt->fetchColumn();
         
@@ -2071,7 +2155,7 @@ function handleCloneCategory($categoryName) {
             $tileBorderRadius = isset($originalTile['tile_border_radius']) && $originalTile['tile_border_radius'] !== null ? (int)$originalTile['tile_border_radius'] : null;
             $tileTextColor = !empty($originalTile['tile_text_color']) ? $originalTile['tile_text_color'] : null;
             
-            $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, ' . $g . ', visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             
             if (!$insertStmt->execute([
                 $newTileId,
@@ -2456,8 +2540,9 @@ function handleBulkImport() {
                 // Generate unique tile ID
                 $tileId = uniqid('tile_', true);
                 
+                $g = tilesQuoteGroup($db);
                 // Insert tile
-                $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, ' . $g . ', position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                 
                 if (!$stmt->execute([
                     $tileId,
@@ -2620,12 +2705,11 @@ function handleToggleLinkFavorite($linkId) {
 function handleArchiveCategory($categoryName) {
     $user = requireAuth();
     $db = getDB();
-    
-    // Decode URL-encoded category name
+    $g = tilesQuoteGroup($db);
     $categoryName = urldecode($categoryName);
     
     // Get all tiles in this category that are not already archived or deleted
-    $stmt = $db->prepare('SELECT id, user_id FROM tiles WHERE "group" = ? AND deleted_at IS NULL AND archived_at IS NULL');
+    $stmt = $db->prepare('SELECT id, user_id FROM tiles WHERE ' . $g . ' = ? AND deleted_at IS NULL AND archived_at IS NULL');
     $stmt->execute([$categoryName]);
     $tiles = $stmt->fetchAll();
     
@@ -2688,12 +2772,11 @@ function handleArchiveCategory($categoryName) {
 function handleUnarchiveCategory($categoryName) {
     $user = requireAuth();
     $db = getDB();
-    
-    // Decode URL-encoded category name
+    $g = tilesQuoteGroup($db);
     $categoryName = urldecode($categoryName);
     
     // Get all archived tiles in this category
-    $stmt = $db->prepare('SELECT id, user_id FROM tiles WHERE "group" = ? AND archived_at IS NOT NULL AND deleted_at IS NULL');
+    $stmt = $db->prepare('SELECT id, user_id FROM tiles WHERE ' . $g . ' = ? AND archived_at IS NOT NULL AND deleted_at IS NULL');
     $stmt->execute([$categoryName]);
     $tiles = $stmt->fetchAll();
     
@@ -2754,12 +2837,11 @@ function handleUnarchiveCategory($categoryName) {
 function handleToggleCategoryFavorite($categoryName) {
     $user = requireAuth();
     $db = getDB();
-    
-    // Decode URL-encoded category name
+    $g = tilesQuoteGroup($db);
     $categoryName = urldecode($categoryName);
     
     // Get all tiles in this category that the user can view
-    $stmt = $db->prepare('SELECT id FROM tiles WHERE "group" = ? ORDER BY position ASC');
+    $stmt = $db->prepare('SELECT id FROM tiles WHERE ' . $g . ' = ? ORDER BY position ASC');
     $stmt->execute([$categoryName]);
     $tiles = $stmt->fetchAll();
     
@@ -3168,7 +3250,7 @@ function handleGetArchive() {
         // Ensure tabs table has position column (migration)
         $hasPosition = false;
         try {
-            $tabColumns = $db->query("PRAGMA table_info(tabs)")->fetchAll(PDO::FETCH_ASSOC);
+            $tabColumns = function_exists('getTableColumns') ? getTableColumns($db, 'tabs') : $db->query("PRAGMA table_info(tabs)")->fetchAll(PDO::FETCH_ASSOC);
             foreach ($tabColumns as $col) {
                 if (strtolower($col['name']) === 'position') {
                     $hasPosition = true;
@@ -3186,7 +3268,7 @@ function handleGetArchive() {
         
         // Check if archived_at column exists
         try {
-            $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll(PDO::FETCH_ASSOC);
+            $columns = function_exists('getTableColumns') ? getTableColumns($db, 'tiles') : $db->query("PRAGMA table_info(tiles)")->fetchAll(PDO::FETCH_ASSOC);
             $hasArchivedAt = false;
             foreach ($columns as $column) {
                 if (strtolower($column['name']) === 'archived_at') {
@@ -3582,18 +3664,15 @@ function handlePermanentDeleteTile($tileId) {
 function handlePermanentDeleteCategory($categoryName) {
     $user = requireAuth();
     $db = getDB();
-    
-    // Decode URL-encoded category name
+    $g = tilesQuoteGroup($db);
     $categoryName = urldecode($categoryName);
     
     // Get soft-deleted tiles in this category
-    // Users can only see their own deleted tiles, admins can see all
     if ($user['is_admin']) {
-        $stmt = $db->prepare('SELECT id, user_id FROM tiles WHERE deleted_at IS NOT NULL AND "group" = ?');
+        $stmt = $db->prepare('SELECT id, user_id FROM tiles WHERE deleted_at IS NOT NULL AND ' . $g . ' = ?');
         $stmt->execute([$categoryName]);
     } else {
-        // Regular users can only see their own deleted tiles in this category
-        $stmt = $db->prepare('SELECT id, user_id FROM tiles WHERE deleted_at IS NOT NULL AND "group" = ? AND user_id = ?');
+        $stmt = $db->prepare('SELECT id, user_id FROM tiles WHERE deleted_at IS NOT NULL AND ' . $g . ' = ? AND user_id = ?');
         $stmt->execute([$categoryName, $user['id']]);
     }
     $deletedTiles = $stmt->fetchAll();
@@ -3602,14 +3681,11 @@ function handlePermanentDeleteCategory($categoryName) {
         sendJSON(['error' => 'No tiles found in this category in recycle bin'], 404);
     }
     
-    // Permanently delete all tiles in this category from recycle bin
-    // Cascade will delete sections, links, and tabs
     if ($user['is_admin']) {
-        $deleteStmt = $db->prepare('DELETE FROM tiles WHERE deleted_at IS NOT NULL AND "group" = ?');
+        $deleteStmt = $db->prepare('DELETE FROM tiles WHERE deleted_at IS NOT NULL AND ' . $g . ' = ?');
         $deleteStmt->execute([$categoryName]);
     } else {
-        // Regular users can only delete their own tiles in this category
-        $deleteStmt = $db->prepare('DELETE FROM tiles WHERE deleted_at IS NOT NULL AND "group" = ? AND user_id = ?');
+        $deleteStmt = $db->prepare('DELETE FROM tiles WHERE deleted_at IS NOT NULL AND ' . $g . ' = ? AND user_id = ?');
         $deleteStmt->execute([$categoryName, $user['id']]);
     }
     $purgedCount = $deleteStmt->rowCount();
@@ -3963,11 +4039,11 @@ function saveVersion($tileId, $db, $userId, $summary = null, $isTemp = false) {
         $stmt = $db->prepare('INSERT INTO tile_versions (tile_id, version_number, created_at, user_id, tile_data, changelog_summary, is_temp) VALUES (?, ?, ?, ?, ?, ?, ?)');
         $stmt->execute([$tileId, $nextVer, time(), $userId, $jsonData, $summary, $isTemp ? 1 : 0]);
         
-        $versionId = $db->lastInsertId();
+        $versionId = $db->lastInsertId('tile_versions');
 
-        // Cleanup: Keep max 10 UNLOCKED, NON-TEMP versions
+        // Cleanup: Keep max 10 UNLOCKED, NON-TEMP versions (MySQL/MariaDB require non-negative LIMIT)
         if (!$isTemp) {
-            $stmt = $db->prepare('SELECT id FROM tile_versions WHERE tile_id = ? AND is_locked = 0 AND is_temp = 0 ORDER BY created_at DESC LIMIT -1 OFFSET 10');
+            $stmt = $db->prepare('SELECT id FROM tile_versions WHERE tile_id = ? AND is_locked = 0 AND is_temp = 0 ORDER BY created_at DESC LIMIT 999999 OFFSET 10');
             $stmt->execute([$tileId]);
             $idsToDelete = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
@@ -4149,8 +4225,9 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         $tileBorderRadius = array_key_exists('tileBorderRadius', $data) && $data['tileBorderRadius'] !== null ? (int)$data['tileBorderRadius'] : null;
         $tileTextColor = isset($data['tileTextColor']) && $data['tileTextColor'] !== null && $data['tileTextColor'] !== '' ? $data['tileTextColor'] : null;
         
-        // Update tile
-        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, allowed_groups = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ?, tile_background_color = ?, tile_gradient_enabled = ?, tile_gradient_colors = ?, tile_gradient_color_positions = ?, tile_gradient_direction = ?, tile_gradient_type = ?, tile_border_radius = ?, tile_text_color = ? WHERE id = ?');
+        $g = tilesQuoteGroup($db);
+        // Update tile (group column quoted for MySQL/MariaDB)
+        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, ' . $g . ' = ?, visibility = ?, allowed_users = ?, allowed_groups = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ?, tile_background_color = ?, tile_gradient_enabled = ?, tile_gradient_colors = ?, tile_gradient_color_positions = ?, tile_gradient_direction = ?, tile_gradient_type = ?, tile_border_radius = ?, tile_text_color = ? WHERE id = ?');
         $stmt->execute([
             $data['title'] ?? '',
             $data['description'] ?? '',
@@ -5157,17 +5234,25 @@ function handleGetTileInfo($tileId) {
     $canDelete = false;
     $granularPermissions = null;
     
+    $fullGranular = [
+        'canAddLinks' => true, 'canAddSections' => true, 'canAddTabs' => true,
+        'canEditLinks' => true, 'canDeleteLinks' => true, 'canDeleteSections' => true, 'canDeleteTabs' => true,
+        'canChangeVisibility' => true, 'canChangeBrowser' => true, 'canCloneTile' => true,
+        'canViewTileInfo' => true, 'canEditTile' => true,
+    ];
     if ($user) {
         if ($user['is_admin']) {
             $canView = true;
             $canEdit = true;
             $canDelete = true;
+            $granularPermissions = $fullGranular;
         } else {
             $isCreator = isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id'];
             if ($isCreator) {
                 $canView = true;
                 $canEdit = true;
                 $canDelete = true;
+                $granularPermissions = $fullGranular;
             } else {
                 $permStmt = $db->prepare('SELECT can_view, can_edit, can_delete, can_add_links, can_add_sections, can_add_tabs, can_edit_links, can_delete_links, can_delete_sections, can_delete_tabs, can_change_visibility, can_change_browser, can_clone_tile, can_view_tile_info, can_edit_tile FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
                 $permStmt->execute([$user['id'], $tileId]);
@@ -5293,13 +5378,9 @@ function handleGetTileInfo($tileId) {
         'tileAdmins' => $tileAdmins
     ];
     
-    // Add granular permissions for current user if they are a tile admin
     if ($granularPermissions) {
         $response['granularPermissions'] = $granularPermissions;
     }
-    if ($granularPermissions) {
-        $response['granularPermissions'] = $granularPermissions;
-    }
-    
+
     sendJSON($response);
 }

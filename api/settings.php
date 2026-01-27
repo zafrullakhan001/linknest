@@ -118,7 +118,8 @@ function normalizeLogoUrl($url) {
 function handleGetSettings() {
     // Settings are public (for display), but only admins can update
     $db = getDB();
-    $stmt = $db->prepare('SELECT key, value FROM settings');
+    $keyCol = method_exists($db, 'quoteIdentifier') ? $db->quoteIdentifier('key') : '`key`';
+    $stmt = $db->prepare('SELECT ' . $keyCol . ', value FROM settings');
     $stmt->execute();
     $rows = $stmt->fetchAll();
     
@@ -152,7 +153,8 @@ function handleGetSettings() {
             // Password is plain text - encrypt it automatically and update the database
             try {
                 $encryptedPassword = encryptPassword($password);
-                $updateStmt = $db->prepare('UPDATE settings SET value = ?, updated_at = ? WHERE key = ?');
+                $keyCol = method_exists($db, 'quoteIdentifier') ? $db->quoteIdentifier('key') : '`key`';
+                $updateStmt = $db->prepare('UPDATE settings SET value = ?, updated_at = ? WHERE ' . $keyCol . ' = ?');
                 $updateStmt->execute([$encryptedPassword, time(), 'ldap_bind_password']);
                 // Return the decrypted version for display (frontend will encrypt when saving)
                 $settings['ldap_bind_password'] = $password;
@@ -247,8 +249,12 @@ function handleUploadLogo() {
     
     // Update settings with the new logo URL (stored without prefix)
     $db = getDB();
-    $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
-    $stmt->execute(['logo_image', $url, time()]);
+    if (function_exists('dbUpsert')) {
+        dbUpsert($db, 'settings', ['key' => 'logo_image', 'value' => $url, 'updated_at' => time()], ['key']);
+    } else {
+        $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+        $stmt->execute(['logo_image', $url, time()]);
+    }
     
     // Return normalized URL for current environment
     $normalizedUrl = normalizeLogoUrl($url);
@@ -334,8 +340,12 @@ function handleUploadFavicon() {
     
     // Update settings with the new favicon URL (stored without prefix)
     $db = getDB();
-    $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
-    $stmt->execute(['favicon', $url, time()]);
+    if (function_exists('dbUpsert')) {
+        dbUpsert($db, 'settings', ['key' => 'favicon', 'value' => $url, 'updated_at' => time()], ['key']);
+    } else {
+        $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+        $stmt->execute(['favicon', $url, time()]);
+    }
     
     // Return normalized URL for current environment
     $normalizedUrl = normalizeLogoUrl($url);
@@ -471,8 +481,12 @@ function handleUpdateSettings() {
             }
             
             // Store setting in database
-            $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
-            $stmt->execute([$key, $value, time()]);
+            if (function_exists('dbUpsert')) {
+                dbUpsert($db, 'settings', ['key' => $key, 'value' => $value, 'updated_at' => time()], ['key']);
+            } else {
+                $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+                $stmt->execute([$key, $value, time()]);
+            }
             
             // Log SAML setting changes for debugging
             if ($key === 'saml_enabled') {
@@ -663,8 +677,12 @@ function handleUpdateUserPreferences() {
                     $preferenceValue = (string)$value;
                 }
                 
-                $stmt = $db->prepare('INSERT OR REPLACE INTO user_preferences (user_id, preference_key, preference_value, updated_at) VALUES (?, ?, ?, ?)');
-                $stmt->execute([$userId, $key, $preferenceValue, time()]);
+                if (function_exists('dbUpsert')) {
+                    dbUpsert($db, 'user_preferences', ['user_id' => $userId, 'preference_key' => $key, 'preference_value' => $preferenceValue, 'updated_at' => time()], ['user_id', 'preference_key']);
+                } else {
+                    $stmt = $db->prepare('INSERT OR REPLACE INTO user_preferences (user_id, preference_key, preference_value, updated_at) VALUES (?, ?, ?, ?)');
+                    $stmt->execute([$userId, $key, $preferenceValue, time()]);
+                }
             }
             
             $db->commit();
@@ -699,12 +717,17 @@ function handleToggleNotifications() {
     requireAuth();
     $db = getDB();
     try {
-        $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'notifications_paused'");
+        $keyCol = method_exists($db, 'quoteIdentifier') ? $db->quoteIdentifier('key') : '`key`';
+        $stmt = $db->prepare("SELECT value FROM settings WHERE " . $keyCol . " = 'notifications_paused'");
         $stmt->execute();
         $current = $stmt->fetchColumn();
         $newState = ($current === '1' || $current === 'true') ? '0' : '1';
-        $stmt = $db->prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('notifications_paused', ?, ?)");
-        $stmt->execute([$newState, time()]);
+        if (function_exists('dbUpsert')) {
+            dbUpsert($db, 'settings', ['key' => 'notifications_paused', 'value' => $newState, 'updated_at' => time()], ['key']);
+        } else {
+            $stmt = $db->prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('notifications_paused', ?, ?)");
+            $stmt->execute([$newState, time()]);
+        }
         $isPaused = $newState === '1';
         sendJSON(['success' => true, 'notifications_paused' => $isPaused, 'message' => $isPaused ? 'Email notifications paused' : 'Email notifications resumed']);
     } catch (Exception $e) {

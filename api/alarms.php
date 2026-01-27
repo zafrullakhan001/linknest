@@ -90,7 +90,7 @@ function handleCreateAlarm() {
     $stmt = $db->prepare('INSERT INTO user_alarms (user_id, time, label, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)');
     $stmt->execute([(int)$user['id'], $time, $label, $enabled, $now, $now]);
 
-    $id = (int)$db->lastInsertId();
+    $id = (int)$db->lastInsertId('user_alarms');
     sendJSON([
         'alarm' => [
             'id' => $id,

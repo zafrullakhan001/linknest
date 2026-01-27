@@ -30,6 +30,7 @@ data/
 .env.*.local
 .env.production
 .env.development
+config/database.local.php
 
 # User uploads
 uploads/

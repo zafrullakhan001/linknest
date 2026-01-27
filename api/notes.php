@@ -126,7 +126,7 @@ function handleCreateNote($db, $userId) {
         $stmt = $db->prepare('INSERT INTO user_notes (user_id, tab_name, content, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)');
         $stmt->execute([$userId, $tabName, $content, $newPosition, $now, $now]);
         
-        $noteId = $db->lastInsertId();
+        $noteId = $db->lastInsertId('user_notes');
         
         sendJSON([
             'success' => true,

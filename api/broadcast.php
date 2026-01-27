@@ -108,7 +108,7 @@ function handleCreateBroadcast($db) {
         $stmt = $db->prepare('INSERT INTO broadcast_messages (message, font_family, font_size, color, scroll_speed, is_active, expires_at, created_at, updated_at, created_by) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)');
         $stmt->execute([$message, $fontFamily, $fontSize, $color, $scrollSpeed, $expiresAt, $now, $now, $userId]);
         
-        $broadcastId = $db->lastInsertId();
+        $broadcastId = $db->lastInsertId('broadcast_messages');
         
         sendJSON([
             'success' => true,

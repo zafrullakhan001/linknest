@@ -28,9 +28,14 @@ try {
     
     $db->beginTransaction();
     
+    $now = time();
     foreach ($settings as $key => $value) {
-        $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
-        $stmt->execute([$key, $value, time()]);
+        if (function_exists('dbUpsert')) {
+            dbUpsert($db, 'settings', ['key' => $key, 'value' => $value, 'updated_at' => $now], ['key']);
+        } else {
+            $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+            $stmt->execute([$key, $value, $now]);
+        }
     }
     
     $db->commit();

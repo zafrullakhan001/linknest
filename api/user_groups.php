@@ -286,7 +286,7 @@ function handleCreateUserGroup() {
             $currentTime
         ]);
         
-        $groupId = (int)$db->lastInsertId();
+        $groupId = (int)$db->lastInsertId('user_groups');
         
         sendJSON([
             'success' => true,

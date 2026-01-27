@@ -54,17 +54,22 @@ function handleGetMessages() {
         $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 100;
         $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : 0;
         $recipientId = isset($_GET['recipient_id']) ? (int)$_GET['recipient_id'] : null;
-        $limit = min($limit, 500); // Cap at 500 messages
-        
+        $limit = min(max(0, $limit), 500); // Cap at 500 messages, ensure non-negative
+        $offset = max(0, $offset);
+
+        // Use literal LIMIT/OFFSET (already validated as int) – bound params can fail on MySQL/Doctrine
+        $sqlLimit = (string)(int)$limit;
+        $sqlOffset = (string)(int)$offset;
+
         // Fetch messages: public messages (recipient_user_id IS NULL) OR messages sent to/from current user
         if ($recipientId !== null) {
             // Direct messages between current user and recipient
-            $stmt = $db->prepare('SELECT * FROM chat_messages WHERE (user_id = ? AND recipient_user_id = ?) OR (user_id = ? AND recipient_user_id = ?) OR (recipient_user_id IS NULL) ORDER BY created_at DESC LIMIT ? OFFSET ?');
-            $stmt->execute([$user['id'], $recipientId, $recipientId, $user['id'], $limit, $offset]);
+            $stmt = $db->prepare('SELECT * FROM chat_messages WHERE (user_id = ? AND recipient_user_id = ?) OR (user_id = ? AND recipient_user_id = ?) OR (recipient_user_id IS NULL) ORDER BY created_at DESC LIMIT ' . $sqlLimit . ' OFFSET ' . $sqlOffset);
+            $stmt->execute([$user['id'], $recipientId, $recipientId, $user['id']]);
         } else {
             // All public messages or messages sent to/from current user
-            $stmt = $db->prepare('SELECT * FROM chat_messages WHERE recipient_user_id IS NULL OR user_id = ? OR recipient_user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?');
-            $stmt->execute([$user['id'], $user['id'], $limit, $offset]);
+            $stmt = $db->prepare('SELECT * FROM chat_messages WHERE recipient_user_id IS NULL OR user_id = ? OR recipient_user_id = ? ORDER BY created_at DESC LIMIT ' . $sqlLimit . ' OFFSET ' . $sqlOffset);
+            $stmt->execute([$user['id'], $user['id']]);
         }
         $messages = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
@@ -172,7 +177,7 @@ function handleCreateMessage() {
             $createdAt
         ]);
         
-        $messageId = $db->lastInsertId();
+        $messageId = $db->lastInsertId('chat_messages');
         
         // Fetch created message
         $stmt = $db->prepare('SELECT * FROM chat_messages WHERE id = ?');

@@ -214,7 +214,7 @@ function handleRegister() {
     $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, created_at) VALUES (?, ?, ?, 0, 0, ?, ?)');
     
     if ($stmt->execute([$username, $email, $passwordHash, 'local', time()])) {
-        $userId = $db->lastInsertId();
+        $userId = $db->lastInsertId('users');
         
         // Don't auto-login, user needs approval
         sendJSON([
@@ -246,9 +246,9 @@ function handleLogin() {
     $rememberMe = isset($data['remember_me']) ? (bool)$data['remember_me'] : false;
     
     $db = getDB();
-    
+    $keyCol = method_exists($db, 'quoteIdentifier') ? $db->quoteIdentifier('key') : '`key`';
     // Check maintenance mode first
-    $stmt = $db->prepare("SELECT key, value FROM settings WHERE key IN ('maintenance_enabled', 'ldap_enabled') OR key LIKE 'ldap_%'");
+    $stmt = $db->prepare("SELECT " . $keyCol . ", value FROM settings WHERE " . $keyCol . " IN ('maintenance_enabled', 'ldap_enabled') OR " . $keyCol . " LIKE 'ldap_%'");
     $stmt->execute();
     $settings = [];
     foreach ($stmt->fetchAll() as $row) {
@@ -726,7 +726,7 @@ function handleLogin() {
             $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, created_at) VALUES (?, ?, ?, 0, 0, ?, ?)');
             if ($stmt->execute([$username, $ldapUser['email'], $passwordHash, 'ldap', time()])) {
                 $user = [
-                    'id' => $db->lastInsertId(),
+                    'id' => $db->lastInsertId('users'),
                     'username' => $username,
                     'email' => $ldapUser['email'],
                     'is_admin' => false,
@@ -1745,7 +1745,8 @@ function handleSearchLdapUsers() {
         
         // Load LDAP settings from database (same approach as handleLogin)
         $db = getDB();
-        $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'ldap_%'");
+        $keyCol = method_exists($db, 'quoteIdentifier') ? $db->quoteIdentifier('key') : '`key`';
+        $stmt = $db->prepare("SELECT " . $keyCol . ", value FROM settings WHERE " . $keyCol . " LIKE 'ldap_%'");
         $stmt->execute();
         $settings = [];
         foreach ($stmt->fetchAll() as $row) {
@@ -2039,7 +2040,7 @@ function handleAddLocalUser() {
     $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, created_at) VALUES (?, ?, ?, 0, 0, ?, ?)');
     
     if ($stmt->execute([$username, $email, $passwordHash, 'local', time()])) {
-        $userId = $db->lastInsertId();
+        $userId = $db->lastInsertId('users');
         sendJSON([
             'success' => true,
             'message' => 'Local user created successfully. User is pending admin approval.',
@@ -2083,7 +2084,8 @@ function handleAddLdapUser() {
     
     // Verify user exists in LDAP - load settings from database
     $db = getDB();
-    $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'ldap_%'");
+    $keyCol = method_exists($db, 'quoteIdentifier') ? $db->quoteIdentifier('key') : '`key`';
+    $stmt = $db->prepare("SELECT " . $keyCol . ", value FROM settings WHERE " . $keyCol . " LIKE 'ldap_%'");
     $stmt->execute();
     $settings = [];
     foreach ($stmt->fetchAll() as $row) {
@@ -2201,7 +2203,7 @@ function handleAddLdapUser() {
         $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, created_at) VALUES (?, ?, ?, 0, 0, ?, ?)');
         
         if ($stmt->execute([$username, $email, $passwordHash, 'ldap', time()])) {
-            $userId = $db->lastInsertId();
+            $userId = $db->lastInsertId('users');
             sendJSON([
                 'success' => true,
                 'message' => 'LDAP user added successfully. User is pending admin approval.',
@@ -2400,7 +2402,8 @@ function handleBulkImportLdapUsers() {
     
     // Validate LDAP is enabled
     $db = getDB();
-    $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'ldap_%'");
+    $keyCol = method_exists($db, 'quoteIdentifier') ? $db->quoteIdentifier('key') : '`key`';
+    $stmt = $db->prepare("SELECT " . $keyCol . ", value FROM settings WHERE " . $keyCol . " LIKE 'ldap_%'");
     $stmt->execute();
     $settings = [];
     foreach ($stmt->fetchAll() as $row) {
@@ -2897,7 +2900,8 @@ function handleStopImpersonation() {
 function checkUserExistsInLdap($username) {
     try {
         $db = getDB();
-        $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'ldap_%'");
+        $keyCol = method_exists($db, 'quoteIdentifier') ? $db->quoteIdentifier('key') : '`key`';
+        $stmt = $db->prepare("SELECT " . $keyCol . ", value FROM settings WHERE " . $keyCol . " LIKE 'ldap_%'");
         $stmt->execute();
         $settings = [];
         foreach ($stmt->fetchAll() as $row) {
@@ -3066,7 +3070,8 @@ function detectUserAuthSource($user, $ldapSettings = null) {
         // Check if email domain matches LDAP domain
         if ($ldapSettings === null) {
             $db = getDB();
-            $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'ldap_%'");
+            $keyCol = method_exists($db, 'quoteIdentifier') ? $db->quoteIdentifier('key') : '`key`';
+            $stmt = $db->prepare("SELECT " . $keyCol . ", value FROM settings WHERE " . $keyCol . " LIKE 'ldap_%'");
             $stmt->execute();
             $ldapSettings = [];
             foreach ($stmt->fetchAll() as $row) {
@@ -3128,7 +3133,8 @@ function handleAutoDetectAuthSources() {
         }
         
         // Check if LDAP is enabled to avoid unnecessary checks
-        $stmt = $db->prepare("SELECT key, value FROM settings WHERE key IN ('ldap_enabled') OR key LIKE 'ldap_%'");
+        $keyCol = method_exists($db, 'quoteIdentifier') ? $db->quoteIdentifier('key') : '`key`';
+        $stmt = $db->prepare("SELECT " . $keyCol . ", value FROM settings WHERE " . $keyCol . " IN ('ldap_enabled') OR " . $keyCol . " LIKE 'ldap_%'");
         $stmt->execute();
         $settings = [];
         foreach ($stmt->fetchAll() as $row) {

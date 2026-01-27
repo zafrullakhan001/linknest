@@ -4,6 +4,22 @@ import { Tile } from '../types';
 // This ensures the app works with both HTTP and HTTPS automatically
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
+const DEFAULT_EMOJI = '📁';
+
+/**
+ * Return a safe emoji for display. Fixes "????" and replacement chars from encoding issues.
+ */
+export function sanitizeEmojiForDisplay(emoji: string | null | undefined, fallback = DEFAULT_EMOJI): string {
+  if (emoji == null || typeof emoji !== 'string') return fallback;
+  const t = emoji.trim();
+  if (!t) return fallback;
+  // Question marks (common when UTF-8 is decoded as Latin-1)
+  if (/^\?+$/.test(t)) return fallback;
+  // Unicode replacement character U+FFFD
+  if (/^\uFFFD+$/.test(t)) return fallback;
+  return t;
+}
+
 // Transform API response to Tile format
 const transformTile = (apiTile: any): Tile => {
   return {
@@ -12,7 +28,7 @@ const transformTile = (apiTile: any): Tile => {
     title: apiTile.title,
     description: apiTile.description || '',
     htmlContent: apiTile.htmlContent || '',
-    emoji: apiTile.emoji || '📁',
+    emoji: sanitizeEmojiForDisplay(apiTile.emoji) || DEFAULT_EMOJI,
     themeColor: (apiTile.themeColor || 'blue') as any,
     group: apiTile.group || 'General',
     createdAt: apiTile.createdAt || Date.now(),

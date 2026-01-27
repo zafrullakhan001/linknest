@@ -4,11 +4,15 @@
     "type": "project",
     "require": {
         "php": ">=8.0",
+        "doctrine/dbal": "^3.6",
         "onelogin/php-saml": "^4.0"
     },
     "autoload": {
         "psr-4": {
             "LinkNest\\": "config/"
         }
+    },
+    "config": {
+        "secure-http": true
     }
 }

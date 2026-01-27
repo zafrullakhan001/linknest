@@ -76,7 +76,7 @@ function handleCreateTimezone() {
     $createdAt = time();
     $stmt->execute([(int)$user['id'], $name, $offsetMinutes, $createdAt]);
 
-    $id = (int)$db->lastInsertId();
+    $id = (int)$db->lastInsertId('user_custom_timezones');
     sendJSON([
         'timezone' => [
             'id' => $id,

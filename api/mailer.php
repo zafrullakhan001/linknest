@@ -38,7 +38,8 @@ function getSMTPConfig() {
     
     // Fallback to legacy settings table (for backward compatibility during migration)
     error_log("[EMAIL] No active SMTP server found in smtp_servers table, checking legacy settings");
-    $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'smtp_%'");
+    $keyCol = method_exists($db, 'quoteIdentifier') ? $db->quoteIdentifier('key') : '`key`';
+    $stmt = $db->prepare("SELECT " . $keyCol . ", value FROM settings WHERE " . $keyCol . " LIKE 'smtp_%'");
     $stmt->execute();
     $rows = $stmt->fetchAll();
     

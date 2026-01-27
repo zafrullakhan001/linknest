@@ -201,7 +201,7 @@ function handleClone() {
             $createdBy
         ]);
         
-        $cloneId = $db->lastInsertId();
+        $cloneId = $db->lastInsertId('clones');
         
         // Start clone in background
         // Use a simple approach: fork the process or use async execution

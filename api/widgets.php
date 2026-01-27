@@ -316,7 +316,7 @@ function handleCreateWidget() {
         
         sendJSON([
             'success' => true,
-            'id' => (int)$db->lastInsertId(),
+            'id' => (int)$db->lastInsertId('custom_widgets'),
             'widgetId' => $data['widgetId']
         ]);
     } catch (PDOException $e) {

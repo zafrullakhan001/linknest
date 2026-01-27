@@ -264,7 +264,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
     const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, allowedUsers: number[], notes: string, tooltip: string, browser: string, richTextContent: string }>>({});
 
-    // Available browsers from BrowserLauncher API
+    // Default browser options when API/extension list is empty (so dropdown always has choices)
+    const DEFAULT_BROWSER_OPTIONS = ['chrome-stable-local', 'chrome-stable', 'chrome-beta', 'chrome-dev', 'edge-stable-local', 'edge-stable', 'edge-beta', 'edge-dev', 'firefox'];
+    // Available browsers from API or extension
     const [availableBrowsers, setAvailableBrowsers] = useState<string[]>([]);
 
     // State for browser selection menu (keyed by link ID)
@@ -864,12 +866,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     }, [isEditing, isAuthenticated, tile.canEdit]);
 
-    // Load available browsers from database when feature is enabled
+    // Load available browsers from database when feature is enabled; always show at least default options
     useEffect(() => {
         if (settings.browser_specific_links_enabled === '1') {
             const loadBrowsersFromDatabase = async () => {
                 try {
-                    const API_BASE = (import.meta as any).env?.VITE_API_BASE || '/api';
+                    const API_BASE = resolveApiBase();
                     const response = await fetch(`${API_BASE}/browsers`, {
                         credentials: 'include',
                     });
@@ -878,22 +880,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         const data = await response.json();
                         if (data.success && data.browsers && data.browsers.length > 0) {
                             const browserIds = data.browsers.map((b: any) => b.browser_id);
-                            console.log('Loaded browsers from database:', browserIds);
                             setAvailableBrowsers(browserIds);
-                        } else {
-                            console.log('No browsers found in database, using fallback');
-                            // Fallback to BrowserLauncher static list if database is empty
-                            if (typeof (window as any).BrowserLauncher !== 'undefined') {
-                                const BrowserLauncher = (window as any).BrowserLauncher;
-                                const browsers = BrowserLauncher.getBrowsers();
-                                if (browsers && browsers.length > 0) {
-                                    setAvailableBrowsers(browsers);
-                                }
-                            }
+                            return;
                         }
                     }
+                    // Database empty or API error: try extension, then default list so dropdown always has options
+                    if (typeof (window as any).BrowserLauncher !== 'undefined') {
+                        const BrowserLauncher = (window as any).BrowserLauncher;
+                        const browsers = BrowserLauncher.getBrowsers && BrowserLauncher.getBrowsers();
+                        if (browsers && Array.isArray(browsers) && browsers.length > 0) {
+                            setAvailableBrowsers(browsers);
+                            return;
+                        }
+                    }
+                    setAvailableBrowsers(DEFAULT_BROWSER_OPTIONS);
                 } catch {
-                    // Browsers from database optional; ignore errors
+                    setAvailableBrowsers(DEFAULT_BROWSER_OPTIONS);
                 }
             };
 
@@ -4169,7 +4171,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     </div>
                                                                                 )}
                                                                                 {/* Admin controls - only show when user has canChangeBrowser */}
-                                                                                {isAuthenticated && tile.canEdit && tile.canChangeBrowser === true && (
+                                                                                {isAuthenticated && tile.canEdit && tile.canChangeBrowser !== false && (
                                                                                     <>
                                                                                         <div className="border-t border-slate-200 dark:border-slate-700 my-1"></div>
                                                                                         <label className="flex items-center gap-2 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-300 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded">
@@ -4309,7 +4311,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     </button>
 
                                                                     {/* Browser selection button - only show when extension is enabled, user is authenticated, and has canChangeBrowser */}
-                                                                    {settings.browser_specific_links_enabled === '1' && isAuthenticated && tile.canChangeBrowser === true && typeof window !== 'undefined' && (window as any).BrowserLauncher && (
+                                                                    {settings.browser_specific_links_enabled === '1' && isAuthenticated && tile.canChangeBrowser !== false && typeof window !== 'undefined' && (window as any).BrowserLauncher && (
                                                                         <button
                                                                             onClick={(e) => {
                                                                                 e.preventDefault();
@@ -5053,7 +5055,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 </div>
 
                                 {/* Browser Selection - Only show if feature is enabled and user has canChangeBrowser */}
-                                {settings.browser_specific_links_enabled === '1' && tile.canChangeBrowser === true && (
+                                {settings.browser_specific_links_enabled === '1' && tile.canChangeBrowser !== false && (
                                     <div>
                                         <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-3">Default Browser for All Links</label>
                                         <select
@@ -6250,7 +6252,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         </div>
 
                                                                                         {/* Browser Selection - Only show if feature is enabled and user has canChangeBrowser */}
-                                                                                        {settings.browser_specific_links_enabled === '1' && tile.canChangeBrowser === true && (
+                                                                                        {settings.browser_specific_links_enabled === '1' && tile.canChangeBrowser !== false && (
                                                                                             <div>
                                                                                                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Open link in</label>
                                                                                                 <select
@@ -6519,6 +6521,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     </svg>
                                                                                                 </button>
                                                                                             )}
+                                                                                            {(tile.canEditLinks !== false) && (
                                                                                             <button
                                                                                                 onClick={() => handleStartEditLink(link)}
                                                                                                 className="p-1.5 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
@@ -6528,6 +6531,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
                                                                                                 </svg>
                                                                                             </button>
+                                                                                            )}
                                                                                             <button
                                                                                                 onClick={() => handleCloneLink(tab.id, section.id, link.id)}
                                                                                                 className="p-1.5 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
@@ -6725,7 +6729,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             </div>
 
                                                                             {/* Browser Selection - Only show if feature is enabled and user has canChangeBrowser */}
-                                                                            {settings.browser_specific_links_enabled === '1' && tile.canChangeBrowser === true && (
+                                                                            {settings.browser_specific_links_enabled === '1' && tile.canChangeBrowser !== false && (
                                                                                 <div>
                                                                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Open link in</label>
                                                                                     <select

@@ -378,7 +378,7 @@ function handleCreateRole() {
         $stmt = $db->prepare('INSERT INTO roles (name, description, created_at, updated_at) VALUES (?, ?, ?, ?)');
         $stmt->execute([$name, $description, $currentTime, $currentTime]);
         
-        $roleId = $db->lastInsertId();
+        $roleId = $db->lastInsertId('roles');
         
         sendJSON([
             'success' => true,

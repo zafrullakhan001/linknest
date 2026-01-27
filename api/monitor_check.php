@@ -991,9 +991,9 @@ function sendEmailWithOptionalFromOverride($to, $subject, $body, $overrides = nu
  */
 function isNotificationPaused() {
     $db = getDB();
-    
+    $keyCol = method_exists($db, 'quoteIdentifier') ? $db->quoteIdentifier('key') : '`key`';
     // Check global pause flag first (simple boolean toggle)
-    $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'notifications_paused'");
+    $stmt = $db->prepare("SELECT value FROM settings WHERE " . $keyCol . " = 'notifications_paused'");
     $stmt->execute();
     $globalPause = $stmt->fetchColumn();
     

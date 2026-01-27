@@ -120,9 +120,9 @@ function handleGetAnalyticsConfig() {
 function handleCheckAnalyticsStatus() {
     try {
         $db = getDB();
-        
+        $keyCol = method_exists($db, 'quoteIdentifier') ? $db->quoteIdentifier('key') : '`key`';
         // Check if enabled
-        $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'performance_analytics_enabled'");
+        $stmt = $db->prepare("SELECT value FROM settings WHERE " . $keyCol . " = 'performance_analytics_enabled'");
         $stmt->execute();
         $enabled = ($stmt->fetchColumn() === '1');
         
@@ -300,15 +300,20 @@ function handleUpdateAnalyticsConfig() {
             $settings['performance_analytics_pg_password'] = $data['pgPassword'];
         }
         
-        // Update all settings
-        $stmt = $db->prepare("
-            INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-        ");
-        
+        // Update all settings (portable upsert)
         $now = time();
-        foreach ($settings as $key => $value) {
-            $stmt->execute([$key, $value, $now]);
+        if (function_exists('dbUpsert')) {
+            foreach ($settings as $key => $value) {
+                dbUpsert($db, 'settings', ['key' => $key, 'value' => $value, 'updated_at' => $now], ['key']);
+            }
+        } else {
+            $stmt = $db->prepare("
+                INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+            ");
+            foreach ($settings as $key => $value) {
+                $stmt->execute([$key, $value, $now]);
+            }
         }
         
         // Update addon status
@@ -517,7 +522,8 @@ function handleDownloadGeoLite2() {
 function getAnalyticsConnectionParams(): ?array {
     try {
         $db = getDB();
-        $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'performance_analytics_pg_%'");
+        $keyCol = method_exists($db, 'quoteIdentifier') ? $db->quoteIdentifier('key') : '`key`';
+        $stmt = $db->prepare("SELECT " . $keyCol . ", value FROM settings WHERE " . $keyCol . " LIKE 'performance_analytics_pg_%'");
         $stmt->execute();
         $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
         $host = $settings['performance_analytics_pg_host'] ?? '';

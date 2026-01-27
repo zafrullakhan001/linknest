@@ -7,6 +7,18 @@ ob_start();
 
 require_once __DIR__ . '/config.php';
 
+/**
+ * Set SQLite busy timeout only when using SQLite (no-op on MySQL/MariaDB).
+ * @param object $db getDB() connection (wrapper or DBAL)
+ * @param int $ms Timeout in milliseconds
+ */
+function linkhealthSetBusyTimeoutIfSqlite($db, $ms) {
+    $conn = function_exists('_conn') ? _conn($db) : $db;
+    if (method_exists($conn, 'getDatabasePlatform') && $conn->getDatabasePlatform()->getName() === 'sqlite') {
+        $db->exec('PRAGMA busy_timeout = ' . (int)$ms);
+    }
+}
+
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -296,9 +308,8 @@ function updateLinkHealth($linkId, $healthResult) {
     for ($attempt = 0; $attempt < $maxRetries; $attempt++) {
         try {
             $db = getDB();
-            // Set very short busy timeout to fail fast
-            $db->exec('PRAGMA busy_timeout = 500'); // Only wait 500ms for locks
-            
+            linkhealthSetBusyTimeoutIfSqlite($db, 500);
+
             // Use a prepared statement for safety
             $stmt = $db->prepare('UPDATE links SET health_status = ?, health_http_code = ?, health_error = ?, health_checked_at = ? WHERE id = ?');
             
@@ -358,9 +369,8 @@ function updateLinkHealthBatch($updates) {
     
     try {
         $db = getDB();
-        // Set busy timeout to handle concurrent access
-        $db->exec('PRAGMA busy_timeout = 3000'); // Wait up to 3 seconds for locks
-        
+        linkhealthSetBusyTimeoutIfSqlite($db, 3000);
+
         // Use deferred transaction (default) instead of immediate to reduce contention
         $db->beginTransaction();
         
@@ -415,10 +425,10 @@ function handleGetHealthStatus() {
             throw new Exception('Database connection failed');
         }
         
-        // Check if links table exists
+        // Check if links table exists (portable: use tableExists on SQLite/MySQL/MariaDB)
         try {
-            $tableCheck = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='links'");
-            if (!$tableCheck || !$tableCheck->fetch()) {
+            $linksTableExists = function_exists('tableExists') ? tableExists($db, 'links') : true;
+            if (!$linksTableExists) {
                 // Clean output before sending
                 if (ob_get_level() > 0) {
                     ob_clean();
@@ -584,8 +594,8 @@ function handleCheckSingleLink() {
         
         // Get link info quickly
         $db = getDB();
-        $db->exec('PRAGMA busy_timeout = 500'); // Very short timeout - 500ms max wait
-        
+        linkhealthSetBusyTimeoutIfSqlite($db, 500);
+
         $stmt = $db->prepare('SELECT id, url, health_status, health_http_code FROM links WHERE id = ?');
         $stmt->execute([$data['linkId']]);
         $link = $stmt->fetch();
@@ -680,9 +690,8 @@ function handleCheckTileLinks() {
         $force = isset($data['force']) ? (bool)$data['force'] : true;
         
         $db = getDB();
-        // Set busy timeout to handle concurrent access
-        $db->exec('PRAGMA busy_timeout = 3000');
-        
+        linkhealthSetBusyTimeoutIfSqlite($db, 3000);
+
         // Get all links for this tile (tabbed + legacy sections), including last health check info
         // NOTE: Some installations store sections under tabs with s.tile_id unset; those must be resolved via tabs.tile_id.
         $stmt = $db->prepare('

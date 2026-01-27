@@ -155,7 +155,7 @@ function handleCreateServer() {
             $now
         ]);
         
-        $serverId = $db->lastInsertId();
+        $serverId = $db->lastInsertId('smtp_servers');
         
         $db->commit();
         

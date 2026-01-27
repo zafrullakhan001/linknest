@@ -90,10 +90,11 @@ function handleSaveArrangement() {
         $deleteStmt = $db->prepare('DELETE FROM tile_arrangements WHERE user_id = 0');
         $deleteStmt->execute();
         
-        // Insert new global arrangement (user_id = 0 for global)
-        // Using INSERT OR REPLACE to handle any conflicts
-        // Using 0 instead of NULL because SQLite doesn't allow NULL in composite PRIMARY KEY
-        $insertStmt = $db->prepare('INSERT OR REPLACE INTO tile_arrangements (user_id, tile_id, position, group_name) VALUES (?, ?, ?, ?)');
+        // Insert new global arrangement (user_id = 0 for global); portable upsert
+        $useUpsert = function_exists('dbUpsert');
+        if (!$useUpsert) {
+            $insertStmt = $db->prepare('INSERT OR REPLACE INTO tile_arrangements (user_id, tile_id, position, group_name) VALUES (?, ?, ?, ?)');
+        }
         
         // Also persist order and group directly on tiles table so /tiles can read it
         $updateTileStmt = $db->prepare('UPDATE tiles SET "group" = ?, position = ? WHERE id = ?');
@@ -119,12 +120,11 @@ function handleSaveArrangement() {
             
             try {
                 // Save to tile_arrangements for backwards compatibility
-                $insertStmt->execute([
-                    0, // 0 for global arrangement (SQLite doesn't allow NULL in PRIMARY KEY)
-                    $tileId,
-                    $position,
-                    $groupName
-                ]);
+                if ($useUpsert) {
+                    dbUpsert($db, 'tile_arrangements', ['user_id' => 0, 'tile_id' => $tileId, 'position' => $position, 'group_name' => $groupName], ['user_id', 'tile_id']);
+                } else {
+                    $insertStmt->execute([0, $tileId, $position, $groupName]);
+                }
                 
                 // Also persist order and group directly on tiles table
                 $updateTileStmt->execute([
@@ -256,10 +256,17 @@ function handleSavePrivateArrangement(array $arrangement) {
         $deleteStmt = $db->prepare('DELETE FROM tile_arrangements WHERE user_id = ?');
         $deleteStmt->execute([$userId]);
         
-        $insertStmt = $db->prepare('INSERT OR REPLACE INTO tile_arrangements (user_id, tile_id, position, group_name) VALUES (?, ?, ?, ?)');
+        $useUpsert = function_exists('dbUpsert');
+        if (!$useUpsert) {
+            $insertStmt = $db->prepare('INSERT OR REPLACE INTO tile_arrangements (user_id, tile_id, position, group_name) VALUES (?, ?, ?, ?)');
+        }
         $count = 0;
         foreach ($owned as $idx => $item) {
-            $insertStmt->execute([$userId, $item['tileId'], $idx, $item['groupName']]);
+            if ($useUpsert) {
+                dbUpsert($db, 'tile_arrangements', ['user_id' => $userId, 'tile_id' => $item['tileId'], 'position' => $idx, 'group_name' => $item['groupName']], ['user_id', 'tile_id']);
+            } else {
+                $insertStmt->execute([$userId, $item['tileId'], $idx, $item['groupName']]);
+            }
             $updateTileStmt->execute([$item['groupName'], $idx, $item['tileId'], $userId]);
             $count++;
         }
@@ -282,8 +289,8 @@ function handleGetCategoryArrangement() {
     
     try {
         // Check if table exists, create if it doesn't
-        $tableCheck = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='category_arrangements'");
-        if ($tableCheck->fetchColumn() === false) {
+        $catTableExists = function_exists('tableExists') ? tableExists($db, 'category_arrangements') : (($t = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='category_arrangements'")) && $t->fetchColumn() !== false);
+        if (!$catTableExists) {
             // Table doesn't exist, create it
             $db->exec('CREATE TABLE IF NOT EXISTS category_arrangements (
                 user_id INTEGER NOT NULL DEFAULT 0,
@@ -373,10 +380,11 @@ function handleSaveCategoryArrangement() {
         $deleteStmt = $db->prepare('DELETE FROM category_arrangements WHERE user_id = 0');
         $deleteStmt->execute();
         
-        // Insert new global category arrangement (user_id = 0 for global)
-        // Using INSERT OR REPLACE to handle any conflicts
-        // Using 0 instead of NULL because SQLite doesn't allow NULL in composite PRIMARY KEY
-        $insertStmt = $db->prepare('INSERT OR REPLACE INTO category_arrangements (user_id, category_name, position, visible_from, expires_at) VALUES (?, ?, ?, ?, ?)');
+        // Insert new global category arrangement (user_id = 0 for global); portable upsert
+        $useUpsert = function_exists('dbUpsert');
+        if (!$useUpsert) {
+            $insertStmt = $db->prepare('INSERT OR REPLACE INTO category_arrangements (user_id, category_name, position, visible_from, expires_at) VALUES (?, ?, ?, ?, ?)');
+        }
         
         foreach ($data['categories'] as $item) {
             if (!isset($item['categoryName']) || !isset($item['position'])) {
@@ -394,14 +402,18 @@ function handleSaveCategoryArrangement() {
             $expiresAt = isset($item['expiresAt']) && !empty($item['expiresAt']) ? $item['expiresAt'] : null;
             
             try {
-                $insertStmt->execute([
-                    0, // 0 for global arrangement (SQLite doesn't allow NULL in PRIMARY KEY)
-                    $categoryName,
-                    (int)$item['position'],
-                    $visibleFrom,
-                    $expiresAt
-                ]);
-            } catch (PDOException $e) {
+                if ($useUpsert) {
+                    dbUpsert($db, 'category_arrangements', [
+                        'user_id' => 0,
+                        'category_name' => $categoryName,
+                        'position' => (int)$item['position'],
+                        'visible_from' => $visibleFrom,
+                        'expires_at' => $expiresAt
+                    ], ['user_id', 'category_name']);
+                } else {
+                    $insertStmt->execute([0, $categoryName, (int)$item['position'], $visibleFrom, $expiresAt]);
+                }
+            } catch (\Throwable $e) {
                 error_log('Failed to insert category: ' . $categoryName . ' - ' . $e->getMessage());
                 // Continue with other categories even if one fails
             }

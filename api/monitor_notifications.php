@@ -351,7 +351,7 @@ function handleCreateNotificationRule() {
             $now
         ]);
         
-        $ruleId = $db->lastInsertId();
+        $ruleId = $db->lastInsertId('monitor_notification_rules');
         
         // Insert recipients
         $stmt = $db->prepare('INSERT INTO monitor_notification_recipients (rule_id, email, created_at) VALUES (?, ?, ?)');
@@ -714,7 +714,7 @@ function handleImportNotificationRules($monitorId) {
                 $now
             ]);
 
-            $ruleId = (int)$db->lastInsertId();
+            $ruleId = (int)$db->lastInsertId('monitor_notification_rules');
             foreach ($recipientsClean as $email) {
                 $insertRecipient->execute([$ruleId, $email, $now]);
             }

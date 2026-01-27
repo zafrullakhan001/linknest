@@ -1,12 +1,44 @@
 <?php
 /**
- * Autoloader for OneLogin PHP-SAML library
+ * Autoloader for OneLogin PHP-SAML, Doctrine DBAL and dependencies
  * 
  * Supports both old-style classes (OneLogin_Saml2_*) and namespace classes (OneLogin\Saml2\*)
+ * and Doctrine\DBAL, Doctrine\Deprecations, Doctrine\Common (event-manager)
  */
 
-$oneloginLibPath = __DIR__ . '/onelogin/php-saml/lib';
-$oneloginSrcPath = __DIR__ . '/onelogin/php-saml/src';
+$vendorDir = __DIR__;
+
+// Doctrine: deprecations, event-manager, dbal (order matters)
+$doctrineDeprecations = $vendorDir . '/doctrine/deprecations-1.0.0/lib/Doctrine/Deprecations';
+$doctrineEventManager = $vendorDir . '/doctrine/event-manager-1.2.0/src';
+$doctrineDbal = $vendorDir . '/doctrine/dbal/src';
+if (is_dir($doctrineDeprecations)) {
+    spl_autoload_register(function ($class) use ($doctrineDeprecations) {
+        if (strpos($class, 'Doctrine\\Deprecations\\') !== 0) return false;
+        $file = $doctrineDeprecations . '/' . str_replace('\\', '/', substr($class, strlen('Doctrine\\Deprecations\\'))) . '.php';
+        if (file_exists($file)) { require $file; return true; }
+        return false;
+    });
+}
+if (is_dir($doctrineEventManager)) {
+    spl_autoload_register(function ($class) use ($doctrineEventManager) {
+        if (strpos($class, 'Doctrine\\Common\\') !== 0) return false;
+        $file = $doctrineEventManager . '/' . str_replace('\\', '/', substr($class, strlen('Doctrine\\Common\\'))) . '.php';
+        if (file_exists($file)) { require $file; return true; }
+        return false;
+    });
+}
+if (is_dir($doctrineDbal)) {
+    spl_autoload_register(function ($class) use ($doctrineDbal) {
+        if (strpos($class, 'Doctrine\\DBAL\\') !== 0) return false;
+        $file = $doctrineDbal . '/' . str_replace('\\', '/', substr($class, strlen('Doctrine\\DBAL\\'))) . '.php';
+        if (file_exists($file)) { require $file; return true; }
+        return false;
+    });
+}
+
+$oneloginLibPath = $vendorDir . '/onelogin/php-saml/lib';
+$oneloginSrcPath = $vendorDir . '/onelogin/php-saml/src';
 
 // Try to load from src first (newer namespace-based version)
 if (is_dir($oneloginSrcPath)) {
@@ -80,7 +112,7 @@ if (is_dir($oneloginLibPath)) {
 }
 
 // Also try to load xmlseclibs from robrichards/xmlseclibs if available
-$robrichardsXmlseclibs = __DIR__ . '/robrichards/xmlseclibs';
+$robrichardsXmlseclibs = $vendorDir . '/robrichards/xmlseclibs';
 if (is_dir($robrichardsXmlseclibs)) {
     // Try src directory first
     $srcPath = $robrichardsXmlseclibs . '/src';

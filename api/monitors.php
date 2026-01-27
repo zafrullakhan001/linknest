@@ -346,7 +346,7 @@ function handleImportMonitorsBundle() {
                     isset($m['maintenance_start']) ? (int)$m['maintenance_start'] : null,
                     isset($m['maintenance_end']) ? (int)$m['maintenance_end'] : null
                 ]);
-                $monitorId = (int)$db->lastInsertId();
+                $monitorId = (int)$db->lastInsertId('monitors');
             } else {
                 $stmtInsertMonitor->execute([
                     $monitorId,
@@ -431,7 +431,7 @@ function handleImportMonitorsBundle() {
                             isset($r['updated_at']) ? (int)$r['updated_at'] : $now
                         ]);
                         
-                        $ruleId = (int)$db->lastInsertId();
+                        $ruleId = (int)$db->lastInsertId('monitor_notification_rules');
                     } else {
                         // Use provided ID (bundle import with replace)
                         $stmtInsertRule->execute([
@@ -786,7 +786,7 @@ function handleDuplicateMonitor($id) {
             $original['legacy_email_body_template']
         ]);
         
-        $newMonitorId = $db->lastInsertId();
+        $newMonitorId = $db->lastInsertId('monitors');
         
         // Copy user permissions if any
         if ((int)$original['permissions_mode'] === 1) {
@@ -832,7 +832,7 @@ function handleDuplicateMonitor($id) {
                 $now
             ]);
             
-            $newRuleId = $db->lastInsertId();
+            $newRuleId = $db->lastInsertId('monitor_notification_rules');
             
             // Copy recipients for this rule
             $recipientsStmt = $db->prepare('SELECT email FROM monitor_notification_recipients WHERE rule_id = ?');

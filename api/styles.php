@@ -60,11 +60,22 @@ switch ($method) {
 
 function ensureStyleProfilesTable($db) {
     try {
-        // Check if table exists
-        $tableExists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='style_profiles'")->fetch();
+        // Check if table exists (use portable helper when available)
+        $tableExists = function_exists('tableExists') ? tableExists($db, 'style_profiles') : (bool)$db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='style_profiles'")->fetch();
         
         if (!$tableExists) {
-            // Create new table with all columns
+            // On non-SQLite (MySQL/MariaDB/PostgreSQL), schema is applied by config.php init; skip SQLite-specific DDL
+            if (function_exists('_conn')) {
+                try {
+                    $conn = _conn($db);
+                    if (!($conn->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\SqlitePlatform)) {
+                        return;
+                    }
+                } catch (\Throwable $e) {
+                    // fall through and try SQLite DDL
+                }
+            }
+            // Create new table with all columns (SQLite only)
             $db->exec('CREATE TABLE style_profiles (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -78,7 +89,7 @@ function ensureStyleProfilesTable($db) {
             $db->exec('CREATE INDEX idx_style_profiles_active ON style_profiles(is_active)');
         } else {
             // Table exists - check if it has the required columns
-            $columns = $db->query("PRAGMA table_info(style_profiles)")->fetchAll(PDO::FETCH_ASSOC);
+            $columns = function_exists('getTableColumns') ? getTableColumns($db, 'style_profiles') : $db->query("PRAGMA table_info(style_profiles)")->fetchAll(PDO::FETCH_ASSOC);
             $columnNames = array_column($columns, 'name');
             
             // Check if table has old column name 'styles' instead of 'styles_data'
@@ -219,13 +230,24 @@ function ensureStyleProfilesTable($db) {
                     }
                 }
             } else {
-                // Table exists with correct structure - just ensure index exists
-                $indexExists = $db->query("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_style_profiles_active'")->fetch();
-                if (!$indexExists) {
-                    try {
+                // Table exists with correct structure - just ensure index exists (portable: try create, ignore if exists)
+                try {
+                    if (function_exists('_conn')) {
+                        $conn = _conn($db);
+                        $platform = $conn->getDatabasePlatform();
+                        $platformName = $platform ? get_class($platform) : '';
+                        if (strpos($platformName, 'MySQL') !== false || strpos($platformName, 'MariaDb') !== false) {
+                            $conn->executeStatement('CREATE INDEX idx_style_profiles_active ON style_profiles(is_active)');
+                        } else {
+                            $db->exec('CREATE INDEX idx_style_profiles_active ON style_profiles(is_active)');
+                        }
+                    } else {
                         $db->exec('CREATE INDEX idx_style_profiles_active ON style_profiles(is_active)');
-                    } catch (PDOException $e) {
-                        error_log('Error creating index: ' . $e->getMessage());
+                    }
+                } catch (\Throwable $e) {
+                    $msg = $e->getMessage();
+                    if (strpos($msg, 'Duplicate key') === false && strpos($msg, 'already exists') === false && strpos($msg, '1061') === false) {
+                        error_log('Error creating index: ' . $msg);
                     }
                 }
             }
@@ -320,7 +342,7 @@ function handleUpdateStyles() {
     ensureStyleProfilesTable($db);
     
     // Double-check table structure before inserting - force migration if needed
-    $columns = $db->query("PRAGMA table_info(style_profiles)")->fetchAll(PDO::FETCH_ASSOC);
+    $columns = function_exists('getTableColumns') ? getTableColumns($db, 'style_profiles') : $db->query("PRAGMA table_info(style_profiles)")->fetchAll(PDO::FETCH_ASSOC);
     $columnNames = array_column($columns, 'name');
     
     // Check if table has wrong column name or missing column
@@ -390,7 +412,7 @@ function handleUpdateStyles() {
             error_log('Table successfully recreated with correct schema');
             
             // Re-fetch columns after recreation
-            $columns = $db->query("PRAGMA table_info(style_profiles)")->fetchAll(PDO::FETCH_ASSOC);
+            $columns = function_exists('getTableColumns') ? getTableColumns($db, 'style_profiles') : $db->query("PRAGMA table_info(style_profiles)")->fetchAll(PDO::FETCH_ASSOC);
             $columnNames = array_column($columns, 'name');
         } catch (PDOException $e) {
             if ($db->inTransaction()) {
@@ -425,7 +447,7 @@ function handleUpdateStyles() {
         $stmt = $db->prepare('INSERT INTO style_profiles (name, styles_data, is_active, created_at, updated_at) VALUES (?, ?, 1, ?, ?)');
         $stmt->execute([$profileName, $stylesData, $timestamp, $timestamp]);
         
-        $profileId = $db->lastInsertId();
+        $profileId = $db->lastInsertId('style_profiles');
         
         $db->commit();
         sendJSON([
@@ -638,7 +660,7 @@ function handleCreateProfile() {
         $stmt = $db->prepare('INSERT INTO style_profiles (name, styles_data, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?)');
         $stmt->execute([$data['name'], $stylesData, $activate ? 1 : 0, $timestamp, $timestamp]);
         
-        $profileId = $db->lastInsertId();
+        $profileId = $db->lastInsertId('style_profiles');
         
         sendJSON([
             'success' => true,
