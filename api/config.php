@@ -143,14 +143,17 @@ if (!extension_loaded('pdo_sqlite')) {
 
 // Initialize database
 function initDatabase() {
-    try {
-        $db = new PDO('sqlite:' . DB_PATH);
-        $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-        
-        // Enterprise SQLite Configuration
-        // Set busy timeout for concurrent access handling
-        $db->exec('PRAGMA busy_timeout = 5000'); // 5000 ms timeout
+    $maxAttempts = 2;
+    $lastException = null;
+    for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+        try {
+            $db = new PDO('sqlite:' . DB_PATH);
+            $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+            
+            // Enterprise SQLite Configuration
+            // Set busy timeout for concurrent access (15s helps avoid "database is locked" under load)
+            $db->exec('PRAGMA busy_timeout = 15000'); // 15000 ms
         
         // Foreign keys disabled for enterprise (as per requirements)
         $db->exec('PRAGMA foreign_keys = OFF');
@@ -1892,11 +1895,19 @@ function initDatabase() {
         createDatabaseIndexes($db);
         
         return $db;
-    } catch (PDOException $e) {
-        http_response_code(500);
-        header('Content-Type: application/json');
-        echo json_encode(['error' => 'Database initialization failed: ' . $e->getMessage()]);
-        exit;
+        } catch (PDOException $e) {
+            $lastException = $e;
+            $isLocked = (strpos($e->getMessage(), 'database is locked') !== false
+                || (method_exists($e, 'getCode') && (int) $e->getCode() === 5)); // SQLITE_BUSY
+            if ($isLocked && $attempt < $maxAttempts) {
+                usleep(250000); // 250 ms before retry
+                continue;
+            }
+            http_response_code(500);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Database initialization failed: ' . $e->getMessage()]);
+            exit;
+        }
     }
 }
 
