@@ -6215,9 +6215,39 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                                                                                         {/* Rich Text Content */}
                                                                                         <div>
-                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                                                                                                Information Content (Rich Text)
-                                                                                            </label>
+                                                                                            <div className="flex items-center justify-between mb-1.5">
+                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                                                                                                    Information Content (Rich Text)
+                                                                                                </label>
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    onClick={() => {
+                                                                                                        const demoContent = '<h2>Welcome to Information Content</h2><p>This is a <strong>sample rich text content</strong> that demonstrates various formatting options available in the editor.</p><h3>Key Features</h3><ul><li>Rich text formatting with <em>bold</em> and <u>underline</u></li><li>Lists and structured content</li><li>Links and embedded content</li><li>Custom styling options</li></ul><h3>Contact Information</h3><p>For more information, please contact:</p><p><strong>Support Team:</strong> support@company.com<br/><strong>Phone:</strong> +1-555-0100</p><blockquote><p>This is an important note or quote that stands out from the regular content.</p></blockquote><p>You can edit this content using the rich text editor toolbar above.</p>';
+                                                                                                        const currentState = editLinkState[link.id] || {
+                                                                                                            label: link.label,
+                                                                                                            url: link.url,
+                                                                                                            icon: link.icon || '',
+                                                                                                            textColor: link.textColor || '',
+                                                                                                            visibility: link.visibility || 'public',
+                                                                                                            allowedUsers: link.allowedUsers || [],
+                                                                                                            notes: link.notes || '',
+                                                                                                            tooltip: link.tooltip || '',
+                                                                                                            browser: link.browser || 'default',
+                                                                                                            richTextContent: ''
+                                                                                                        };
+                                                                                                        setEditLinkState({
+                                                                                                            ...editLinkState,
+                                                                                                            [link.id]: {
+                                                                                                                ...currentState,
+                                                                                                                richTextContent: demoContent
+                                                                                                            }
+                                                                                                        });
+                                                                                                    }}
+                                                                                                    className="px-3 py-1 text-xs bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-colors"
+                                                                                                >
+                                                                                                    Demo Fill
+                                                                                                </button>
+                                                                                            </div>
                                                                                             <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
                                                                                                 If provided, clicking this link will open a rich text dialog instead of navigating to the URL. Leave empty to open the URL normally.
                                                                                             </p>
@@ -6710,9 +6740,21 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                                                                             {/* Rich Text Content */}
                                                                             <div>
-                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                                                                                    Information Content (Rich Text)
-                                                                                </label>
+                                                                                <div className="flex items-center justify-between mb-1.5">
+                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                                                                                        Information Content (Rich Text)
+                                                                                    </label>
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => {
+                                                                                            const demoContent = '<h2>Welcome to Information Content</h2><p>This is a <strong>sample rich text content</strong> that demonstrates various formatting options available in the editor.</p><h3>Key Features</h3><ul><li>Rich text formatting with <em>bold</em> and <u>underline</u></li><li>Lists and structured content</li><li>Links and embedded content</li><li>Custom styling options</li></ul><h3>Contact Information</h3><p>For more information, please contact:</p><p><strong>Support Team:</strong> support@company.com<br/><strong>Phone:</strong> +1-555-0100</p><blockquote><p>This is an important note or quote that stands out from the regular content.</p></blockquote><p>You can edit this content using the rich text editor toolbar above.</p>';
+                                                                                            updateNewLinkState(section.id, 'richTextContent', demoContent);
+                                                                                        }}
+                                                                                        className="px-3 py-1 text-xs bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-colors"
+                                                                                    >
+                                                                                        Demo Fill
+                                                                                    </button>
+                                                                                </div>
                                                                                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
                                                                                     If provided, clicking this link will open a rich text dialog instead of navigating to the URL. Leave empty to open the URL normally.
                                                                                 </p>
@@ -7919,6 +7961,31 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg font-medium transition-colors"
                                         >
                                             Cancel
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                // Fill form with demo data
+                                                setNotesPresetForm({
+                                                    ownerInfo: 'IT Operations Team - John Smith (john.smith@company.com)',
+                                                    supportTeamInfo: 'Level 1 Support - support@company.com | Level 2 Support - l2support@company.com',
+                                                    serviceNowGroupInfo: 'IT Operations Group (it-ops-group@company.com)',
+                                                    businessOwner: 'Sarah Johnson - Director of IT Operations (sarah.johnson@company.com, ext. 1234)',
+                                                    productOwner: 'Michael Chen - Senior Product Manager (michael.chen@company.com, ext. 5678)',
+                                                    architect: 'David Williams - Solutions Architect (david.williams@company.com, ext. 9012)',
+                                                    vendorDetails: 'TechCorp Solutions - Vendor Contact: vendor@techcorp.com | Support: support@techcorp.com | Phone: +1-555-0100',
+                                                    serviceNowDemand: 'DEM-2024-001234',
+                                                    serviceNowProject: 'PROJ-2024-005678',
+                                                    serviceNowTask: 'TASK-2024-009012',
+                                                    goLiveInfo: 'Planned Go-Live: Q2 2024 | Target Date: June 15, 2024 | Status: On Track',
+                                                    majorUpgradeInfo: 'Next Major Upgrade: Version 3.0 | Scheduled: Q3 2024 | Upgrade Window: September 2024',
+                                                    serviceDeliveryManager: 'Emily Davis - SDM (emily.davis@company.com, ext. 3456)',
+                                                    businessRelationshipManager: 'Robert Martinez - BRM (robert.martinez@company.com, ext. 7890)',
+                                                    technologyRelationshipManager: 'Jennifer Lee - TRM (jennifer.lee@company.com, ext. 2468)'
+                                                });
+                                            }}
+                                            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-colors"
+                                        >
+                                            Demo Fill
                                         </button>
                                         <button
                                             onClick={() => {
