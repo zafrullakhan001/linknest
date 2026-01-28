@@ -159,6 +159,39 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [ldapTestUser, setLdapTestUser] = useState('');
   const [ldapTestPassword, setLdapTestPassword] = useState('');
 
+  // LDAP Servers management state
+  const [ldapServers, setLdapServers] = useState<Array<{
+    name: string;
+    server: string;
+    port: string;
+    protocol: string;
+    tls: string;
+    timeout: string;
+    bind_dn: string;
+    bind_password: string;
+    user_search_base: string;
+    user_filter: string;
+    user_attributes: string;
+    group_search_base: string;
+    group_filter: string;
+    group_attributes: string;
+    require_group_membership: string;
+    required_groups: string;
+    search_scope: string;
+    user_dn_template: string;
+    nested_groups: string;
+    case_sensitive: string;
+    ssl_verify: string;
+    connection_retry: string;
+    retry_delay: string;
+    email_attribute: string;
+    display_name_attribute: string;
+    referrals: string;
+    login_domain: string;
+  }>>([]);
+  const [editingServerIndex, setEditingServerIndex] = useState<number | null>(null);
+  const [showServerForm, setShowServerForm] = useState(false);
+
   // Ref to store bind password for immediate access (avoids React state timing issues)
   const ldapBindPasswordRef = useRef<string>('');
 
@@ -538,6 +571,58 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         maintenance_message: loadedSettings.maintenance_message || ''
       };
       setSettings(settingsWithDefaults);
+      
+      // Load LDAP servers
+      const ldapServersJson = (loadedSettings as any).ldap_servers as string | undefined;
+      if (ldapServersJson) {
+        try {
+          const parsed = JSON.parse(ldapServersJson);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setLdapServers(parsed);
+          } else {
+            setLdapServers([]);
+          }
+        } catch (e) {
+          console.error('Failed to parse LDAP servers:', e);
+          setLdapServers([]);
+        }
+      } else {
+        // Check if old single-server format exists and convert it
+        if (loadedSettings.ldap_server) {
+          const oldServer = {
+            name: loadedSettings.ldap_login_domain || loadedSettings.ldap_server || 'LDAP Server',
+            server: loadedSettings.ldap_server || '',
+            port: loadedSettings.ldap_port || '389',
+            protocol: loadedSettings.ldap_protocol || 'ldap',
+            tls: loadedSettings.ldap_tls || '0',
+            timeout: loadedSettings.ldap_timeout || '30',
+            bind_dn: loadedSettings.ldap_bind_dn || '',
+            bind_password: loadedSettings.ldap_bind_password || '',
+            user_search_base: loadedSettings.ldap_user_search_base || '',
+            user_filter: loadedSettings.ldap_user_filter || '(sAMAccountName={username})',
+            user_attributes: loadedSettings.ldap_user_attributes || 'sAMAccountName,mail,displayName',
+            group_search_base: loadedSettings.ldap_group_search_base || '',
+            group_filter: loadedSettings.ldap_group_filter || '(objectClass=group)',
+            group_attributes: loadedSettings.ldap_group_attributes || 'cn,distinguishedName,member',
+            require_group_membership: loadedSettings.ldap_require_group_membership || '0',
+            required_groups: loadedSettings.ldap_required_groups || '',
+            search_scope: loadedSettings.ldap_search_scope || 'sub',
+            user_dn_template: loadedSettings.ldap_user_dn_template || '',
+            nested_groups: loadedSettings.ldap_nested_groups || '0',
+            case_sensitive: loadedSettings.ldap_case_sensitive || '0',
+            ssl_verify: loadedSettings.ldap_ssl_verify || '1',
+            connection_retry: loadedSettings.ldap_connection_retry || '3',
+            retry_delay: loadedSettings.ldap_retry_delay || '1',
+            email_attribute: loadedSettings.ldap_email_attribute || '',
+            display_name_attribute: loadedSettings.ldap_display_name_attribute || '',
+            referrals: loadedSettings.ldap_referrals || '0',
+            login_domain: loadedSettings.ldap_login_domain || ''
+          };
+          setLdapServers([oldServer]);
+        } else {
+          setLdapServers([]);
+        }
+      }
       // Update ref with loaded password
       ldapBindPasswordRef.current = loadedSettings.ldap_bind_password || '';
       // Set preview if logo image exists
@@ -5503,7 +5588,651 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       </div>
                     </div>
 
-                    <div className={`grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2'} gap-6`}>
+                    {/* LDAP Servers Management */}
+                    {settings.ldap_enabled === '1' && (
+                      <div className="mb-6 mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+                        <div className="flex items-center justify-between mb-4">
+                          <div>
+                            <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white`}>LDAP Servers</h4>
+                            <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-slate-500 dark:text-slate-400 mt-1`}>
+                              Configure multiple LDAP servers. Users will select their server from a dropdown during login.
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              const newServer = {
+                                name: `LDAP Server ${ldapServers.length + 1}`,
+                                server: '',
+                                port: '389',
+                                protocol: 'ldap',
+                                tls: '0',
+                                timeout: '30',
+                                bind_dn: '',
+                                bind_password: '',
+                                user_search_base: '',
+                                user_filter: '(sAMAccountName={username})',
+                                user_attributes: 'sAMAccountName,mail,displayName',
+                                group_search_base: '',
+                                group_filter: '(objectClass=group)',
+                                group_attributes: 'cn,distinguishedName,member',
+                                require_group_membership: '0',
+                                required_groups: '',
+                                search_scope: 'sub',
+                                user_dn_template: '',
+                                nested_groups: '0',
+                                case_sensitive: '0',
+                                ssl_verify: '1',
+                                connection_retry: '3',
+                                retry_delay: '1',
+                                email_attribute: '',
+                                display_name_attribute: '',
+                                referrals: '0',
+                                login_domain: ''
+                              };
+                              setLdapServers([...ldapServers, newServer]);
+                              setEditingServerIndex(ldapServers.length);
+                              setShowServerForm(true);
+                            }}
+                            className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-3 py-1.5 text-xs'} bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors flex items-center gap-1.5 touch-manipulation`}
+                            style={isMobile ? { minHeight: '44px' } : {}}
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                              <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                            </svg>
+                            Add Server
+                          </button>
+                        </div>
+
+                        {/* Servers List */}
+                        {ldapServers.length === 0 ? (
+                          <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4 text-center">
+                            <p className="text-sm text-slate-600 dark:text-slate-400">No LDAP servers configured. Click "Add Server" to get started.</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {ldapServers.map((server, index) => (
+                              <div
+                                key={index}
+                                className={`bg-slate-50 dark:bg-slate-900/50 border-2 rounded-lg p-4 transition-all ${
+                                  editingServerIndex === index
+                                    ? 'border-brand-500 dark:border-brand-400'
+                                    : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                                }`}
+                              >
+                                {editingServerIndex === index ? (
+                                  <div className="space-y-6 max-h-[80vh] overflow-y-auto pr-2">
+                                    {/* Basic Information */}
+                                    <div>
+                                      <h5 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Basic Information</h5>
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Server Name *</label>
+                                          <input
+                                            type="text"
+                                            value={server.name}
+                                            onChange={(e) => {
+                                              const updated = [...ldapServers];
+                                              updated[index].name = e.target.value;
+                                              setLdapServers(updated);
+                                            }}
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                                            placeholder="e.g., Domain 1, Company LDAP"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Login Domain (shown in dropdown)</label>
+                                          <input
+                                            type="text"
+                                            value={server.login_domain || ''}
+                                            onChange={(e) => {
+                                              const updated = [...ldapServers];
+                                              updated[index].login_domain = e.target.value;
+                                              setLdapServers(updated);
+                                            }}
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                                            placeholder="e.g., example.com"
+                                          />
+                                          <p className="text-[10px] text-slate-500 mt-1">Optional: Override the domain shown in the login dropdown</p>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Connection Settings */}
+                                    <div>
+                                      <h5 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Connection</h5>
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Server Host *</label>
+                                          <input
+                                            type="text"
+                                            value={server.server}
+                                            onChange={(e) => {
+                                              const updated = [...ldapServers];
+                                              updated[index].server = e.target.value;
+                                              setLdapServers(updated);
+                                            }}
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                                            placeholder="ldap.example.com"
+                                          />
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div>
+                                            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Port</label>
+                                            <input
+                                              type="number"
+                                              value={server.port}
+                                              onChange={(e) => {
+                                                const updated = [...ldapServers];
+                                                updated[index].port = e.target.value;
+                                                setLdapServers(updated);
+                                              }}
+                                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Timeout (sec)</label>
+                                            <input
+                                              type="number"
+                                              value={server.timeout}
+                                              onChange={(e) => {
+                                                const updated = [...ldapServers];
+                                                updated[index].timeout = e.target.value;
+                                                setLdapServers(updated);
+                                              }}
+                                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                                            />
+                                          </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div>
+                                            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Protocol</label>
+                                            <select
+                                              value={server.protocol}
+                                              onChange={(e) => {
+                                                const updated = [...ldapServers];
+                                                updated[index].protocol = e.target.value;
+                                                setLdapServers(updated);
+                                              }}
+                                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                                            >
+                                              <option value="ldap">LDAP</option>
+                                              <option value="ldaps">LDAPS (SSL)</option>
+                                            </select>
+                                          </div>
+                                          <div className="flex items-end pb-2">
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                              <input
+                                                type="checkbox"
+                                                checked={server.tls === '1'}
+                                                onChange={(e) => {
+                                                  const updated = [...ldapServers];
+                                                  updated[index].tls = e.target.checked ? '1' : '0';
+                                                  setLdapServers(updated);
+                                                }}
+                                                className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                                              />
+                                              <span className="text-xs text-slate-700 dark:text-slate-300">Use StartTLS</span>
+                                            </label>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Service Account (Bind) */}
+                                    <div>
+                                      <h5 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Service Account (Bind)</h5>
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Bind DN</label>
+                                          <input
+                                            type="text"
+                                            value={server.bind_dn}
+                                            onChange={(e) => {
+                                              const updated = [...ldapServers];
+                                              updated[index].bind_dn = e.target.value;
+                                              setLdapServers(updated);
+                                            }}
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                                            placeholder="cn=admin,dc=example,dc=com"
+                                          />
+                                          <p className="text-[10px] text-slate-500 mt-1">Leave empty for anonymous bind</p>
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Bind Password</label>
+                                          <SecurePasswordInput
+                                            value={server.bind_password}
+                                            onChange={(e) => {
+                                              const updated = [...ldapServers];
+                                              updated[index].bind_password = e.target.value;
+                                              setLdapServers(updated);
+                                            }}
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                                            placeholder="********"
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* User Schema */}
+                                    <div>
+                                      <h5 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">User Schema</h5>
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Base DN</label>
+                                          <input
+                                            type="text"
+                                            value={server.user_search_base}
+                                            onChange={(e) => {
+                                              const updated = [...ldapServers];
+                                              updated[index].user_search_base = e.target.value;
+                                              setLdapServers(updated);
+                                            }}
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                                            placeholder="ou=users,dc=example,dc=com"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">User Filter</label>
+                                          <input
+                                            type="text"
+                                            value={server.user_filter}
+                                            onChange={(e) => {
+                                              const updated = [...ldapServers];
+                                              updated[index].user_filter = e.target.value;
+                                              setLdapServers(updated);
+                                            }}
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
+                                            placeholder="(sAMAccountName={username})"
+                                          />
+                                          <p className="text-[10px] text-slate-500 mt-1">Use {`{username}`} as placeholder for login input</p>
+                                        </div>
+                                        <div className="md:col-span-2">
+                                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Attributes</label>
+                                          <input
+                                            type="text"
+                                            value={server.user_attributes}
+                                            onChange={(e) => {
+                                              const updated = [...ldapServers];
+                                              updated[index].user_attributes = e.target.value;
+                                              setLdapServers(updated);
+                                            }}
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
+                                            placeholder="sAMAccountName,mail,displayName"
+                                          />
+                                          <p className="text-[10px] text-slate-500 mt-1">Comma separated list of attributes to fetch</p>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Group Membership */}
+                                    <div>
+                                      <h5 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Group Membership</h5>
+                                      <div className="space-y-4">
+                                        <div className="space-y-2">
+                                          <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                              type="checkbox"
+                                              checked={server.require_group_membership === '1'}
+                                              onChange={(e) => {
+                                                const updated = [...ldapServers];
+                                                updated[index].require_group_membership = e.target.checked ? '1' : '0';
+                                                setLdapServers(updated);
+                                              }}
+                                              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                                            />
+                                            <span className="text-sm text-slate-700 dark:text-slate-300">Require Group Membership</span>
+                                          </label>
+                                          <p className="text-[10px] text-slate-500 ml-6">Only allow users who are members of specific groups</p>
+                                        </div>
+                                        {server.require_group_membership === '1' && (
+                                          <div>
+                                            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Required Groups (comma-separated)</label>
+                                            <input
+                                              type="text"
+                                              value={server.required_groups}
+                                              onChange={(e) => {
+                                                const updated = [...ldapServers];
+                                                updated[index].required_groups = e.target.value;
+                                                setLdapServers(updated);
+                                              }}
+                                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
+                                              placeholder="CN=Admins,CN=Users,DC=example,DC=com"
+                                            />
+                                            <p className="text-[10px] text-slate-500 mt-1">User must be a member of at least one of these groups. Enter full DN or partial match.</p>
+                                          </div>
+                                        )}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                          <div>
+                                            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Group Search Base</label>
+                                            <input
+                                              type="text"
+                                              value={server.group_search_base}
+                                              onChange={(e) => {
+                                                const updated = [...ldapServers];
+                                                updated[index].group_search_base = e.target.value;
+                                                setLdapServers(updated);
+                                              }}
+                                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                                              placeholder="ou=groups,dc=example,dc=com"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Group Filter</label>
+                                            <input
+                                              type="text"
+                                              value={server.group_filter}
+                                              onChange={(e) => {
+                                                const updated = [...ldapServers];
+                                                updated[index].group_filter = e.target.value;
+                                                setLdapServers(updated);
+                                              }}
+                                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
+                                              placeholder="(objectClass=group)"
+                                            />
+                                          </div>
+                                          <div className="md:col-span-2">
+                                            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Group Attributes</label>
+                                            <input
+                                              type="text"
+                                              value={server.group_attributes}
+                                              onChange={(e) => {
+                                                const updated = [...ldapServers];
+                                                updated[index].group_attributes = e.target.value;
+                                                setLdapServers(updated);
+                                              }}
+                                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
+                                              placeholder="cn,distinguishedName,member"
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Advanced Options */}
+                                    <div>
+                                      <h5 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Advanced Options</h5>
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Search Scope</label>
+                                          <select
+                                            value={server.search_scope}
+                                            onChange={(e) => {
+                                              const updated = [...ldapServers];
+                                              updated[index].search_scope = e.target.value;
+                                              setLdapServers(updated);
+                                            }}
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                                          >
+                                            <option value="base">Base (exact match only)</option>
+                                            <option value="one">One-level (immediate children)</option>
+                                            <option value="sub">Subtree (recursive, default)</option>
+                                          </select>
+                                          <p className="text-[10px] text-slate-500 mt-1">How deep to search in the directory tree</p>
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">User DN Template (Alternative)</label>
+                                          <input
+                                            type="text"
+                                            value={server.user_dn_template}
+                                            onChange={(e) => {
+                                              const updated = [...ldapServers];
+                                              updated[index].user_dn_template = e.target.value;
+                                              setLdapServers(updated);
+                                            }}
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
+                                            placeholder="CN={username},CN=Users,DC=example,DC=com"
+                                          />
+                                          <p className="text-[10px] text-slate-500 mt-1">Direct bind without search. Use {`{username}`} placeholder. Leave empty to use search-based auth.</p>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div>
+                                            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Connection Retries</label>
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              max="10"
+                                              value={server.connection_retry}
+                                              onChange={(e) => {
+                                                const updated = [...ldapServers];
+                                                updated[index].connection_retry = e.target.value;
+                                                setLdapServers(updated);
+                                              }}
+                                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Retry Delay (sec)</label>
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              max="10"
+                                              value={server.retry_delay}
+                                              onChange={(e) => {
+                                                const updated = [...ldapServers];
+                                                updated[index].retry_delay = e.target.value;
+                                                setLdapServers(updated);
+                                              }}
+                                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
+                                            />
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Custom Email Attribute</label>
+                                          <input
+                                            type="text"
+                                            value={server.email_attribute}
+                                            onChange={(e) => {
+                                              const updated = [...ldapServers];
+                                              updated[index].email_attribute = e.target.value;
+                                              setLdapServers(updated);
+                                            }}
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
+                                            placeholder="mail"
+                                          />
+                                          <p className="text-[10px] text-slate-500 mt-1">Override default email attribute (leave empty for auto-detect)</p>
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Custom Display Name Attribute</label>
+                                          <input
+                                            type="text"
+                                            value={server.display_name_attribute}
+                                            onChange={(e) => {
+                                              const updated = [...ldapServers];
+                                              updated[index].display_name_attribute = e.target.value;
+                                              setLdapServers(updated);
+                                            }}
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono"
+                                            placeholder="displayName"
+                                          />
+                                          <p className="text-[10px] text-slate-500 mt-1">Override default display name attribute (leave empty for auto-detect)</p>
+                                        </div>
+                                        <div className="space-y-2">
+                                          <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                              type="checkbox"
+                                              checked={server.nested_groups === '1'}
+                                              onChange={(e) => {
+                                                const updated = [...ldapServers];
+                                                updated[index].nested_groups = e.target.checked ? '1' : '0';
+                                                setLdapServers(updated);
+                                              }}
+                                              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                                            />
+                                            <span className="text-xs text-slate-700 dark:text-slate-300">Enable Nested Group Support</span>
+                                          </label>
+                                          <p className="text-[10px] text-slate-500 ml-6">Check group membership recursively through nested groups</p>
+                                        </div>
+                                        <div className="space-y-2">
+                                          <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                              type="checkbox"
+                                              checked={server.case_sensitive === '1'}
+                                              onChange={(e) => {
+                                                const updated = [...ldapServers];
+                                                updated[index].case_sensitive = e.target.checked ? '1' : '0';
+                                                setLdapServers(updated);
+                                              }}
+                                              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                                            />
+                                            <span className="text-xs text-slate-700 dark:text-slate-300">Case Sensitive Username Matching</span>
+                                          </label>
+                                          <p className="text-[10px] text-slate-500 ml-6">Require exact case match for usernames (default: case-insensitive)</p>
+                                        </div>
+                                        <div className="space-y-2">
+                                          <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                              type="checkbox"
+                                              checked={server.ssl_verify === '1'}
+                                              onChange={(e) => {
+                                                const updated = [...ldapServers];
+                                                updated[index].ssl_verify = e.target.checked ? '1' : '0';
+                                                setLdapServers(updated);
+                                              }}
+                                              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                                            />
+                                            <span className="text-xs text-slate-700 dark:text-slate-300">Verify SSL Certificates</span>
+                                          </label>
+                                          <p className="text-[10px] text-slate-500 ml-6">Validate SSL/TLS certificates (recommended: enabled)</p>
+                                        </div>
+                                        <div className="space-y-2">
+                                          <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                              type="checkbox"
+                                              checked={server.referrals === '1'}
+                                              onChange={(e) => {
+                                                const updated = [...ldapServers];
+                                                updated[index].referrals = e.target.checked ? '1' : '0';
+                                                setLdapServers(updated);
+                                              }}
+                                              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                                            />
+                                            <span className="text-xs text-slate-700 dark:text-slate-300">Follow LDAP Referrals</span>
+                                          </label>
+                                          <p className="text-[10px] text-slate-500 ml-6">Follow referrals to other LDAP servers (default: disabled)</p>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex gap-2 justify-end pt-4 border-t border-slate-200 dark:border-slate-700">
+                                      <button
+                                        onClick={() => {
+                                          setEditingServerIndex(null);
+                                          setShowServerForm(false);
+                                        }}
+                                        className="px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          if (!server.server || !server.name) {
+                                            alert('Please provide at least a server name and host');
+                                            return;
+                                          }
+                                          setEditingServerIndex(null);
+                                          setShowServerForm(false);
+                                        }}
+                                        className="px-4 py-2 text-sm bg-brand-600 hover:bg-brand-500 text-white rounded-lg transition-colors"
+                                      >
+                                        Save Server
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <h5 className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                                          {server.name || `Server ${index + 1}`}
+                                        </h5>
+                                        {server.login_domain && (
+                                          <span className="text-xs px-2 py-0.5 bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 rounded">
+                                            {server.login_domain}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className="text-xs text-slate-600 dark:text-slate-400 truncate">
+                                        {server.server || 'No server configured'} : {server.port || '389'} ({server.protocol || 'ldap'})
+                                        {server.tls === '1' && server.protocol !== 'ldaps' && ' + StartTLS'}
+                                      </p>
+                                      {server.user_search_base && (
+                                        <p className="text-xs text-slate-500 dark:text-slate-500 mt-1 truncate">
+                                          Base: {server.user_search_base}
+                                        </p>
+                                      )}
+                                      <div className="flex flex-wrap gap-1 mt-2">
+                                        {server.require_group_membership === '1' && (
+                                          <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded">
+                                            Group Required
+                                          </span>
+                                        )}
+                                        {server.nested_groups === '1' && (
+                                          <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded">
+                                            Nested Groups
+                                          </span>
+                                        )}
+                                        {server.case_sensitive === '1' && (
+                                          <span className="text-[10px] px-1.5 py-0.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 rounded">
+                                            Case Sensitive
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 ml-4">
+                                      <button
+                                        onClick={() => {
+                                          setEditingServerIndex(index);
+                                          setShowServerForm(true);
+                                        }}
+                                        className="p-2 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                                        title="Edit server"
+                                      >
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                          <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                                        </svg>
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          if (confirm(`Are you sure you want to remove "${server.name || `Server ${index + 1}`}"?`)) {
+                                            const updated = ldapServers.filter((_, i) => i !== index);
+                                            setLdapServers(updated);
+                                            if (editingServerIndex === index) {
+                                              setEditingServerIndex(null);
+                                              setShowServerForm(false);
+                                            } else if (editingServerIndex !== null && editingServerIndex > index) {
+                                              setEditingServerIndex(editingServerIndex - 1);
+                                            }
+                                          }
+                                        }}
+                                        className="p-2 text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                                        title="Remove server"
+                                      >
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                          <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                                        </svg>
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Legacy Single Server Form - Show only if no servers configured and LDAP is enabled */}
+                    {settings.ldap_enabled === '1' && ldapServers.length === 0 && !showServerForm && (
+                      <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                        <p className="text-sm text-amber-800 dark:text-amber-200">
+                          <strong>Note:</strong> The form below is for backward compatibility. Please add at least one LDAP server using the "Add Server" button above for multi-server support.
+                        </p>
+                      </div>
+                    )}
+
+
+                    {/* Legacy single-server form - only shown when no servers configured */}
+                    <div className={`grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2'} gap-6 ${ldapServers.length > 0 ? 'hidden' : ''}`}>
                       {/* Connection Settings */}
                       <div className="space-y-4">
                         <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 pb-2`}>Connection</h4>
@@ -6153,7 +6882,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           try {
                             setSettingsSaving(true);
                             setError('');
-                            await settingsService.updateSettings(settings);
+                            
+                            // Save LDAP servers as JSON
+                            const settingsToSave: Partial<AppSettings> = { ...settings };
+                            if (ldapServers.length > 0) {
+                              settingsToSave.ldap_servers = JSON.stringify(ldapServers);
+                            } else {
+                              // If no servers, clear the setting
+                              settingsToSave.ldap_servers = '';
+                            }
+                            
+                            await settingsService.updateSettings(settingsToSave);
                             // Refresh global settings context so AuthModal sees latest LDAP status
                             await refreshSettings();
                             alert('LDAP settings saved successfully!');

@@ -244,6 +244,7 @@ function handleLogin() {
         $password = $data['password'];
     $authMethod = isset($data['auth_method']) ? $data['auth_method'] : null; // 'local' or 'ldap' or null for auto
     $rememberMe = isset($data['remember_me']) ? (bool)$data['remember_me'] : false;
+    $ldapServerIndex = isset($data['ldap_server_index']) ? (int)$data['ldap_server_index'] : null; // Selected LDAP server index
     
     $db = getDB();
     
@@ -294,19 +295,38 @@ function handleLogin() {
     // Note: ldap_escape_filter and ldap_escape_dn are now defined globally above
     
     if ($ldapEnabled && extension_loaded('ldap')) {
-        $retryCount = (int)($settings['ldap_connection_retry'] ?? 3);
-        $retryDelay = (int)($settings['ldap_retry_delay'] ?? 1);
+        // Get LDAP servers list
+        $ldapServers = getLdapServers($settings);
+        
+        if (empty($ldapServers)) {
+            debug_log("LDAP: No LDAP servers configured");
+            throw new Exception("LDAP servers are not configured");
+        }
+        
+        // If server index is specified, use only that server; otherwise use first server
+        $selectedServerIndex = $ldapServerIndex !== null ? $ldapServerIndex : 0;
+        
+        if ($selectedServerIndex < 0 || $selectedServerIndex >= count($ldapServers)) {
+            debug_log("LDAP: Invalid server index: $selectedServerIndex");
+            throw new Exception("Invalid LDAP server selected");
+        }
+        
+        $serverConfig = $ldapServers[$selectedServerIndex];
+        debug_log("LDAP: Using server index $selectedServerIndex: " . ($serverConfig['name'] ?? $serverConfig['server']));
+        
+        $retryCount = (int)($serverConfig['connection_retry'] ?? 3);
+        $retryDelay = (int)($serverConfig['retry_delay'] ?? 1);
         $ldap = null;
         $lastError = null;
         
         // Retry connection logic
         for ($attempt = 0; $attempt <= $retryCount; $attempt++) {
             try {
-                $server = trim($settings['ldap_server'] ?? '');
-                $port = (int)($settings['ldap_port'] ?? 389);
-                $protocol = trim($settings['ldap_protocol'] ?? 'ldap');
-                $tls = !empty($settings['ldap_tls']); // 0 or 1
-                $timeout = (int)($settings['ldap_timeout'] ?? 30);
+                $server = trim($serverConfig['server'] ?? '');
+                $port = (int)($serverConfig['port'] ?? 389);
+                $protocol = trim($serverConfig['protocol'] ?? 'ldap');
+                $tls = !empty($serverConfig['tls']) && $serverConfig['tls'] == '1';
+                $timeout = (int)($serverConfig['timeout'] ?? 30);
                 
                 if (empty($server)) {
                     debug_log("LDAP: Server address is empty");
@@ -350,7 +370,7 @@ function handleLogin() {
             ldap_set_option($ldap, LDAP_OPT_PROTOCOL_VERSION, 3);
             
             // Referral handling
-            $followReferrals = !empty($settings['ldap_referrals']) && $settings['ldap_referrals'] == '1';
+            $followReferrals = !empty($serverConfig['referrals']) && $serverConfig['referrals'] == '1';
             ldap_set_option($ldap, LDAP_OPT_REFERRALS, $followReferrals ? 1 : 0);
             
             ldap_set_option($ldap, LDAP_OPT_NETWORK_TIMEOUT, $timeout);
@@ -358,7 +378,7 @@ function handleLogin() {
             
             // SSL certificate verification
             if ($protocol === 'ldaps') {
-                $sslVerify = !isset($settings['ldap_ssl_verify']) || $settings['ldap_ssl_verify'] == '1';
+                $sslVerify = !isset($serverConfig['ssl_verify']) || $serverConfig['ssl_verify'] == '1';
                 if (!$sslVerify) {
                     // Disable certificate verification (not recommended for production)
                     // Define constants if not available (PHP < 7.0)
@@ -384,8 +404,8 @@ function handleLogin() {
             }
             
             // Bind with service account to search for user
-            $bindDn = trim($settings['ldap_bind_dn'] ?? '');
-            $bindPass = $settings['ldap_bind_password'] ?? '';
+            $bindDn = trim($serverConfig['bind_dn'] ?? '');
+            $bindPass = $serverConfig['bind_password'] ?? '';
             
             // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
             if (!empty($bindPass)) {
@@ -424,13 +444,13 @@ function handleLogin() {
             
             if ($bound) {
                 // Check if User DN Template is configured (direct bind method)
-                $userDnTemplate = trim($settings['ldap_user_dn_template'] ?? '');
+                $userDnTemplate = trim($serverConfig['user_dn_template'] ?? '');
                 $userDn = null;
                 $userEntry = null;
                 
                 if (!empty($userDnTemplate)) {
                     // Use DN template for direct bind (no search needed)
-                    $caseSensitive = !empty($settings['ldap_case_sensitive']) && $settings['ldap_case_sensitive'] == '1';
+                    $caseSensitive = !empty($serverConfig['case_sensitive']) && $serverConfig['case_sensitive'] == '1';
                     $bindUsername = $caseSensitive ? $username : strtolower($username);
                     $userDn = str_replace('{username}', ldap_escape_dn($bindUsername), $userDnTemplate);
                     debug_log("LDAP: Using DN template: $userDn");
@@ -441,7 +461,7 @@ function handleLogin() {
                         $ldapSuccess = true;
                         
                         // Fetch user attributes
-                        $attributesStr = $settings['ldap_user_attributes'] ?? 'sAMAccountName,mail,displayName';
+                        $attributesStr = $serverConfig['user_attributes'] ?? 'sAMAccountName,mail,displayName';
                         $attributes = array_map('trim', explode(',', $attributesStr));
                         $result = @ldap_read($ldap, $userDn, '(objectClass=*)', $attributes);
                         if ($result) {
@@ -455,8 +475,8 @@ function handleLogin() {
                     }
                 } else {
                     // Use search-based authentication
-                    $searchBase = trim($settings['ldap_user_search_base'] ?? '');
-                    $filterTemplate = trim($settings['ldap_user_filter'] ?? '(sAMAccountName={username})');
+                    $searchBase = trim($serverConfig['user_search_base'] ?? '');
+                    $filterTemplate = trim($serverConfig['user_filter'] ?? '(sAMAccountName={username})');
                     
                     if (empty($searchBase)) {
                         debug_log("LDAP: User search base is empty");
@@ -465,18 +485,18 @@ function handleLogin() {
                     }
                     
                     // Escape username and replace in filter template
-                    $caseSensitive = !empty($settings['ldap_case_sensitive']) && $settings['ldap_case_sensitive'] == '1';
+                    $caseSensitive = !empty($serverConfig['case_sensitive']) && $serverConfig['case_sensitive'] == '1';
                     $searchUsername = $caseSensitive ? $username : strtolower($username);
                     $safeUsername = ldap_escape_filter($searchUsername);
                     $filter = str_replace('{username}', $safeUsername, $filterTemplate);
 
                 debug_log("LDAP: Searching base: $searchBase with filter: $filter");
 
-                $attributesStr = $settings['ldap_user_attributes'] ?? 'sAMAccountName,mail,displayName';
+                $attributesStr = $serverConfig['user_attributes'] ?? 'sAMAccountName,mail,displayName';
                 $attributes = array_map('trim', explode(',', $attributesStr));
                 
                     // Determine search scope and use appropriate LDAP function
-                    $searchScope = strtolower($settings['ldap_search_scope'] ?? 'sub');
+                    $searchScope = strtolower($serverConfig['search_scope'] ?? 'sub');
                     
                     // Use different LDAP functions based on scope
                     if ($searchScope === 'base') {
@@ -533,8 +553,8 @@ function handleLogin() {
                 $ldapDisplayName = '';
                 
                 // Custom attribute mappings
-                $emailAttr = !empty($settings['ldap_email_attribute']) ? strtolower($settings['ldap_email_attribute']) : null;
-                $displayNameAttr = !empty($settings['ldap_display_name_attribute']) ? strtolower($settings['ldap_display_name_attribute']) : null;
+                $emailAttr = !empty($serverConfig['email_attribute']) ? strtolower($serverConfig['email_attribute']) : null;
+                $displayNameAttr = !empty($serverConfig['display_name_attribute']) ? strtolower($serverConfig['display_name_attribute']) : null;
                 
                 // Try custom email attribute first, then defaults
                 if ($emailAttr && isset($userEntry[$emailAttr]) && is_array($userEntry[$emailAttr]) && isset($userEntry[$emailAttr][0])) {
@@ -571,11 +591,8 @@ function handleLogin() {
                 // Fallback email if not found - use domain from base DN or user search base
                 if (empty($ldapEmail)) {
                     $domain = null;
-                    // Try ldap_base_dn first, then fall back to ldap_user_search_base
-                    $baseDn = $settings['ldap_base_dn'] ?? '';
-                    if (empty($baseDn)) {
-                        $baseDn = $settings['ldap_user_search_base'] ?? '';
-                    }
+                    // Try user search base first
+                    $baseDn = $serverConfig['user_search_base'] ?? '';
                     
                     if (!empty($baseDn)) {
                         // Extract domain from base DN (e.g., "DC=oneflorida,DC=org" -> "oneflorida.org")
@@ -589,7 +606,7 @@ function handleLogin() {
                     
                     // If domain still not found, try to extract from server hostname
                     if (empty($domain)) {
-                        $server = trim($settings['ldap_server'] ?? '');
+                        $server = trim($serverConfig['server'] ?? '');
                         if (!empty($server)) {
                             // Try to extract domain from FQDN (e.g., "server.example.com" -> "example.com")
                             $parts = explode('.', $server);
@@ -598,6 +615,11 @@ function handleLogin() {
                                 $domain = strtolower(implode('.', array_slice($parts, 1)));
                             }
                         }
+                    }
+                    
+                    // Try login_domain from server config
+                    if (empty($domain) && !empty($serverConfig['login_domain'])) {
+                        $domain = strtolower(trim($serverConfig['login_domain']));
                     }
                     
                     // Final fallback - use generic domain
@@ -609,9 +631,9 @@ function handleLogin() {
                 }
                 
                 // Check group membership requirements if enabled
-                $requireGroupMembership = !empty($settings['ldap_require_group_membership']) && $settings['ldap_require_group_membership'] == '1';
-                if ($requireGroupMembership && !empty($settings['ldap_required_groups'])) {
-                    $requiredGroups = array_map('trim', explode(',', $settings['ldap_required_groups']));
+                $requireGroupMembership = !empty($serverConfig['require_group_membership']) && $serverConfig['require_group_membership'] == '1';
+                if ($requireGroupMembership && !empty($serverConfig['required_groups'])) {
+                    $requiredGroups = array_map('trim', explode(',', $serverConfig['required_groups']));
                     $userGroups = [];
                     
                     // Get user's groups
@@ -624,8 +646,8 @@ function handleLogin() {
                     }
                     
                     // Check nested groups if enabled
-                    $nestedGroups = !empty($settings['ldap_nested_groups']) && $settings['ldap_nested_groups'] == '1';
-                    if ($nestedGroups && !empty($settings['ldap_group_search_base'])) {
+                    $nestedGroups = !empty($serverConfig['nested_groups']) && $serverConfig['nested_groups'] == '1';
+                    if ($nestedGroups && !empty($serverConfig['group_search_base'])) {
                         // TODO: Implement nested group checking recursively
                         // This would require additional LDAP queries to check group membership
                     }
@@ -3015,6 +3037,59 @@ function extractEmailDomain($email) {
  * @param array $settings LDAP settings array
  * @return string|null LDAP domain or null if not found
  */
+/**
+ * Get LDAP servers configuration (supports both old single-server and new multi-server format)
+ * @param array $settings Settings array from database
+ * @return array Array of LDAP server configurations
+ */
+function getLdapServers($settings) {
+    // Check if new multi-server format exists
+    if (!empty($settings['ldap_servers'])) {
+        $serversJson = $settings['ldap_servers'];
+        $servers = json_decode($serversJson, true);
+        if (is_array($servers) && !empty($servers)) {
+            return $servers;
+        }
+    }
+    
+    // Fallback to old single-server format (for backward compatibility)
+    $server = trim($settings['ldap_server'] ?? '');
+    if (empty($server)) {
+        return [];
+    }
+    
+    // Convert old format to new format
+    return [[
+        'name' => $settings['ldap_login_domain'] ?? $server,
+        'server' => $server,
+        'port' => (int)($settings['ldap_port'] ?? 389),
+        'protocol' => trim($settings['ldap_protocol'] ?? 'ldap'),
+        'tls' => !empty($settings['ldap_tls']) && $settings['ldap_tls'] == '1' ? '1' : '0',
+        'timeout' => (int)($settings['ldap_timeout'] ?? 30),
+        'bind_dn' => trim($settings['ldap_bind_dn'] ?? ''),
+        'bind_password' => $settings['ldap_bind_password'] ?? '',
+        'user_search_base' => trim($settings['ldap_user_search_base'] ?? ''),
+        'user_filter' => trim($settings['ldap_user_filter'] ?? '(sAMAccountName={username})'),
+        'user_attributes' => trim($settings['ldap_user_attributes'] ?? 'sAMAccountName,mail,displayName'),
+        'group_search_base' => trim($settings['ldap_group_search_base'] ?? ''),
+        'group_filter' => trim($settings['ldap_group_filter'] ?? '(objectClass=group)'),
+        'group_attributes' => trim($settings['ldap_group_attributes'] ?? 'cn,distinguishedName,member'),
+        'require_group_membership' => !empty($settings['ldap_require_group_membership']) && $settings['ldap_require_group_membership'] == '1' ? '1' : '0',
+        'required_groups' => trim($settings['ldap_required_groups'] ?? ''),
+        'search_scope' => strtolower($settings['ldap_search_scope'] ?? 'sub'),
+        'user_dn_template' => trim($settings['ldap_user_dn_template'] ?? ''),
+        'nested_groups' => !empty($settings['ldap_nested_groups']) && $settings['ldap_nested_groups'] == '1' ? '1' : '0',
+        'case_sensitive' => !empty($settings['ldap_case_sensitive']) && $settings['ldap_case_sensitive'] == '1' ? '1' : '0',
+        'ssl_verify' => !isset($settings['ldap_ssl_verify']) || $settings['ldap_ssl_verify'] == '1' ? '1' : '0',
+        'connection_retry' => (int)($settings['ldap_connection_retry'] ?? 3),
+        'retry_delay' => (int)($settings['ldap_retry_delay'] ?? 1),
+        'email_attribute' => trim($settings['ldap_email_attribute'] ?? ''),
+        'display_name_attribute' => trim($settings['ldap_display_name_attribute'] ?? ''),
+        'referrals' => !empty($settings['ldap_referrals']) && $settings['ldap_referrals'] == '1' ? '1' : '0',
+        'login_domain' => trim($settings['ldap_login_domain'] ?? ''),
+    ]];
+}
+
 function getLdapDomainFromSettings($settings) {
     // Try to extract domain from base DN first
     $baseDn = $settings['ldap_base_dn'] ?? '';

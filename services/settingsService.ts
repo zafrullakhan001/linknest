@@ -53,6 +53,7 @@ export interface AppSettings {
   ldap_protocol?: string;
   ldap_base_dn?: string;
   ldap_login_domain?: string; // Optional explicit domain label for login dropdown
+  ldap_servers?: string; // JSON string of LDAP servers array
   ldap_bind_dn?: string;
   ldap_bind_password?: string;
   ldap_user_search_base?: string;
@@ -144,6 +145,7 @@ export const settingsService = {
       ldap_protocol: data.settings?.ldap_protocol || 'ldap',
       ldap_base_dn: data.settings?.ldap_base_dn || '',
       ldap_login_domain: data.settings?.ldap_login_domain || '',
+      ldap_servers: data.settings?.ldap_servers || '',
       ldap_bind_dn: data.settings?.ldap_bind_dn || '',
       ldap_bind_password: data.settings?.ldap_bind_password || '',
       ldap_user_search_base: data.settings?.ldap_user_search_base || '',

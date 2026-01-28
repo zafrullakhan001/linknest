@@ -370,7 +370,7 @@ function handleUpdateSettings() {
                 'disabled_tabs',
                 'maintenance_enabled', 'maintenance_message',
                 'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
-                'ldap_login_domain',
+                'ldap_login_domain', 'ldap_servers',
                 'ldap_bind_dn', 'ldap_bind_password',
                 'ldap_user_search_base', 'ldap_user_filter', 'ldap_user_attributes', 
                 'ldap_group_search_base', 'ldap_group_filter', 'ldap_group_attributes', 
@@ -386,6 +386,23 @@ function handleUpdateSettings() {
                 'idp_x509cert', 'nameid_format', 'strict', 'debug', 'map_name_to', 'map_email_to',
                 'map_display_name_to', 'auto_provision'
             ];
+            
+            // Handle ldap_servers - ensure it's valid JSON
+            if ($key === 'ldap_servers') {
+                if (is_array($value)) {
+                    $value = json_encode($value);
+                } elseif (is_string($value)) {
+                    // Validate JSON
+                    $decoded = json_decode($value, true);
+                    if (json_last_error() !== JSON_ERROR_NONE) {
+                        continue; // Skip invalid JSON
+                    }
+                    // Re-encode to ensure consistent format
+                    $value = json_encode($decoded);
+                } else {
+                    continue; // Skip invalid types
+                }
+            }
             if (!in_array($key, $allowedKeys)) {
                 continue; // Skip invalid keys
             }

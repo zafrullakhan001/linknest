@@ -48,6 +48,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [loading, setLoading] = useState(false);
   const [ldapDomain, setLdapDomain] = useState<string | null>(null);
   const [ldapEnabled, setLdapEnabled] = useState(false);
+  const [ldapServers, setLdapServers] = useState<Array<{ name: string; server: string; login_domain?: string }>>([]);
+  const [selectedLdapServerIndex, setSelectedLdapServerIndex] = useState<number>(0);
   const [samlEnabled, setSamlEnabled] = useState(false);
   const [localAuthEnabled, setLocalAuthEnabled] = useState(true);
   const [authState, setAuthState] = useState<AuthState>('idle');
@@ -129,35 +131,73 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         }
       }
 
-      // Extract domain from settings if LDAP is enabled
+      // Load LDAP servers list if LDAP is enabled
       if (enabled) {
-        // 1) Prefer explicit login domain if configured in settings
-        let domain: string | null = null;
-        const explicit = (appSettings as any).ldap_login_domain as string | undefined;
-        if (explicit && explicit.trim().length > 0) {
-          domain = explicit.trim().toLowerCase();
-        } else {
-          // 2) Try ldap_base_dn first, then fall back to ldap_user_search_base
-          const baseDn = appSettings.ldap_base_dn || appSettings.ldap_user_search_base || '';
-          if (baseDn) {
-            domain = extractDomainFromBaseDn(baseDn);
+        // Check for new multi-server format
+        const ldapServersJson = (appSettings as any).ldap_servers as string | undefined;
+        let servers: Array<{ name: string; server: string; login_domain?: string }> = [];
+        
+        if (ldapServersJson) {
+          try {
+            const parsed = JSON.parse(ldapServersJson);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              servers = parsed.map((s: any) => ({
+                name: s.name || s.server || 'LDAP Server',
+                server: s.server || '',
+                login_domain: s.login_domain || s.name || ''
+              }));
+            }
+          } catch (e) {
+            console.error('Failed to parse LDAP servers:', e);
           }
-          // 3) If still not found, try to extract from server hostname as fallback
-          if (!domain) {
-            const server = appSettings.ldap_server || '';
-            if (server) {
-              const parts = server.split('.');
+        }
+        
+        // Fallback to old single-server format
+        if (servers.length === 0) {
+          const server = appSettings.ldap_server || '';
+          if (server) {
+            const loginDomain = (appSettings as any).ldap_login_domain as string | undefined;
+            servers = [{
+              name: loginDomain || server,
+              server: server,
+              login_domain: loginDomain || ''
+            }];
+          }
+        }
+        
+        setLdapServers(servers);
+        setSelectedLdapServerIndex(0); // Reset to first server
+        
+        // Extract domain from first server for display
+        if (servers.length > 0) {
+          const firstServer = servers[0];
+          let domain: string | null = null;
+          
+          if (firstServer.login_domain) {
+            domain = firstServer.login_domain.toLowerCase();
+          } else {
+            // Try to extract from base DN
+            const baseDn = appSettings.ldap_base_dn || appSettings.ldap_user_search_base || '';
+            if (baseDn) {
+              domain = extractDomainFromBaseDn(baseDn);
+            }
+            // If still not found, try to extract from server hostname
+            if (!domain && firstServer.server) {
+              const parts = firstServer.server.split('.');
               if (parts.length >= 2) {
-                // Skip first part (hostname), use rest as domain
                 domain = parts.slice(1).join('.').toLowerCase();
               }
             }
           }
+          
+          setLdapDomain(domain);
+        } else {
+          setLdapDomain(null);
         }
-
-        setLdapDomain(domain);
       } else {
+        setLdapServers([]);
         setLdapDomain(null);
+        setSelectedLdapServerIndex(0);
       }
     } else {
       // Reset when not in login mode
@@ -177,6 +217,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       setRememberMe(false);
       setError('');
       setSuccess('');
+      setSelectedLdapServerIndex(0);
     }
   }, [isOpen]);
 
@@ -289,9 +330,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           );
 
           try {
-            // Try login with timeout
+            // Try login with timeout - pass selected LDAP server index if LDAP method
+            const ldapServerIndex = (method === 'ldap' || (method === undefined && ldapEnabled)) ? selectedLdapServerIndex : undefined;
             await Promise.race([
-              login(username, password, method === 'ldap' ? 'ldap' : undefined, rememberMe),
+              login(username, password, method === 'ldap' ? 'ldap' : undefined, rememberMe, ldapServerIndex),
               timeoutPromise
             ]);
 
@@ -307,8 +349,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
               setCurrentMethod('local');
               setProgress(50); // Reset progress
 
-              // Try local authentication
-              await login(username, password, 'local', rememberMe);
+              // Try local authentication (no LDAP server index needed)
+              await login(username, password, 'local', rememberMe, undefined);
               setAuthState('success');
               setProgress(100);
               await new Promise(resolve => setTimeout(resolve, 200));
@@ -321,7 +363,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           // Direct local authentication
           setAuthState('local_authenticating');
           setCurrentMethod('local');
-          await login(username, password, 'local', rememberMe);
+          await login(username, password, 'local', rememberMe, undefined);
           setAuthState('success');
           setProgress(100);
           await new Promise(resolve => setTimeout(resolve, 200));
@@ -337,6 +379,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         setAuthState('idle');
         setProgress(0);
         setCurrentMethod(null);
+        setSelectedLdapServerIndex(0);
       } else {
         // Register: validate password strength and confirmation
         const pwValidation = validatePassword(password);
@@ -605,6 +648,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                       </p>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* LDAP Server Selection Dropdown - only show when LDAP is selected and multiple servers available */}
+              {authMethod === 'ldap' && ldapServers.length > 1 && (
+                <div>
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
+                    LDAP Server / Domain
+                  </label>
+                  <select
+                    value={selectedLdapServerIndex}
+                    onChange={(e) => setSelectedLdapServerIndex(parseInt(e.target.value, 10))}
+                    disabled={loading}
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  >
+                    {ldapServers.map((server, index) => (
+                      <option key={index} value={index}>
+                        {server.name} {server.server ? `(${server.server})` : ''}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
 
