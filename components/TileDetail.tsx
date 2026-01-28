@@ -18,22 +18,22 @@ import { VersionDiffViewer } from './VersionDiffViewer';
 
 // Resolve API base dynamically
 function resolveApiBase(): string {
-  const envBase = (import.meta as any)?.env?.VITE_API_BASE;
-  if (envBase) {
-    return envBase;
-  }
-
-  if (typeof window !== 'undefined') {
-    const path = window.location.pathname || '';
-    if (path !== '/' && path.length > 1) {
-      const cleanPath = path.replace(/\/[^/]*$/, '').replace(/\/$/, '');
-      if (cleanPath && cleanPath !== '/') {
-        return `${cleanPath}/api`;
-      }
+    const envBase = (import.meta as any)?.env?.VITE_API_BASE;
+    if (envBase) {
+        return envBase;
     }
-  }
 
-  return '/api';
+    if (typeof window !== 'undefined') {
+        const path = window.location.pathname || '';
+        if (path !== '/' && path.length > 1) {
+            const cleanPath = path.replace(/\/[^/]*$/, '').replace(/\/$/, '');
+            if (cleanPath && cleanPath !== '/') {
+                return `${cleanPath}/api`;
+            }
+        }
+    }
+
+    return '/api';
 }
 
 interface TileVersion {
@@ -366,24 +366,24 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [tileVersions, setTileVersions] = useState<TileVersion[]>([]);
     const [loadingVersions, setLoadingVersions] = useState(false);
     const [versionActionLoading, setVersionActionLoading] = useState<number | null>(null);
-    
+
     // Version Filter/Search State
     const [versionSearchTerm, setVersionSearchTerm] = useState('');
     const [versionFilterUser, setVersionFilterUser] = useState<string>('');
     const [versionFilterDateFrom, setVersionFilterDateFrom] = useState<string>('');
     const [versionFilterDateTo, setVersionFilterDateTo] = useState<string>('');
     const [versionFilterTag, setVersionFilterTag] = useState<string>('');
-    
+
     // Version Compare State
     const [selectedVersionsForCompare, setSelectedVersionsForCompare] = useState<number[]>([]);
     const [isDiffLoading, setIsDiffLoading] = useState(false);
-    
+
     // Version Edit State (tags/comments)
     const [editingVersionId, setEditingVersionId] = useState<number | null>(null);
     const [editingVersionTags, setEditingVersionTags] = useState<string[]>([]);
     const [editingVersionComments, setEditingVersionComments] = useState<string>('');
     const [newTagInput, setNewTagInput] = useState('');
-    
+
     // Restore Preview State
     const [restorePreviewVersion, setRestorePreviewVersion] = useState<number | null>(null);
 
@@ -476,17 +476,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             try {
                 // Small delay to allow UI to render first
                 await new Promise(resolve => setTimeout(resolve, 500));
-                
+
                 // Get all sections from the tile
                 const sections = tile.tabs && tile.tabs.length > 0
                     ? tile.tabs.flatMap(tab => tab.sections)
                     : tile.sections || [];
-                
+
                 // Check if tile has any links
-                const hasLinks = sections.some(section => 
+                const hasLinks = sections.some(section =>
                     section.links && section.links.length > 0
                 );
-                
+
                 // Only auto-check if tile has links and we're not already checking
                 if (hasLinks && !checkingHealth) {
                     handleCheckTileHealth();
@@ -655,7 +655,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setEditEmoji(tile.emoji);
         setEditColor(tile.themeColor);
         setEditVisibility(tile.visibility || 'public');
-        
+
         // Always include owner in allowed users list
         const allowedUsers = tile.allowedUsers || [];
         if (tile.userId) {
@@ -668,10 +668,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         } else {
             setEditAllowedUsers(allowedUsers);
         }
-        
+
         // Load allowed groups
         setEditAllowedGroups(tile.allowedGroups || []);
-        
+
         setEditBrowser(tile.browser || 'default');
 
         // Tabs / sections: always reflect the latest tile data when
@@ -1010,7 +1010,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 setDiffOriginalTile(versionParams);
                 setDiffModifiedTile(tile); // Current state
                 setDiffTitle(`Comparing Version ${version.version_number} vs Current`);
-                
+
                 // Set version metadata for display
                 setDiffOriginalVersionMeta({
                     versionNumber: version.version_number,
@@ -1018,12 +1018,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     username: version.username,
                     changelogSummary: version.changelog_summary
                 });
-                
+
                 // For current state, we don't have version metadata, but we can show it's current
                 setDiffModifiedVersionMeta({
                     changelogSummary: null // Current state doesn't have a changelog summary
                 });
-                
+
                 setDiffViewerOpen(true);
             }
         } catch (error) {
@@ -1163,21 +1163,21 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 setDiffOriginalTile(data.version1.data);
                 setDiffModifiedTile(data.version2.data);
                 setDiffTitle(`Comparing Version ${data.version1.version_number} vs Version ${data.version2.version_number}`);
-                
+
                 setDiffOriginalVersionMeta({
                     versionNumber: data.version1.version_number,
                     createdAt: data.version1.created_at,
                     username: tileVersions.find(v => v.id === versionId1)?.username || 'Unknown',
                     changelogSummary: data.version1.changelog_summary
                 });
-                
+
                 setDiffModifiedVersionMeta({
                     versionNumber: data.version2.version_number,
                     createdAt: data.version2.created_at,
                     username: tileVersions.find(v => v.id === versionId2)?.username || 'Unknown',
                     changelogSummary: data.version2.changelog_summary
                 });
-                
+
                 setDiffViewerOpen(true);
                 setSelectedVersionsForCompare([]);
             }
@@ -1310,21 +1310,21 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 setDiffOriginalTile(tile); // Current state
                 setDiffModifiedTile(versionParams); // Version to restore
                 setDiffTitle(`Restore Preview: Version ${version?.version_number || versionId}`);
-                
+
                 setDiffOriginalVersionMeta({
                     versionNumber: 0, // Current
                     createdAt: Date.now() / 1000,
                     username: 'Current State',
                     changelogSummary: null
                 });
-                
+
                 setDiffModifiedVersionMeta({
                     versionNumber: version?.version_number || 0,
                     createdAt: version?.created_at || 0,
                     username: version?.username || 'Unknown',
                     changelogSummary: version?.changelog_summary || null
                 });
-                
+
                 setDiffViewerOpen(true);
             }
         } catch (error) {
@@ -1349,7 +1349,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         // Search term filter
         if (versionSearchTerm) {
             const searchLower = versionSearchTerm.toLowerCase();
-            const matchesSearch = 
+            const matchesSearch =
                 version.changelog_summary?.toLowerCase().includes(searchLower) ||
                 version.username?.toLowerCase().includes(searchLower) ||
                 version.comments?.toLowerCase().includes(searchLower) ||
@@ -3614,36 +3614,36 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             <span>Edit</span>
                                         </button>
                                         {(user?.is_admin || tile.canCloneTile === true) && (
-                                        <button
-                                            onClick={async () => {
-                                                if (!isAuthenticated) {
-                                                    if (onAuthRequired) onAuthRequired();
-                                                    return;
-                                                }
-                                                if (!tile.canEdit && !user?.is_admin) {
-                                                    alert('You do not have permission to clone this space.');
-                                                    return;
-                                                }
-                                                try {
-                                                    await cloneTile(tile.id);
-                                                    // Fetch fresh tiles to get the cloned one
-                                                    const freshTiles = await getTiles();
-                                                    onUpdateTiles(freshTiles);
-                                                    alert('Space cloned successfully!');
-                                                } catch (error) {
-                                                    console.error('Failed to clone tile:', error);
-                                                    alert('Failed to clone space. Please try again.');
-                                                }
-                                            }}
-                                            className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 backdrop-blur-sm"
-                                            title="Clone this space"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
-                                                <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.439A1.5 1.5 0 008.378 6H4.5z" />
-                                            </svg>
-                                            <span>Clone</span>
-                                        </button>
+                                            <button
+                                                onClick={async () => {
+                                                    if (!isAuthenticated) {
+                                                        if (onAuthRequired) onAuthRequired();
+                                                        return;
+                                                    }
+                                                    if (!tile.canEdit && !user?.is_admin) {
+                                                        alert('You do not have permission to clone this space.');
+                                                        return;
+                                                    }
+                                                    try {
+                                                        await cloneTile(tile.id);
+                                                        // Fetch fresh tiles to get the cloned one
+                                                        const freshTiles = await getTiles();
+                                                        onUpdateTiles(freshTiles);
+                                                        alert('Space cloned successfully!');
+                                                    } catch (error) {
+                                                        console.error('Failed to clone tile:', error);
+                                                        alert('Failed to clone space. Please try again.');
+                                                    }
+                                                }}
+                                                className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 backdrop-blur-sm"
+                                                title="Clone this space"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                    <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                                                    <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.439A1.5 1.5 0 008.378 6H4.5z" />
+                                                </svg>
+                                                <span>Clone</span>
+                                            </button>
                                         )}
                                     </>
                                 )}
@@ -4789,22 +4789,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 <button
                                                     type="button"
                                                     onClick={() => setVisibilityActiveTab('users')}
-                                                    className={`flex-1 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors ${
-                                                        visibilityActiveTab === 'users'
-                                                            ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400 border-b-2 border-brand-500'
-                                                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                                                    }`}
+                                                    className={`flex-1 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors ${visibilityActiveTab === 'users'
+                                                        ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400 border-b-2 border-brand-500'
+                                                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                                        }`}
                                                 >
                                                     Users ({editAllowedUsers.length})
                                                 </button>
                                                 <button
                                                     type="button"
                                                     onClick={() => setVisibilityActiveTab('groups')}
-                                                    className={`flex-1 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors ${
-                                                        visibilityActiveTab === 'groups'
-                                                            ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400 border-b-2 border-brand-500'
-                                                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                                                    }`}
+                                                    className={`flex-1 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors ${visibilityActiveTab === 'groups'
+                                                        ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400 border-b-2 border-brand-500'
+                                                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                                        }`}
                                                 >
                                                     Groups ({editAllowedGroups.length})
                                                 </button>
@@ -4847,11 +4845,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             return (
                                                                 <span
                                                                     key={`user-${userId}`}
-                                                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${
-                                                                        isOwner 
-                                                                            ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-700'
-                                                                            : 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 border-brand-200 dark:border-brand-800'
-                                                                    }`}
+                                                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${isOwner
+                                                                        ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-700'
+                                                                        : 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 border-brand-200 dark:border-brand-800'
+                                                                        }`}
                                                                 >
                                                                     {user?.username || `User ${userId}`}
                                                                     {isOwner && (
@@ -4926,11 +4923,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     return (
                                                                         <label
                                                                             key={user.id}
-                                                                            className={`flex items-center gap-3 p-2.5 rounded-lg transition-colors ${
-                                                                                isOwner 
-                                                                                    ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
-                                                                                    : 'hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer'
-                                                                            }`}
+                                                                            className={`flex items-center gap-3 p-2.5 rounded-lg transition-colors ${isOwner
+                                                                                ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
+                                                                                : 'hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer'
+                                                                                }`}
                                                                         >
                                                                             <input
                                                                                 type="checkbox"
@@ -4944,15 +4940,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     }
                                                                                 }}
                                                                                 disabled={isOwner}
-                                                                                className={`rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 w-4 h-4 ${
-                                                                                    isOwner ? 'opacity-50 cursor-not-allowed' : ''
-                                                                                }`}
+                                                                                className={`rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 w-4 h-4 ${isOwner ? 'opacity-50 cursor-not-allowed' : ''
+                                                                                    }`}
                                                                             />
-                                                                            <span className={`text-sm font-medium flex-1 ${
-                                                                                isOwner 
-                                                                                    ? 'text-amber-800 dark:text-amber-200'
-                                                                                    : 'text-slate-700 dark:text-slate-300'
-                                                                            }`}>
+                                                                            <span className={`text-sm font-medium flex-1 ${isOwner
+                                                                                ? 'text-amber-800 dark:text-amber-200'
+                                                                                : 'text-slate-700 dark:text-slate-300'
+                                                                                }`}>
                                                                                 {user.username}
                                                                             </span>
                                                                             {isOwner && (
@@ -4973,8 +4967,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 return u.username.toLowerCase().includes(searchLower) ||
                                                                     u.email?.toLowerCase().includes(searchLower);
                                                             }).length === 0 && (
-                                                                <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users found</div>
-                                                            )}
+                                                                    <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users found</div>
+                                                                )}
                                                         </div>
                                                     )
                                                 )}
@@ -4999,8 +4993,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         (g.description || '').toLowerCase().includes(searchLower);
                                                                 })
                                                                 .map(g => (
-                                                                    <label 
-                                                                        key={g.id} 
+                                                                    <label
+                                                                        key={g.id}
                                                                         className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50"
                                                                     >
                                                                         <input
@@ -5031,8 +5025,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 return g.name.toLowerCase().includes(searchLower) ||
                                                                     (g.description || '').toLowerCase().includes(searchLower);
                                                             }).length === 0 && (
-                                                                <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups found</div>
-                                                            )}
+                                                                    <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups found</div>
+                                                                )}
                                                         </div>
                                                     )
                                                 )}
@@ -5052,8 +5046,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     )}
                                 </div>
 
-                                {/* Browser Selection - Only show if feature is enabled and user has canChangeBrowser */}
-                                {settings.browser_specific_links_enabled === '1' && tile.canChangeBrowser === true && (
+                                {/* Browser Selection - Only show if feature is enabled and user has canChangeBrowser or is admin */}
+                                {settings.browser_specific_links_enabled === '1' && (user?.is_admin || tile.canChangeBrowser === true) && (
                                     <div>
                                         <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-3">Default Browser for All Links</label>
                                         <select
@@ -5217,7 +5211,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     )}
                                                 </div>
                                             )}
-                                            
+
                                             {loadingVersions ? (
                                                 <div className="text-center py-4 text-slate-500 text-sm">Loading versions...</div>
                                             ) : tileVersions.length === 0 ? (
@@ -5311,7 +5305,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     </button>
                                                                 </div>
                                                             </div>
-                                                            
+
                                                             {/* Edit Tags/Comments UI */}
                                                             {editingVersionId === version.id && (
                                                                 <div className="mt-3 p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-300 dark:border-slate-600 space-y-3">
@@ -5383,7 +5377,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     </div>
                                                                 </div>
                                                             )}
-                                                            
+
                                                             <div className="flex gap-2 mt-3 pt-3 border-t border-slate-200 dark:border-slate-800">
                                                                 <button
                                                                     onClick={() => handleCompareWithCurrent(version)}
@@ -5675,22 +5669,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         </svg>
                                                     </button>
                                                     {(tile.canDeleteTabs !== false && (tile.canDeleteTabs !== undefined || tile.canEdit)) && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            if (tile.canDeleteTabs !== false && (tile.canDeleteTabs !== undefined || tile.canEdit)) {
-                                                                console.log('Delete button clicked for tab:', { id: tab.id, title: tab.title });
-                                                                handleRemoveTab(tab.id);
-                                                            }
-                                                        }}
-                                                        disabled={editTabs.length <= 1}
-                                                        className="text-slate-400 hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed p-2"
-                                                        title={editTabs.length <= 1 ? "Cannot delete the last tab" : "Delete Tab"}
-                                                    >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                                                        </svg>
-                                                    </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                if (tile.canDeleteTabs !== false && (tile.canDeleteTabs !== undefined || tile.canEdit)) {
+                                                                    console.log('Delete button clicked for tab:', { id: tab.id, title: tab.title });
+                                                                    handleRemoveTab(tab.id);
+                                                                }
+                                                            }}
+                                                            disabled={editTabs.length <= 1}
+                                                            className="text-slate-400 hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed p-2"
+                                                            title={editTabs.length <= 1 ? "Cannot delete the last tab" : "Delete Tab"}
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                                            </svg>
+                                                        </button>
                                                     )}
                                                 </div>
 
@@ -5987,22 +5981,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         </svg>
                                                                     </button>
                                                                     {(tile.canDeleteSections !== false && (tile.canDeleteSections !== undefined || tile.canEdit)) && (
-                                                                    <button
-                                                                        onClick={(e) => {
-                                                                            e.preventDefault();
-                                                                            e.stopPropagation();
-                                                                            if (tile.canDeleteSections !== false && (tile.canDeleteSections !== undefined || tile.canEdit)) {
-                                                                                console.log('Delete section button clicked:', { tabId: tab.id, sectionId: section.id });
-                                                                                handleRemoveSection(tab.id, section.id);
-                                                                            }
-                                                                        }}
-                                                                        className="text-slate-400 hover:text-red-500 p-2"
-                                                                        title="Delete Section"
-                                                                    >
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                                                                        </svg>
-                                                                    </button>
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.preventDefault();
+                                                                                e.stopPropagation();
+                                                                                if (tile.canDeleteSections !== false && (tile.canDeleteSections !== undefined || tile.canEdit)) {
+                                                                                    console.log('Delete section button clicked:', { tabId: tab.id, sectionId: section.id });
+                                                                                    handleRemoveSection(tab.id, section.id);
+                                                                                }
+                                                                            }}
+                                                                            className="text-slate-400 hover:text-red-500 p-2"
+                                                                            title="Delete Section"
+                                                                        >
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                                                            </svg>
+                                                                        </button>
                                                                     )}
                                                                 </div>
 
@@ -6280,7 +6274,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         </div>
 
                                                                                         {/* Browser Selection - Only show if feature is enabled and user has canChangeBrowser */}
-                                                                                        {settings.browser_specific_links_enabled === '1' && tile.canChangeBrowser === true && (
+                                                                                        {settings.browser_specific_links_enabled === '1' && (user?.is_admin || tile.canChangeBrowser === true) && (
                                                                                             <div>
                                                                                                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Open link in</label>
                                                                                                 <select
@@ -6578,15 +6572,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 </svg>
                                                                                             </button>
                                                                                             {(tile.canDeleteLinks !== false && (tile.canDeleteLinks !== undefined || tile.canEdit)) && (
-                                                                                            <button
-                                                                                                onClick={() => handleRemoveLinkFromSection(tab.id, section.id, link.id)}
-                                                                                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
-                                                                                                title="Delete Link"
-                                                                                            >
-                                                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                                                                    <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                                                                                                </svg>
-                                                                                            </button>
+                                                                                                <button
+                                                                                                    onClick={() => handleRemoveLinkFromSection(tab.id, section.id, link.id)}
+                                                                                                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded"
+                                                                                                    title="Delete Link"
+                                                                                                >
+                                                                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                                                                        <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                                                                                    </svg>
+                                                                                                </button>
                                                                                             )}
                                                                                         </div>
                                                                                     </div>
@@ -6766,8 +6760,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 />
                                                                             </div>
 
-                                                                            {/* Browser Selection - Only show if feature is enabled and user has canChangeBrowser */}
-                                                                            {settings.browser_specific_links_enabled === '1' && tile.canChangeBrowser === true && (
+                                                                            {/* Browser Selection - Only show if feature is enabled and user has canChangeBrowser or is admin */}
+                                                                            {settings.browser_specific_links_enabled === '1' && (user?.is_admin || tile.canChangeBrowser === true) && (
                                                                                 <div>
                                                                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Open link in</label>
                                                                                     <select

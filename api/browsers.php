@@ -33,16 +33,23 @@ function ensureBrowsersTable($db) {
     }
 }
 
+
 // Initialize database
 try {
+    error_log('Browsers API: Attempting to get database connection');
     $db = getDB();
+    error_log('Browsers API: Database connection successful, ensuring tables');
     ensureBrowsersTable($db);
+    error_log('Browsers API: Tables ensured successfully');
 } catch (Exception $e) {
+    error_log('Browsers API: Database initialization failed - ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
     http_response_code(500);
     header('Content-Type: application/json');
     echo json_encode([
         'error' => 'Database initialization failed',
-        'details' => $e->getMessage()
+        'details' => $e->getMessage(),
+        'file' => $e->getFile(),
+        'line' => $e->getLine()
     ]);
     exit;
 }

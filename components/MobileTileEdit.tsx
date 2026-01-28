@@ -949,7 +949,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                         style={{ minHeight: '44px' }}
                                                                     />
                                                                 </div>
-                                                                {settings?.browser_specific_links_enabled === '1' && (
+                                                                {(settings as any)?.browser_specific_links_enabled === '1' && (user?.is_admin || tile.canChangeBrowser === true) && (
                                                                     <div>
                                                                         <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
                                                                             Open link in
@@ -961,7 +961,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                             style={{ minHeight: '44px' }}
                                                                         >
                                                                             <option value="default">Default Browser</option>
-                                                                            {availableBrowsers.map(browserId => {
+                                                                            {(availableBrowsers || []).map(browserId => {
                                                                                 const displayName = browserId.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
                                                                                 return <option key={browserId} value={browserId}>{displayName}</option>;
                                                                             })}
@@ -1184,7 +1184,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                                             style={{ minHeight: '44px' }}
                                                                                         />
                                                                                     </div>
-                                                                                    {settings?.browser_specific_links_enabled === '1' && (
+                                                                                    {(settings as any)?.browser_specific_links_enabled === '1' && (user?.is_admin || tile.canChangeBrowser === true) && (
                                                                                         <div>
                                                                                             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
                                                                                                 Open link in
@@ -1196,7 +1196,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                                                 style={{ minHeight: '44px' }}
                                                                                             >
                                                                                                 <option value="default">Default Browser</option>
-                                                                                                {availableBrowsers.map(browserId => {
+                                                                                                {(availableBrowsers || []).map(browserId => {
                                                                                                     const displayName = browserId.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
                                                                                                     return <option key={browserId} value={browserId}>{displayName}</option>;
                                                                                                 })}
