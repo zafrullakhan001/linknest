@@ -1019,6 +1019,12 @@ const SortableTile: React.FC<SortableTileProps> = ({
   }, [currentMessageIndex, activeMessages]);
   const activeMessagesCount = activeMessages.length;
 
+  // Create a stable dependency for the effect based on active celebration messages
+  const celebrationMessageKeys = activeMessages
+    .filter(msg => msg.type === 'celebration')
+    .map(msg => `${msg.id}-${msg.celebrationEffect}`)
+    .join(',');
+
   // Trigger fireworks or confetti for celebration messages based on celebrationEffect setting
   useEffect(() => {
     const celebrationMessages = activeMessages.filter(msg => msg.type === 'celebration');
@@ -1027,29 +1033,29 @@ const SortableTile: React.FC<SortableTileProps> = ({
       // Check what effect is requested for the first celebration message
       const effectType = celebrationMessages[0].celebrationEffect || 'fireworks';
 
-      if (effectType === 'fireworks') {
-        // Trigger fireworks immediately
-        setFireworksTrigger(prev => prev + 1);
+      // Stop any existing intervals if the effect type changed
+      // The dependency celebrationMessageKeys handles this.
 
-        // Set up interval to re-trigger fireworks every 5 seconds
+      // Trigger effect immediately
+      if (effectType === 'fireworks') {
+        setFireworksTrigger(prev => prev + 1);
         const interval = setInterval(() => {
           setFireworksTrigger(prev => prev + 1);
         }, 5000);
-
         return () => clearInterval(interval);
       } else if (effectType === 'confetti') {
-        // Trigger confetti immediately
         setConfettiTrigger(prev => prev + 1);
-
-        // Set up interval to re-trigger confetti every 5 seconds
         const interval = setInterval(() => {
           setConfettiTrigger(prev => prev + 1);
         }, 5000);
-
         return () => clearInterval(interval);
       }
+    } else {
+      // Reset triggers if no celebration messages
+      setFireworksTrigger(0);
+      setConfettiTrigger(0);
     }
-  }, [activeMessages]);
+  }, [celebrationMessageKeys]);
 
 
 

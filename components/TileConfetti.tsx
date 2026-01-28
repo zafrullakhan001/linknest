@@ -22,30 +22,32 @@ export const TileConfetti: React.FC<TileConfettiProps> = ({ trigger, tileRef }) 
     const confettiRef = useRef<ConfettiPiece[]>([]);
     const animationFrameRef = useRef<number>();
 
-    // Subtle grey colors for background confetti
+    // Vibrant colors for confetti
     const colors = [
-        'rgba(120, 120, 120, 0.4)',
-        'rgba(100, 100, 100, 0.45)',
-        'rgba(140, 140, 140, 0.35)',
-        'rgba(80, 80, 80, 0.5)',
+        '#ff4d4d', // Red
+        '#4d94ff', // Blue
+        '#ffff4d', // Yellow
+        '#4dff4d', // Green
+        '#d94dff', // Purple
+        '#ff944d', // Orange
     ];
 
     const shapes: Array<'square' | 'circle' | 'triangle'> = ['square', 'circle', 'triangle'];
 
     const createConfetti = (canvas: HTMLCanvasElement) => {
         const rect = canvas.getBoundingClientRect();
-        const count = 25; // Subtle amount
+        const count = 40; // More confetti
 
         for (let i = 0; i < count; i++) {
             confettiRef.current.push({
                 x: Math.random() * rect.width,
                 y: -20 - Math.random() * 50, // Start above the tile
-                vx: (Math.random() - 0.5) * 2,
-                vy: 1 + Math.random() * 2,
+                vx: (Math.random() - 0.5) * 0.5, // Even gentler horizontal drift
+                vy: 0.2 + Math.random() * 0.4, // Super slow initial fall
                 rotation: Math.random() * 360,
-                rotationSpeed: (Math.random() - 0.5) * 5,
+                rotationSpeed: (Math.random() - 0.5) * 1, // Minimal rotation speed
                 color: colors[Math.floor(Math.random() * colors.length)],
-                size: 3 + Math.random() * 4,
+                size: 4 + Math.random() * 5,
                 shape: shapes[Math.floor(Math.random() * shapes.length)],
             });
         }
@@ -56,6 +58,7 @@ export const TileConfetti: React.FC<TileConfettiProps> = ({ trigger, tileRef }) 
         confetti: ConfettiPiece
     ) => {
         ctx.save();
+        ctx.globalAlpha = 0.7; // Reduced intensity by 30%
         ctx.translate(confetti.x, confetti.y);
         ctx.rotate((confetti.rotation * Math.PI) / 180);
         ctx.fillStyle = confetti.color;
@@ -94,7 +97,7 @@ export const TileConfetti: React.FC<TileConfettiProps> = ({ trigger, tileRef }) 
         confettiRef.current = confettiRef.current.filter(confetti => {
             confetti.x += confetti.vx;
             confetti.y += confetti.vy;
-            confetti.vy += 0.05; // Gravity
+            confetti.vy += 0.004; // Minimal gravity (50% slower than before)
             confetti.rotation += confetti.rotationSpeed;
 
             // Remove if out of bounds
@@ -145,10 +148,9 @@ export const TileConfetti: React.FC<TileConfettiProps> = ({ trigger, tileRef }) 
     return (
         <canvas
             ref={canvasRef}
-            className="absolute inset-0 pointer-events-none z-0"
+            className="absolute inset-0 pointer-events-none z-10"
             style={{
                 borderRadius: 'inherit',
-                opacity: 0.6,
             }}
         />
     );
