@@ -128,7 +128,10 @@ try {
         
         if (!empty($userDnTemplate)) {
             // Use DN template for direct bind
-            $userDn = str_replace('{username}', ldap_escape_dn($testUsername), $userDnTemplate);
+            // Handle case sensitivity (same as login flow)
+            $caseSensitive = !empty($data['ldap_case_sensitive']) && $data['ldap_case_sensitive'] == '1';
+            $bindUsername = $caseSensitive ? $testUsername : strtolower($testUsername);
+            $userDn = str_replace('{username}', ldap_escape_dn($bindUsername), $userDnTemplate);
             $userBind = @ldap_bind($ldap, $userDn, $testPassword);
             if ($userBind) {
                 sendJSON([
@@ -150,7 +153,10 @@ try {
             }
             
             // Escape username and replace in filter template
-            $safeUsername = ldap_escape_filter($testUsername);
+            // Handle case sensitivity (same as login flow)
+            $caseSensitive = !empty($data['ldap_case_sensitive']) && $data['ldap_case_sensitive'] == '1';
+            $searchUsername = $caseSensitive ? $testUsername : strtolower($testUsername);
+            $safeUsername = ldap_escape_filter($searchUsername);
             $filter = str_replace('{username}', $safeUsername, $filterTemplate);
             
             // Determine search scope
@@ -182,7 +188,16 @@ try {
             
             $entries = @ldap_get_entries($ldap, $result);
             if ($entries === false || $entries['count'] == 0) {
-                throw new Exception("User '$testUsername' not found in LDAP directory");
+                $errorMsg = "User '$testUsername' not found in LDAP directory";
+                $errorMsg .= "\nSearch base: $searchBase";
+                $errorMsg .= "\nFilter used: $filter";
+                $errorMsg .= "\nSearch scope: $searchScope";
+                if (isset($caseSensitive)) {
+                    $errorMsg .= "\nCase sensitive: " . ($caseSensitive ? 'Yes' : 'No');
+                    $errorMsg .= "\nSearched username: " . ($caseSensitive ? $testUsername : strtolower($testUsername));
+                }
+                $errorMsg .= "\n\nTip: If you entered the username with @domain (e.g., user@domain.com), try using just the username part (e.g., user) if your LDAP filter expects only the username.";
+                throw new Exception($errorMsg);
             }
             
             $userEntry = $entries[0];

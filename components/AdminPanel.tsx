@@ -6580,6 +6580,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     {/* Test Connection */}
                     <div className={`${isMobile ? 'mt-6' : 'mt-8'} ${isMobile ? 'pt-6' : 'pt-6'} border-t border-slate-200 dark:border-slate-700`}>
                       <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white mb-4`}>Test Connection</h4>
+                      {ldapServers.length > 0 && (
+                        <p className={`${isMobile ? 'text-xs' : 'text-xs'} text-slate-600 dark:text-slate-400 mb-3`}>
+                          {editingServerIndex !== null 
+                            ? `Testing server: ${ldapServers[editingServerIndex]?.name || 'Selected Server'}`
+                            : `Testing first server: ${ldapServers[0]?.name || 'Server 1'}`}
+                        </p>
+                      )}
 
                       <form
                         onSubmit={async (e) => {
@@ -6588,22 +6595,78 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             setLdapTestLoading(true);
                             setLdapTestResult(null);
 
-                            // Use ref value first (most up-to-date), fallback to state
-                            const bindPassword = ldapBindPasswordRef.current || settings.ldap_bind_password || '';
+                            let testSettings: Partial<AppSettings>;
+                            let testUsername = ldapTestUser;
 
-                            // Ensure bind password doesn't contain dots (should never happen, but safety check)
-                            if (bindPassword.includes('â€¢')) {
-                              setLdapTestResult({
-                                success: false,
-                                message: 'Password field contains invalid characters. Please re-enter the password.'
-                              });
-                              setLdapTestLoading(false);
-                              return;
+                            // If we have multiple LDAP servers, use the selected/edited server's config
+                            if (ldapServers.length > 0) {
+                              // Determine which server to test
+                              const serverIndex = editingServerIndex !== null ? editingServerIndex : 0;
+                              const server = ldapServers[serverIndex];
+                              
+                              if (!server) {
+                                setLdapTestResult({
+                                  success: false,
+                                  message: 'No server selected for testing'
+                                });
+                                setLdapTestLoading(false);
+                                return;
+                              }
+
+                              // Handle username format - strip @domain if it matches the server's login_domain
+                              if (testUsername && server.login_domain) {
+                                const domainLower = server.login_domain.toLowerCase().trim();
+                                const usernameLower = testUsername.toLowerCase();
+                                if (usernameLower.includes('@' + domainLower)) {
+                                  // Extract username part before @domain
+                                  const parts = testUsername.split('@');
+                                  if (parts.length === 2 && parts[1].toLowerCase() === domainLower) {
+                                    testUsername = parts[0];
+                                  }
+                                }
+                              }
+
+                              // Convert server config to the format expected by ldap_test.php
+                              testSettings = {
+                                ldap_server: server.server,
+                                ldap_port: server.port,
+                                ldap_protocol: server.protocol,
+                                ldap_tls: server.tls === '1',
+                                ldap_timeout: server.timeout,
+                                ldap_bind_dn: server.bind_dn,
+                                ldap_bind_password: server.bind_password, // Use server's password directly
+                                ldap_user_search_base: server.user_search_base,
+                                ldap_user_filter: server.user_filter,
+                                ldap_user_attributes: server.user_attributes,
+                                ldap_user_dn_template: server.user_dn_template,
+                                ldap_search_scope: server.search_scope,
+                                ldap_nested_groups: server.nested_groups,
+                                ldap_case_sensitive: server.case_sensitive,
+                                ldap_ssl_verify: server.ssl_verify,
+                                ldap_connection_retry: server.connection_retry,
+                                ldap_retry_delay: server.retry_delay,
+                                ldap_email_attribute: server.email_attribute,
+                                ldap_display_name_attribute: server.display_name_attribute,
+                                ldap_referrals: server.referrals
+                              };
+                            } else {
+                              // Fall back to legacy single-server settings
+                              const bindPassword = ldapBindPasswordRef.current || settings.ldap_bind_password || '';
+
+                              // Ensure bind password doesn't contain dots (should never happen, but safety check)
+                              if (bindPassword.includes('â€¢')) {
+                                setLdapTestResult({
+                                  success: false,
+                                  message: 'Password field contains invalid characters. Please re-enter the password.'
+                                });
+                                setLdapTestLoading(false);
+                                return;
+                              }
+
+                              testSettings = { ...settings, ldap_bind_password: bindPassword };
                             }
 
-                            // Create settings object with the real password
-                            const testSettings = { ...settings, ldap_bind_password: bindPassword };
-                            const result = await settingsService.testLdapConnection(testSettings, ldapTestUser, ldapTestPassword);
+                            const result = await settingsService.testLdapConnection(testSettings, testUsername, ldapTestPassword);
                             setLdapTestResult(result);
                           } catch (err: any) {
                             setLdapTestResult({ success: false, message: err.message });

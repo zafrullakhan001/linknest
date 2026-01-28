@@ -483,8 +483,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
               {ldapEnabled && (
                 <span className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[10px] sm:text-xs font-semibold flex items-center gap-1">
                   <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                  <span className="hidden sm:inline">LDAP Active</span>
-                  <span className="sm:hidden">LDAP</span>
+                  <span className="hidden sm:inline">
+                    LDAP Active{ldapServers.length > 0 ? ` (${ldapServers.length})` : ''}
+                  </span>
+                  <span className="sm:hidden">
+                    LDAP{ldapServers.length > 0 ? ` (${ldapServers.length})` : ''}
+                  </span>
                 </span>
               )}
               {samlEnabled && (
@@ -561,7 +565,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                         </svg>
                         <div className="flex-1 sm:flex-none text-center sm:text-center">
                           <span className="text-xs font-medium text-slate-700 dark:text-slate-300 block">LDAP</span>
-                          <span className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 block mt-0.5">{ldapDomain || 'Enterprise'}</span>
+                          <span className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 block mt-0.5">
+                            {ldapServers.length > 1
+                              ? `${ldapServers.length} server(s) – select below`
+                              : ldapServers.length === 1
+                                ? (ldapServers[0].login_domain || ldapServers[0].name || ldapDomain || 'Enterprise')
+                                : (ldapDomain || 'Enterprise')}
+                          </span>
                         </div>
                       </label>
                     )}
@@ -651,8 +661,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 </div>
               )}
 
-              {/* LDAP Server Selection Dropdown - only show when LDAP is selected and multiple servers available */}
-              {authMethod === 'ldap' && ldapServers.length > 1 && (
+              {/* LDAP Server Selection Dropdown - show when LDAP or Auto is selected and at least one server */}
+              {((authMethod === 'ldap' || authMethod === 'auto') && ldapEnabled && ldapServers.length >= 1) && (
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
                     LDAP Server / Domain
@@ -662,13 +672,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     onChange={(e) => setSelectedLdapServerIndex(parseInt(e.target.value, 10))}
                     disabled={loading}
                     className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    title="Select which LDAP server or domain to authenticate against"
                   >
                     {ldapServers.map((server, index) => (
                       <option key={index} value={index}>
-                        {server.name} {server.server ? `(${server.server})` : ''}
+                        {server.name}{server.login_domain ? ` · ${server.login_domain}` : ''}{server.server ? ` (${server.server})` : ''}
                       </option>
                     ))}
                   </select>
+                  {ldapServers.length > 1 && (
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                      Choose the LDAP server or domain for your account.
+                    </p>
+                  )}
                 </div>
               )}
 
