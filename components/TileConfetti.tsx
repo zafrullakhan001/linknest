@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
+import type { CelebrationConfig } from '../types';
 
 interface ConfettiPiece {
     x: number;
@@ -10,45 +11,47 @@ interface ConfettiPiece {
     color: string;
     size: number;
     shape: 'square' | 'circle' | 'triangle';
+    opacity: number;
 }
 
 interface TileConfettiProps {
     trigger: number;
     tileRef?: React.RefObject<HTMLDivElement>;
+    config?: CelebrationConfig;
 }
 
-export const TileConfetti: React.FC<TileConfettiProps> = ({ trigger, tileRef }) => {
+const DEFAULT_COUNT = 40;
+
+export const TileConfetti: React.FC<TileConfettiProps> = ({ trigger, tileRef, config }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const confettiRef = useRef<ConfettiPiece[]>([]);
     const animationFrameRef = useRef<number>();
 
-    // Vibrant colors for confetti
+    const intensity = Math.max(1, Math.min(100, config?.intensity ?? 100)) / 100;
+    const count = Math.max(5, Math.min(80, config?.particleCount ?? DEFAULT_COUNT));
+    const sizeMul = Math.max(0.5, Math.min(2, (config?.particleSize ?? 100) / 100));
+
     const colors = [
-        '#ff4d4d', // Red
-        '#4d94ff', // Blue
-        '#ffff4d', // Yellow
-        '#4dff4d', // Green
-        '#d94dff', // Purple
-        '#ff944d', // Orange
+        '#ff4d4d', '#4d94ff', '#ffff4d', '#4dff4d', '#d94dff', '#ff944d',
     ];
 
     const shapes: Array<'square' | 'circle' | 'triangle'> = ['square', 'circle', 'triangle'];
 
     const createConfetti = (canvas: HTMLCanvasElement) => {
         const rect = canvas.getBoundingClientRect();
-        const count = 40; // More confetti
-
         for (let i = 0; i < count; i++) {
+            const baseSize = 4 + Math.random() * 5;
             confettiRef.current.push({
                 x: Math.random() * rect.width,
-                y: -20 - Math.random() * 50, // Start above the tile
-                vx: (Math.random() - 0.5) * 0.5, // Even gentler horizontal drift
-                vy: 0.2 + Math.random() * 0.4, // Super slow initial fall
+                y: -20 - Math.random() * 50,
+                vx: (Math.random() - 0.5) * 0.5 * intensity,
+                vy: (0.2 + Math.random() * 0.4) * intensity,
                 rotation: Math.random() * 360,
-                rotationSpeed: (Math.random() - 0.5) * 1, // Minimal rotation speed
+                rotationSpeed: (Math.random() - 0.5) * 1,
                 color: colors[Math.floor(Math.random() * colors.length)],
-                size: 4 + Math.random() * 5,
+                size: baseSize * sizeMul,
                 shape: shapes[Math.floor(Math.random() * shapes.length)],
+                opacity: 0.7 * intensity,
             });
         }
     };
@@ -58,7 +61,7 @@ export const TileConfetti: React.FC<TileConfettiProps> = ({ trigger, tileRef }) 
         confetti: ConfettiPiece
     ) => {
         ctx.save();
-        ctx.globalAlpha = 0.7; // Reduced intensity by 30%
+        ctx.globalAlpha = confetti.opacity;
         ctx.translate(confetti.x, confetti.y);
         ctx.rotate((confetti.rotation * Math.PI) / 180);
         ctx.fillStyle = confetti.color;
@@ -141,7 +144,7 @@ export const TileConfetti: React.FC<TileConfettiProps> = ({ trigger, tileRef }) 
                 cancelAnimationFrame(animationFrameRef.current);
             }
         };
-    }, [trigger, tileRef]);
+    }, [trigger, tileRef, intensity, count, sizeMul]);
 
     if (trigger === 0) return null;
 

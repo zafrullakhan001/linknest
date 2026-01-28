@@ -131,6 +131,19 @@ export interface TileMessage {
   animationType?: 'rollover' | 'still' | 'flash' | 'flip-horizontal' | 'flip-vertical' | 'bounce' | 'pulse' | 'shake' | 'fade' | 'slide'; // Animation type
   delayBefore?: number; // Delay in seconds before showing this message (for sequential display when multiple messages are active)
   celebrationEffect?: 'none' | 'fireworks' | 'confetti' | 'snowfall' | 'hearts-rising' | 'hearts-falling' | 'bubbles'; // Visual effect for celebration messages
+  celebrationConfig?: CelebrationConfig; // Optional overrides for celebration animation
+}
+
+/** Optional per-message overrides for celebration effect animations. All values use defaults when omitted. */
+export interface CelebrationConfig {
+  /** 0–100. Affects opacity and speed. Default 100. */
+  intensity?: number;
+  /** Particles per burst (hearts, bubbles, confetti, snowflakes, firework particles). Default varies by effect. */
+  particleCount?: number;
+  /** 50–200. Size multiplier (%). Default 100. */
+  particleSize?: number;
+  /** Milliseconds between bursts. Default 5000. Min 2000, max 15000. */
+  triggerIntervalMs?: number;
 }
 
 export const THEME_COLORS = [

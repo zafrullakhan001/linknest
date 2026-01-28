@@ -486,6 +486,13 @@ function handleGetTiles() {
             if (!isset($messagesByTile[$msgRow['tile_id']])) {
                 $messagesByTile[$msgRow['tile_id']] = [];
             }
+            $cc = null;
+            if (!empty($msgRow['celebration_config'])) {
+                $dec = json_decode($msgRow['celebration_config'], true);
+                if (is_array($dec)) {
+                    $cc = $dec;
+                }
+            }
             $messagesByTile[$msgRow['tile_id']][] = [
                 'id' => $msgRow['id'],
                 'content' => $msgRow['content'],
@@ -499,7 +506,8 @@ function handleGetTiles() {
                 'displayLocation' => $msgRow['display_location'] ?? 'both',
                 'animationType' => $msgRow['animation_type'] ?? 'rollover',
                 'delayBefore' => isset($msgRow['delay_before']) ? (float)$msgRow['delay_before'] : 0,
-                'celebrationEffect' => $msgRow['celebration_effect'] ?? 'fireworks'
+                'celebrationEffect' => $msgRow['celebration_effect'] ?? 'fireworks',
+                'celebrationConfig' => $cc
             ];
         }
         
@@ -1916,9 +1924,10 @@ function handleCloneTile($tileId) {
     $messages = $msgStmt->fetchAll();
     
     if (!empty($messages)) {
-        $msgInsertStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location, animation_type, delay_before, celebration_effect) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $msgInsertStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location, animation_type, delay_before, celebration_effect, celebration_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         foreach ($messages as $msg) {
             $newMsgId = uniqid('msg_', true);
+            $cc = isset($msg['celebration_config']) && $msg['celebration_config'] !== null && $msg['celebration_config'] !== '' ? $msg['celebration_config'] : null;
             $msgInsertStmt->execute([
                 $newMsgId,
                 $newTileId,
@@ -1933,7 +1942,8 @@ function handleCloneTile($tileId) {
                 $msg['display_location'] ?? 'both',
                 $msg['animation_type'] ?? 'rollover',
                 isset($msg['delay_before']) ? (float)$msg['delay_before'] : 0,
-                $msg['celebration_effect'] ?? 'fireworks'
+                $msg['celebration_effect'] ?? 'fireworks',
+                $cc
             ]);
         }
     }
@@ -4376,9 +4386,10 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         
         // Messages
         if (isset($data['messages']) && is_array($data['messages'])) {
-            $msgStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location, animation_type, delay_before, celebration_effect) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $msgStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location, animation_type, delay_before, celebration_effect, celebration_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             foreach ($data['messages'] as $msg) {
                 $msgId = $msg['id'] ?? uniqid('msg_', true);
+                $cc = isset($msg['celebrationConfig']) && is_array($msg['celebrationConfig']) ? json_encode($msg['celebrationConfig']) : null;
                 $msgStmt->execute([
                     $msgId,
                     $tileId,
@@ -4393,7 +4404,8 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                     $msg['displayLocation'] ?? 'both',
                     $msg['animationType'] ?? 'rollover',
                     isset($msg['delayBefore']) ? (float)$msg['delayBefore'] : 0,
-                    $msg['celebrationEffect'] ?? 'fireworks'
+                    $msg['celebrationEffect'] ?? 'fireworks',
+                    $cc
                 ]);
             }
         }

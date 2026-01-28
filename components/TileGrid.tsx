@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Tile, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS, TileVisibility, TileMessage, Link } from '../types';
+import { Tile, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, POPULAR_EMOJIS, TileVisibility, TileMessage, Link, CelebrationConfig } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { saveTileArrangement, saveCategoryArrangement, getCategoryArrangement, toggleFavorite, saveTile, createTile, getTiles, cloneCategory, toggleCategoryFavorite, getRecycleBin, restoreTile, purgeRecycleBin, permanentDeleteTile, permanentDeleteCategory, deleteTile, getArchive, archiveTile, unarchiveTile, purgeArchive, archiveCategory, unarchiveCategory, getFavoriteLinks, FavoriteLink } from '../services/storageService';
 import {
@@ -1030,7 +1030,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
   // Create a stable dependency for the effect based on active celebration messages
   const celebrationMessageKeys = activeMessages
     .filter(msg => msg.type === 'celebration')
-    .map(msg => `${msg.id}-${msg.celebrationEffect}`)
+    .map(msg => `${msg.id}-${msg.celebrationEffect}-${JSON.stringify(msg.celebrationConfig ?? {})}`)
     .join(',');
 
   // Trigger fireworks or confetti for celebration messages based on celebrationEffect setting
@@ -1040,6 +1040,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
     if (celebrationMessages.length > 0) {
       let effectType = celebrationMessages[0].celebrationEffect || 'fireworks';
       if (effectType === 'hearts') effectType = 'hearts-rising';
+      const cfg = celebrationMessages[0].celebrationConfig ?? {};
+      const intervalMs = Math.max(2000, Math.min(15000, cfg.triggerIntervalMs ?? 5000));
 
       if (effectType === 'none') {
         setFireworksTrigger(0);
@@ -1053,27 +1055,27 @@ const SortableTile: React.FC<SortableTileProps> = ({
 
       if (effectType === 'fireworks') {
         setFireworksTrigger(prev => prev + 1);
-        const interval = setInterval(() => setFireworksTrigger(prev => prev + 1), 5000);
+        const interval = setInterval(() => setFireworksTrigger(prev => prev + 1), intervalMs);
         return () => clearInterval(interval);
       } else if (effectType === 'confetti') {
         setConfettiTrigger(prev => prev + 1);
-        const interval = setInterval(() => setConfettiTrigger(prev => prev + 1), 5000);
+        const interval = setInterval(() => setConfettiTrigger(prev => prev + 1), intervalMs);
         return () => clearInterval(interval);
       } else if (effectType === 'snowfall') {
         setSnowfallTrigger(prev => prev + 1);
-        const interval = setInterval(() => setSnowfallTrigger(prev => prev + 1), 5000);
+        const interval = setInterval(() => setSnowfallTrigger(prev => prev + 1), intervalMs);
         return () => clearInterval(interval);
       } else if (effectType === 'hearts-rising') {
         setHeartsRisingTrigger(prev => prev + 1);
-        const interval = setInterval(() => setHeartsRisingTrigger(prev => prev + 1), 5000);
+        const interval = setInterval(() => setHeartsRisingTrigger(prev => prev + 1), intervalMs);
         return () => clearInterval(interval);
       } else if (effectType === 'hearts-falling') {
         setHeartsFallingTrigger(prev => prev + 1);
-        const interval = setInterval(() => setHeartsFallingTrigger(prev => prev + 1), 5000);
+        const interval = setInterval(() => setHeartsFallingTrigger(prev => prev + 1), intervalMs);
         return () => clearInterval(interval);
       } else if (effectType === 'bubbles') {
         setBubblesTrigger(prev => prev + 1);
-        const interval = setInterval(() => setBubblesTrigger(prev => prev + 1), 5000);
+        const interval = setInterval(() => setBubblesTrigger(prev => prev + 1), intervalMs);
         return () => clearInterval(interval);
       }
     } else {
@@ -1211,12 +1213,20 @@ const SortableTile: React.FC<SortableTileProps> = ({
       `}
     >
       {/* Celebration effect animations */}
-      <TileFireworks trigger={fireworksTrigger} tileRef={tileRef} />
-      <TileConfetti trigger={confettiTrigger} tileRef={tileRef} />
-      <TileSnowfall trigger={snowfallTrigger} tileRef={tileRef} />
-      <TileHeartsRising trigger={heartsRisingTrigger} tileRef={tileRef} />
-      <TileHeartsFalling trigger={heartsFallingTrigger} tileRef={tileRef} />
-      <TileBubbles trigger={bubblesTrigger} tileRef={tileRef} />
+      {(() => {
+        const celeb = activeMessages.filter(m => m.type === 'celebration')[0];
+        const effectCfg = celeb?.celebrationEffect && celeb.celebrationEffect !== 'none' ? celeb.celebrationConfig : undefined;
+        return (
+          <>
+            <TileFireworks trigger={fireworksTrigger} tileRef={tileRef} config={effectCfg} />
+            <TileConfetti trigger={confettiTrigger} tileRef={tileRef} config={effectCfg} />
+            <TileSnowfall trigger={snowfallTrigger} tileRef={tileRef} config={effectCfg} />
+            <TileHeartsRising trigger={heartsRisingTrigger} tileRef={tileRef} config={effectCfg} />
+            <TileHeartsFalling trigger={heartsFallingTrigger} tileRef={tileRef} config={effectCfg} />
+            <TileBubbles trigger={bubblesTrigger} tileRef={tileRef} config={effectCfg} />
+          </>
+        );
+      })()}
 
       {/* Compact Header */}
       <div className="flex items-start justify-between mb-3">
@@ -2030,7 +2040,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [messageAnimationType, setMessageAnimationType] = useState<'rollover' | 'still' | 'flash' | 'flip-horizontal' | 'flip-vertical' | 'bounce' | 'pulse' | 'shake' | 'fade' | 'slide'>('rollover');
   const [messageDelayBefore, setMessageDelayBefore] = useState<number>(0);
   const [messageCelebrationEffect, setMessageCelebrationEffect] = useState<'none' | 'fireworks' | 'confetti' | 'snowfall' | 'hearts-rising' | 'hearts-falling' | 'bubbles'>('fireworks');
-
+  const [messageCelebrationConfig, setMessageCelebrationConfig] = useState<CelebrationConfig>(() => ({
+    intensity: 100,
+    particleCount: 18,
+    particleSize: 100,
+    triggerIntervalMs: 5000,
+  }));
 
   // Helper function to get message status
   const getMessageStatus = (msg: TileMessage): 'active' | 'upcoming' | 'expired' => {
@@ -7472,6 +7487,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                           setMessageAnimationType('rollover');
                           setMessageDelayBefore(0);
                           setMessageCelebrationEffect('fireworks');
+                          setMessageCelebrationConfig({ intensity: 100, particleCount: 18, particleSize: 100, triggerIntervalMs: 5000 });
                         }}
                         className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors shadow-sm hover:shadow"
                       >
@@ -7652,6 +7668,71 @@ export const TileGrid: React.FC<TileGridProps> = ({
                               <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
                                 Choose a subtle background animation for celebration messages
                               </p>
+                            </div>
+                          )}
+
+                          {/* Animation controls - only for celebration messages with an effect */}
+                          {messageType === 'celebration' && messageCelebrationEffect !== 'none' && (
+                            <div className="mb-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-4">
+                              <span className="block text-sm font-semibold text-slate-700 dark:text-slate-300">⚙️ Animation controls</span>
+                              <div className="space-y-3">
+                                <div>
+                                  <div className="flex justify-between text-xs text-slate-600 dark:text-slate-400 mb-1">
+                                    <span>Intensity</span>
+                                    <span>{messageCelebrationConfig.intensity ?? 100}%</span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min={1}
+                                    max={100}
+                                    value={messageCelebrationConfig.intensity ?? 100}
+                                    onChange={(e) => setMessageCelebrationConfig(c => ({ ...c, intensity: parseInt(e.target.value, 10) }))}
+                                    className="w-full h-2 rounded-lg appearance-none bg-slate-200 dark:bg-slate-700 accent-brand-500"
+                                  />
+                                </div>
+                                <div>
+                                  <div className="flex justify-between text-xs text-slate-600 dark:text-slate-400 mb-1">
+                                    <span>Particle count</span>
+                                    <span>{messageCelebrationConfig.particleCount ?? 18}</span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min={5}
+                                    max={80}
+                                    value={messageCelebrationConfig.particleCount ?? 18}
+                                    onChange={(e) => setMessageCelebrationConfig(c => ({ ...c, particleCount: parseInt(e.target.value, 10) }))}
+                                    className="w-full h-2 rounded-lg appearance-none bg-slate-200 dark:bg-slate-700 accent-brand-500"
+                                  />
+                                </div>
+                                <div>
+                                  <div className="flex justify-between text-xs text-slate-600 dark:text-slate-400 mb-1">
+                                    <span>Particle size</span>
+                                    <span>{messageCelebrationConfig.particleSize ?? 100}%</span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min={50}
+                                    max={200}
+                                    value={messageCelebrationConfig.particleSize ?? 100}
+                                    onChange={(e) => setMessageCelebrationConfig(c => ({ ...c, particleSize: parseInt(e.target.value, 10) }))}
+                                    className="w-full h-2 rounded-lg appearance-none bg-slate-200 dark:bg-slate-700 accent-brand-500"
+                                  />
+                                </div>
+                                <div>
+                                  <div className="flex justify-between text-xs text-slate-600 dark:text-slate-400 mb-1">
+                                    <span>Burst interval</span>
+                                    <span>{Math.max(2, Math.min(15, Math.round((messageCelebrationConfig.triggerIntervalMs ?? 5000) / 1000)))}s</span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min={2}
+                                    max={15}
+                                    value={Math.max(2, Math.min(15, Math.round((messageCelebrationConfig.triggerIntervalMs ?? 5000) / 1000)))}
+                                    onChange={(e) => setMessageCelebrationConfig(c => ({ ...c, triggerIntervalMs: parseInt(e.target.value, 10) * 1000 }))}
+                                    className="w-full h-2 rounded-lg appearance-none bg-slate-200 dark:bg-slate-700 accent-brand-500"
+                                  />
+                                </div>
+                              </div>
                             </div>
                           )}
 
@@ -7870,7 +7951,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                   displayLocation: messageDisplayLocation,
                                   animationType: messageAnimationType,
                                   delayBefore: messageDelayBefore || 0,
-                                  celebrationEffect: messageCelebrationEffect
+                                  celebrationEffect: messageCelebrationEffect,
+                                  celebrationConfig: messageCelebrationEffect !== 'none' ? messageCelebrationConfig : undefined,
                                 };
 
                                 if (editingMessageId === 'new') {
@@ -8008,6 +8090,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                       const eff = msg.celebrationEffect || 'fireworks';
                                       const resolved = eff === 'hearts' ? 'hearts-rising' : (validEffects.includes(eff as any) ? eff : 'fireworks');
                                       setMessageCelebrationEffect(resolved);
+                                      const cc = msg.celebrationConfig ?? {};
+                                      setMessageCelebrationConfig({
+                                        intensity: Math.max(1, Math.min(100, cc.intensity ?? 100)),
+                                        particleCount: Math.max(5, Math.min(80, cc.particleCount ?? 18)),
+                                        particleSize: Math.max(50, Math.min(200, cc.particleSize ?? 100)),
+                                        triggerIntervalMs: Math.max(2000, Math.min(15000, cc.triggerIntervalMs ?? 5000)),
+                                      });
                                     }}
                                     className="p-2 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-colors"
                                     title="Edit message"

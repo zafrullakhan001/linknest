@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import type { CelebrationConfig } from '../types';
 
 interface Particle {
     x: number;
@@ -10,46 +11,43 @@ interface Particle {
     color: string;
     size: number;
     lineLength: number;
+    intensity: number;
 }
 
 interface TileFireworksProps {
     trigger: number;
     tileRef?: React.RefObject<HTMLDivElement>;
+    config?: CelebrationConfig;
 }
 
-export const TileFireworks: React.FC<TileFireworksProps> = ({ trigger, tileRef }) => {
+const DEFAULT_COUNT = 45;
+
+export const TileFireworks: React.FC<TileFireworksProps> = ({ trigger, tileRef, config }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const particlesRef = useRef<Particle[]>([]);
     const animationFrameRef = useRef<number>();
     const [isActive, setIsActive] = useState(false);
 
-    // Higher intensity colors
+    const intensity = Math.max(1, Math.min(100, config?.intensity ?? 100)) / 100;
+    const particleCount = Math.max(10, Math.min(80, config?.particleCount ?? DEFAULT_COUNT));
+    const sizeMul = Math.max(0.5, Math.min(2, (config?.particleSize ?? 100) / 100));
+
     const colors = [
-        'rgba(255, 50, 50, 1.0)',   // Bright Red
-        'rgba(50, 150, 255, 1.0)',  // Bright Azure
-        'rgba(255, 255, 50, 1.0)',  // Bright Yellow
-        'rgba(50, 255, 50, 1.0)',   // Bright Lime
-        'rgba(200, 50, 255, 1.0)',  // Bright Purple
-        'rgba(255, 120, 0, 1.0)',   // Bright Orange
-        'rgba(255, 50, 180, 1.0)',  // Bright Pink
-        'rgba(0, 255, 255, 1.0)',   // Bright Cyan
-        'rgba(150, 255, 100, 1.0)', // Bright Mint
-        'rgba(255, 180, 100, 1.0)', // Bright Peach
+        'rgba(255, 50, 50, 1.0)', 'rgba(50, 150, 255, 1.0)', 'rgba(255, 255, 50, 1.0)',
+        'rgba(50, 255, 50, 1.0)', 'rgba(200, 50, 255, 1.0)', 'rgba(255, 120, 0, 1.0)',
+        'rgba(255, 50, 180, 1.0)', 'rgba(0, 255, 255, 1.0)', 'rgba(150, 255, 100, 1.0)', 'rgba(255, 180, 100, 1.0)',
     ];
 
     const createFirework = (canvas: HTMLCanvasElement) => {
         const rect = canvas.getBoundingClientRect();
-        // Random positions across the tile for variety
         const centerX = rect.width * (0.2 + Math.random() * 0.6);
         const centerY = rect.height * (0.2 + Math.random() * 0.6);
-
-        // Create bursts
-        const particleCount = 45; // Slightly more particles
         const color = colors[Math.floor(Math.random() * colors.length)];
 
         for (let i = 0; i < particleCount; i++) {
             const angle = (Math.PI * 2 * i) / particleCount;
-            const velocity = 0.2 + Math.random() * 0.4;
+            const velocity = (0.2 + Math.random() * 0.4) * intensity;
+            const baseLine = 45 + Math.random() * 55;
 
             particlesRef.current.push({
                 x: centerX,
@@ -58,9 +56,10 @@ export const TileFireworks: React.FC<TileFireworksProps> = ({ trigger, tileRef }
                 vy: Math.sin(angle) * velocity,
                 life: 1,
                 maxLife: 1,
-                color: color,
-                size: 1.0, // Restored slightly for more perceived intensity
-                lineLength: 45 + Math.random() * 55, // Even longer strands
+                color,
+                size: 1.0 * sizeMul,
+                lineLength: baseLine * sizeMul,
+                intensity,
             });
         }
     };
@@ -93,7 +92,7 @@ export const TileFireworks: React.FC<TileFireworksProps> = ({ trigger, tileRef }
             // Draw particle as thin line (streak effect)
             if (particle.life > 0) {
                 ctx.save();
-                ctx.globalAlpha = particle.life * 0.6; // Reduced intensity by 30%
+                ctx.globalAlpha = particle.life * 0.6 * particle.intensity;
                 ctx.strokeStyle = particle.color;
                 ctx.lineWidth = particle.size;
                 ctx.lineCap = 'round';
@@ -172,7 +171,7 @@ export const TileFireworks: React.FC<TileFireworksProps> = ({ trigger, tileRef }
                 cancelAnimationFrame(animationFrameRef.current);
             }
         };
-    }, [trigger, tileRef]);
+    }, [trigger, tileRef, intensity, particleCount, sizeMul]);
 
     if (trigger === 0) return null;
 

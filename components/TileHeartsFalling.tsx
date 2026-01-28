@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import type { CelebrationConfig } from '../types';
 
 interface Heart {
   x: number;
@@ -14,11 +15,11 @@ interface Heart {
 interface TileHeartsFallingProps {
   trigger: number;
   tileRef?: React.RefObject<HTMLDivElement>;
+  config?: CelebrationConfig;
 }
 
 const RED = '#e53935';
-const MAX_HEARTS = 75;
-const HEARTS_PER_BURST = 18;
+const DEFAULT_COUNT = 18;
 
 function drawHeartPath(ctx: CanvasRenderingContext2D, size: number) {
   const scale = size / 16;
@@ -35,27 +36,34 @@ function drawHeartPath(ctx: CanvasRenderingContext2D, size: number) {
   ctx.closePath();
 }
 
-export const TileHeartsFalling: React.FC<TileHeartsFallingProps> = ({ trigger, tileRef }) => {
+export const TileHeartsFalling: React.FC<TileHeartsFallingProps> = ({ trigger, tileRef, config }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const heartsRef = useRef<Heart[]>([]);
   const animationFrameRef = useRef<number>();
 
+  const intensity = Math.max(1, Math.min(100, config?.intensity ?? 100)) / 100;
+  const count = Math.max(5, Math.min(80, config?.particleCount ?? DEFAULT_COUNT));
+  const sizeMul = Math.max(0.5, Math.min(2, (config?.particleSize ?? 100) / 100));
+  const maxHearts = Math.max(count * 3, 60);
+
   const addHearts = (canvas: HTMLCanvasElement) => {
     const rect = canvas.getBoundingClientRect();
-    for (let i = 0; i < HEARTS_PER_BURST; i++) {
+    for (let i = 0; i < count; i++) {
+      const baseSize = 9 + Math.random() * 11;
+      const baseOpacity = 0.75 + Math.random() * 0.25;
       heartsRef.current.push({
         x: Math.random() * rect.width,
         y: -20 - Math.random() * 70,
-        vx: (Math.random() - 0.5) * 0.3,
-        vy: 0.12 + Math.random() * 0.18,
+        vx: (Math.random() - 0.5) * 0.3 * intensity,
+        vy: (0.12 + Math.random() * 0.18) * intensity,
         rotation: Math.random() * 360,
         rotationSpeed: (Math.random() - 0.5) * 0.7,
-        size: 9 + Math.random() * 11,
-        opacity: 0.75 + Math.random() * 0.25,
+        size: baseSize * sizeMul,
+        opacity: baseOpacity * intensity,
       });
     }
-    if (heartsRef.current.length > MAX_HEARTS) {
-      heartsRef.current = heartsRef.current.slice(-MAX_HEARTS);
+    if (heartsRef.current.length > maxHearts) {
+      heartsRef.current = heartsRef.current.slice(-maxHearts);
     }
   };
 
@@ -117,7 +125,7 @@ export const TileHeartsFalling: React.FC<TileHeartsFallingProps> = ({ trigger, t
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [trigger, tileRef]);
+  }, [trigger, tileRef, intensity, count, sizeMul, maxHearts]);
 
   if (trigger === 0) return null;
 

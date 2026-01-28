@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import type { CelebrationConfig } from '../types';
 
 interface Bubble {
   x: number;
@@ -14,25 +15,33 @@ interface Bubble {
 interface TileBubblesProps {
   trigger: number;
   tileRef?: React.RefObject<HTMLDivElement>;
+  config?: CelebrationConfig;
 }
 
-export const TileBubbles: React.FC<TileBubblesProps> = ({ trigger, tileRef }) => {
+const DEFAULT_COUNT = 20;
+
+export const TileBubbles: React.FC<TileBubblesProps> = ({ trigger, tileRef, config }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bubblesRef = useRef<Bubble[]>([]);
   const animationFrameRef = useRef<number>();
 
+  const intensity = Math.max(1, Math.min(100, config?.intensity ?? 100)) / 100;
+  const count = Math.max(5, Math.min(80, config?.particleCount ?? DEFAULT_COUNT));
+  const sizeMul = Math.max(0.5, Math.min(2, (config?.particleSize ?? 100) / 100));
+
   const createBubbles = (canvas: HTMLCanvasElement) => {
     const rect = canvas.getBoundingClientRect();
-    const count = 20;
     bubblesRef.current = [];
     for (let i = 0; i < count; i++) {
+      const baseR = 3 + Math.random() * 5;
+      const baseO = 0.15 + Math.random() * 0.2;
       bubblesRef.current.push({
         x: Math.random() * rect.width,
         y: rect.height + 5 + Math.random() * 20,
-        vx: (Math.random() - 0.5) * 0.12,
-        vy: -0.15 - Math.random() * 0.2,
-        radius: 3 + Math.random() * 5,
-        opacity: 0.15 + Math.random() * 0.2,
+        vx: (Math.random() - 0.5) * 0.12 * intensity,
+        vy: (-0.15 - Math.random() * 0.2) * intensity,
+        radius: baseR * sizeMul,
+        opacity: baseO * intensity,
         wobble: Math.random() * Math.PI * 2,
         wobbleSpeed: 0.02 + Math.random() * 0.03,
       });
@@ -95,7 +104,7 @@ export const TileBubbles: React.FC<TileBubblesProps> = ({ trigger, tileRef }) =>
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [trigger, tileRef]);
+  }, [trigger, tileRef, intensity, count, sizeMul]);
 
   if (trigger === 0) return null;
 

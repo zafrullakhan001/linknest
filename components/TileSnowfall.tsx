@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import type { CelebrationConfig } from '../types';
 
 interface Snowflake {
   x: number;
@@ -14,33 +15,39 @@ interface Snowflake {
 interface TileSnowfallProps {
   trigger: number;
   tileRef?: React.RefObject<HTMLDivElement>;
+  config?: CelebrationConfig;
 }
 
-const MAX_FLAKES = 80;
-const FLAKES_PER_BURST = 12;
+const DEFAULT_BURST = 12;
 
-export const TileSnowfall: React.FC<TileSnowfallProps> = ({ trigger, tileRef }) => {
+export const TileSnowfall: React.FC<TileSnowfallProps> = ({ trigger, tileRef, config }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const snowflakesRef = useRef<Snowflake[]>([]);
   const animationFrameRef = useRef<number>();
 
+  const intensity = Math.max(1, Math.min(100, config?.intensity ?? 100)) / 100;
+  const burst = Math.max(5, Math.min(80, config?.particleCount ?? DEFAULT_BURST));
+  const sizeMul = Math.max(0.5, Math.min(2, (config?.particleSize ?? 100) / 100));
+  const maxFlakes = Math.max(burst * 4, 60);
+
   const addSnowflakes = (canvas: HTMLCanvasElement) => {
     const rect = canvas.getBoundingClientRect();
-    for (let i = 0; i < FLAKES_PER_BURST; i++) {
+    for (let i = 0; i < burst; i++) {
+      const baseSize = 2 + Math.random() * 4;
+      const baseOpacity = 0.5 + Math.random() * 0.5;
       snowflakesRef.current.push({
         x: Math.random() * rect.width,
         y: -10 - Math.random() * 30,
-        vx: (Math.random() - 0.5) * 0.15,
-        vy: 0.08 + Math.random() * 0.12,
+        vx: (Math.random() - 0.5) * 0.15 * intensity,
+        vy: (0.08 + Math.random() * 0.12) * intensity,
         rotation: Math.random() * 360,
         rotationSpeed: (Math.random() - 0.5) * 0.3,
-        size: 2 + Math.random() * 4,
-        opacity: 0.5 + Math.random() * 0.5,
+        size: baseSize * sizeMul,
+        opacity: baseOpacity * intensity,
       });
     }
-    // Trim oldest if over cap
-    if (snowflakesRef.current.length > MAX_FLAKES) {
-      snowflakesRef.current = snowflakesRef.current.slice(-MAX_FLAKES);
+    if (snowflakesRef.current.length > maxFlakes) {
+      snowflakesRef.current = snowflakesRef.current.slice(-maxFlakes);
     }
   };
 
@@ -112,7 +119,7 @@ export const TileSnowfall: React.FC<TileSnowfallProps> = ({ trigger, tileRef }) 
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [trigger, tileRef]);
+  }, [trigger, tileRef, intensity, burst, sizeMul, maxFlakes]);
 
   if (trigger === 0) return null;
 

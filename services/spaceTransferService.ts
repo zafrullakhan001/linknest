@@ -343,7 +343,9 @@ export const normalizeImportedTiles = (
             fontStyle: typeof msg.fontStyle === 'string' ? msg.fontStyle : undefined,
             displayLocation: (typeof msg.displayLocation === 'string' && ['tile', 'detail', 'both'].includes(msg.displayLocation)) ? msg.displayLocation as any : 'both',
             animationType: (typeof msg.animationType === 'string' && ['rollover', 'still', 'flash', 'flip-horizontal', 'flip-vertical', 'bounce', 'pulse', 'shake', 'fade', 'slide'].includes(msg.animationType)) ? msg.animationType as any : 'rollover',
-            delayBefore: typeof msg.delayBefore === 'number' ? msg.delayBefore : undefined
+            delayBefore: typeof msg.delayBefore === 'number' ? msg.delayBefore : undefined,
+            celebrationEffect: (typeof msg.celebrationEffect === 'string' && ['none', 'fireworks', 'confetti', 'snowfall', 'hearts-rising', 'hearts-falling', 'bubbles'].includes(msg.celebrationEffect)) ? msg.celebrationEffect as any : undefined,
+            celebrationConfig: typeof msg.celebrationConfig === 'object' && msg.celebrationConfig !== null ? msg.celebrationConfig : undefined
           }))
         : undefined
     };

@@ -1024,6 +1024,12 @@ function initDatabase() {
                 if (!in_array('delay_before', $columnNames)) {
                     $db->exec('ALTER TABLE tile_messages ADD COLUMN delay_before REAL DEFAULT 0');
                 }
+                if (!in_array('celebration_effect', $columnNames)) {
+                    $db->exec('ALTER TABLE tile_messages ADD COLUMN celebration_effect TEXT DEFAULT \'fireworks\'');
+                }
+                if (!in_array('celebration_config', $columnNames)) {
+                    $db->exec('ALTER TABLE tile_messages ADD COLUMN celebration_config TEXT');
+                }
             }
         } catch (PDOException $e) {
             error_log('tile_messages migration error: ' . $e->getMessage());
