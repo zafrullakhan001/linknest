@@ -314,6 +314,46 @@ function handleLogin() {
         $serverConfig = $ldapServers[$selectedServerIndex];
         debug_log("LDAP: Using server index $selectedServerIndex: " . ($serverConfig['name'] ?? $serverConfig['server']));
         
+        // Handle email format username - extract username part if @domain matches server's domain
+        $originalUsername = $username;
+        if (strpos($username, '@') !== false) {
+            $domainToMatch = null;
+            
+            // Try login_domain first
+            if (!empty($serverConfig['login_domain'])) {
+                $domainToMatch = strtolower(trim($serverConfig['login_domain']));
+            }
+            
+            // If no login_domain, try to extract from server hostname
+            if (!$domainToMatch && !empty($serverConfig['server'])) {
+                $hostParts = explode('.', $serverConfig['server']);
+                if (count($hostParts) >= 2) {
+                    $domainToMatch = strtolower(implode('.', array_slice($hostParts, 1)));
+                }
+            }
+            
+            // If still no domain, try to extract from base DN
+            if (!$domainToMatch && !empty($serverConfig['user_search_base'])) {
+                if (preg_match_all('/DC=([^,]+)/i', $serverConfig['user_search_base'], $matches)) {
+                    if (!empty($matches[1])) {
+                        $domainToMatch = strtolower(implode('.', $matches[1]));
+                    }
+                }
+            }
+            
+            // If domain matches, extract username part
+            if ($domainToMatch) {
+                $usernameLower = strtolower($username);
+                if (strpos($usernameLower, '@' . $domainToMatch) !== false) {
+                    $parts = explode('@', $username);
+                    if (count($parts) === 2 && strtolower($parts[1]) === $domainToMatch) {
+                        $username = $parts[0];
+                        debug_log("LDAP: Extracted username from email format: '$originalUsername' -> '$username' (domain: $domainToMatch)");
+                    }
+                }
+            }
+        }
+        
         $retryCount = (int)($serverConfig['connection_retry'] ?? 3);
         $retryDelay = (int)($serverConfig['retry_delay'] ?? 1);
         $ldap = null;

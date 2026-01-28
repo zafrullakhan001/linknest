@@ -153,13 +153,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [samlImportFile, setSamlImportFile] = useState<File | null>(null);
   const [samlImporting, setSamlImporting] = useState(false);
 
-  // LDAP Test state
-  const [ldapTestLoading, setLdapTestLoading] = useState(false);
-  const [ldapTestResult, setLdapTestResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [ldapTestUser, setLdapTestUser] = useState('');
-  const [ldapTestPassword, setLdapTestPassword] = useState('');
-
-  // LDAP Servers management state
+  // LDAP Servers management state (declare first since it's used in useEffect)
   const [ldapServers, setLdapServers] = useState<Array<{
     name: string;
     server: string;
@@ -191,6 +185,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   }>>([]);
   const [editingServerIndex, setEditingServerIndex] = useState<number | null>(null);
   const [showServerForm, setShowServerForm] = useState(false);
+
+  // LDAP Test state
+  const [ldapTestLoading, setLdapTestLoading] = useState(false);
+  const [ldapTestResult, setLdapTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [ldapTestUser, setLdapTestUser] = useState('');
+  const [ldapTestPassword, setLdapTestPassword] = useState('');
+  const [selectedTestServerIndex, setSelectedTestServerIndex] = useState<number>(0);
+
+  // Sync test server selection with editing server index and validate bounds
+  useEffect(() => {
+    // If editing a server, sync to that server
+    if (editingServerIndex !== null && editingServerIndex >= 0 && editingServerIndex < ldapServers.length) {
+      setSelectedTestServerIndex(editingServerIndex);
+    } else if (ldapServers.length > 0) {
+      // Otherwise, ensure selected index is within bounds
+      setSelectedTestServerIndex(prev => {
+        if (prev < 0 || prev >= ldapServers.length) {
+          return 0;
+        }
+        return prev;
+      });
+    } else {
+      // No servers, reset to 0
+      setSelectedTestServerIndex(0);
+    }
+  }, [editingServerIndex, ldapServers.length]);
 
   // Ref to store bind password for immediate access (avoids React state timing issues)
   const ldapBindPasswordRef = useRef<string>('');
@@ -6580,11 +6600,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     {/* Test Connection */}
                     <div className={`${isMobile ? 'mt-6' : 'mt-8'} ${isMobile ? 'pt-6' : 'pt-6'} border-t border-slate-200 dark:border-slate-700`}>
                       <h4 className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-slate-900 dark:text-white mb-4`}>Test Connection</h4>
-                      {ldapServers.length > 0 && (
+                      
+                      {/* Server Selection Dropdown */}
+                      {ldapServers.length > 1 && (
+                        <div className="mb-4">
+                          <label className={`block ${isMobile ? 'text-xs' : 'text-xs'} font-medium text-slate-700 dark:text-slate-300 mb-1`}>Select LDAP Server to Test</label>
+                          <select
+                            value={selectedTestServerIndex}
+                            onChange={(e) => setSelectedTestServerIndex(parseInt(e.target.value))}
+                            className={`w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg ${isMobile ? 'px-3 py-2.5 text-sm' : 'px-3 py-2 text-sm'} touch-manipulation`}
+                            style={isMobile ? { minHeight: '44px' } : {}}
+                          >
+                            {ldapServers.map((server, index) => (
+                              <option key={index} value={index}>
+                                {server.name} {server.login_domain ? `(${server.login_domain})` : ''} - {server.server}:{server.port}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      {ldapServers.length === 1 && (
                         <p className={`${isMobile ? 'text-xs' : 'text-xs'} text-slate-600 dark:text-slate-400 mb-3`}>
-                          {editingServerIndex !== null 
-                            ? `Testing server: ${ldapServers[editingServerIndex]?.name || 'Selected Server'}`
-                            : `Testing first server: ${ldapServers[0]?.name || 'Server 1'}`}
+                          Testing server: {ldapServers[0]?.name || 'LDAP Server'}
                         </p>
                       )}
 
@@ -6598,10 +6635,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             let testSettings: Partial<AppSettings>;
                             let testUsername = ldapTestUser;
 
-                            // If we have multiple LDAP servers, use the selected/edited server's config
+                            // If we have multiple LDAP servers, use the selected server's config
                             if (ldapServers.length > 0) {
-                              // Determine which server to test
-                              const serverIndex = editingServerIndex !== null ? editingServerIndex : 0;
+                              // Use the selected test server index
+                              const serverIndex = selectedTestServerIndex >= 0 && selectedTestServerIndex < ldapServers.length 
+                                ? selectedTestServerIndex 
+                                : 0;
                               const server = ldapServers[serverIndex];
                               
                               if (!server) {
@@ -6614,14 +6653,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               }
 
                               // Handle username format - strip @domain if it matches the server's login_domain
-                              if (testUsername && server.login_domain) {
-                                const domainLower = server.login_domain.toLowerCase().trim();
-                                const usernameLower = testUsername.toLowerCase();
-                                if (usernameLower.includes('@' + domainLower)) {
-                                  // Extract username part before @domain
-                                  const parts = testUsername.split('@');
-                                  if (parts.length === 2 && parts[1].toLowerCase() === domainLower) {
-                                    testUsername = parts[0];
+                              // Also try to extract domain from server hostname or base DN if login_domain not set
+                              if (testUsername && testUsername.includes('@')) {
+                                let domainToMatch = server.login_domain;
+                                
+                                // If no login_domain, try to extract from server hostname
+                                if (!domainToMatch && server.server) {
+                                  const hostParts = server.server.split('.');
+                                  if (hostParts.length >= 2) {
+                                    domainToMatch = hostParts.slice(1).join('.');
+                                  }
+                                }
+                                
+                                // If still no domain, try to extract from base DN
+                                if (!domainToMatch && server.user_search_base) {
+                                  const dnMatch = server.user_search_base.match(/DC=([^,]+)/gi);
+                                  if (dnMatch && dnMatch.length > 0) {
+                                    domainToMatch = dnMatch.map(dc => dc.replace(/DC=/i, '')).join('.');
+                                  }
+                                }
+                                
+                                if (domainToMatch) {
+                                  const domainLower = domainToMatch.toLowerCase().trim();
+                                  const usernameLower = testUsername.toLowerCase();
+                                  if (usernameLower.includes('@' + domainLower)) {
+                                    // Extract username part before @domain
+                                    const parts = testUsername.split('@');
+                                    if (parts.length === 2 && parts[1].toLowerCase() === domainLower) {
+                                      testUsername = parts[0];
+                                    }
                                   }
                                 }
                               }
