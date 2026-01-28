@@ -24,6 +24,9 @@ import { LinkInfoDialog } from './LinkInfoDialog';
 import { useMobile } from '../hooks/useMobile';
 import { MobileTileView } from './MobileTileView';
 import { TileInfoDialog } from './TileInfoDialog';
+import { TileFireworks } from './TileFireworks';
+import { TileConfetti } from './TileConfetti';
+
 
 
 interface TileGridProps {
@@ -866,6 +869,10 @@ const SortableTile: React.FC<SortableTileProps> = ({
   const { user } = useAuth();
   const [showCategoryDialog, setShowCategoryDialog] = useState(false);
   const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
+  const [fireworksTrigger, setFireworksTrigger] = useState(0);
+  const [confettiTrigger, setConfettiTrigger] = useState(0);
+  const tileRef = useRef<HTMLDivElement>(null);
+
 
   // Helper function to strip formatting characters for plain text display (tooltips, etc.)
   const stripFormatting = (content: string): string => {
@@ -1012,6 +1019,40 @@ const SortableTile: React.FC<SortableTileProps> = ({
   }, [currentMessageIndex, activeMessages]);
   const activeMessagesCount = activeMessages.length;
 
+  // Trigger fireworks or confetti for celebration messages based on celebrationEffect setting
+  useEffect(() => {
+    const celebrationMessages = activeMessages.filter(msg => msg.type === 'celebration');
+
+    if (celebrationMessages.length > 0) {
+      // Check what effect is requested for the first celebration message
+      const effectType = celebrationMessages[0].celebrationEffect || 'fireworks';
+
+      if (effectType === 'fireworks') {
+        // Trigger fireworks immediately
+        setFireworksTrigger(prev => prev + 1);
+
+        // Set up interval to re-trigger fireworks every 5 seconds
+        const interval = setInterval(() => {
+          setFireworksTrigger(prev => prev + 1);
+        }, 5000);
+
+        return () => clearInterval(interval);
+      } else if (effectType === 'confetti') {
+        // Trigger confetti immediately
+        setConfettiTrigger(prev => prev + 1);
+
+        // Set up interval to re-trigger confetti every 5 seconds
+        const interval = setInterval(() => {
+          setConfettiTrigger(prev => prev + 1);
+        }, 5000);
+
+        return () => clearInterval(interval);
+      }
+    }
+  }, [activeMessages]);
+
+
+
   const currentCategory = tile.group || 'General';
 
   const animationDelay = (groupIndex * 80) + (tileIndex * 50);
@@ -1117,6 +1158,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
 
   return (
     <div
+      ref={tileRef}
       style={decorationStyles}
       onClick={() => onTileClick(tile.id)}
       role="button"
@@ -1133,6 +1175,10 @@ const SortableTile: React.FC<SortableTileProps> = ({
         flex flex-col h-full min-h-[140px] cursor-pointer
       `}
     >
+      {/* Fireworks Animation for Celebration Messages */}
+      <TileFireworks trigger={fireworksTrigger} tileRef={tileRef} />
+      {/* Confetti Animation for Celebration Messages */}
+      <TileConfetti trigger={confettiTrigger} tileRef={tileRef} />
 
       {/* Compact Header */}
       <div className="flex items-start justify-between mb-3">
@@ -1945,6 +1991,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [messageDisplayLocation, setMessageDisplayLocation] = useState<'tile' | 'detail' | 'both'>('both');
   const [messageAnimationType, setMessageAnimationType] = useState<'rollover' | 'still' | 'flash' | 'flip-horizontal' | 'flip-vertical' | 'bounce' | 'pulse' | 'shake' | 'fade' | 'slide'>('rollover');
   const [messageDelayBefore, setMessageDelayBefore] = useState<number>(0);
+  const [messageCelebrationEffect, setMessageCelebrationEffect] = useState<'none' | 'fireworks' | 'confetti'>('fireworks');
+
 
   // Helper function to get message status
   const getMessageStatus = (msg: TileMessage): 'active' | 'upcoming' | 'expired' => {
@@ -7385,6 +7433,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                           setMessageDisplayLocation('both');
                           setMessageAnimationType('rollover');
                           setMessageDelayBefore(0);
+                          setMessageCelebrationEffect('fireworks');
                         }}
                         className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors shadow-sm hover:shadow"
                       >
@@ -7542,6 +7591,27 @@ export const TileGrid: React.FC<TileGridProps> = ({
                               </label>
                             </div>
                           </div>
+
+                          {/* Celebration Effect Selector - Only show for celebration messages */}
+                          {messageType === 'celebration' && (
+                            <div className="mb-4">
+                              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                                🎆 Celebration Effect
+                              </label>
+                              <select
+                                value={messageCelebrationEffect}
+                                onChange={(e) => setMessageCelebrationEffect(e.target.value as any)}
+                                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                              >
+                                <option value="fireworks">🎆 Fireworks (Subtle Grey Lines)</option>
+                                <option value="confetti">🎊 Confetti (Falling)</option>
+                                <option value="none">❌ None</option>
+                              </select>
+                              <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+                                Choose a subtle background animation for celebration messages
+                              </p>
+                            </div>
+                          )}
 
                           <div className="grid grid-cols-2 gap-4">
                             <div>
@@ -7757,7 +7827,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                   fontStyle: messageFontStyle || undefined,
                                   displayLocation: messageDisplayLocation,
                                   animationType: messageAnimationType,
-                                  delayBefore: messageDelayBefore || 0
+                                  delayBefore: messageDelayBefore || 0,
+                                  celebrationEffect: messageCelebrationEffect
                                 };
 
                                 if (editingMessageId === 'new') {
@@ -7891,6 +7962,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                       setMessageDisplayLocation(msg.displayLocation || 'both');
                                       setMessageAnimationType(msg.animationType || 'rollover');
                                       setMessageDelayBefore(msg.delayBefore || 0);
+                                      setMessageCelebrationEffect(msg.celebrationEffect || 'fireworks');
                                     }}
                                     className="p-2 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-colors"
                                     title="Edit message"
@@ -9384,3 +9456,4 @@ export const TileGrid: React.FC<TileGridProps> = ({
     </div >
   );
 };
+
