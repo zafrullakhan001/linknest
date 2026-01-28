@@ -26,6 +26,10 @@ import { MobileTileView } from './MobileTileView';
 import { TileInfoDialog } from './TileInfoDialog';
 import { TileFireworks } from './TileFireworks';
 import { TileConfetti } from './TileConfetti';
+import { TileSnowfall } from './TileSnowfall';
+import { TileHeartsRising } from './TileHeartsRising';
+import { TileHeartsFalling } from './TileHeartsFalling';
+import { TileBubbles } from './TileBubbles';
 
 
 
@@ -871,6 +875,10 @@ const SortableTile: React.FC<SortableTileProps> = ({
   const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
   const [fireworksTrigger, setFireworksTrigger] = useState(0);
   const [confettiTrigger, setConfettiTrigger] = useState(0);
+  const [snowfallTrigger, setSnowfallTrigger] = useState(0);
+  const [heartsRisingTrigger, setHeartsRisingTrigger] = useState(0);
+  const [heartsFallingTrigger, setHeartsFallingTrigger] = useState(0);
+  const [bubblesTrigger, setBubblesTrigger] = useState(0);
   const tileRef = useRef<HTMLDivElement>(null);
 
 
@@ -1030,30 +1038,51 @@ const SortableTile: React.FC<SortableTileProps> = ({
     const celebrationMessages = activeMessages.filter(msg => msg.type === 'celebration');
 
     if (celebrationMessages.length > 0) {
-      // Check what effect is requested for the first celebration message
-      const effectType = celebrationMessages[0].celebrationEffect || 'fireworks';
+      let effectType = celebrationMessages[0].celebrationEffect || 'fireworks';
+      if (effectType === 'hearts') effectType = 'hearts-rising';
 
-      // Stop any existing intervals if the effect type changed
-      // The dependency celebrationMessageKeys handles this.
+      if (effectType === 'none') {
+        setFireworksTrigger(0);
+        setConfettiTrigger(0);
+        setSnowfallTrigger(0);
+        setHeartsRisingTrigger(0);
+        setHeartsFallingTrigger(0);
+        setBubblesTrigger(0);
+        return;
+      }
 
-      // Trigger effect immediately
       if (effectType === 'fireworks') {
         setFireworksTrigger(prev => prev + 1);
-        const interval = setInterval(() => {
-          setFireworksTrigger(prev => prev + 1);
-        }, 5000);
+        const interval = setInterval(() => setFireworksTrigger(prev => prev + 1), 5000);
         return () => clearInterval(interval);
       } else if (effectType === 'confetti') {
         setConfettiTrigger(prev => prev + 1);
-        const interval = setInterval(() => {
-          setConfettiTrigger(prev => prev + 1);
-        }, 5000);
+        const interval = setInterval(() => setConfettiTrigger(prev => prev + 1), 5000);
+        return () => clearInterval(interval);
+      } else if (effectType === 'snowfall') {
+        setSnowfallTrigger(prev => prev + 1);
+        const interval = setInterval(() => setSnowfallTrigger(prev => prev + 1), 5000);
+        return () => clearInterval(interval);
+      } else if (effectType === 'hearts-rising') {
+        setHeartsRisingTrigger(prev => prev + 1);
+        const interval = setInterval(() => setHeartsRisingTrigger(prev => prev + 1), 5000);
+        return () => clearInterval(interval);
+      } else if (effectType === 'hearts-falling') {
+        setHeartsFallingTrigger(prev => prev + 1);
+        const interval = setInterval(() => setHeartsFallingTrigger(prev => prev + 1), 5000);
+        return () => clearInterval(interval);
+      } else if (effectType === 'bubbles') {
+        setBubblesTrigger(prev => prev + 1);
+        const interval = setInterval(() => setBubblesTrigger(prev => prev + 1), 5000);
         return () => clearInterval(interval);
       }
     } else {
-      // Reset triggers if no celebration messages
       setFireworksTrigger(0);
       setConfettiTrigger(0);
+      setSnowfallTrigger(0);
+      setHeartsRisingTrigger(0);
+      setHeartsFallingTrigger(0);
+      setBubblesTrigger(0);
     }
   }, [celebrationMessageKeys]);
 
@@ -1181,10 +1210,13 @@ const SortableTile: React.FC<SortableTileProps> = ({
         flex flex-col h-full min-h-[140px] cursor-pointer
       `}
     >
-      {/* Fireworks Animation for Celebration Messages */}
+      {/* Celebration effect animations */}
       <TileFireworks trigger={fireworksTrigger} tileRef={tileRef} />
-      {/* Confetti Animation for Celebration Messages */}
       <TileConfetti trigger={confettiTrigger} tileRef={tileRef} />
+      <TileSnowfall trigger={snowfallTrigger} tileRef={tileRef} />
+      <TileHeartsRising trigger={heartsRisingTrigger} tileRef={tileRef} />
+      <TileHeartsFalling trigger={heartsFallingTrigger} tileRef={tileRef} />
+      <TileBubbles trigger={bubblesTrigger} tileRef={tileRef} />
 
       {/* Compact Header */}
       <div className="flex items-start justify-between mb-3">
@@ -1362,8 +1394,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
           )}
 
 
-          {/* Clone Button - Only show if user has edit permission and canCloneTile permission */}
-          {onCloneTile && tile.canEdit && tile.canCloneTile === true && (
+          {/* Clone Button - Show if user is admin, or has edit + canCloneTile permission */}
+          {onCloneTile && (user?.is_admin || (tile.canEdit && tile.canCloneTile === true)) && (
             <button
               onClick={(e) => onCloneTile(e, tile.id)}
               className="p-1 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded transition-all"
@@ -1997,7 +2029,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [messageDisplayLocation, setMessageDisplayLocation] = useState<'tile' | 'detail' | 'both'>('both');
   const [messageAnimationType, setMessageAnimationType] = useState<'rollover' | 'still' | 'flash' | 'flip-horizontal' | 'flip-vertical' | 'bounce' | 'pulse' | 'shake' | 'fade' | 'slide'>('rollover');
   const [messageDelayBefore, setMessageDelayBefore] = useState<number>(0);
-  const [messageCelebrationEffect, setMessageCelebrationEffect] = useState<'none' | 'fireworks' | 'confetti'>('fireworks');
+  const [messageCelebrationEffect, setMessageCelebrationEffect] = useState<'none' | 'fireworks' | 'confetti' | 'snowfall' | 'hearts-rising' | 'hearts-falling' | 'bubbles'>('fireworks');
 
 
   // Helper function to get message status
@@ -7606,11 +7638,15 @@ export const TileGrid: React.FC<TileGridProps> = ({
                               </label>
                               <select
                                 value={messageCelebrationEffect}
-                                onChange={(e) => setMessageCelebrationEffect(e.target.value as any)}
+                                onChange={(e) => setMessageCelebrationEffect(e.target.value as 'none' | 'fireworks' | 'confetti' | 'snowfall' | 'hearts-rising' | 'hearts-falling' | 'bubbles')}
                                 className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
                               >
-                                <option value="fireworks">🎆 Fireworks (Subtle Grey Lines)</option>
+                                <option value="fireworks">🎆 Fireworks</option>
                                 <option value="confetti">🎊 Confetti (Falling)</option>
+                                <option value="snowfall">❄️ Snowfall</option>
+                                <option value="hearts-rising">❤️ Hearts (Rising)</option>
+                                <option value="hearts-falling">❤️ Hearts (Falling)</option>
+                                <option value="bubbles">🫧 Bubbles (Rising)</option>
                                 <option value="none">❌ None</option>
                               </select>
                               <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
@@ -7968,7 +8004,10 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                       setMessageDisplayLocation(msg.displayLocation || 'both');
                                       setMessageAnimationType(msg.animationType || 'rollover');
                                       setMessageDelayBefore(msg.delayBefore || 0);
-                                      setMessageCelebrationEffect(msg.celebrationEffect || 'fireworks');
+                                      const validEffects = ['none', 'fireworks', 'confetti', 'snowfall', 'hearts-rising', 'hearts-falling', 'bubbles'] as const;
+                                      const eff = msg.celebrationEffect || 'fireworks';
+                                      const resolved = eff === 'hearts' ? 'hearts-rising' : (validEffects.includes(eff as any) ? eff : 'fireworks');
+                                      setMessageCelebrationEffect(resolved);
                                     }}
                                     className="p-2 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-colors"
                                     title="Edit message"

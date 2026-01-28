@@ -3613,14 +3613,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             </svg>
                                             <span>Edit</span>
                                         </button>
-                                        {tile.canCloneTile === true && (
+                                        {(user?.is_admin || tile.canCloneTile === true) && (
                                         <button
                                             onClick={async () => {
                                                 if (!isAuthenticated) {
                                                     if (onAuthRequired) onAuthRequired();
                                                     return;
                                                 }
-                                                if (!tile.canEdit) {
+                                                if (!tile.canEdit && !user?.is_admin) {
                                                     alert('You do not have permission to clone this space.');
                                                     return;
                                                 }
