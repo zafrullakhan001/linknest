@@ -7582,9 +7582,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             }}></div>
             <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto" style={{ zIndex: 99999 }}>
               <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1 truncate" title={editingTile.title || undefined}>
                     {tileType === 'hyperlink' ? 'Edit Hyperlink' : 'Edit Space'}
+                    {editingTile.title && (
+                      <span className="text-brand-600 dark:text-brand-400 font-semibold"> — {editingTile.title}</span>
+                    )}
                   </h2>
                   <p className="text-sm text-slate-500 dark:text-slate-400">
                     {tileType === 'hyperlink' ? 'Update your hyperlink settings' : 'Update your space settings'}
