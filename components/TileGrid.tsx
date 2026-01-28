@@ -2046,6 +2046,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     particleSize: 100,
     triggerIntervalMs: 5000,
   }));
+  const messageBoardImportInputRef = useRef<HTMLInputElement>(null);
 
   // Helper function to get message status
   const getMessageStatus = (msg: TileMessage): 'active' | 'upcoming' | 'expired' => {
@@ -2114,6 +2115,182 @@ export const TileGrid: React.FC<TileGridProps> = ({
       setMessageEndDate(formatDateForInput(targetDate));
     }
   };
+
+  const validMessageTypes = ['info', 'warning', 'celebration', 'alert', 'custom'] as const;
+  const validDisplayLocations = ['tile', 'detail', 'both'] as const;
+  const validAnimationTypes = ['rollover', 'still', 'flash', 'flip-horizontal', 'flip-vertical', 'bounce', 'pulse', 'shake', 'fade', 'slide'] as const;
+  const validCelebrationEffects = ['none', 'fireworks', 'confetti', 'snowfall', 'hearts-rising', 'hearts-falling', 'hearts', 'bubbles'] as const;
+
+  const normalizeImportedMessage = (raw: unknown, index: number): TileMessage | null => {
+    if (!raw || typeof raw !== 'object') return null;
+    const m = raw as Record<string, unknown>;
+    const content = typeof m.content === 'string' ? m.content : '';
+    if (!content.trim()) return null;
+    const type = validMessageTypes.includes(m.type as any) ? (m.type as typeof validMessageTypes[number]) : 'info';
+    const displayLocation = validDisplayLocations.includes(m.displayLocation as any) ? (m.displayLocation as typeof validDisplayLocations[number]) : 'both';
+    const animationType = validAnimationTypes.includes(m.animationType as any) ? (m.animationType as typeof validAnimationTypes[number]) : 'rollover';
+    let celebrationEffect = validCelebrationEffects.includes(m.celebrationEffect as any) ? (m.celebrationEffect as string) : 'fireworks';
+    if (celebrationEffect === 'hearts') celebrationEffect = 'hearts-rising';
+    const startDate = typeof m.startDate === 'string' ? m.startDate : new Date().toISOString();
+    const endDate = typeof m.endDate === 'string' ? m.endDate : new Date().toISOString();
+    const isActive = typeof m.isActive === 'boolean' ? m.isActive : true;
+    const priority = typeof m.priority === 'number' ? m.priority : index;
+    const textColor = typeof m.textColor === 'string' ? m.textColor : undefined;
+    const fontStyle = typeof m.fontStyle === 'string' ? m.fontStyle : undefined;
+    const delayBefore = typeof m.delayBefore === 'number' ? m.delayBefore : 0;
+    let celebrationConfig: CelebrationConfig | undefined;
+    if (m.celebrationConfig && typeof m.celebrationConfig === 'object' && m.celebrationConfig !== null) {
+      const cc = m.celebrationConfig as Record<string, unknown>;
+      celebrationConfig = {};
+      if (typeof cc.intensity === 'number') celebrationConfig.intensity = Math.max(1, Math.min(100, cc.intensity));
+      if (typeof cc.particleCount === 'number') celebrationConfig.particleCount = Math.max(5, Math.min(80, cc.particleCount));
+      if (typeof cc.particleSize === 'number') celebrationConfig.particleSize = Math.max(50, Math.min(200, cc.particleSize));
+      if (typeof cc.triggerIntervalMs === 'number') celebrationConfig.triggerIntervalMs = Math.max(2000, Math.min(15000, cc.triggerIntervalMs));
+    }
+    return {
+      id: generateId(),
+      content: content.trim(),
+      type,
+      startDate,
+      endDate,
+      isActive,
+      priority,
+      textColor: textColor || undefined,
+      fontStyle: fontStyle || undefined,
+      displayLocation,
+      animationType,
+      delayBefore,
+      celebrationEffect: celebrationEffect as TileMessage['celebrationEffect'],
+      celebrationConfig: Object.keys(celebrationConfig || {}).length ? celebrationConfig : undefined,
+    };
+  };
+
+  const handleExportMessageBoard = useCallback(() => {
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      messages,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `linknest-message-board-${editingTile?.id ?? 'export'}-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [messages, editingTile?.id]);
+
+  const handleImportMessageBoard = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const text = reader.result as string;
+        const data = JSON.parse(text) as unknown;
+        let rawList: unknown[] = [];
+        if (Array.isArray(data)) {
+          rawList = data;
+        } else if (data && typeof data === 'object' && Array.isArray((data as { messages?: unknown[] }).messages)) {
+          rawList = (data as { messages: unknown[] }).messages;
+        } else {
+          alert('Invalid format. Expected a JSON array of messages or { "messages": [...] }.');
+          return;
+        }
+        const normalized: TileMessage[] = [];
+        rawList.forEach((item, i) => {
+          const msg = normalizeImportedMessage(item, i);
+          if (msg) normalized.push(msg);
+        });
+        setMessages(normalized);
+        setEditingMessageId(null);
+        if (normalized.length !== rawList.length) {
+          const skipped = rawList.length - normalized.length;
+          alert(`Imported ${normalized.length} message(s). Skipped ${skipped} invalid or empty.`);
+        }
+      } catch (err) {
+        console.error('Import failed:', err);
+        alert('Failed to parse JSON. Please check the file format.');
+      }
+      e.target.value = '';
+    };
+    reader.readAsText(file, 'UTF-8');
+  }, []);
+
+  const handleDownloadAIPrompt = useCallback(() => {
+    const prompt = `# Linknest Message Board – AI Bulk Generator Prompt
+
+Use this prompt with Claude, ChatGPT, or similar AI tools to generate scheduled messages in bulk. Copy everything below the line, paste into your AI chat, then save the AI's JSON output and import it via the Import button (upload icon) in the message board.
+
+---
+
+## Your request to the AI
+
+Generate a JSON array of scheduled message board messages for Linknest. Each message has the following fields. Use only the allowed values. Omit optional fields if not needed.
+
+**Required:** content (string). All other fields are optional.
+
+**Fields and allowed values:**
+
+| Field | Type | Allowed values | Default |
+|-------|------|----------------|---------|
+| content | string | any text; URLs allowed, **bold** and _italic_ supported | — |
+| type | string | "info", "warning", "celebration", "alert", "custom" | "info" |
+| startDate | string | ISO 8601 date-time (e.g. "2026-01-15T09:00:00.000Z") | now |
+| endDate | string | ISO 8601 date-time | now |
+| isActive | boolean | true, false | true |
+| priority | number | 0, 1, 2, ... (lower = higher priority) | 0 |
+| textColor | string | hex e.g. "#3b82f6" | — |
+| fontStyle | string | "normal", "italic", "bold", etc. | "normal" |
+| displayLocation | string | "tile", "detail", "both" | "both" |
+| animationType | string | "rollover", "still", "flash", "flip-horizontal", "flip-vertical", "bounce", "pulse", "shake", "fade", "slide" | "rollover" |
+| delayBefore | number | seconds before showing (sequential messages) | 0 |
+| celebrationEffect | string | "none", "fireworks", "confetti", "snowfall", "hearts-rising", "hearts-falling", "bubbles" | "fireworks" |
+| celebrationConfig | object | optional; see below | — |
+
+**celebrationConfig** (optional, for celebrationEffect not "none"):
+- intensity: 1–100 (default 100)
+- particleCount: 5–80
+- particleSize: 50–200 (percentage)
+- triggerIntervalMs: 2000–15000 (milliseconds between bursts)
+
+**Output format:** Reply with ONLY a valid JSON array of message objects, no markdown code fences or extra text. Example:
+
+[
+  { "content": "🎉 Happy Birthday!", "type": "celebration", "startDate": "2026-02-14T00:00:00.000Z", "endDate": "2026-02-14T23:59:59.000Z", "celebrationEffect": "hearts-rising" },
+  { "content": "**Maintenance** tonight 10–11pm.", "type": "warning", "priority": 1 }
+]
+
+You may also wrap the array in an object: { "messages": [ ... ] }.
+
+---
+
+## JSON template (copy and adapt)
+
+[
+  {
+    "content": "Your message text. Use **bold** and _italic_. URLs become clickable.",
+    "type": "info",
+    "startDate": "2026-01-01T09:00:00.000Z",
+    "endDate": "2026-12-31T23:59:59.000Z",
+    "isActive": true,
+    "priority": 0,
+    "displayLocation": "both",
+    "animationType": "rollover",
+    "celebrationEffect": "none"
+  }
+]
+
+**Next steps:** Paste this prompt into Claude/ChatGPT, describe how many messages you need and any themes (e.g. holidays, reminders, celebrations). Save the AI's JSON output as a .json file, then use the Import button in the message board to load it.
+`;
+    const blob = new Blob([prompt], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'linknest-ai-prompt-message-board.md';
+    a.click();
+    URL.revokeObjectURL(url);
+  }, []);
 
   // Helper function to parse URLs and render clickable links
   const renderMessageContent = (content: string) => {
@@ -7472,30 +7649,71 @@ export const TileGrid: React.FC<TileGridProps> = ({
                           </span>
                         )}
                       </div>
-                      <button
-                        onClick={() => {
-                          setEditingMessageId('new');
-                          setMessageContent('');
-                          setMessageType('info');
-                          setMessageStartDate('');
-                          setMessageEndDate('');
-                          setMessageIsActive(true);
-                          setMessagePriority(0);
-                          setMessageTextColor('');
-                          setMessageFontStyle('normal');
-                          setMessageDisplayLocation('both');
-                          setMessageAnimationType('rollover');
-                          setMessageDelayBefore(0);
-                          setMessageCelebrationEffect('fireworks');
-                          setMessageCelebrationConfig({ intensity: 100, particleCount: 18, particleSize: 100, triggerIntervalMs: 5000 });
-                        }}
-                        className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors shadow-sm hover:shadow"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                          <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-                        </svg>
-                        Add Message
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleExportMessageBoard}
+                          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors border border-slate-200 dark:border-slate-600"
+                          title="Export all messages as JSON"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
+                            <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+                          </svg>
+                        </button>
+                        <input
+                          ref={messageBoardImportInputRef}
+                          type="file"
+                          accept=".json,application/json"
+                          className="hidden"
+                          onChange={handleImportMessageBoard}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => messageBoardImportInputRef.current?.click()}
+                          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors border border-slate-200 dark:border-slate-600"
+                          title="Import messages from JSON file"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 3.129a.75.75 0 001.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 101.09 1.03L9.25 4.636v8.614z" />
+                            <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDownloadAIPrompt}
+                          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors border border-slate-200 dark:border-slate-600"
+                          title="Download AI prompt + JSON template for bulk generation (Claude, ChatGPT)"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path d="M15.98 1.804a1 1 0 00-1.96 0l-.24 1.192a1 1 0 01-.784.785l-1.192.238a1 1 0 000 1.962l1.192.238a1 1 0 01.785.785l.238 1.192a1 1 0 001.962 0l.238-1.192a1 1 0 01.785-.785l1.192-.238a1 1 0 000-1.962l-1.192-.238a1 1 0 01-.785-.785l-.238-1.192zM6.949 5.684a1 1 0 00-1.898 0l-.683 2.051a1 1 0 01-.633.633l-2.051.683a1 1 0 000 1.898l2.051.684a1 1 0 01.633.632l.683 2.051a1 1 0 001.898 0l.683-2.051a1 1 0 01.633-.633l2.051-.683a1 1 0 000-1.898l-2.051-.683a1 1 0 01-.633-.633L6.95 5.684zM13.949 13.684a1 1 0 00-1.898 0l-.184.551a1 1 0 01-.632.633l-.551.183a1 1 0 000 1.898l.551.183a1 1 0 01.633.633l.183.551a1 1 0 001.898 0l.184-.551a1 1 0 01.632-.633l.551-.183a1 1 0 000-1.898l-.551-.184a1 1 0 01-.633-.632l-.183-.551z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingMessageId('new');
+                            setMessageContent('');
+                            setMessageType('info');
+                            setMessageStartDate('');
+                            setMessageEndDate('');
+                            setMessageIsActive(true);
+                            setMessagePriority(0);
+                            setMessageTextColor('');
+                            setMessageFontStyle('normal');
+                            setMessageDisplayLocation('both');
+                            setMessageAnimationType('rollover');
+                            setMessageDelayBefore(0);
+                            setMessageCelebrationEffect('fireworks');
+                            setMessageCelebrationConfig({ intensity: 100, particleCount: 18, particleSize: 100, triggerIntervalMs: 5000 });
+                          }}
+                          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors shadow-sm hover:shadow"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                          </svg>
+                          Add Message
+                        </button>
+                      </div>
                     </div>
 
                     {/* Message Editor */}
