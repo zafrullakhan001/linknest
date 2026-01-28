@@ -1236,7 +1236,8 @@ function handleCreateTile() {
     $tileGradientDirection = ($tileGradientEnabled === 1 && isset($data['tileGradientDirection']) && $data['tileGradientDirection'] !== null) ? (is_numeric($data['tileGradientDirection']) ? (int)$data['tileGradientDirection'] : $data['tileGradientDirection']) : null;
     $tileGradientType = ($tileGradientEnabled === 1 && isset($data['tileGradientType']) && $data['tileGradientType']) ? $data['tileGradientType'] : null;
     $tileBorderRadius = array_key_exists('tileBorderRadius', $data) && $data['tileBorderRadius'] !== null ? (int)$data['tileBorderRadius'] : null;
-    $tileTextColor = isset($data['tileTextColor']) && $data['tileTextColor'] !== null && $data['tileTextColor'] !== '' ? $data['tileTextColor'] : null;
+    // Don't save #000000 (black) as it's effectively "no decoration" - treat it as null
+    $tileTextColor = isset($data['tileTextColor']) && $data['tileTextColor'] !== null && $data['tileTextColor'] !== '' && strtolower(trim($data['tileTextColor'])) !== '#000000' && strtolower(trim($data['tileTextColor'])) !== '000000' ? $data['tileTextColor'] : null;
     
     $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     
@@ -4147,7 +4148,8 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         $tileGradientDirection = ($tileGradientEnabled === 1 && isset($data['tileGradientDirection']) && $data['tileGradientDirection'] !== null) ? (is_numeric($data['tileGradientDirection']) ? (int)$data['tileGradientDirection'] : $data['tileGradientDirection']) : null;
         $tileGradientType = ($tileGradientEnabled === 1 && isset($data['tileGradientType']) && $data['tileGradientType']) ? $data['tileGradientType'] : null;
         $tileBorderRadius = array_key_exists('tileBorderRadius', $data) && $data['tileBorderRadius'] !== null ? (int)$data['tileBorderRadius'] : null;
-        $tileTextColor = isset($data['tileTextColor']) && $data['tileTextColor'] !== null && $data['tileTextColor'] !== '' ? $data['tileTextColor'] : null;
+        // Don't save #000000 (black) as it's effectively "no decoration" - treat it as null
+        $tileTextColor = isset($data['tileTextColor']) && $data['tileTextColor'] !== null && $data['tileTextColor'] !== '' && strtolower(trim($data['tileTextColor'])) !== '#000000' && strtolower(trim($data['tileTextColor'])) !== '000000' ? $data['tileTextColor'] : null;
         
         // Update tile
         $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, allowed_groups = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ?, tile_background_color = ?, tile_gradient_enabled = ?, tile_gradient_colors = ?, tile_gradient_color_positions = ?, tile_gradient_direction = ?, tile_gradient_type = ?, tile_border_radius = ?, tile_text_color = ? WHERE id = ?');

@@ -641,7 +641,10 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
       decorationStyles.borderRadius = `${tile.tileBorderRadius}px`;
     }
 
-    if (tile.tileTextColor) {
+    // Only apply text color if tile has other decorations (background or gradient)
+    // This prevents forcing text color on tiles without decorations
+    const hasOtherDecorations = !!(tile.tileBackgroundColor || (tile.tileGradientEnabled && tile.tileGradientColors && tile.tileGradientColors.length > 0));
+    if (tile.tileTextColor && hasOtherDecorations) {
       decorationStyles.color = tile.tileTextColor;
     }
 

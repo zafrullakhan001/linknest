@@ -1017,11 +1017,12 @@ const SortableTile: React.FC<SortableTileProps> = ({
   const animationDelay = (groupIndex * 80) + (tileIndex * 50);
 
   // Check if tile has local decoration (takes precedence over global)
+  // Only count as local decoration if tile has actual visual customizations
+  // Border radius alone should NOT trigger local decoration mode
+  // Text color alone should NOT trigger local decoration mode
   const hasLocalDecoration = !!(
     tile.tileBackgroundColor ||
-    (tile.tileGradientEnabled && tile.tileGradientColors && tile.tileGradientColors.length > 0) ||
-    (tile.tileBorderRadius !== undefined && tile.tileBorderRadius >= 0) ||
-    tile.tileTextColor
+    (tile.tileGradientEnabled && tile.tileGradientColors && tile.tileGradientColors.length > 0)
   );
 
   // Build decoration styles (local decoration takes precedence)
@@ -1070,17 +1071,26 @@ const SortableTile: React.FC<SortableTileProps> = ({
       // But we still mark it as having local decoration if other properties are set
     }
 
-    // Border radius (local takes precedence) - always apply if defined
-    if (tile.tileBorderRadius !== undefined && tile.tileBorderRadius !== null) {
-      decorationStyles['--tile-local-border-radius' as any] = `${tile.tileBorderRadius}px`;
-      decorationStyles.borderRadius = `${tile.tileBorderRadius}px`;
+    // Text color (local takes precedence) - only apply if defined AND tile has other decorations
+    // This prevents forcing text color on tiles without decorations
+    // Also ignore #000000 (black) as it's effectively "no decoration"
+    const effectiveTextColor = tile.tileTextColor &&
+      tile.tileTextColor.toLowerCase() !== '#000000' &&
+      tile.tileTextColor.toLowerCase() !== '000000'
+      ? tile.tileTextColor
+      : null;
+    if (effectiveTextColor && hasLocalDecoration) {
+      decorationStyles['--tile-local-text-color' as any] = effectiveTextColor;
+      decorationStyles.color = effectiveTextColor;
     }
+  }
 
-    // Text color (local takes precedence) - always apply if defined
-    if (tile.tileTextColor) {
-      decorationStyles['--tile-local-text-color' as any] = tile.tileTextColor;
-      decorationStyles.color = tile.tileTextColor;
-    }
+  // Border radius - apply independently of local decoration
+  // This allows border radius customization without triggering the local decoration CSS overrides
+  if (tile.tileBorderRadius !== undefined && tile.tileBorderRadius !== null) {
+    // Set CSS custom property so !important rules in CSS can use it
+    decorationStyles['--tile-local-border-radius' as any] = `${tile.tileBorderRadius}px`;
+    decorationStyles.borderRadius = `${tile.tileBorderRadius}px`;
   }
 
   // Split animation class - only apply decoration class if no local decoration
@@ -1118,7 +1128,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
         }
       }}
       className={`
-        linknest-tile ${hasLocalDecoration ? 'has-local-decoration' : ''} ${tileAnimatedClass} ${finalAnimationClass} group relative ${!hasLocalDecoration || (tile.tileBorderRadius === undefined) ? 'rounded-xl' : ''} ${borderClass}
+        linknest-tile ${hasLocalDecoration ? 'has-local-decoration' : ''} ${tileAnimatedClass} ${finalAnimationClass} group relative ${tile.tileBorderRadius === undefined ? 'rounded-xl' : ''} ${borderClass}
         transition-all duration-200 
         flex flex-col h-full min-h-[140px] cursor-pointer
       `}
@@ -2301,12 +2311,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
     if (!isAuthenticated || !user) {
       return allCategories; // For non-authenticated users, return all categories
     }
-    
+
     // If user is admin, return all categories
     if (user.is_admin) {
       return allCategories;
     }
-    
+
     // Filter to only categories where user owns at least one tile
     const userOwnedCategorySet = new Set<string>();
     tiles.forEach(t => {
@@ -2315,7 +2325,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
         userOwnedCategorySet.add(t.group || 'General');
       }
     });
-    
+
     // Return categories in the same order as allCategories, but filtered
     return allCategories.filter(cat => userOwnedCategorySet.has(cat));
   }, [allCategories, tiles, isAuthenticated, user]);
@@ -2327,14 +2337,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
         .then(tiles => {
           setRecycleBinTiles(tiles);
         })
-        .catch(() => {});
+        .catch(() => { });
 
       // Also load archive count on mount
       getArchive()
         .then(tiles => {
           setArchiveTiles(tiles);
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [isAuthenticated]);
 
@@ -2617,7 +2627,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       const timeoutId = setTimeout(() => {
         // Save to user preferences (server-side)
         userPreferencesService.updatePreference('activeTab', activeTab)
-          .catch(() => {});
+          .catch(() => { });
 
         // Also save to localStorage for immediate restoration after login
         localStorage.setItem('linknest_user_active_tab', activeTab);
@@ -3329,7 +3339,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
           setIsLoadingUsers(false);
         });
     }
-    
+
     const shouldFetchGroups = (isModalOpen || isEditModalOpen) && isAuthenticated && newVisibility === 'private' && safeAvailableGroups.length === 0 && !isLoadingGroups;
     if (shouldFetchGroups) {
       setIsLoadingGroups(true);
@@ -3647,7 +3657,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     } else {
       setNewVisibility(tile.visibility || 'public');
     }
-    
+
     // Always include owner in allowed users list
     const allowedUsers = tile.allowedUsers || [];
     const allowedGroups = tile.allowedGroups || [];
@@ -3718,6 +3728,33 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
   };
 
+  // Helper function to check if a tile has any decorations
+  const hasAnyDecorations = useCallback((tile: Tile): boolean => {
+    return !!(
+      tile.tileBackgroundColor ||
+      (tile.tileGradientEnabled && tile.tileGradientColors && tile.tileGradientColors.length > 0) ||
+      (tile.tileBorderRadius !== undefined && tile.tileBorderRadius !== null) ||
+      (tile.tileTextColor &&
+        tile.tileTextColor.toLowerCase() !== '#000000' &&
+        tile.tileTextColor.toLowerCase() !== '000000')
+    );
+  }, []);
+
+  // Helper function to reset tile decorations (same as "Reset All" button)
+  const resetTileDecorations = useCallback((tile: Tile): Tile => {
+    return {
+      ...tile,
+      tileBackgroundColor: undefined,
+      tileGradientEnabled: undefined,
+      tileGradientColors: undefined,
+      tileGradientColorPositions: undefined,
+      tileGradientDirection: undefined,
+      tileGradientType: undefined,
+      tileBorderRadius: undefined,
+      tileTextColor: undefined
+    };
+  }, []);
+
   const handleUpdateTile = async () => {
     if (!editingTile || !newTitle.trim()) return;
 
@@ -3737,6 +3774,51 @@ export const TileGrid: React.FC<TileGridProps> = ({
       }
     }
 
+    // Check if visibility is changing
+    const visibilityChanged = editingTile.visibility !== newVisibility;
+
+    // Check if tile has any decorations from form state
+    const hasDecorationsFromForm = !!(
+      tileBackgroundColor.trim() ||
+      (tileGradientEnabled && tileGradientColors && tileGradientColors.length > 0) ||
+      (tileBorderRadius !== undefined && tileBorderRadius !== null) ||
+      (tileTextColor.trim() &&
+        tileTextColor.trim().toLowerCase() !== '#000000' &&
+        tileTextColor.trim().toLowerCase() !== '000000')
+    );
+
+    // Check if original tile had decorations
+    const hasDecorationsFromTile = hasAnyDecorations(editingTile);
+
+    // If visibility changed and tile has no decorations (neither in form nor original), automatically reset decorations
+    let decorationProps: Partial<Tile> = {};
+    if (visibilityChanged && !hasDecorationsFromForm && !hasDecorationsFromTile) {
+      // No decorations at all - reset all (use global style manager)
+      decorationProps = {
+        tileBackgroundColor: undefined,
+        tileGradientEnabled: undefined,
+        tileGradientColors: undefined,
+        tileGradientColorPositions: undefined,
+        tileGradientDirection: undefined,
+        tileGradientType: undefined,
+        tileBorderRadius: undefined,
+        tileTextColor: undefined
+      };
+    } else {
+      // Has decorations or visibility didn't change - use form values
+      decorationProps = {
+        tileBackgroundColor: tileBackgroundColor.trim() ? tileBackgroundColor.trim() : undefined,
+        tileGradientEnabled: tileGradientEnabled !== undefined ? tileGradientEnabled : undefined,
+        tileGradientColors: tileGradientEnabled && tileGradientColors && tileGradientColors.length > 0 ? tileGradientColors : undefined,
+        tileGradientColorPositions: tileGradientEnabled && tileGradientColors && tileGradientColorPositions && tileGradientColorPositions.length === tileGradientColors.length ? tileGradientColorPositions : undefined,
+        tileGradientDirection: tileGradientEnabled && tileGradientDirection !== undefined ? tileGradientDirection : undefined,
+        tileGradientType: tileGradientEnabled && tileGradientType ? tileGradientType : undefined,
+        tileBorderRadius: tileBorderRadius !== undefined && tileBorderRadius !== null ? tileBorderRadius : undefined,
+        // Don't save #000000 (black) as it's effectively "no decoration" - treat it as undefined
+        tileTextColor: tileTextColor.trim() && tileTextColor.trim().toLowerCase() !== '#000000' && tileTextColor.trim().toLowerCase() !== '000000' ? tileTextColor.trim() : undefined
+      };
+    }
+
     const updatedTile: Tile = {
       ...editingTile,
       title: newTitle,
@@ -3752,17 +3834,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
       openInNewTab: tileType === 'hyperlink' ? openInNewTab : undefined,
       visibleFrom: visibleFrom.trim() ? new Date(visibleFrom).toISOString() : undefined,
       expiresAt: expiresAt.trim() ? new Date(expiresAt).toISOString() : undefined,
-      // Tile decoration properties - preserve false/0 values, only use undefined for empty
-      // When all values are empty/default, they'll be undefined and tile will use global style manager
-      tileBackgroundColor: tileBackgroundColor.trim() ? tileBackgroundColor.trim() : undefined,
-      tileGradientEnabled: tileGradientEnabled !== undefined ? tileGradientEnabled : undefined,
-      tileGradientColors: tileGradientEnabled && tileGradientColors && tileGradientColors.length > 0 ? tileGradientColors : undefined,
-      tileGradientColorPositions: tileGradientEnabled && tileGradientColors && tileGradientColorPositions && tileGradientColorPositions.length === tileGradientColors.length ? tileGradientColorPositions : undefined,
-      tileGradientDirection: tileGradientEnabled && tileGradientDirection !== undefined ? tileGradientDirection : undefined,
-      tileGradientType: tileGradientEnabled && tileGradientType ? tileGradientType : undefined,
-      tileBorderRadius: tileBorderRadius !== undefined && tileBorderRadius !== null ? tileBorderRadius : undefined,
-      tileTextColor: tileTextColor.trim() ? tileTextColor.trim() : undefined,
-      messages: messages
+      messages: messages,
+      ...decorationProps
     };
 
     try {
@@ -4550,11 +4623,37 @@ export const TileGrid: React.FC<TileGridProps> = ({
         const tile = tiles.find(t => t.id === tileId);
         if (!tile) return;
 
-        const updatedTile: Tile = {
-          ...tile,
-          visibility: settings.visibility,
-          allowedUsers: settings.visibility === 'private' ? settings.allowedUsers : undefined
-        };
+        let updatedTile: Tile;
+
+        // If tile has no decorations, automatically reset it to use global style manager styles
+        if (!hasAnyDecorations(tile)) {
+          // Reset all decorations (same as clicking "Reset All")
+          updatedTile = resetTileDecorations(tile);
+          updatedTile.visibility = settings.visibility;
+          updatedTile.allowedUsers = settings.visibility === 'private' ? settings.allowedUsers : undefined;
+        } else {
+          // Tile has decorations - preserve them
+          const decorationProps: Partial<Tile> = {};
+          if (tile.tileBackgroundColor) decorationProps.tileBackgroundColor = tile.tileBackgroundColor;
+          if (tile.tileGradientEnabled !== undefined && tile.tileGradientEnabled !== null) decorationProps.tileGradientEnabled = tile.tileGradientEnabled;
+          if (tile.tileGradientColors && tile.tileGradientColors.length > 0) decorationProps.tileGradientColors = tile.tileGradientColors;
+          if (tile.tileGradientColorPositions && tile.tileGradientColorPositions.length > 0) decorationProps.tileGradientColorPositions = tile.tileGradientColorPositions;
+          if (tile.tileGradientDirection !== undefined && tile.tileGradientDirection !== null) decorationProps.tileGradientDirection = tile.tileGradientDirection;
+          if (tile.tileGradientType) decorationProps.tileGradientType = tile.tileGradientType;
+          if (tile.tileBorderRadius !== undefined && tile.tileBorderRadius !== null) decorationProps.tileBorderRadius = tile.tileBorderRadius;
+          // Don't preserve #000000 (black) as it's effectively "no decoration" - tiles should use global style manager colors
+          if (tile.tileTextColor && tile.tileTextColor.toLowerCase() !== '#000000' && tile.tileTextColor.toLowerCase() !== '000000') {
+            decorationProps.tileTextColor = tile.tileTextColor;
+          }
+
+          updatedTile = {
+            ...tile,
+            visibility: settings.visibility,
+            allowedUsers: settings.visibility === 'private' ? settings.allowedUsers : undefined,
+            // Only include decoration properties if they have values
+            ...decorationProps
+          };
+        }
 
         return saveTile(updatedTile);
       });
@@ -4694,13 +4793,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const handleShowCategoryInfo = useCallback(async (categoryName: string, categoryTiles: Tile[]) => {
     // Determine category owner from oldest tile (first created in category)
     let categoryOwner: { userId: number | null; username: string | null; email: string | null; isAdmin: boolean } | undefined;
-    
+
     if (categoryTiles.length > 0) {
       // Find oldest tile (first created)
-      const oldestTile = categoryTiles.reduce((oldest, current) => 
+      const oldestTile = categoryTiles.reduce((oldest, current) =>
         (!oldest || current.createdAt < oldest.createdAt) ? current : oldest
       );
-      
+
       if (oldestTile.userId) {
         try {
           // Fetch owner info
@@ -4708,7 +4807,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
           const response = await fetch(`${API_BASE}/auth/user/${oldestTile.userId}`, {
             credentials: 'include'
           });
-          
+
           if (response.ok) {
             const userInfo = await response.json();
             categoryOwner = {
@@ -4730,7 +4829,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
         }
       }
     }
-    
+
     setTileInfoDialog({
       categoryInfo: {
         categoryName,
@@ -6609,22 +6708,20 @@ export const TileGrid: React.FC<TileGridProps> = ({
                               <button
                                 type="button"
                                 onClick={() => setVisibilityActiveTab('users')}
-                                className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${
-                                  visibilityActiveTab === 'users'
-                                    ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
-                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                                }`}
+                                className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${visibilityActiveTab === 'users'
+                                  ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
+                                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                  }`}
                               >
                                 USERS ({newAllowedUsers.length})
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setVisibilityActiveTab('groups')}
-                                className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${
-                                  visibilityActiveTab === 'groups'
-                                    ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
-                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                                }`}
+                                className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${visibilityActiveTab === 'groups'
+                                  ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
+                                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                  }`}
                               >
                                 GROUPS ({newAllowedGroups.length})
                               </button>
@@ -6667,7 +6764,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                 ) : (
                                   <div className="space-y-1">
                                     {safeAvailableUsers
-        .filter(u => {
+                                      .filter(u => {
                                         const searchLower = visibilitySearchTerm.toLowerCase();
                                         return u.username.toLowerCase().includes(searchLower) ||
                                           u.email?.toLowerCase().includes(searchLower);
@@ -6675,13 +6772,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                       .map(u => {
                                         const isCurrentUserOwner = user && u.id === user.id;
                                         return (
-                                          <label 
-                                            key={u.id} 
-                                            className={`flex items-center gap-2 p-2 rounded ${
-                                              isCurrentUserOwner 
-                                                ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
-                                                : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50'
-                                            }`}
+                                          <label
+                                            key={u.id}
+                                            className={`flex items-center gap-2 p-2 rounded ${isCurrentUserOwner
+                                              ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
+                                              : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                                              }`}
                                           >
                                             <input
                                               type="checkbox"
@@ -6695,15 +6791,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                                   setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
                                                 }
                                               }}
-                                              className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${
-                                                isCurrentUserOwner ? 'opacity-50 cursor-not-allowed' : ''
-                                              }`}
+                                              className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${isCurrentUserOwner ? 'opacity-50 cursor-not-allowed' : ''
+                                                }`}
                                             />
-                                            <span className={`text-sm flex-1 ${
-                                              isCurrentUserOwner 
-                                                ? 'text-amber-800 dark:text-amber-200 font-medium'
-                                                : 'text-slate-700 dark:text-slate-300'
-                                            }`}>
+                                            <span className={`text-sm flex-1 ${isCurrentUserOwner
+                                              ? 'text-amber-800 dark:text-amber-200 font-medium'
+                                              : 'text-slate-700 dark:text-slate-300'
+                                              }`}>
                                               {u.username}
                                             </span>
                                             {isCurrentUserOwner && (
@@ -6724,8 +6818,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                       return u.username.toLowerCase().includes(searchLower) ||
                                         u.email?.toLowerCase().includes(searchLower);
                                     }).length === 0 && (
-                                      <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users found</div>
-                                    )}
+                                        <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users found</div>
+                                      )}
                                   </div>
                                 )
                               )}
@@ -6738,14 +6832,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                 ) : (
                                   <div className="space-y-1">
                                     {safeAvailableGroups
-        .filter(g => {
+                                      .filter(g => {
                                         const searchLower = visibilitySearchTerm.toLowerCase();
                                         return g.name.toLowerCase().includes(searchLower) ||
                                           (g.description || '').toLowerCase().includes(searchLower);
                                       })
                                       .map(g => (
-                                        <label 
-                                          key={g.id} 
+                                        <label
+                                          key={g.id}
                                           className="flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50"
                                         >
                                           <input
@@ -6776,8 +6870,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                       return g.name.toLowerCase().includes(searchLower) ||
                                         (g.description || '').toLowerCase().includes(searchLower);
                                     }).length === 0 && (
-                                      <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups found</div>
-                                    )}
+                                        <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups found</div>
+                                      )}
                                   </div>
                                 )
                               )}
@@ -6951,22 +7045,20 @@ export const TileGrid: React.FC<TileGridProps> = ({
                             <button
                               type="button"
                               onClick={() => setVisibilityActiveTab('users')}
-                              className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${
-                                visibilityActiveTab === 'users'
-                                  ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
-                                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                              }`}
+                              className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${visibilityActiveTab === 'users'
+                                ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                }`}
                             >
                               USERS ({newAllowedUsers.length})
                             </button>
                             <button
                               type="button"
                               onClick={() => setVisibilityActiveTab('groups')}
-                              className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${
-                                visibilityActiveTab === 'groups'
-                                  ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
-                                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                              }`}
+                              className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${visibilityActiveTab === 'groups'
+                                ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                }`}
                             >
                               GROUPS ({newAllowedGroups.length})
                             </button>
@@ -7009,7 +7101,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                               ) : (
                                 <div className="space-y-1">
                                   {safeAvailableUsers
-        .filter(u => {
+                                    .filter(u => {
                                       const searchLower = visibilitySearchTerm.toLowerCase();
                                       return u.username.toLowerCase().includes(searchLower) ||
                                         u.email?.toLowerCase().includes(searchLower);
@@ -7017,13 +7109,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                     .map(u => {
                                       const isCurrentUserOwner = user && u.id === user.id;
                                       return (
-                                        <label 
-                                          key={u.id} 
-                                          className={`flex items-center gap-2 p-2 rounded ${
-                                            isCurrentUserOwner 
-                                              ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
-                                              : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50'
-                                          }`}
+                                        <label
+                                          key={u.id}
+                                          className={`flex items-center gap-2 p-2 rounded ${isCurrentUserOwner
+                                            ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
+                                            : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                                            }`}
                                         >
                                           <input
                                             type="checkbox"
@@ -7037,15 +7128,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                                 setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
                                               }
                                             }}
-                                            className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${
-                                              isCurrentUserOwner ? 'opacity-50 cursor-not-allowed' : ''
-                                            }`}
+                                            className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${isCurrentUserOwner ? 'opacity-50 cursor-not-allowed' : ''
+                                              }`}
                                           />
-                                          <span className={`text-sm flex-1 ${
-                                            isCurrentUserOwner 
-                                              ? 'text-amber-800 dark:text-amber-200 font-medium'
-                                              : 'text-slate-700 dark:text-slate-300'
-                                          }`}>
+                                          <span className={`text-sm flex-1 ${isCurrentUserOwner
+                                            ? 'text-amber-800 dark:text-amber-200 font-medium'
+                                            : 'text-slate-700 dark:text-slate-300'
+                                            }`}>
                                             {u.username}
                                           </span>
                                           {isCurrentUserOwner && (
@@ -7066,8 +7155,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                     return u.username.toLowerCase().includes(searchLower) ||
                                       u.email?.toLowerCase().includes(searchLower);
                                   }).length === 0 && (
-                                    <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users found</div>
-                                  )}
+                                      <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users found</div>
+                                    )}
                                 </div>
                               )
                             )}
@@ -7080,14 +7169,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
                               ) : (
                                 <div className="space-y-1">
                                   {safeAvailableGroups
-        .filter(g => {
+                                    .filter(g => {
                                       const searchLower = visibilitySearchTerm.toLowerCase();
                                       return g.name.toLowerCase().includes(searchLower) ||
                                         (g.description || '').toLowerCase().includes(searchLower);
                                     })
                                     .map(g => (
-                                      <label 
-                                        key={g.id} 
+                                      <label
+                                        key={g.id}
                                         className="flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50"
                                       >
                                         <input
@@ -7118,8 +7207,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                     return g.name.toLowerCase().includes(searchLower) ||
                                       (g.description || '').toLowerCase().includes(searchLower);
                                   }).length === 0 && (
-                                    <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups found</div>
-                                  )}
+                                      <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups found</div>
+                                    )}
                                 </div>
                               )
                             )}
@@ -7980,22 +8069,20 @@ export const TileGrid: React.FC<TileGridProps> = ({
                               <button
                                 type="button"
                                 onClick={() => setVisibilityActiveTab('users')}
-                                className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${
-                                  visibilityActiveTab === 'users'
-                                    ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
-                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                                }`}
+                                className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${visibilityActiveTab === 'users'
+                                  ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
+                                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                  }`}
                               >
                                 USERS ({newAllowedUsers.length})
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setVisibilityActiveTab('groups')}
-                                className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${
-                                  visibilityActiveTab === 'groups'
-                                    ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
-                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                                }`}
+                                className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${visibilityActiveTab === 'groups'
+                                  ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
+                                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                  }`}
                               >
                                 GROUPS ({newAllowedGroups.length})
                               </button>
@@ -8038,7 +8125,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                 ) : (
                                   <div className="space-y-1">
                                     {safeAvailableUsers
-        .filter(u => {
+                                      .filter(u => {
                                         const searchLower = visibilitySearchTerm.toLowerCase();
                                         return u.username.toLowerCase().includes(searchLower) ||
                                           u.email?.toLowerCase().includes(searchLower);
@@ -8046,13 +8133,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                       .map(u => {
                                         const isOwner = editingTile && editingTile.userId && u.id === (typeof editingTile.userId === 'string' ? parseInt(editingTile.userId, 10) : editingTile.userId);
                                         return (
-                                          <label 
-                                            key={u.id} 
-                                            className={`flex items-center gap-2 p-2 rounded ${
-                                              isOwner 
-                                                ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
-                                                : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50'
-                                            }`}
+                                          <label
+                                            key={u.id}
+                                            className={`flex items-center gap-2 p-2 rounded ${isOwner
+                                              ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
+                                              : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                                              }`}
                                           >
                                             <input
                                               type="checkbox"
@@ -8066,15 +8152,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                                   setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
                                                 }
                                               }}
-                                              className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${
-                                                isOwner ? 'opacity-50 cursor-not-allowed' : ''
-                                              }`}
+                                              className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${isOwner ? 'opacity-50 cursor-not-allowed' : ''
+                                                }`}
                                             />
-                                            <span className={`text-sm flex-1 ${
-                                              isOwner 
-                                                ? 'text-amber-800 dark:text-amber-200 font-medium'
-                                                : 'text-slate-700 dark:text-slate-300'
-                                            }`}>
+                                            <span className={`text-sm flex-1 ${isOwner
+                                              ? 'text-amber-800 dark:text-amber-200 font-medium'
+                                              : 'text-slate-700 dark:text-slate-300'
+                                              }`}>
                                               {u.username}
                                             </span>
                                             {isOwner && (
@@ -8095,8 +8179,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                       return u.username.toLowerCase().includes(searchLower) ||
                                         u.email?.toLowerCase().includes(searchLower);
                                     }).length === 0 && (
-                                      <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users found</div>
-                                    )}
+                                        <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users found</div>
+                                      )}
                                   </div>
                                 )
                               )}
@@ -8109,14 +8193,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                 ) : (
                                   <div className="space-y-1">
                                     {safeAvailableGroups
-        .filter(g => {
+                                      .filter(g => {
                                         const searchLower = visibilitySearchTerm.toLowerCase();
                                         return g.name.toLowerCase().includes(searchLower) ||
                                           (g.description || '').toLowerCase().includes(searchLower);
                                       })
                                       .map(g => (
-                                        <label 
-                                          key={g.id} 
+                                        <label
+                                          key={g.id}
                                           className="flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50"
                                         >
                                           <input
@@ -8147,8 +8231,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                       return g.name.toLowerCase().includes(searchLower) ||
                                         (g.description || '').toLowerCase().includes(searchLower);
                                     }).length === 0 && (
-                                      <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups found</div>
-                                    )}
+                                        <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups found</div>
+                                      )}
                                   </div>
                                 )
                               )}
@@ -8223,22 +8307,20 @@ export const TileGrid: React.FC<TileGridProps> = ({
                               <button
                                 type="button"
                                 onClick={() => setVisibilityActiveTab('users')}
-                                className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${
-                                  visibilityActiveTab === 'users'
-                                    ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
-                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                                }`}
+                                className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${visibilityActiveTab === 'users'
+                                  ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
+                                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                  }`}
                               >
                                 USERS ({newAllowedUsers.length})
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setVisibilityActiveTab('groups')}
-                                className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${
-                                  visibilityActiveTab === 'groups'
-                                    ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
-                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                                }`}
+                                className={`flex-1 px-4 py-2 text-xs font-semibold transition-colors ${visibilityActiveTab === 'groups'
+                                  ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400'
+                                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                  }`}
                               >
                                 GROUPS ({newAllowedGroups.length})
                               </button>
@@ -8281,7 +8363,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                 ) : (
                                   <div className="space-y-1">
                                     {safeAvailableUsers
-        .filter(u => {
+                                      .filter(u => {
                                         const searchLower = visibilitySearchTerm.toLowerCase();
                                         return u.username.toLowerCase().includes(searchLower) ||
                                           u.email?.toLowerCase().includes(searchLower);
@@ -8289,13 +8371,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                       .map(u => {
                                         const isOwner = editingTile && editingTile.userId && u.id === (typeof editingTile.userId === 'string' ? parseInt(editingTile.userId, 10) : editingTile.userId);
                                         return (
-                                          <label 
-                                            key={u.id} 
-                                            className={`flex items-center gap-2 p-2 rounded ${
-                                              isOwner 
-                                                ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
-                                                : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50'
-                                            }`}
+                                          <label
+                                            key={u.id}
+                                            className={`flex items-center gap-2 p-2 rounded ${isOwner
+                                              ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 cursor-not-allowed'
+                                              : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                                              }`}
                                           >
                                             <input
                                               type="checkbox"
@@ -8309,15 +8390,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                                   setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
                                                 }
                                               }}
-                                              className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${
-                                                isOwner ? 'opacity-50 cursor-not-allowed' : ''
-                                              }`}
+                                              className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${isOwner ? 'opacity-50 cursor-not-allowed' : ''
+                                                }`}
                                             />
-                                            <span className={`text-sm flex-1 ${
-                                              isOwner 
-                                                ? 'text-amber-800 dark:text-amber-200 font-medium'
-                                                : 'text-slate-700 dark:text-slate-300'
-                                            }`}>
+                                            <span className={`text-sm flex-1 ${isOwner
+                                              ? 'text-amber-800 dark:text-amber-200 font-medium'
+                                              : 'text-slate-700 dark:text-slate-300'
+                                              }`}>
                                               {u.username}
                                             </span>
                                             {isOwner && (
@@ -8338,8 +8417,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                       return u.username.toLowerCase().includes(searchLower) ||
                                         u.email?.toLowerCase().includes(searchLower);
                                     }).length === 0 && (
-                                      <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users found</div>
-                                    )}
+                                        <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users found</div>
+                                      )}
                                   </div>
                                 )
                               )}
@@ -8352,14 +8431,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                 ) : (
                                   <div className="space-y-1">
                                     {safeAvailableGroups
-        .filter(g => {
+                                      .filter(g => {
                                         const searchLower = visibilitySearchTerm.toLowerCase();
                                         return g.name.toLowerCase().includes(searchLower) ||
                                           (g.description || '').toLowerCase().includes(searchLower);
                                       })
                                       .map(g => (
-                                        <label 
-                                          key={g.id} 
+                                        <label
+                                          key={g.id}
                                           className="flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50"
                                         >
                                           <input
@@ -8390,8 +8469,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
                                       return g.name.toLowerCase().includes(searchLower) ||
                                         (g.description || '').toLowerCase().includes(searchLower);
                                     }).length === 0 && (
-                                      <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups found</div>
-                                    )}
+                                        <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No groups found</div>
+                                      )}
                                   </div>
                                 )
                               )}

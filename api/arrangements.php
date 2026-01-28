@@ -278,45 +278,80 @@ function handleSavePrivateArrangement(array $arrangement) {
 
 function handleGetCategoryArrangement() {
     // Global arrangement - no authentication required
-    $db = getDB();
-    
     try {
+        $db = getDB();
+        
         // Check if table exists, create if it doesn't
-        $tableCheck = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='category_arrangements'");
-        if ($tableCheck->fetchColumn() === false) {
-            // Table doesn't exist, create it
-            $db->exec('CREATE TABLE IF NOT EXISTS category_arrangements (
-                user_id INTEGER NOT NULL DEFAULT 0,
-                category_name TEXT NOT NULL,
-                position INTEGER NOT NULL,
-                visible_from TEXT,
-                expires_at TEXT,
-                PRIMARY KEY (user_id, category_name)
-            )');
+        try {
+            $tableCheck = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='category_arrangements'");
+            $tableExists = false;
+            if ($tableCheck) {
+                $result = $tableCheck->fetchColumn();
+                $tableExists = ($result !== false);
+            }
+            
+            if (!$tableExists) {
+                // Table doesn't exist, create it
+                $db->exec('CREATE TABLE IF NOT EXISTS category_arrangements (
+                    user_id INTEGER NOT NULL DEFAULT 0,
+                    category_name TEXT NOT NULL,
+                    position INTEGER NOT NULL,
+                    visible_from TEXT,
+                    expires_at TEXT,
+                    PRIMARY KEY (user_id, category_name)
+                )');
+            }
+        } catch (PDOException $tableError) {
+            error_log("Category arrangement: Table check/create error: " . $tableError->getMessage());
+            // Try to create table anyway
+            try {
+                $db->exec('CREATE TABLE IF NOT EXISTS category_arrangements (
+                    user_id INTEGER NOT NULL DEFAULT 0,
+                    category_name TEXT NOT NULL,
+                    position INTEGER NOT NULL,
+                    visible_from TEXT,
+                    expires_at TEXT,
+                    PRIMARY KEY (user_id, category_name)
+                )');
+            } catch (PDOException $createError) {
+                error_log("Category arrangement: Failed to create table: " . $createError->getMessage());
+            }
         }
         
         // Get global category arrangement (user_id = 0 for global)
         $stmt = $db->prepare('SELECT category_name, position, visible_from, expires_at FROM category_arrangements WHERE user_id = 0 ORDER BY position ASC');
-        $stmt->execute();
-        
-        $arrangement = [];
-        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $arrangement[] = [
-                'categoryName' => $row['category_name'],
-                'position' => (int)$row['position'],
-                'visibleFrom' => $row['visible_from'] ?: null,
-                'expiresAt' => $row['expires_at'] ?: null
-            ];
+        if ($stmt) {
+            $stmt->execute();
+            
+            $arrangement = [];
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $arrangement[] = [
+                    'categoryName' => $row['category_name'],
+                    'position' => (int)$row['position'],
+                    'visibleFrom' => $row['visible_from'] ?: null,
+                    'expiresAt' => $row['expires_at'] ?: null
+                ];
+            }
+            
+            sendJSON($arrangement);
+        } else {
+            // If prepare failed, return empty array
+            error_log("Category arrangement: Failed to prepare statement");
+            sendJSON([]);
         }
         
-        sendJSON($arrangement);
-        
     } catch (PDOException $e) {
-        error_log("Category arrangement error: " . $e->getMessage());
+        error_log("Category arrangement PDO error: " . $e->getMessage() . " | Code: " . $e->getCode());
+        error_log("Category arrangement error trace: " . $e->getTraceAsString());
         // Return empty array on error instead of crashing
         sendJSON([]);
     } catch (Exception $e) {
-        error_log("Category arrangement error: " . $e->getMessage());
+        error_log("Category arrangement error: " . $e->getMessage() . " | File: " . $e->getFile() . " | Line: " . $e->getLine());
+        error_log("Category arrangement error trace: " . $e->getTraceAsString());
+        sendJSON([]);
+    } catch (Throwable $e) {
+        error_log("Category arrangement fatal error: " . $e->getMessage() . " | File: " . $e->getFile() . " | Line: " . $e->getLine());
+        error_log("Category arrangement error trace: " . $e->getTraceAsString());
         sendJSON([]);
     }
 }
