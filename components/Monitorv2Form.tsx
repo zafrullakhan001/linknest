@@ -7,9 +7,10 @@ interface Monitorv2FormProps {
     onSave: (monitor: Partial<Monitorv2>) => Promise<void>;
     onCancel: () => void;
     isAddingNew?: boolean;
+    createdMonitorId?: number;
 }
 
-export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, onCancel, isAddingNew = false }) => {
+export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, onCancel, isAddingNew = false, createdMonitorId }) => {
     const [formData, setFormData] = useState<Partial<Monitorv2>>({
         name: '',
         type: 'url',
@@ -133,22 +134,22 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <div className="bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl border border-slate-200 dark:border-[#333] w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-                {/* Header */}
-                <div className="px-6 py-4 border-b border-slate-200 dark:border-[#333] flex items-center justify-between bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20">
+                {/* Header - aligned with MonitorForm (gray, same wording) */}
+                <div className="px-6 py-4 border-b border-gray-200 dark:border-[#333] flex items-center justify-between bg-gray-50 dark:bg-[#252525]">
                     <div>
-                        <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                            {monitor ? 'Edit Monitor' : 'Create Monitor'}
+                        <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
+                            {(monitor?.id && !isAddingNew) ? 'Edit Monitor' : 'Add New Monitor'}
                         </h2>
-                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                        <p className="text-sm text-gray-500 dark:text-slate-400">
                             Configure your monitoring settings
                         </p>
                     </div>
-                    <button onClick={onCancel} className="p-2 hover:bg-slate-200 dark:hover:bg-[#333] rounded-lg transition-colors">
+                    <button onClick={onCancel} className="p-2 hover:bg-gray-200 dark:hover:bg-[#333] rounded-lg transition-colors text-gray-500">
                         <FaTimes size={20} />
                     </button>
                 </div>
 
-                {/* Tabs */}
+                {/* Tabs - blue accent to match Monitoring */}
                 <div className="flex border-b border-slate-200 dark:border-[#333] bg-slate-50 dark:bg-[#252525]">
                     {(['general', 'notifications', 'advanced'] as const).map(tab => (
                         <button
@@ -156,7 +157,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                             onClick={() => setActiveTab(tab)}
                             className={`px-6 py-3 text-sm font-medium capitalize transition-colors ${
                                 activeTab === tab
-                                    ? 'text-purple-600 border-b-2 border-purple-600 bg-white dark:bg-[#1e1e1e]'
+                                    ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 bg-white dark:bg-[#1e1e1e]'
                                     : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white'
                             }`}
                         >
@@ -179,7 +180,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                         type="text"
                                         value={formData.name}
                                         onChange={e => setFormData({...formData, name: e.target.value})}
-                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                         placeholder="e.g., Google Website"
                                         required
                                     />
@@ -191,7 +192,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                     <select
                                         value={formData.type}
                                         onChange={e => setFormData({...formData, type: e.target.value as any})}
-                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     >
                                         <option value="url">URL (HTTP/HTTPS)</option>
                                         <option value="keyword">Keyword (HTTP + Content Check)</option>
@@ -210,7 +211,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                     type="text"
                                     value={formData.target}
                                     onChange={e => setFormData({...formData, target: e.target.value})}
-                                    className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                    className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     placeholder={isUrlType ? 'https://example.com' : isPortType ? 'example.com or IP' : '192.168.1.1'}
                                     required
                                 />
@@ -226,7 +227,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                         type="number"
                                         value={formData.port || ''}
                                         onChange={e => setFormData({...formData, port: parseInt(e.target.value)})}
-                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                         placeholder="80, 443, 3306, etc."
                                         min={1}
                                         max={65535}
@@ -244,7 +245,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                         type="text"
                                         value={formData.keyword || ''}
                                         onChange={e => setFormData({...formData, keyword: e.target.value})}
-                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                         placeholder="Text to search for in the page"
                                         required
                                     />
@@ -261,7 +262,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                         type="number"
                                         value={formData.interval}
                                         onChange={e => setFormData({...formData, interval: parseInt(e.target.value)})}
-                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                         min={1}
                                         max={1440}
                                     />
@@ -274,7 +275,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                         type="number"
                                         value={formData.timeout || ''}
                                         onChange={e => setFormData({...formData, timeout: parseInt(e.target.value)})}
-                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                         min={1}
                                         max={60}
                                     />
@@ -287,7 +288,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                         type="number"
                                         value={formData.warning_threshold}
                                         onChange={e => setFormData({...formData, warning_threshold: parseInt(e.target.value)})}
-                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                         min={1}
                                         max={20}
                                         title="Consecutive failures before declaring DOWN"
@@ -305,7 +306,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                         type="text"
                                         value={formData.tab_name}
                                         onChange={e => setFormData({...formData, tab_name: e.target.value})}
-                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                         placeholder="General"
                                     />
                                 </div>
@@ -317,7 +318,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                         type="text"
                                         value={formData.group_name}
                                         onChange={e => setFormData({...formData, group_name: e.target.value})}
-                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                         placeholder="Other"
                                     />
                                 </div>
@@ -353,7 +354,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                     type="button"
                                     onClick={() => setFormData({...formData, email_notification: formData.email_notification ? 0 : 1})}
                                     className={`text-2xl transition-colors ${
-                                        formData.email_notification ? 'text-purple-600' : 'text-slate-400'
+                                        formData.email_notification ? 'text-blue-600' : 'text-slate-400'
                                     }`}
                                 >
                                     {formData.email_notification ? <FaToggleOn /> : <FaToggleOff />}
@@ -371,7 +372,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                                 type="text"
                                                 value={formData.legacy_email_to || ''}
                                                 onChange={e => setFormData({...formData, legacy_email_to: e.target.value})}
-                                                className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                                className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                                 placeholder="admin@example.com"
                                             />
                                         </div>
@@ -383,7 +384,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                                 type="text"
                                                 value={formData.legacy_email_cc || ''}
                                                 onChange={e => setFormData({...formData, legacy_email_cc: e.target.value})}
-                                                className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                                className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                                 placeholder="Comma-separated emails"
                                             />
                                         </div>
@@ -398,7 +399,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                                 type="text"
                                                 value={formData.legacy_email_from_name || ''}
                                                 onChange={e => setFormData({...formData, legacy_email_from_name: e.target.value})}
-                                                className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                                className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                                 placeholder="LinkNest Monitor"
                                             />
                                         </div>
@@ -410,7 +411,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                                 type="email"
                                                 value={formData.legacy_email_from_email || ''}
                                                 onChange={e => setFormData({...formData, legacy_email_from_email: e.target.value})}
-                                                className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                                className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                                 placeholder="monitor@example.com"
                                             />
                                         </div>
@@ -424,7 +425,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                             type="text"
                                             value={formData.legacy_email_subject_template || ''}
                                             onChange={e => setFormData({...formData, legacy_email_subject_template: e.target.value})}
-                                            className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                            className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                         />
                                         <p className="text-xs text-slate-500 mt-1">
                                             Variables: {'{monitor_name}'}, {'{status}'}, {'{time}'}, {'{app_name}'}
@@ -439,7 +440,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                             value={formData.legacy_email_body_template || ''}
                                             onChange={e => setFormData({...formData, legacy_email_body_template: e.target.value})}
                                             rows={4}
-                                            className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent font-mono text-sm"
+                                            className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
                                         />
                                         <p className="text-xs text-slate-500 mt-1">
                                             Variables: {'{monitor_name}'}, {'{status}'}, {'{time}'}, {'{details}'}, {'{app_name}'}
@@ -455,7 +456,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                     <button
                                         type="button"
                                         onClick={addRule}
-                                        className="flex items-center gap-2 px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+                                        className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
                                     >
                                         <FaPlus size={12} />
                                         Add Rule
@@ -557,7 +558,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                                     key={user.id}
                                                     className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-colors ${
                                                         isSelected
-                                                            ? 'bg-purple-100 dark:bg-purple-900/30'
+                                                            ? 'bg-blue-100 dark:bg-blue-900/30'
                                                             : 'hover:bg-slate-100 dark:hover:bg-[#333]'
                                                     }`}
                                                 >
@@ -565,7 +566,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                                         type="checkbox"
                                                         checked={isSelected}
                                                         onChange={() => toggleUserPermission(user.id)}
-                                                        className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                                                        className="rounded border-slate-300 text-blue-600 focus:ring-purple-500"
                                                     />
                                                     <span className="text-sm text-slate-700 dark:text-slate-300">{user.username}</span>
                                                 </label>
@@ -602,10 +603,10 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                     <button
                         onClick={handleSubmit}
                         disabled={saving}
-                        className="flex items-center gap-2 px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                        className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 font-medium"
                     >
                         <FaSave size={16} />
-                        {saving ? 'Saving...' : 'Save Monitor'}
+                        {saving ? 'Saving...' : (monitor?.id && !isAddingNew) ? 'Update Monitor' : 'Create Monitor'}
                     </button>
                 </div>
             </div>

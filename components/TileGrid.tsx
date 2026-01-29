@@ -1749,6 +1749,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
       if (tab === 'archive') return disabledAppTabs.has('archive');
       if (tab === 'recycle-bin') return disabledAppTabs.has('recycle-bin');
       if (tab === 'monitoring') return disabledAppTabs.has('monitoring');
+      if (tab === 'monitorv2') {
+        // If addon is explicitly disabled (setting exists and is '0'), hide the tab
+        // If setting is undefined or missing, allow the tab (default to enabled)
+        if (settings?.monitorv2_enabled === '0') return true;
+        // If addon is enabled (or default), check tab visibility settings
+        return disabledAppTabs.has('monitorv2');
+      }
       return false;
     })();
 
@@ -1767,7 +1774,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
         'expired': 'expired',
         'archive': 'archive',
         'recycle-bin': 'recycle-bin',
-        'monitoring': 'monitoring'
+        'monitoring': 'monitoring',
+        'monitorv2': 'monitorv2'
       };
 
       const tabId = tabIdMap[tab];
@@ -1777,7 +1785,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
     // User has no roles or not authenticated - use global settings only
     return false;
-  }, [disabledAppTabs, isAuthenticated, user, allowedTabsByRole]);
+  }, [disabledAppTabs, isAuthenticated, user, allowedTabsByRole, settings]);
 
   const getFallbackTab = useCallback((): TabType | null => {
     const candidates: TabType[] = isAuthenticated
@@ -1796,7 +1804,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
     for (const c of candidates) {
       // Auth restrictions
-      const restrictedTabs: TabType[] = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+      const restrictedTabs: TabType[] = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2'];
       if (!isAuthenticated && restrictedTabs.includes(c)) continue;
       if (isTabDisabledBySettings(c)) continue;
       return c;
@@ -1813,12 +1821,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     try {
       const saved = localStorage.getItem('linknest_active_tab');
-      const validTabs = ['favorites', 'public', 'public-favorites', 'your-apps', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+      const validTabs = ['favorites', 'public', 'public-favorites', 'your-apps', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2'];
 
       if (saved && validTabs.includes(saved)) {
         // If not authenticated, force public-accessible tabs only
         // monitoring tab is admin only (checked in useEffect)
-        const restrictedTabs = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+        const restrictedTabs = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2'];
         if (!isAuthenticated && restrictedTabs.includes(saved)) {
           return 'public';
         }
@@ -1837,7 +1845,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       return;
     }
     // Preserve existing auth rules
-    const restrictedTabs: TabType[] = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+    const restrictedTabs: TabType[] = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2'];
     if (!isAuthenticated && restrictedTabs.includes(tab)) {
       setActiveTab('public');
       return;
@@ -1847,7 +1855,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
   // If the current tab becomes disabled (or unauthorized), fall back to the first allowed tab
   useEffect(() => {
-    const restrictedTabs: TabType[] = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+    const restrictedTabs: TabType[] = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2'];
     const unauthorized = (!isAuthenticated && restrictedTabs.includes(activeTab));
     const disabled = isTabDisabledBySettings(activeTab);
 
@@ -1872,7 +1880,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   useEffect(() => {
     const handleSwitchTab = (e: any) => {
       const tab = e.detail as TabType;
-      const validTabs: TabType[] = ['favorites', 'public', 'public-favorites', 'your-apps', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+      const validTabs: TabType[] = ['favorites', 'public', 'public-favorites', 'your-apps', 'private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2'];
 
       if (tab && validTabs.includes(tab)) {
         if (isTabDisabledBySettings(tab)) {
@@ -1887,7 +1895,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
           setActiveTab('favorites');
         } else {
           // Check restricted tabs
-          const restrictedTabs = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring'];
+          const restrictedTabs = ['private', 'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2'];
           if (!isAuthenticated && restrictedTabs.includes(tab)) {
             setActiveTab('public');
           } else {
@@ -5578,7 +5586,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 Monitoring
               </button>
             )}
-            {isAuthenticated && !disabledAppTabs.has('monitoring') && (
+            {isAuthenticated && !isTabDisabledBySettings('monitorv2') && (
               <button
                 onClick={() => requestTab('monitorv2')}
                 className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'monitorv2' ? 'active' : ''}`}
@@ -6027,7 +6035,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       {activeTab === 'monitorv2' && <Monitorv2Dashboard />}
 
       {/* Categories View */}
-      {viewMode === 'categories' && activeTab !== 'monitoring' && (
+      {viewMode === 'categories' && activeTab !== 'monitoring' && activeTab !== 'monitorv2' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-20 mt-6">
           {Object.keys(groupedTiles).map((groupName) => {
             const groupTiles = groupedTiles[groupName];
@@ -6093,7 +6101,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       )}
 
       {/* Tiles Grid - Full Width with More Columns */}
-      <div className={activeTab === 'monitoring' || viewMode === 'categories' ? 'hidden' : ''}>
+      <div className={activeTab === 'monitoring' || activeTab === 'monitorv2' || viewMode === 'categories' ? 'hidden' : ''}>
         {Object.keys(groupedTiles).map((groupName, groupIndex) => {
           const groupTiles = groupedTiles[groupName];
           // Use the actual display order (which respects categoryOrder)
@@ -6217,7 +6225,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
       {/* Matching Links Section - Shown when searching */}
       {
-        activeTab !== 'monitoring' && searchTerm.trim() && (() => {
+        activeTab !== 'monitoring' && activeTab !== 'monitorv2' && searchTerm.trim() && (() => {
           const searchLower = searchTerm.toLowerCase();
           type MatchingLink = {
             id: string;

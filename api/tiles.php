@@ -2972,6 +2972,7 @@ function handleGetRecycleBin() {
         // Load visibility and permissions
         $tileVisibility = $row['visibility'] ?? 'public';
         $tileAllowedUsers = $row['allowed_users'] ? json_decode($row['allowed_users'], true) : [];
+        $tileAllowedGroups = isset($row['allowed_groups']) && $row['allowed_groups'] ? json_decode($row['allowed_groups'], true) : [];
         
         // For recycle bin, user owns the tile (since it's filtered by user_id)
         $canView = true;
@@ -3198,9 +3199,9 @@ function handleGetArchive() {
         }
         
         // Check if archived_at column exists
+        $hasArchivedAt = false;
         try {
             $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll(PDO::FETCH_ASSOC);
-            $hasArchivedAt = false;
             foreach ($columns as $column) {
                 if (strtolower($column['name']) === 'archived_at') {
                     $hasArchivedAt = true;
@@ -3215,7 +3216,12 @@ function handleGetArchive() {
             }
         } catch (Exception $e) {
             error_log('Error checking for archived_at column: ' . $e->getMessage());
-            // If we can't check, try the query anyway - it will fail gracefully
+            $hasArchivedAt = false;
+        }
+        
+        if (!$hasArchivedAt) {
+            sendJSON([]);
+            return;
         }
         
         // Get all archived tiles (archived_at IS NOT NULL and deleted_at IS NULL)

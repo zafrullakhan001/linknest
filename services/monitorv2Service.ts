@@ -372,31 +372,24 @@ export const monitorv2Service = {
         return await response.json();
     },
 
-    // Simple Import/Export
+    // Simple Import/Export (alias for bundle)
     async exportMonitors(): Promise<any> {
-        const response = await fetch(`${API_BASE}/export`);
-        if (!response.ok) throw new Error('Failed to export monitors');
-        return await response.json();
+        return this.exportBundle();
     },
 
-    async importMonitors(data: any): Promise<void> {
-        const response = await fetch(`${API_BASE}/import`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        });
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
-            throw new Error(err.error || 'Failed to import monitors');
-        }
+    async importMonitors(data: any, replace: boolean = true): Promise<number> {
+        return this.importBundle(data, replace);
+    },
+
+    // Single monitor export (for UI parity with monitoring)
+    async exportMonitor(id: number): Promise<any> {
+        const monitor = await this.getMonitor(id);
+        return { type: 'single_monitor', monitor };
     },
 
     // Run Check (manual)
     async runCheck(id: number): Promise<{ check: MonitorCheck }> {
-        const response = await fetch(`${API_BASE}/${id}/check`, {
-            method: 'POST'
-        });
-        if (!response.ok) throw new Error('Failed to run check');
-        return await response.json();
+        const result = await this.checkMonitor(id);
+        return { check: { status: result.status, response_time_ms: result.response_time, status_message: result.details, checked_at: new Date().toISOString() } as MonitorCheck };
     }
 };
