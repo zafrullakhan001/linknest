@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Monitorv2, Monitorv2NotificationRule, monitorv2Service } from '../services/monitorv2Service';
 import { FaPlus, FaTrash, FaClock, FaEnvelope, FaTimes, FaSave, FaToggleOn, FaToggleOff } from 'react-icons/fa';
 
@@ -34,10 +34,79 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
     });
 
     const [rules, setRules] = useState<Partial<Monitorv2NotificationRule>[]>([]);
-    const [activeTab, setActiveTab] = useState<'general' | 'notifications' | 'advanced'>('general');
+    const [activeTab, setActiveTab] = useState<'settings' | 'notifications' | 'advanced'>('settings');
     const [saving, setSaving] = useState(false);
     const [users, setUsers] = useState<{id: number, username: string, email: string}[]>([]);
     const [loadingUsers, setLoadingUsers] = useState(false);
+
+    // Draggable modal (match Monitoring tab)
+    const [position, setPosition] = useState({ x: 0, y: 0 });
+    const [isDragging, setIsDragging] = useState(false);
+    const dragOffset = useRef({ x: 0, y: 0 });
+    const modalRef = useRef<HTMLDivElement>(null);
+    const isInitialized = useRef(false);
+    const monitorFormRef = useRef<HTMLFormElement>(null);
+
+    // Initialize position on mount
+    useEffect(() => {
+        if (!isInitialized.current && modalRef.current) {
+            const rect = modalRef.current.getBoundingClientRect();
+            setPosition({
+                x: (window.innerWidth - rect.width) / 2,
+                y: (window.innerHeight - rect.height) / 2
+            });
+            isInitialized.current = true;
+        }
+    }, []);
+
+    // Close on ESC
+    useEffect(() => {
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                onCancel();
+            }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [onCancel]);
+
+    // Handle drag start
+    const handleMouseDown = (e: React.MouseEvent) => {
+        if ((e.target as HTMLElement).closest('button')) return;
+        if (modalRef.current && (e.target as HTMLElement).closest('[data-drag-handle]')) {
+            e.preventDefault();
+            e.stopPropagation();
+            const rect = modalRef.current.getBoundingClientRect();
+            dragOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+            setPosition({ x: rect.left, y: rect.top });
+            setIsDragging(true);
+        }
+    };
+
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (isDragging) {
+                setPosition({
+                    x: e.clientX - dragOffset.current.x,
+                    y: e.clientY - dragOffset.current.y
+                });
+            }
+        };
+        const handleMouseUp = () => setIsDragging(false);
+        if (isDragging) {
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = 'grabbing';
+            document.body.style.userSelect = 'none';
+            return () => {
+                document.removeEventListener('mousemove', handleMouseMove);
+                document.removeEventListener('mouseup', handleMouseUp);
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            };
+        }
+    }, [isDragging]);
 
     useEffect(() => {
         if (monitor) {
@@ -131,215 +200,303 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
     const isPortType = formData.type === 'port';
     const isPingType = formData.type === 'ping';
 
+    const FieldHelp: React.FC<{ text: string }> = ({ text }) => (
+        <p className="text-xs text-gray-600 mt-1">{text}</p>
+    );
+
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <div className="bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl border border-slate-200 dark:border-[#333] w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-                {/* Header - aligned with MonitorForm (gray, same wording) */}
-                <div className="px-6 py-4 border-b border-gray-200 dark:border-[#333] flex items-center justify-between bg-gray-50 dark:bg-[#252525]">
-                    <div>
-                        <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
-                            {(monitor?.id && !isAddingNew) ? 'Edit Monitor' : 'Add New Monitor'}
-                        </h2>
-                        <p className="text-sm text-gray-500 dark:text-slate-400">
-                            Configure your monitoring settings
-                        </p>
-                    </div>
-                    <button onClick={onCancel} className="p-2 hover:bg-gray-200 dark:hover:bg-[#333] rounded-lg transition-colors text-gray-500">
-                        <FaTimes size={20} />
-                    </button>
-                </div>
-
-                {/* Tabs - blue accent to match Monitoring */}
-                <div className="flex border-b border-slate-200 dark:border-[#333] bg-slate-50 dark:bg-[#252525]">
-                    {(['general', 'notifications', 'advanced'] as const).map(tab => (
+        <div className="fixed inset-0 z-50" style={{ backgroundColor: 'transparent' }}>
+            <div
+                ref={modalRef}
+                className="bg-white rounded-xl shadow-2xl border border-gray-200 w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+                style={{
+                    position: 'absolute',
+                    left: `${position.x}px`,
+                    top: `${position.y}px`,
+                    cursor: isDragging ? 'grabbing' : 'default'
+                }}
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Draggable Header - match Monitoring tab */}
+                <div
+                    data-drag-handle
+                    className={`px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gray-50 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+                    onMouseDown={handleMouseDown}
+                >
+                    <h2 className="text-xl font-semibold text-gray-800">
+                        {(monitor?.id && !isAddingNew) ? 'Edit Monitor' : 'Add New Monitor'}
+                    </h2>
+                    <div className="flex items-center gap-3">
+                        <div className="text-gray-500 text-xs flex items-center gap-1">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                            </svg>
+                            Drag to move
+                        </div>
                         <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            className={`px-6 py-3 text-sm font-medium capitalize transition-colors ${
-                                activeTab === tab
-                                    ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 bg-white dark:bg-[#1e1e1e]'
-                                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white'
-                            }`}
+                            type="button"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onCancel(); }}
+                            className="text-gray-500 hover:text-gray-700 rounded-md p-1 hover:bg-gray-100 transition-colors"
+                            aria-label="Close"
+                            title="Close"
                         >
-                            {tab}
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
                         </button>
-                    ))}
+                    </div>
                 </div>
 
-                {/* Form Content */}
-                <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6">
-                    {activeTab === 'general' && (
-                        <div className="space-y-6">
-                            {/* Basic Info */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                        Monitor Name *
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={formData.name}
-                                        onChange={e => setFormData({...formData, name: e.target.value})}
-                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                        placeholder="e.g., Google Website"
-                                        required
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                        Monitor Type *
-                                    </label>
-                                    <select
-                                        value={formData.type}
-                                        onChange={e => setFormData({...formData, type: e.target.value as any})}
-                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                    >
-                                        <option value="url">URL (HTTP/HTTPS)</option>
-                                        <option value="keyword">Keyword (HTTP + Content Check)</option>
-                                        <option value="port">TCP Port</option>
-                                        <option value="ping">Ping (ICMP)</option>
-                                    </select>
-                                </div>
-                            </div>
+                {/* Tabs - match Monitoring tab (Settings, Email Notifications, Advanced) */}
+                <div className="border-b border-gray-200 bg-gray-50 px-6">
+                    <div className="flex space-x-1">
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('settings')}
+                            className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${activeTab === 'settings'
+                                ? 'border-blue-600 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700'
+                                }`}
+                        >
+                            Settings
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('notifications')}
+                            className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${activeTab === 'notifications'
+                                ? 'border-blue-600 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700'
+                                }`}
+                        >
+                            Email Notifications
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('advanced')}
+                            className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${activeTab === 'advanced'
+                                ? 'border-blue-600 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700'
+                                }`}
+                        >
+                            Advanced
+                        </button>
+                    </div>
+                </div>
 
-                            {/* Target */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                    Target {isUrlType ? 'URL' : isPortType ? 'Host' : 'Host/IP'} *
-                                </label>
-                                <input
-                                    type="text"
-                                    value={formData.target}
-                                    onChange={e => setFormData({...formData, target: e.target.value})}
-                                    className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                    placeholder={isUrlType ? 'https://example.com' : isPortType ? 'example.com or IP' : '192.168.1.1'}
-                                    required
-                                />
-                            </div>
-
-                            {/* Type-specific fields */}
-                            {isPortType && (
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                        Port Number *
-                                    </label>
-                                    <input
-                                        type="number"
-                                        value={formData.port || ''}
-                                        onChange={e => setFormData({...formData, port: parseInt(e.target.value)})}
-                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                        placeholder="80, 443, 3306, etc."
-                                        min={1}
-                                        max={65535}
-                                        required
-                                    />
-                                </div>
-                            )}
-
-                            {formData.type === 'keyword' && (
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                        Keyword to Search *
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={formData.keyword || ''}
-                                        onChange={e => setFormData({...formData, keyword: e.target.value})}
-                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                        placeholder="Text to search for in the page"
-                                        required
-                                    />
-                                </div>
-                            )}
-
-                            {/* Interval and Timeout */}
-                            <div className="grid grid-cols-3 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                        Check Interval (minutes)
-                                    </label>
-                                    <input
-                                        type="number"
-                                        value={formData.interval}
-                                        onChange={e => setFormData({...formData, interval: parseInt(e.target.value)})}
-                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                        min={1}
-                                        max={1440}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                        Timeout (seconds)
-                                    </label>
-                                    <input
-                                        type="number"
-                                        value={formData.timeout || ''}
-                                        onChange={e => setFormData({...formData, timeout: parseInt(e.target.value)})}
-                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                        min={1}
-                                        max={60}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                        Warning Threshold
-                                    </label>
-                                    <input
-                                        type="number"
-                                        value={formData.warning_threshold}
-                                        onChange={e => setFormData({...formData, warning_threshold: parseInt(e.target.value)})}
-                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                        min={1}
-                                        max={20}
-                                        title="Consecutive failures before declaring DOWN"
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Organization */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                        Tab Name
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={formData.tab_name}
-                                        onChange={e => setFormData({...formData, tab_name: e.target.value})}
-                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                        placeholder="General"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                        Group Name
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={formData.group_name}
-                                        onChange={e => setFormData({...formData, group_name: e.target.value})}
-                                        className="w-full border border-slate-300 dark:border-[#444] rounded-lg px-3 py-2 bg-white dark:bg-[#252525] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                        placeholder="Other"
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Active Toggle */}
-                            <div className="flex items-center gap-3">
-                                <button
-                                    type="button"
-                                    onClick={() => setFormData({...formData, is_active: formData.is_active ? 0 : 1})}
-                                    className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-                                        formData.is_active
-                                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
-                                    }`}
-                                >
-                                    {formData.is_active ? <FaToggleOn size={20} /> : <FaToggleOff size={20} />}
-                                    <span className="font-medium">{formData.is_active ? 'Active' : 'Inactive'}</span>
+                {/* Scrollable Content - match Monitoring tab */}
+                <div className="overflow-y-auto flex-1 p-6 bg-white">
+                    {activeTab === 'settings' && (
+                        <>
+                            <div className="mb-4">
+                                <button type="button" className="text-sm text-blue-600 hover:text-blue-700">
+                                    Show Templates
                                 </button>
                             </div>
-                        </div>
+
+                            <form ref={monitorFormRef} id="monitor-form" onSubmit={handleSubmit} className="space-y-5">
+                                {/* Basic Information Section */}
+                                <div className="space-y-4">
+                                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide border-b border-gray-200 pb-2">
+                                        Basic Information
+                                    </h3>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Monitor Name <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={formData.name}
+                                            onChange={e => setFormData({...formData, name: e.target.value})}
+                                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                            placeholder="My Server"
+                                            required
+                                        />
+                                        <FieldHelp text="A friendly name to identify this monitor in your dashboard (e.g., 'Production Server', 'API Endpoint')" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Monitor Type <span className="text-red-500">*</span>
+                                        </label>
+                                        <select
+                                            value={formData.type}
+                                            onChange={e => setFormData({...formData, type: e.target.value as Monitorv2['type']})}
+                                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                        >
+                                            <option value="url">URL Check</option>
+                                            <option value="keyword">Keyword Check</option>
+                                            <option value="port">Port Check</option>
+                                            <option value="ping">Ping Check</option>
+                                        </select>
+                                        <FieldHelp text={
+                                            formData.type === 'url'
+                                                ? "Checks if a website or API endpoint is accessible via HTTP/HTTPS request"
+                                                : formData.type === 'keyword'
+                                                    ? "Checks if a specific text/keyword appears in the webpage content"
+                                                    : formData.type === 'port'
+                                                        ? "Checks if a network port on a server is open and accepting connections"
+                                                        : "Checks if the host/IP responds to ping"
+                                        } />
+                                    </div>
+                                </div>
+
+                                {/* Target Configuration Section */}
+                                <div className="space-y-4">
+                                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide border-b border-gray-200 pb-2">
+                                        Target Configuration
+                                    </h3>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            {(formData.type === 'port' || formData.type === 'ping') ? 'Host / IP Address' : 'URL'} <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type={(formData.type === 'port' || formData.type === 'ping') ? 'text' : 'url'}
+                                            value={formData.target}
+                                            onChange={e => setFormData({...formData, target: e.target.value})}
+                                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                            placeholder={(formData.type === 'port' || formData.type === 'ping') ? '192.168.1.1 or example.com' : 'https://example.com'}
+                                            required
+                                        />
+                                        <FieldHelp text={
+                                            (formData.type === 'port' || formData.type === 'ping')
+                                                ? "The IP address or hostname of the server to check (e.g., 192.168.1.1, server.example.com)"
+                                                : "The full URL to monitor, including protocol (http:// or https://). For APIs, include the full endpoint path."
+                                        } />
+                                    </div>
+                                    {isPortType && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Port Number <span className="text-red-500">*</span>
+                                            </label>
+                                            <input
+                                                type="number"
+                                                value={formData.port ?? ''}
+                                                onChange={e => setFormData({...formData, port: parseInt(e.target.value) || undefined})}
+                                                className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                                placeholder="80, 443, 3306, etc."
+                                                min={1}
+                                                max={65535}
+                                                required
+                                            />
+                                            <FieldHelp text="The network port number to check (common ports: 80 for HTTP, 443 for HTTPS, 22 for SSH, 3306 for MySQL)" />
+                                        </div>
+                                    )}
+                                    {formData.type === 'keyword' && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Keyword to Search <span className="text-red-500">*</span>
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={formData.keyword || ''}
+                                                onChange={e => setFormData({...formData, keyword: e.target.value})}
+                                                className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                                placeholder="Welcome, Success, Error"
+                                                required
+                                            />
+                                            <FieldHelp text="The text string to search for in the webpage. Monitor will be marked as 'up' if this keyword is found, 'down' if not found." />
+                                        </div>
+                                    )}
+                                    {(isUrlType) && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Timeout (seconds)
+                                            </label>
+                                            <input
+                                                type="number"
+                                                value={formData.timeout ?? ''}
+                                                onChange={e => setFormData({...formData, timeout: parseInt(e.target.value) || undefined})}
+                                                className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                                placeholder="5"
+                                                min={1}
+                                                max={60}
+                                            />
+                                            <FieldHelp text="Maximum time to wait for the HTTP request before marking the check as failed. Leave blank to use the default." />
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Monitoring Settings Section */}
+                                <div className="space-y-4">
+                                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide border-b border-gray-200 pb-2">
+                                        Monitoring Settings
+                                    </h3>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Check Interval (minutes) <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="number"
+                                            value={formData.interval}
+                                            onChange={e => setFormData({...formData, interval: parseInt(e.target.value) || 5})}
+                                            min={1}
+                                            max={1440}
+                                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                            required
+                                        />
+                                        <FieldHelp text="How often the monitor should check the target on its normal schedule (cron/worker). Lower values provide faster alerts but use more resources." />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Warning Threshold (failures) <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="number"
+                                            value={formData.warning_threshold}
+                                            onChange={e => setFormData({...formData, warning_threshold: parseInt(e.target.value) || 1})}
+                                            min={1}
+                                            max={20}
+                                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                            required
+                                        />
+                                        <FieldHelp text="Number of consecutive failed checks before the monitor is considered DOWN. Failures below this threshold show as WARNING." />
+                                    </div>
+                                    <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                        <input
+                                            type="checkbox"
+                                            checked={!!formData.is_active}
+                                            onChange={e => setFormData({...formData, is_active: e.target.checked ? 1 : 0})}
+                                            id="isActive"
+                                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
+                                        />
+                                        <div className="flex-1">
+                                            <label htmlFor="isActive" className="text-sm font-medium text-gray-700 cursor-pointer">
+                                                Enable this monitor
+                                            </label>
+                                            <FieldHelp text="When enabled, the monitor will run checks according to the interval. Disable to temporarily pause monitoring without deleting the monitor." />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Organization Section */}
+                                <div className="space-y-4">
+                                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide border-b border-gray-200 pb-2">
+                                        Organization (Optional)
+                                    </h3>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Tab Name</label>
+                                            <input
+                                                type="text"
+                                                value={formData.tab_name || ''}
+                                                onChange={e => setFormData({...formData, tab_name: e.target.value})}
+                                                className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                                placeholder="General"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Group Name</label>
+                                            <input
+                                                type="text"
+                                                value={formData.group_name || ''}
+                                                onChange={e => setFormData({...formData, group_name: e.target.value})}
+                                                className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                                placeholder="Other"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            </form>
+                        </>
                     )}
 
                     {activeTab === 'notifications' && (
@@ -589,26 +746,44 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                             </div>
                         </div>
                     )}
-                </form>
-
-                {/* Footer */}
-                <div className="px-6 py-4 border-t border-slate-200 dark:border-[#333] flex justify-end gap-3 bg-slate-50 dark:bg-[#252525]">
-                    <button
-                        type="button"
-                        onClick={onCancel}
-                        className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-[#333] rounded-lg transition-colors"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        onClick={handleSubmit}
-                        disabled={saving}
-                        className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 font-medium"
-                    >
-                        <FaSave size={16} />
-                        {saving ? 'Saving...' : (monitor?.id && !isAddingNew) ? 'Update Monitor' : 'Create Monitor'}
-                    </button>
                 </div>
+
+                {/* Footer with Actions - Only show on Settings tab (match Monitoring tab) */}
+                {activeTab === 'settings' && (
+                    <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3">
+                        {isAddingNew && createdMonitorId ? (
+                            <button
+                                type="button"
+                                onClick={onCancel}
+                                className="px-5 py-2 text-gray-700 hover:text-gray-900 transition-colors rounded-lg hover:bg-gray-100 border border-gray-300"
+                            >
+                                Done
+                            </button>
+                        ) : (
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={onCancel}
+                                    className="px-5 py-2 text-gray-700 hover:text-gray-900 transition-colors rounded-lg hover:bg-gray-100 border border-gray-300"
+                                    disabled={saving}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const form = monitorFormRef.current || (document.getElementById('monitor-form') as HTMLFormElement | null);
+                                        if (form) form.requestSubmit();
+                                    }}
+                                    disabled={saving}
+                                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                                >
+                                    {saving ? 'Saving...' : (monitor?.id && !isAddingNew) ? 'Update Monitor' : 'Create Monitor'}
+                                </button>
+                            </>
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     );

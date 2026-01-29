@@ -156,14 +156,14 @@ const API_BASE = 'api/monitorv2.php';
 export const monitorv2Service = {
     // Monitors
     async getMonitors(): Promise<Monitorv2[]> {
-        const response = await fetch(API_BASE);
+        const response = await fetch(API_BASE, { credentials: 'include' });
         if (!response.ok) throw new Error('Failed to fetch monitors');
         const data = await response.json();
         return data.monitors || [];
     },
 
     async getMonitor(id: number): Promise<Monitorv2> {
-        const response = await fetch(`${API_BASE}/${id}`);
+        const response = await fetch(`${API_BASE}/${id}`, { credentials: 'include' });
         if (!response.ok) throw new Error('Failed to fetch monitor');
         const data = await response.json();
         return data.monitor;
@@ -173,7 +173,8 @@ export const monitorv2Service = {
         const response = await fetch(API_BASE, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(monitor)
+            body: JSON.stringify(monitor),
+            credentials: 'include'
         });
         if (!response.ok) throw new Error('Failed to create monitor');
         const data = await response.json();
@@ -184,7 +185,8 @@ export const monitorv2Service = {
         const response = await fetch(`${API_BASE}/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(monitor)
+            body: JSON.stringify(monitor),
+            credentials: 'include'
         });
         if (!response.ok) throw new Error('Failed to update monitor');
         const data = await response.json();
@@ -193,14 +195,16 @@ export const monitorv2Service = {
 
     async deleteMonitor(id: number): Promise<void> {
         const response = await fetch(`${API_BASE}/${id}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            credentials: 'include'
         });
         if (!response.ok) throw new Error('Failed to delete monitor');
     },
 
     async deleteAllMonitors(): Promise<void> {
         const response = await fetch(`${API_BASE}/all`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            credentials: 'include'
         });
         if (!response.ok) throw new Error('Failed to delete all monitors');
     },
@@ -208,7 +212,8 @@ export const monitorv2Service = {
     // Monitor Operations
     async checkMonitor(id: number): Promise<{ status: string; response_time: number; details: string }> {
         const response = await fetch(`${API_BASE}/${id}/check`, {
-            method: 'POST'
+            method: 'POST',
+            credentials: 'include'
         });
         if (!response.ok) throw new Error('Failed to check monitor');
         const data = await response.json();
@@ -224,7 +229,8 @@ export const monitorv2Service = {
         results: Record<number, any>;
     }> {
         const response = await fetch(`${API_BASE}/check-all`, {
-            method: 'POST'
+            method: 'POST',
+            credentials: 'include'
         });
         if (!response.ok) throw new Error('Failed to check all monitors');
         return await response.json();
@@ -232,7 +238,8 @@ export const monitorv2Service = {
 
     async duplicateMonitor(id: number): Promise<Monitorv2> {
         const response = await fetch(`${API_BASE}/${id}/duplicate`, {
-            method: 'POST'
+            method: 'POST',
+            credentials: 'include'
         });
         if (!response.ok) throw new Error('Failed to duplicate monitor');
         const data = await response.json();
@@ -251,7 +258,7 @@ export const monitorv2Service = {
         if (options?.to) params.append('to', options.to.toString());
         
         const url = `${API_BASE}/${id}/logs${params.toString() ? '?' + params.toString() : ''}`;
-        const response = await fetch(url);
+        const response = await fetch(url, { credentials: 'include' });
         if (!response.ok) throw new Error('Failed to fetch monitor logs');
         const data = await response.json();
         return data.logs;
@@ -263,14 +270,14 @@ export const monitorv2Service = {
         hourly: { hour: string; total: number; up_count: number; avg_response: number }[];
     }> {
         const params = period ? `?period=${period}` : '';
-        const response = await fetch(`${API_BASE}/${id}/stats${params}`);
+        const response = await fetch(`${API_BASE}/${id}/stats${params}`, { credentials: 'include' });
         if (!response.ok) throw new Error('Failed to fetch monitor stats');
         return await response.json();
     },
 
     // Incidents
     async getMonitorIncidents(id: number, limit: number = 50): Promise<Monitorv2Incident[]> {
-        const response = await fetch(`${API_BASE}/${id}/incidents?limit=${limit}`);
+        const response = await fetch(`${API_BASE}/${id}/incidents?limit=${limit}`, { credentials: 'include' });
         if (!response.ok) throw new Error('Failed to fetch incidents');
         const data = await response.json();
         return data.incidents;
@@ -278,7 +285,7 @@ export const monitorv2Service = {
 
     // Import/Export
     async exportBundle(): Promise<any> {
-        const response = await fetch(`${API_BASE}/export-bundle`);
+        const response = await fetch(`${API_BASE}/export-bundle`, { credentials: 'include' });
         if (!response.ok) throw new Error('Failed to export bundle');
         return await response.json();
     },
@@ -287,7 +294,8 @@ export const monitorv2Service = {
         const response = await fetch(`${API_BASE}/import-bundle`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...bundle, replace })
+            body: JSON.stringify({ ...bundle, replace }),
+            credentials: 'include'
         });
         if (!response.ok) {
             const err = await response.json().catch(() => ({}));
@@ -302,7 +310,8 @@ export const monitorv2Service = {
         const response = await fetch(`${API_BASE}/update-tab`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ old_name: oldName, new_name: newName })
+            body: JSON.stringify({ old_name: oldName, new_name: newName }),
+            credentials: 'include'
         });
         if (!response.ok) throw new Error('Failed to update tab name');
     },
@@ -311,21 +320,22 @@ export const monitorv2Service = {
         const response = await fetch(`${API_BASE}/update-group`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tab_name: tabName, old_name: oldName, new_name: newName })
+            body: JSON.stringify({ tab_name: tabName, old_name: oldName, new_name: newName }),
+            credentials: 'include'
         });
         if (!response.ok) throw new Error('Failed to update group name');
     },
 
     // Health
     async healthCheck(): Promise<{ status: string; monitors: number; checks_24h: number }> {
-        const response = await fetch(`${API_BASE}/health`);
+        const response = await fetch(`${API_BASE}/health`, { credentials: 'include' });
         if (!response.ok) throw new Error('Health check failed');
         return await response.json();
     },
 
     // Configuration (through settings API)
     async getConfig(): Promise<Monitorv2Config> {
-        const response = await fetch('api/addons/monitorv2');
+        const response = await fetch('api/addons/monitorv2', { credentials: 'include' });
         if (!response.ok) throw new Error('Failed to fetch config');
         const data = await response.json();
         return data.config;
@@ -335,7 +345,8 @@ export const monitorv2Service = {
         const response = await fetch('api/addons/monitorv2', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(config)
+            body: JSON.stringify(config),
+            credentials: 'include'
         });
         if (!response.ok) throw new Error('Failed to save config');
     },
@@ -360,14 +371,16 @@ export const monitorv2Service = {
                 pgDatabase: config.pgDatabase,
                 pgUser: config.pgUser,
                 pgPassword: config.pgPassword
-            })
+            }),
+            credentials: 'include'
         });
         return await response.json();
     },
 
     async setupSchema(): Promise<{ success: boolean; message: string }> {
         const response = await fetch(`${API_BASE}/setup-schema`, {
-            method: 'POST'
+            method: 'POST',
+            credentials: 'include'
         });
         return await response.json();
     },

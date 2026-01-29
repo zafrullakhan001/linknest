@@ -335,6 +335,10 @@ function handleCreateMonitor() {
     }
     
     $data = getJSONInput();
+    if (!is_array($data)) {
+        sendJSON(['error' => 'Invalid input'], 400);
+        return;
+    }
     
     // Validation
     if (empty($data['name']) || empty($data['type']) || empty($data['target'])) {
@@ -353,32 +357,37 @@ function handleCreateMonitor() {
             INSERT INTO zmonitoring.monitors (
                 name, type, target, port, keyword, interval_minutes,
                 warning_threshold, timeout_seconds, is_active, email_notification,
-                tab_name, group_name, legacy_notify_pending
+                tab_name, group_name, legacy_notify_pending, current_status
             ) VALUES (
                 :name, :type, :target, :port, :keyword, :interval,
                 :warning_threshold, :timeout, :is_active, :email_notification,
-                :tab_name, :group_name, :legacy_notify_pending
+                :tab_name, :group_name, :legacy_notify_pending, :current_status
             ) RETURNING *
         ";
         
         $stmt = $db->prepare($sql);
         $stmt->execute([
-            ':name' => $data['name'],
+            ':name' => trim((string) $data['name']),
             ':type' => $data['type'],
-            ':target' => $data['target'],
-            ':port' => $data['port'] ?? null,
-            ':keyword' => $data['keyword'] ?? null,
-            ':interval' => $data['interval'] ?? 5,
-            ':warning_threshold' => $data['warning_threshold'] ?? 1,
-            ':timeout' => $data['timeout'] ?? null,
-            ':is_active' => isset($data['is_active']) ? (bool)$data['is_active'] : true,
-            ':email_notification' => isset($data['email_notification']) ? (bool)$data['email_notification'] : false,
-            ':tab_name' => $data['tab_name'] ?? 'General',
-            ':group_name' => $data['group_name'] ?? 'Other',
-            ':legacy_notify_pending' => isset($data['email_notification']) && $data['email_notification'] ? true : false
+            ':target' => trim((string) $data['target']),
+            ':port' => isset($data['port']) && $data['port'] !== '' ? (int) $data['port'] : null,
+            ':keyword' => isset($data['keyword']) && $data['keyword'] !== '' ? trim((string) $data['keyword']) : null,
+            ':interval' => isset($data['interval']) ? (int) $data['interval'] : 5,
+            ':warning_threshold' => isset($data['warning_threshold']) ? (int) $data['warning_threshold'] : 1,
+            ':timeout' => isset($data['timeout']) && $data['timeout'] !== '' ? (int) $data['timeout'] : null,
+            ':is_active' => (!isset($data['is_active']) || $data['is_active']) ? 1 : 0,
+            ':email_notification' => !empty($data['email_notification']) ? 1 : 0,
+            ':tab_name' => isset($data['tab_name']) && $data['tab_name'] !== '' ? trim((string) $data['tab_name']) : 'General',
+            ':group_name' => isset($data['group_name']) && $data['group_name'] !== '' ? trim((string) $data['group_name']) : 'Other',
+            ':legacy_notify_pending' => !empty($data['email_notification']) ? 1 : 0,
+            ':current_status' => 'unknown'
         ]);
         
-        $monitor = $stmt->fetch();
+        $monitor = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$monitor) {
+            sendJSON(['error' => 'Failed to create monitor'], 500);
+            return;
+        }
         
         // Handle permissions if provided
         if (!empty($data['allowed_user_ids']) && is_array($data['allowed_user_ids'])) {
@@ -387,21 +396,26 @@ function handleCreateMonitor() {
                 VALUES (:user_id, :monitor_id, TRUE)
             ");
             foreach ($data['allowed_user_ids'] as $userId) {
-                $permStmt->execute([':user_id' => (int)$userId, ':monitor_id' => $monitor['id']]);
+                $permStmt->execute([':user_id' => (int) $userId, ':monitor_id' => $monitor['id']]);
             }
         }
         
-        // Transform response
-        $monitor['interval'] = (int)$monitor['interval_minutes'];
-        $monitor['created_at'] = strtotime($monitor['created_at']);
-        $monitor['updated_at'] = strtotime($monitor['updated_at']);
-        $monitor['last_status'] = $monitor['current_status'];
+        // Transform response for frontend (timestamps as unix, interval alias, last_status)
+        $monitor['interval'] = (int) ($monitor['interval_minutes'] ?? 5);
+        $createdAt = $monitor['created_at'] ?? null;
+        $monitor['created_at'] = $createdAt ? (is_numeric($createdAt) ? (int) $createdAt : (int) strtotime($createdAt)) : time();
+        $updatedAt = $monitor['updated_at'] ?? null;
+        $monitor['updated_at'] = $updatedAt ? (is_numeric($updatedAt) ? (int) $updatedAt : (int) strtotime($updatedAt)) : time();
+        $monitor['last_status'] = $monitor['current_status'] ?? 'unknown';
         
         sendJSON(['success' => true, 'monitor' => $monitor], 201);
         
     } catch (PDOException $e) {
         error_log("Monitorv2 create error: " . $e->getMessage());
         sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
+    } catch (Throwable $e) {
+        error_log("Monitorv2 create error: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine());
+        sendJSON(['error' => 'Server error: ' . $e->getMessage()], 500);
     }
 }
 
@@ -461,7 +475,7 @@ function handleUpdateMonitor($id) {
                 $value = $data[$inputKey];
                 // Convert boolean values
                 if (in_array($inputKey, ['is_active', 'email_notification'])) {
-                    $value = (bool)$value;
+                    $value = (int)(bool)$value;
                 }
                 $params[":" . $inputKey] = $value;
             }
@@ -1023,8 +1037,8 @@ function handleDuplicateMonitor($id) {
             ':interval' => $original['interval_minutes'],
             ':warning_threshold' => $original['warning_threshold'],
             ':timeout' => $original['timeout_seconds'],
-            ':is_active' => $original['is_active'],
-            ':email_notification' => $original['email_notification'],
+            ':is_active' => (int)$original['is_active'],
+            ':email_notification' => (int)$original['email_notification'],
             ':tab_name' => $original['tab_name'],
             ':group_name' => $original['group_name'],
             ':legacy_email_to' => $original['legacy_email_to'],
@@ -1068,7 +1082,7 @@ function handleDuplicateMonitor($id) {
                 ':from_name' => $rule['from_name'],
                 ':from_email' => $rule['from_email'],
                 ':cc_emails' => $rule['cc_emails'],
-                ':is_enabled' => $rule['is_enabled']
+                ':is_enabled' => (int)$rule['is_enabled']
             ]);
             $newRuleId = $ruleInsertStmt->fetch()['id'];
             
@@ -1318,8 +1332,8 @@ function handleImportBundle() {
                 ':interval' => $m['interval_minutes'] ?? 5,
                 ':warning_threshold' => $m['warning_threshold'] ?? 1,
                 ':timeout' => $m['timeout_seconds'] ?? null,
-                ':is_active' => $m['is_active'] ?? true,
-                ':email_notification' => $m['email_notification'] ?? false,
+                ':is_active' => (int)($m['is_active'] ?? 1),
+                ':email_notification' => (int)($m['email_notification'] ?? 0),
                 ':tab_name' => $m['tab_name'] ?? 'General',
                 ':group_name' => $m['group_name'] ?? 'Other',
                 ':current_status' => $m['current_status'] ?? null,
@@ -1373,7 +1387,7 @@ function handleImportBundle() {
                         ':from_name' => $rule['from_name'] ?? null,
                         ':from_email' => $rule['from_email'] ?? null,
                         ':cc_emails' => $rule['cc_emails'] ?? null,
-                        ':is_enabled' => $rule['is_enabled'] ?? true
+                        ':is_enabled' => (int)($rule['is_enabled'] ?? 1)
                     ]);
                     $newRuleId = $ruleStmt->fetch()['id'];
                     
