@@ -17,6 +17,7 @@ import { linkHealthService } from '../services/linkHealthService';
 import { favoriteLinkHealthService, LinkHealthCheckResult } from '../services/favoriteLinkHealthService';
 import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, getTileDecorationClass, TileAnimation, TileDecoration } from './TileAnimationSelector';
 import { MonitoringDashboard } from './MonitoringDashboard';
+import { Monitorv2Dashboard } from './Monitorv2Dashboard';
 import { getDisabledTabsFromSettings } from '../services/tabVisibilityService';
 import { rolesService } from '../services/rolesService';
 import { FaTimes } from 'react-icons/fa';
@@ -1711,7 +1712,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
   );
 };
 
-type TabType = 'favorites' | 'public' | 'public-favorites' | 'your-apps' | 'private' | 'scheduled' | 'expired' | 'archive' | 'recycle-bin' | 'monitoring';
+type TabType = 'favorites' | 'public' | 'public-favorites' | 'your-apps' | 'private' | 'scheduled' | 'expired' | 'archive' | 'recycle-bin' | 'monitoring' | 'monitorv2';
 
 export const TileGrid: React.FC<TileGridProps> = ({
   tiles,
@@ -5577,6 +5578,15 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 Monitoring
               </button>
             )}
+            {isAuthenticated && !disabledAppTabs.has('monitoring') && (
+              <button
+                onClick={() => requestTab('monitorv2')}
+                className={`linknest-spaces-tab px-4 py-2 ${activeTab === 'monitorv2' ? 'active' : ''}`}
+                title="Advanced Monitoring with PostgreSQL/TimescaleDB"
+              >
+                Monitorv2
+              </button>
+            )}
             {!disabledAppTabs.has('recycle-bin') && (
               <button
                 onClick={() => requestTab('recycle-bin')}
@@ -6014,6 +6024,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       })()}
 
       {activeTab === 'monitoring' && <MonitoringDashboard />}
+      {activeTab === 'monitorv2' && <Monitorv2Dashboard />}
 
       {/* Categories View */}
       {viewMode === 'categories' && activeTab !== 'monitoring' && (

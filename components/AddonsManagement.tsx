@@ -20,6 +20,16 @@ interface AnalyticsConfig {
     dashboardUrl: string;
 }
 
+interface Monitorv2Config {
+    enabled: boolean;
+    pgHost: string;
+    pgPort: number;
+    pgDatabase: string;
+    pgUser: string;
+    retentionDays: number;
+    autoCleanup: boolean;
+}
+
 interface AddonStatus {
     addon_name: string;
     is_enabled: boolean;
@@ -940,6 +950,9 @@ export const AddonsManagement: React.FC = () => {
                 )}
             </div>
             
+            {/* Monitorv2 Add-on Card */}
+            <Monitorv2AddonCard />
+            
             {/* Future Add-ons Placeholder */}
             <div className="mt-6 bg-white rounded-xl shadow-lg border border-gray-200 p-6 opacity-60">
                 <div className="flex items-center gap-4">
@@ -950,6 +963,518 @@ export const AddonsManagement: React.FC = () => {
                     </div>
                 </div>
             </div>
+        </div>
+    );
+};
+
+// ============================================
+// Monitorv2 Addon Card Component
+// ============================================
+const Monitorv2AddonCard: React.FC = () => {
+    const [config, setConfig] = useState<Monitorv2Config>({
+        enabled: false,
+        pgHost: 'localhost',
+        pgPort: 5433,
+        pgDatabase: 'postgres',
+        pgUser: 'postgres',
+        retentionDays: 90,
+        autoCleanup: true
+    });
+    
+    const [pgPassword, setPgPassword] = useState('');
+    const [status, setStatus] = useState<AddonStatus | null>(null);
+    const [healthStatus, setHealthStatus] = useState<{status: string; message: string; monitors?: number; checks_24h?: number} | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [testing, setTesting] = useState(false);
+    const [testResult, setTestResult] = useState<any>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [expanded, setExpanded] = useState(false);
+    const [setupActions, setSetupActions] = useState<{[key: string]: boolean}>({});
+    const [setupResults, setSetupResults] = useState<{[key: string]: any}>({});
+    
+    // Load configuration on mount
+    useEffect(() => {
+        loadConfiguration();
+        checkHealth();
+    }, []);
+    
+    const loadConfiguration = async () => {
+        try {
+            setLoading(true);
+            const response = await fetch(`${API_BASE}/addons/monitorv2`);
+            if (!response.ok) throw new Error('Failed to load configuration');
+            
+            const data = await response.json();
+            setConfig(data.config);
+            setStatus(data.status);
+            
+            if (data.config.enabled) {
+                setExpanded(true);
+            }
+        } catch (err: any) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+    
+    const checkHealth = async () => {
+        try {
+            const response = await fetch(`${API_BASE}/addons/monitorv2/status`);
+            if (!response.ok) return;
+            
+            const data = await response.json();
+            setHealthStatus(data);
+        } catch (err) {
+            console.error('Health check failed:', err);
+        }
+    };
+    
+    const handleTestConnection = async () => {
+        try {
+            setTesting(true);
+            setTestResult(null);
+            setError(null);
+            
+            const response = await fetch(`${API_BASE}/addons/monitorv2/test-connection`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    pgHost: config.pgHost,
+                    pgPort: config.pgPort,
+                    pgDatabase: config.pgDatabase,
+                    pgUser: config.pgUser,
+                    pgPassword: pgPassword
+                })
+            });
+            
+            const data = await response.json();
+            setTestResult(data);
+            
+            if (!data.success) {
+                setError(data.error || 'Connection test failed');
+            }
+        } catch (err: any) {
+            setError(err.message);
+        } finally {
+            setTesting(false);
+        }
+    };
+    
+    const handleSave = async () => {
+        try {
+            setSaving(true);
+            setError(null);
+            
+            const payload = {
+                ...config,
+                pgPassword: pgPassword || undefined
+            };
+            
+            const response = await fetch(`${API_BASE}/addons/monitorv2`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.error || 'Failed to save configuration');
+            }
+            
+            await loadConfiguration();
+            await checkHealth();
+            
+            alert('Configuration saved successfully!');
+            
+        } catch (err: any) {
+            setError(err.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+    
+    const handleSetupAction = async (action: string) => {
+        try {
+            setSetupActions(prev => ({...prev, [action]: true}));
+            setError(null);
+            
+            let endpoint = '';
+            let method = 'POST';
+            let body: any = {};
+            
+            switch (action) {
+                case 'setup-schema':
+                    endpoint = `${API_BASE}/addons/monitorv2/setup-schema`;
+                    break;
+                case 'purge-data':
+                    endpoint = `${API_BASE}/addons/monitorv2/purge-data`;
+                    body = { confirm: 'DELETE_ALL_DATA' };
+                    break;
+                default:
+                    throw new Error('Unknown action');
+            }
+            
+            const response = await fetch(endpoint, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined
+            });
+            
+            const data = await response.json();
+            setSetupResults(prev => ({...prev, [action]: data}));
+            
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || data.message || 'Action failed');
+            }
+            
+            if (action === 'setup-schema' || action === 'purge-data') {
+                await checkHealth();
+            }
+            
+        } catch (err: any) {
+            setError(err.message);
+            setSetupResults(prev => ({...prev, [action]: {success: false, error: err.message}}));
+        } finally {
+            setSetupActions(prev => ({...prev, [action]: false}));
+        }
+    };
+    
+    const getStatusBadge = () => {
+        if (!healthStatus) return null;
+        
+        const badges: Record<string, { text: string; class: string }> = {
+            disabled: { text: 'Disabled', class: 'bg-gray-100 text-gray-700' },
+            not_configured: { text: 'Not Configured', class: 'bg-yellow-100 text-yellow-700' },
+            unavailable: { text: 'Unavailable', class: 'bg-red-100 text-red-700' },
+            available: { text: 'Active', class: 'bg-green-100 text-green-700' },
+            error: { text: 'Error', class: 'bg-red-100 text-red-700' }
+        };
+        
+        const badge = badges[healthStatus.status] || badges.disabled;
+        
+        return (
+            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${badge.class}`}>
+                {badge.text}
+            </span>
+        );
+    };
+    
+    if (loading) {
+        return (
+            <div className="mt-6 p-6 bg-white rounded-xl shadow-lg border border-gray-200">
+                <div className="text-center">
+                    <div className="inline-block w-8 h-8 border-4 border-purple-500/20 border-t-purple-500 rounded-full animate-spin"></div>
+                    <p className="mt-4 text-gray-600">Loading Monitorv2 configuration...</p>
+                </div>
+            </div>
+        );
+    }
+    
+    return (
+        <div className="mt-6 bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+            <div className="p-6 bg-gradient-to-r from-purple-50 to-pink-50 border-b border-gray-200">
+                <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-4 flex-1">
+                        <div className="text-4xl">📡</div>
+                        <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                                <h2 className="text-xl font-bold text-gray-800">Monitorv2</h2>
+                                {getStatusBadge()}
+                            </div>
+                            <p className="text-sm text-gray-600 mb-3">
+                                Advanced monitoring with PostgreSQL/TimescaleDB. Store monitoring history 
+                                with time-series data, automatic aggregation, and high-performance queries.
+                            </p>
+                            
+                            {healthStatus && healthStatus.status === 'available' && (
+                                <div className="flex gap-4 text-sm">
+                                    <div className="px-3 py-1 bg-white rounded-lg border border-gray-200">
+                                        <span className="text-gray-600">Monitors:</span>
+                                        <span className="font-semibold text-gray-800 ml-1">{healthStatus.monitors || 0}</span>
+                                    </div>
+                                    <div className="px-3 py-1 bg-white rounded-lg border border-gray-200">
+                                        <span className="text-gray-600">24h Checks:</span>
+                                        <span className="font-semibold text-gray-800 ml-1">{healthStatus.checks_24h?.toLocaleString() || 0}</span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => setExpanded(!expanded)}
+                            className="px-4 py-2 text-sm text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition-colors"
+                        >
+                            {expanded ? 'Hide' : 'Configure'}
+                        </button>
+                        
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={config.enabled}
+                                onChange={(e) => setConfig({...config, enabled: e.target.checked})}
+                                className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            {/* Configuration Panel */}
+            {expanded && (
+                <div className="p-6 space-y-6 bg-gray-50">
+                    {error && (
+                        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                            <strong>Error:</strong> {error}
+                        </div>
+                    )}
+                    
+                    {/* PostgreSQL Connection */}
+                    <div className="bg-white rounded-lg border border-gray-200 p-5">
+                        <h3 className="text-lg font-semibold text-gray-800 mb-4">PostgreSQL Connection</h3>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Host <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    value={config.pgHost}
+                                    onChange={(e) => setConfig({...config, pgHost: e.target.value})}
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                                    placeholder="localhost"
+                                />
+                            </div>
+                            
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Port <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="number"
+                                    value={config.pgPort}
+                                    onChange={(e) => setConfig({...config, pgPort: parseInt(e.target.value)})}
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                                    placeholder="5433"
+                                />
+                            </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4 mt-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Database <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    value={config.pgDatabase}
+                                    onChange={(e) => setConfig({...config, pgDatabase: e.target.value})}
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                                    placeholder="postgres"
+                                />
+                            </div>
+                            
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Username <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    value={config.pgUser}
+                                    onChange={(e) => setConfig({...config, pgUser: e.target.value})}
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                                    placeholder="postgres"
+                                />
+                            </div>
+                        </div>
+                        
+                        <div className="mt-4">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Password <span className="text-red-500">*</span>
+                            </label>
+                            <SecurePasswordInput
+                                value={pgPassword}
+                                onChange={(e) => setPgPassword(e.target.value)}
+                                placeholder="Enter PostgreSQL password"
+                                className="w-full"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                                Password is encrypted when saved. Leave blank to keep existing password.
+                            </p>
+                        </div>
+                        
+                        <div className="mt-4">
+                            <button
+                                onClick={handleTestConnection}
+                                disabled={testing || !config.pgHost || !config.pgDatabase}
+                                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {testing ? 'Testing...' : 'Test Connection'}
+                            </button>
+                            
+                            {testResult && (
+                                <div className={`mt-3 p-3 rounded-lg ${testResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                                    <p className={`font-semibold ${testResult.success ? 'text-green-800' : 'text-red-800'}`}>
+                                        {testResult.message}
+                                    </p>
+                                    {testResult.details && (
+                                        <div className="mt-2 text-sm text-gray-700 space-y-1">
+                                            <p>✓ PostgreSQL: {testResult.details.postgres_version}</p>
+                                            {testResult.details.timescaledb_installed ? (
+                                                <p>✓ TimescaleDB: {testResult.details.timescaledb_version}</p>
+                                            ) : (
+                                                <p className="text-yellow-700">⚠ TimescaleDB not installed</p>
+                                            )}
+                                            {testResult.details.schema_exists && (
+                                                <p>✓ Schema exists: zmonitoring</p>
+                                            )}
+                                            {testResult.details.schema_ready ? (
+                                                <p className="text-green-700 font-semibold">✓ Schema ready</p>
+                                            ) : (
+                                                <p className="text-yellow-700">⚠ Schema not initialized. Click "Setup Schema" below.</p>
+                                            )}
+                                        </div>
+                                    )}
+                                    {testResult.error && (
+                                        <p className="mt-2 text-sm text-red-700">{testResult.error}</p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    
+                    {/* Data Retention */}
+                    <div className="bg-white rounded-lg border border-gray-200 p-5">
+                        <h3 className="text-lg font-semibold text-gray-800 mb-4">Data Retention</h3>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Retention Period (days)
+                                </label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="3650"
+                                    value={config.retentionDays}
+                                    onChange={(e) => setConfig({...config, retentionDays: parseInt(e.target.value)})}
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                    How long to keep detailed check history
+                                </p>
+                            </div>
+                            
+                            <div className="flex items-center">
+                                <label className="flex items-center gap-3 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={config.autoCleanup}
+                                        onChange={(e) => setConfig({...config, autoCleanup: e.target.checked})}
+                                        className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                                    />
+                                    <div>
+                                        <span className="text-sm font-medium text-gray-700">Auto-cleanup old data</span>
+                                        <p className="text-xs text-gray-500">Automatically delete data older than retention period</p>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {/* Quick Setup Actions */}
+                    <div className="bg-white rounded-lg border border-gray-200 p-5">
+                        <h3 className="text-lg font-semibold text-gray-800 mb-4">Quick Setup Actions</h3>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Setup Schema */}
+                            <div className="border border-gray-200 rounded-lg p-4">
+                                <div className="flex items-start justify-between mb-3">
+                                    <div>
+                                        <h4 className="font-semibold text-gray-800 mb-1">1. Setup Database Schema</h4>
+                                        <p className="text-xs text-gray-600">Initialize TimescaleDB tables and hypertables</p>
+                                    </div>
+                                    <span className="text-2xl">🗄️</span>
+                                </div>
+                                <button
+                                    onClick={() => handleSetupAction('setup-schema')}
+                                    disabled={setupActions['setup-schema'] || !config.enabled}
+                                    className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                                >
+                                    {setupActions['setup-schema'] ? 'Setting up...' : 'Setup Schema'}
+                                </button>
+                                {setupResults['setup-schema'] && (
+                                    <div className={`mt-2 p-2 rounded text-xs ${setupResults['setup-schema'].success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                                        {setupResults['setup-schema'].message || setupResults['setup-schema'].error}
+                                    </div>
+                                )}
+                            </div>
+                            
+                            {/* Purge Data */}
+                            <div className="border border-red-200 rounded-lg p-4 bg-red-50">
+                                <div className="flex items-start justify-between mb-3">
+                                    <div>
+                                        <h4 className="font-semibold text-red-800 mb-1">⚠️ Purge All Data</h4>
+                                        <p className="text-xs text-red-600">Delete all Monitorv2 data (irreversible)</p>
+                                    </div>
+                                    <span className="text-2xl">🗑️</span>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        if (confirm('⚠️ WARNING: This will delete ALL Monitorv2 data. This action cannot be undone!\n\nType "DELETE" to confirm.')) {
+                                            const confirmText = prompt('Type "DELETE_ALL_DATA" to confirm:');
+                                            if (confirmText === 'DELETE_ALL_DATA') {
+                                                handleSetupAction('purge-data');
+                                            }
+                                        }
+                                    }}
+                                    disabled={setupActions['purge-data'] || !config.enabled}
+                                    className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                                >
+                                    {setupActions['purge-data'] ? 'Purging...' : 'Purge All Data'}
+                                </button>
+                                {setupResults['purge-data'] && (
+                                    <div className={`mt-2 p-2 rounded text-xs ${setupResults['purge-data'].success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                                        {setupResults['purge-data'].message || setupResults['purge-data'].error}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        
+                        <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                            <p className="text-sm text-purple-800">
+                                <strong>Note:</strong> Ensure PostgreSQL with TimescaleDB is running on <code className="bg-purple-100 px-1 rounded">{config.pgHost}:{config.pgPort}</code> before running setup.
+                            </p>
+                        </div>
+                    </div>
+                    
+                    {/* Action Buttons */}
+                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                        <button
+                            onClick={() => {
+                                setExpanded(false);
+                                loadConfiguration();
+                            }}
+                            className="px-5 py-2 text-gray-700 hover:text-gray-900 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        
+                        <button
+                            onClick={handleSave}
+                            disabled={saving}
+                            className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                        >
+                            {saving ? 'Saving...' : 'Save Configuration'}
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

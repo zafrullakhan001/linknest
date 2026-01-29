@@ -24,6 +24,10 @@ switch ($method) {
             handleCheckAnalyticsStatus();
         } elseif ($path === '/performance-analytics/backup' || $path === '/performance-analytics/backup/') {
             handleBackupAnalyticsDb();
+        } elseif ($path === '/monitorv2' || $path === '/monitorv2/') {
+            handleGetMonitorv2Config();
+        } elseif ($path === '/monitorv2/status' || $path === '/monitorv2/status/') {
+            handleCheckMonitorv2Status();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -40,6 +44,12 @@ switch ($method) {
             handleDownloadGeoLite2();
         } elseif ($path === '/performance-analytics/restore' || $path === '/performance-analytics/restore/') {
             handleRestoreAnalyticsDb();
+        } elseif ($path === '/monitorv2/test-connection' || $path === '/monitorv2/test-connection/') {
+            handleTestMonitorv2Connection();
+        } elseif ($path === '/monitorv2/setup-schema' || $path === '/monitorv2/setup-schema/') {
+            handleSetupMonitorv2Schema();
+        } elseif ($path === '/monitorv2/purge-data' || $path === '/monitorv2/purge-data/') {
+            handlePurgeMonitorv2Data();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -48,6 +58,8 @@ switch ($method) {
     case 'PUT':
         if ($path === '/performance-analytics' || $path === '/performance-analytics/') {
             handleUpdateAnalyticsConfig();
+        } elseif ($path === '/monitorv2' || $path === '/monitorv2/') {
+            handleUpdateMonitorv2Config();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -896,4 +908,423 @@ function restoreSplitSql(string $sql): array {
         $statements[] = trim($current);
     }
     return $statements;
+}
+
+
+// ============================================
+// MONITORV2 ADDON FUNCTIONS
+// ============================================
+
+/**
+ * Get Monitorv2 configuration
+ */
+function handleGetMonitorv2Config() {
+    try {
+        $db = getDB();
+        
+        // Get all settings with 'monitorv2_' prefix
+        $stmt = $db->prepare("
+            SELECT key, value 
+            FROM settings 
+            WHERE key LIKE 'monitorv2_%'
+        ");
+        $stmt->execute();
+        $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+        
+        // Get addon status
+        $statusStmt = $db->prepare("
+            SELECT * FROM addon_status 
+            WHERE addon_name = 'monitorv2'
+        ");
+        $statusStmt->execute();
+        $status = $statusStmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Initialize addon status if not exists
+        if (!$status) {
+            $db->prepare("
+                INSERT INTO addon_status (addon_name, is_enabled, is_available, last_check_at)
+                VALUES ('monitorv2', 0, 0, ?)
+            ")->execute([time()]);
+            $status = ['addon_name' => 'monitorv2', 'is_enabled' => 0, 'is_available' => 0];
+        }
+        
+        sendJSON([
+            'config' => [
+                'enabled' => (bool)($settings['monitorv2_enabled'] ?? false),
+                'pgHost' => $settings['monitorv2_pg_host'] ?? 'localhost',
+                'pgPort' => (int)($settings['monitorv2_pg_port'] ?? 5433),
+                'pgDatabase' => $settings['monitorv2_pg_database'] ?? 'postgres',
+                'pgUser' => $settings['monitorv2_pg_user'] ?? 'postgres',
+                // Don't send password back
+                'retentionDays' => (int)($settings['monitorv2_retention_days'] ?? 90),
+                'autoCleanup' => (bool)($settings['monitorv2_auto_cleanup'] ?? true)
+            ],
+            'status' => $status
+        ]);
+        
+    } catch (Exception $e) {
+        sendJSON(['error' => 'Failed to load configuration: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Check Monitorv2 addon health status
+ */
+function handleCheckMonitorv2Status() {
+    try {
+        $db = getDB();
+        
+        // Check if enabled
+        $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'monitorv2_enabled'");
+        $stmt->execute();
+        $enabled = ($stmt->fetchColumn() === '1');
+        
+        if (!$enabled) {
+            sendJSON([
+                'status' => 'disabled',
+                'message' => 'Monitorv2 addon is disabled'
+            ]);
+            return;
+        }
+        
+        // Try to connect to PostgreSQL
+        $monitorv2DB = getMonitorv2DB();
+        
+        if (!$monitorv2DB) {
+            sendJSON([
+                'status' => 'unavailable',
+                'message' => 'Cannot connect to PostgreSQL database'
+            ]);
+            return;
+        }
+        
+        // Check if required tables exist
+        $stmt = $monitorv2DB->query("
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'zmonitoring' 
+            AND table_name IN ('monitors', 'monitor_checks', 'notification_rules')
+        ");
+        $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        if (count($tables) < 3) {
+            sendJSON([
+                'status' => 'not_configured',
+                'message' => 'Database schema not initialized',
+                'existing_tables' => $tables
+            ]);
+            return;
+        }
+        
+        // Get monitor count
+        $stmt = $monitorv2DB->query("SELECT COUNT(*) FROM zmonitoring.monitors");
+        $monitorCount = $stmt->fetchColumn();
+        
+        $stmt = $monitorv2DB->query("SELECT COUNT(*) FROM zmonitoring.monitor_checks WHERE checked_at >= NOW() - INTERVAL '24 hours'");
+        $checks24h = $stmt->fetchColumn();
+        
+        sendJSON([
+            'status' => 'available',
+            'message' => 'Monitorv2 is operational',
+            'monitors' => (int)$monitorCount,
+            'checks_24h' => (int)$checks24h
+        ]);
+        
+    } catch (Exception $e) {
+        sendJSON([
+            'status' => 'error',
+            'message' => 'Health check failed: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Test Monitorv2 PostgreSQL connection
+ */
+function handleTestMonitorv2Connection() {
+    try {
+        $data = getJSONInput();
+        
+        if (empty($data['pgHost']) || empty($data['pgDatabase']) || empty($data['pgUser'])) {
+            sendJSON(['error' => 'Host, database, and user are required'], 400);
+            return;
+        }
+        
+        // Try to connect
+        $dsn = sprintf(
+            "pgsql:host=%s;port=%d;dbname=%s",
+            $data['pgHost'],
+            $data['pgPort'] ?? 5433,
+            $data['pgDatabase']
+        );
+        
+        $pdo = new PDO(
+            $dsn,
+            $data['pgUser'],
+            $data['pgPassword'] ?? '',
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_TIMEOUT => 5
+            ]
+        );
+        
+        // Check if TimescaleDB is available
+        $stmt = $pdo->query("SELECT default_version FROM pg_available_extensions WHERE name = 'timescaledb'");
+        $timescaledb = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Check if extension is installed
+        $stmt = $pdo->query("SELECT * FROM pg_extension WHERE extname = 'timescaledb'");
+        $timescaledbInstalled = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Check if schema exists
+        $stmt = $pdo->query("
+            SELECT schema_name 
+            FROM information_schema.schemata 
+            WHERE schema_name = 'zmonitoring'
+        ");
+        $schemaExists = $stmt->fetch();
+        
+        // Check if tables exist
+        $existingTables = [];
+        if ($schemaExists) {
+            $stmt = $pdo->query("
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_schema = 'zmonitoring'
+            ");
+            $existingTables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        }
+        
+        sendJSON([
+            'success' => true,
+            'message' => 'Connection successful',
+            'details' => [
+                'postgres_version' => $pdo->getAttribute(PDO::ATTR_SERVER_VERSION),
+                'timescaledb_version' => $timescaledb['default_version'] ?? null,
+                'timescaledb_installed' => !empty($timescaledbInstalled),
+                'schema_exists' => !empty($schemaExists),
+                'tables_exist' => $existingTables,
+                'schema_ready' => in_array('monitors', $existingTables) && in_array('monitor_checks', $existingTables)
+            ]
+        ]);
+        
+    } catch (PDOException $e) {
+        sendJSON([
+            'success' => false,
+            'error' => 'Connection failed: ' . $e->getMessage()
+        ], 400);
+    } catch (Exception $e) {
+        sendJSON([
+            'success' => false,
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Update Monitorv2 configuration
+ */
+function handleUpdateMonitorv2Config() {
+    try {
+        $db = getDB();
+        $data = getJSONInput();
+        
+        // Validate required fields if enabling
+        if (!empty($data['enabled'])) {
+            if (empty($data['pgHost']) || empty($data['pgDatabase']) || empty($data['pgUser'])) {
+                sendJSON(['error' => 'PostgreSQL connection settings are required when enabling the addon'], 400);
+                return;
+            }
+        }
+        
+        // Prepare settings to update
+        $settings = [
+            'monitorv2_enabled' => !empty($data['enabled']) ? '1' : '0',
+            'monitorv2_pg_host' => $data['pgHost'] ?? 'localhost',
+            'monitorv2_pg_port' => (string)($data['pgPort'] ?? 5433),
+            'monitorv2_pg_database' => $data['pgDatabase'] ?? 'postgres',
+            'monitorv2_pg_user' => $data['pgUser'] ?? 'postgres',
+            'monitorv2_retention_days' => (string)($data['retentionDays'] ?? 90),
+            'monitorv2_auto_cleanup' => !empty($data['autoCleanup']) ? '1' : '0'
+        ];
+        
+        // Update password only if provided
+        if (!empty($data['pgPassword'])) {
+            $settings['monitorv2_pg_password'] = $data['pgPassword'];
+        }
+        
+        // Update all settings
+        $stmt = $db->prepare("
+            INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+        ");
+        
+        $now = time();
+        foreach ($settings as $key => $value) {
+            $stmt->execute([$key, $value, $now]);
+        }
+        
+        // Update addon status
+        $statusStmt = $db->prepare("
+            INSERT INTO addon_status (addon_name, is_enabled, last_check_at)
+            VALUES ('monitorv2', ?, ?)
+            ON CONFLICT(addon_name) DO UPDATE SET is_enabled = excluded.is_enabled, last_check_at = excluded.last_check_at
+        ");
+        $statusStmt->execute([!empty($data['enabled']) ? 1 : 0, $now]);
+        
+        sendJSON([
+            'success' => true,
+            'message' => 'Configuration saved successfully'
+        ]);
+        
+    } catch (Exception $e) {
+        sendJSON(['error' => 'Failed to save configuration: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Setup Monitorv2 database schema
+ */
+function handleSetupMonitorv2Schema() {
+    try {
+        $schemaFile = __DIR__ . '/../monitorv2/schema.sql';
+        
+        if (!file_exists($schemaFile)) {
+            sendJSON(['error' => 'Schema file not found: ' . $schemaFile], 404);
+            return;
+        }
+        
+        // Get PostgreSQL connection
+        $monitorv2DB = getMonitorv2DB();
+        if (!$monitorv2DB) {
+            sendJSON(['error' => 'Cannot connect to PostgreSQL. Please configure connection settings first.'], 400);
+            return;
+        }
+        
+        // Read and execute schema file
+        $schemaSQL = file_get_contents($schemaFile);
+        
+        // Execute the entire schema at once (PostgreSQL supports this better than SQLite)
+        try {
+            $monitorv2DB->exec($schemaSQL);
+        } catch (PDOException $e) {
+            // Ignore "already exists" errors
+            if (strpos($e->getMessage(), 'already exists') === false && 
+                strpos($e->getMessage(), 'duplicate') === false) {
+                throw $e;
+            }
+        }
+        
+        // Verify tables were created
+        $stmt = $monitorv2DB->query("
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'zmonitoring'
+        ");
+        $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        sendJSON([
+            'success' => true,
+            'message' => 'Schema setup completed',
+            'tables_created' => $tables,
+            'schema_ready' => in_array('monitors', $tables) && in_array('monitor_checks', $tables)
+        ]);
+        
+    } catch (Exception $e) {
+        sendJSON(['error' => 'Schema setup failed: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Purge Monitorv2 data
+ */
+function handlePurgeMonitorv2Data() {
+    try {
+        $monitorv2DB = getMonitorv2DB();
+        if (!$monitorv2DB) {
+            sendJSON(['error' => 'Cannot connect to PostgreSQL'], 400);
+            return;
+        }
+        
+        // Get confirmation from request
+        $data = getJSONInput();
+        if (empty($data['confirm']) || $data['confirm'] !== 'DELETE_ALL_DATA') {
+            sendJSON(['error' => 'Confirmation required. Send confirm: "DELETE_ALL_DATA"'], 400);
+            return;
+        }
+        
+        // Truncate all tables in zmonitoring schema
+        $tables = [
+            'notification_recipients',
+            'notification_rules',
+            'notification_logs',
+            'monitor_checks',
+            'monitor_hourly_stats',
+            'monitor_daily_stats',
+            'incidents',
+            'maintenance_windows',
+            'user_monitor_permissions',
+            'monitors'
+        ];
+        
+        $truncated = [];
+        foreach ($tables as $table) {
+            try {
+                $monitorv2DB->exec("TRUNCATE TABLE zmonitoring.{$table} CASCADE");
+                $truncated[] = $table;
+            } catch (PDOException $e) {
+                // Table might not exist, that's okay
+            }
+        }
+        
+        sendJSON([
+            'success' => true,
+            'message' => 'Monitorv2 data purged successfully',
+            'tables_truncated' => $truncated
+        ]);
+        
+    } catch (Exception $e) {
+        sendJSON(['error' => 'Purge failed: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Get Monitorv2 PostgreSQL connection
+ */
+function getMonitorv2DB() {
+    static $db = null;
+    if ($db !== null) return $db;
+    
+    try {
+        $sqlite = getDB();
+        $stmt = $sqlite->prepare("SELECT key, value FROM settings WHERE key LIKE 'monitorv2_%'");
+        $stmt->execute();
+        $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+        
+        $host = $settings['monitorv2_pg_host'] ?? 'localhost';
+        $port = (int)($settings['monitorv2_pg_port'] ?? 5433);
+        $database = $settings['monitorv2_pg_database'] ?? 'postgres';
+        $user = $settings['monitorv2_pg_user'] ?? 'postgres';
+        $password = $settings['monitorv2_pg_password'] ?? '';
+        
+        // Decrypt password if needed
+        if (!empty($password) && strpos($password, '.') !== false && substr_count($password, '.') === 2) {
+            try {
+                $password = decryptPassword($password);
+            } catch (Exception $e) {
+                // Keep as-is if decryption fails
+            }
+        }
+        
+        $dsn = "pgsql:host={$host};port={$port};dbname={$database}";
+        $db = new PDO($dsn, $user, $password, [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_TIMEOUT => 10
+        ]);
+        return $db;
+    } catch (PDOException $e) {
+        error_log("Monitorv2 DB connection failed: " . $e->getMessage());
+        return null;
+    }
 }

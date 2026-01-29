@@ -141,6 +141,15 @@ if ($path === '/') {
 } elseif (strpos($path, '/monitors') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 9); // Remove '/monitors'
     require __DIR__ . '/monitors.php';
+} elseif (strpos($path, '/monitorv2') === 0) {
+    $remainingPath = substr($path, 10); // Remove '/monitorv2'
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    require __DIR__ . '/monitorv2.php';
+    exit;
 } elseif (strpos($path, '/timezones') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 10); // Remove '/timezones'
     require __DIR__ . '/timezones.php';
