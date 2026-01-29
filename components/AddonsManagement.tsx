@@ -992,6 +992,11 @@ const Monitorv2AddonCard: React.FC = () => {
     const [expanded, setExpanded] = useState(false);
     const [setupActions, setSetupActions] = useState<{[key: string]: boolean}>({});
     const [setupResults, setSetupResults] = useState<{[key: string]: any}>({});
+    const [monitorv2Tab, setMonitorv2Tab] = useState<'config' | 'backup-restore'>('config');
+    const [backupLoading, setBackupLoading] = useState(false);
+    const [restoreLoading, setRestoreLoading] = useState(false);
+    const [restoreFile, setRestoreFile] = useState<File | null>(null);
+    const [restoreResult, setRestoreResult] = useState<{ success: boolean; message: string } | null>(null);
     
     // Load configuration on mount
     useEffect(() => {
@@ -1233,6 +1238,135 @@ const Monitorv2AddonCard: React.FC = () => {
                         </div>
                     )}
                     
+                    {/* Tabs: Configuration | Backup & Restore */}
+                    <div className="flex gap-1 border-b border-gray-200">
+                        <button
+                            type="button"
+                            onClick={() => setMonitorv2Tab('config')}
+                            className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${monitorv2Tab === 'config' ? 'bg-purple-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                        >
+                            Configuration
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setMonitorv2Tab('backup-restore')}
+                            className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${monitorv2Tab === 'backup-restore' ? 'bg-purple-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                        >
+                            Backup & Restore
+                        </button>
+                    </div>
+                    
+                    {monitorv2Tab === 'backup-restore' && (
+                        <div className="space-y-6">
+                            <div className="bg-white rounded-lg border border-gray-200 p-5">
+                                <h3 className="text-lg font-semibold text-gray-800 mb-4">Database Backup</h3>
+                                <p className="text-sm text-gray-600 mb-4">
+                                    Download a full backup of the Monitorv2 PostgreSQL database as a ZIP file (contains a plain SQL dump). Use the same connection settings configured in the Configuration tab.
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        setBackupLoading(true);
+                                        try {
+                                            const url = `${API_BASE}/addons/monitorv2/backup`;
+                                            const res = await fetch(url, { credentials: 'include' });
+                                            const contentType = res.headers.get('Content-Type') || '';
+                                            if (!res.ok) {
+                                                const data = await res.json().catch(() => ({}));
+                                                throw new Error(data.error || data.hint || `Backup failed (${res.status})`);
+                                            }
+                                            const blob = await res.blob();
+                                            const disp = res.headers.get('Content-Disposition');
+                                            const match = disp && disp.match(/filename="?([^";]+)"?/);
+                                            const name = match ? match[1] : `monitorv2_backup_${new Date().toISOString().slice(0, 10)}.zip`;
+                                            const a = document.createElement('a');
+                                            a.href = URL.createObjectURL(blob);
+                                            a.download = name;
+                                            a.click();
+                                            URL.revokeObjectURL(a.href);
+                                        } catch (err: any) {
+                                            setError(err.message);
+                                        } finally {
+                                            setBackupLoading(false);
+                                        }
+                                    }}
+                                    disabled={backupLoading || !config.pgHost || !config.pgDatabase}
+                                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {backupLoading ? 'Creating backup...' : 'Download backup (ZIP)'}
+                                </button>
+                                <p className="text-xs text-gray-500 mt-3">
+                                    Backup uses PHP/PDO only (no <code className="bg-gray-100 px-1 rounded">pg_dump</code> required). Data-only SQL; run <code className="bg-gray-100 px-1 rounded">monitorv2/schema.sql</code> before restore if the database is empty.
+                                </p>
+                            </div>
+                            <div className="bg-white rounded-lg border border-gray-200 p-5">
+                                <h3 className="text-lg font-semibold text-gray-800 mb-4">Restore from backup</h3>
+                                <p className="text-sm text-gray-600 mb-4">
+                                    Upload a previously downloaded .sql or .zip backup to restore the Monitorv2 database. This will run the SQL against the configured database (existing data may be affected).
+                                </p>
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <label className="cursor-pointer">
+                                        <span className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700 inline-block">Choose file</span>
+                                        <input
+                                            type="file"
+                                            accept=".sql,.zip"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                const f = e.target.files?.[0];
+                                                setRestoreFile(f || null);
+                                                setRestoreResult(null);
+                                            }}
+                                        />
+                                    </label>
+                                    {restoreFile && <span className="text-sm text-gray-600">{restoreFile.name}</span>}
+                                    <button
+                                        type="button"
+                                        onClick={async () => {
+                                            if (!restoreFile) return;
+                                            setRestoreLoading(true);
+                                            setError(null);
+                                            setRestoreResult(null);
+                                            try {
+                                                const form = new FormData();
+                                                form.append('file', restoreFile);
+                                                const res = await fetch(`${API_BASE}/addons/monitorv2/restore`, {
+                                                    method: 'POST',
+                                                    credentials: 'include',
+                                                    body: form
+                                                });
+                                                const data = await res.json().catch(() => ({}));
+                                                if (res.ok && data.success) {
+                                                    setRestoreResult({ success: true, message: data.message || 'Restored successfully.' });
+                                                    setRestoreFile(null);
+                                                } else {
+                                                    setRestoreResult({ success: false, message: data.error || 'Restore failed' });
+                                                }
+                                            } catch (err: any) {
+                                                setRestoreResult({ success: false, message: err.message });
+                                            } finally {
+                                                setRestoreLoading(false);
+                                            }
+                                        }}
+                                        disabled={restoreLoading || !restoreFile}
+                                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {restoreLoading ? 'Restoring...' : 'Restore'}
+                                    </button>
+                                </div>
+                                {restoreResult && (
+                                    <div className={`mt-3 p-3 rounded-lg text-sm ${restoreResult.success ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-700'}`}>
+                                        {restoreResult.message}
+                                    </div>
+                                )}
+                                <p className="text-xs text-gray-500 mt-3">
+                                    Restore uses <code className="bg-gray-100 px-1 rounded">psql</code> if available, otherwise runs the SQL via PHP (no CLI tools required).
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {monitorv2Tab === 'config' && (
+                    <>
                     {/* PostgreSQL Connection */}
                     <div className="bg-white rounded-lg border border-gray-200 p-5">
                         <h3 className="text-lg font-semibold text-gray-800 mb-4">PostgreSQL Connection</h3>
@@ -1473,6 +1607,8 @@ const Monitorv2AddonCard: React.FC = () => {
                             {saving ? 'Saving...' : 'Save Configuration'}
                         </button>
                     </div>
+                    </>
+                    )}
                 </div>
             )}
         </div>

@@ -28,6 +28,8 @@ switch ($method) {
             handleGetMonitorv2Config();
         } elseif ($path === '/monitorv2/status' || $path === '/monitorv2/status/') {
             handleCheckMonitorv2Status();
+        } elseif ($path === '/monitorv2/backup' || $path === '/monitorv2/backup/') {
+            handleBackupMonitorv2Db();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -50,6 +52,8 @@ switch ($method) {
             handleSetupMonitorv2Schema();
         } elseif ($path === '/monitorv2/purge-data' || $path === '/monitorv2/purge-data/') {
             handlePurgeMonitorv2Data();
+        } elseif ($path === '/monitorv2/restore' || $path === '/monitorv2/restore/') {
+            handleRestoreMonitorv2Db();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -914,6 +918,311 @@ function restoreSplitSql(string $sql): array {
 // ============================================
 // MONITORV2 ADDON FUNCTIONS
 // ============================================
+
+/**
+ * Get Monitorv2 PostgreSQL connection params from settings (for backup/restore).
+ * Decrypts password if stored in encrypted format.
+ *
+ * @return array{host:string,port:int,database:string,user:string,password:string}|null
+ */
+function getMonitorv2ConnectionParams(): ?array {
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'monitorv2_%'");
+        $stmt->execute();
+        $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+        $host = $settings['monitorv2_pg_host'] ?? '';
+        $database = $settings['monitorv2_pg_database'] ?? '';
+        if (empty($host) || empty($database)) {
+            return null;
+        }
+        $password = $settings['monitorv2_pg_password'] ?? '';
+        if (!empty($password) && strpos($password, '.') !== false && substr_count($password, '.') === 2) {
+            try {
+                $password = decryptPassword($password);
+            } catch (Exception $e) {
+                // keep as-is if decryption fails
+            }
+        }
+        return [
+            'host' => $host,
+            'port' => (int)($settings['monitorv2_pg_port'] ?? 5433),
+            'database' => $database,
+            'user' => $settings['monitorv2_pg_user'] ?? 'postgres',
+            'password' => $password
+        ];
+    } catch (Exception $e) {
+        return null;
+    }
+}
+
+/**
+ * Export Monitorv2 database (zmonitoring schema) to SQL file using PDO only (no pg_dump).
+ * Produces a data-only backup: TRUNCATE + INSERT for all zmonitoring tables.
+ * Restore assumes the schema (e.g. monitorv2/schema.sql) is already applied.
+ */
+function exportMonitorv2DbViaPhp(PDO $pdo, string $sqlPath): void {
+    $fp = fopen($sqlPath, 'wb');
+    if (!$fp) {
+        throw new RuntimeException('Could not create SQL file');
+    }
+    $schema = 'zmonitoring';
+    fwrite($fp, "-- Linknest Monitorv2 backup (PHP export)\n");
+    fwrite($fp, "-- " . date('c') . "\n");
+    fwrite($fp, "-- Data-only: run monitorv2/schema.sql before restore if needed.\n\n");
+    fwrite($fp, "SET session_replication_role = replica;\n\n");
+    $tables = $pdo->query("SELECT tablename FROM pg_tables WHERE schemaname = " . $pdo->quote($schema) . " ORDER BY tablename")->fetchAll(PDO::FETCH_COLUMN);
+    if (empty($tables)) {
+        fwrite($fp, "-- No tables in {$schema} schema\n");
+        fwrite($fp, "SET session_replication_role = DEFAULT;\n");
+        fclose($fp);
+        return;
+    }
+    $qualified = array_map(function ($t) use ($schema) {
+        return '"' . str_replace('"', '""', $schema) . '"."' . str_replace('"', '""', $t) . '"';
+    }, $tables);
+    $truncateList = implode(', ', $qualified);
+    fwrite($fp, "TRUNCATE TABLE {$truncateList} CASCADE;\n\n");
+    $batchSize = 100;
+    foreach ($tables as $table) {
+        $safeTable = '"' . str_replace('"', '""', $schema) . '"."' . str_replace('"', '""', $table) . '"';
+        $cols = $pdo->query("SELECT column_name FROM information_schema.columns WHERE table_schema = " . $pdo->quote($schema) . " AND table_name = " . $pdo->quote($table) . " ORDER BY ordinal_position")->fetchAll(PDO::FETCH_COLUMN);
+        if (empty($cols)) {
+            continue;
+        }
+        $colList = implode(', ', array_map(function ($c) { return '"' . str_replace('"', '""', $c) . '"'; }, $cols));
+        $stmt = $pdo->query("SELECT * FROM {$safeTable}");
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($rows)) {
+            fwrite($fp, "-- Table {$schema}.{$table}: 0 rows\n");
+            continue;
+        }
+        $rowCount = 0;
+        $batches = array_chunk($rows, $batchSize);
+        foreach ($batches as $batch) {
+            $values = [];
+            foreach ($batch as $row) {
+                $v = [];
+                foreach ($cols as $col) {
+                    $val = $row[$col] ?? null;
+                    if ($val === null) {
+                        $v[] = 'NULL';
+                    } elseif (is_bool($val)) {
+                        $v[] = $val ? 'TRUE' : 'FALSE';
+                    } elseif (is_int($val) || (is_float($val) && (float)(int)$val === $val)) {
+                        $v[] = (string)(int)$val;
+                    } elseif (is_float($val)) {
+                        $v[] = str_replace(',', '.', (string)$val);
+                    } else {
+                        $v[] = $pdo->quote((string)$val);
+                    }
+                }
+                $values[] = '(' . implode(', ', $v) . ')';
+            }
+            fwrite($fp, "INSERT INTO {$safeTable} ({$colList}) VALUES " . implode(",\n ", $values) . ";\n");
+            $rowCount += count($batch);
+        }
+        fwrite($fp, "-- Table {$schema}.{$table}: {$rowCount} rows\n\n");
+    }
+    fwrite($fp, "SET session_replication_role = DEFAULT;\n");
+    fclose($fp);
+}
+
+/**
+ * Create Monitorv2 DB backup and send as ZIP download.
+ * Uses PHP/PDO export only (no pg_dump required).
+ */
+function handleBackupMonitorv2Db(): void {
+    $params = getMonitorv2ConnectionParams();
+    if (!$params) {
+        sendJSON(['error' => 'Monitorv2 database not configured. Set PostgreSQL connection in add-on settings.'], 400);
+        return;
+    }
+    $tmpDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'ln_mv2_backup_' . bin2hex(random_bytes(8));
+    if (!@mkdir($tmpDir, 0700, true)) {
+        sendJSON(['error' => 'Could not create temporary directory'], 500);
+        return;
+    }
+    $timestamp = date('Ymd-His');
+    $sqlFile = $tmpDir . DIRECTORY_SEPARATOR . 'monitorv2_backup_' . $timestamp . '.sql';
+    $zipFile = $tmpDir . DIRECTORY_SEPARATOR . 'monitorv2_backup_' . $timestamp . '.zip';
+    try {
+        $dsn = sprintf('pgsql:host=%s;port=%d;dbname=%s', $params['host'], $params['port'], $params['database']);
+        $pdo = new PDO($dsn, $params['user'], $params['password'], [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_TIMEOUT => 300,
+        ]);
+        exportMonitorv2DbViaPhp($pdo, $sqlFile);
+    } catch (Exception $e) {
+        if (is_dir($tmpDir)) {
+            if (file_exists($sqlFile)) @unlink($sqlFile);
+            @rmdir($tmpDir);
+        }
+        sendJSON(['error' => 'Export failed: ' . $e->getMessage()], 500);
+        return;
+    }
+    if (!file_exists($sqlFile) || filesize($sqlFile) === 0) {
+        @unlink($sqlFile);
+        @rmdir($tmpDir);
+        sendJSON(['error' => 'Export produced empty file'], 500);
+        return;
+    }
+    if (!class_exists('ZipArchive')) {
+        @unlink($sqlFile);
+        @rmdir($tmpDir);
+        sendJSON(['error' => 'Zip extension not available. Enable php zip extension.'], 500);
+        return;
+    }
+    $zip = new ZipArchive();
+    if ($zip->open($zipFile, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+        @unlink($sqlFile);
+        @rmdir($tmpDir);
+        sendJSON(['error' => 'Could not create zip file'], 500);
+        return;
+    }
+    $zip->addFile($sqlFile, basename($sqlFile));
+    $zip->close();
+    @unlink($sqlFile);
+    $zipName = 'monitorv2_backup_' . $timestamp . '.zip';
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . $zipName . '"');
+    header('Content-Length: ' . filesize($zipFile));
+    readfile($zipFile);
+    @unlink($zipFile);
+    @rmdir($tmpDir);
+    exit;
+}
+
+/**
+ * Restore Monitorv2 DB from uploaded SQL or ZIP containing SQL.
+ * Uses psql if available, otherwise runs the SQL via PHP (no CLI tools required).
+ */
+function handleRestoreMonitorv2Db(): void {
+    $params = getMonitorv2ConnectionParams();
+    if (!$params) {
+        sendJSON(['error' => 'Monitorv2 database not configured.'], 400);
+        return;
+    }
+    $file = $_FILES['file'] ?? null;
+    if (!$file || ($file['error'] !== UPLOAD_ERR_OK)) {
+        $msg = 'No file uploaded or upload error.';
+        if ($file && $file['error'] !== UPLOAD_ERR_OK) {
+            $msg = 'Upload error: ' . ($file['error'] === UPLOAD_ERR_INI_SIZE ? 'file too large' : 'code ' . $file['error']);
+        }
+        sendJSON(['error' => $msg], 400);
+        return;
+    }
+    $tmpDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'ln_mv2_restore_' . bin2hex(random_bytes(8));
+    if (!@mkdir($tmpDir, 0700, true)) {
+        sendJSON(['error' => 'Could not create temporary directory'], 500);
+        return;
+    }
+    $sqlFile = null;
+    $name = $file['name'];
+    $path = $file['tmp_name'];
+    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+    if ($ext === 'zip') {
+        $zip = new ZipArchive();
+        if ($zip->open($path) !== true) {
+            @rmdir($tmpDir);
+            sendJSON(['error' => 'Invalid zip file'], 400);
+            return;
+        }
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $entry = $zip->getNameIndex($i);
+            if (preg_match('/\.sql$/i', $entry)) {
+                $zip->extractTo($tmpDir, $entry);
+                $sqlFile = $tmpDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $entry);
+                break;
+            }
+        }
+        $zip->close();
+        if (!$sqlFile || !file_exists($sqlFile)) {
+            @rmdir($tmpDir);
+            sendJSON(['error' => 'Zip file does not contain a .sql file'], 400);
+            return;
+        }
+    } elseif ($ext === 'sql') {
+        $dest = $tmpDir . DIRECTORY_SEPARATOR . basename($name);
+        if (!@move_uploaded_file($path, $dest)) {
+            @rmdir($tmpDir);
+            sendJSON(['error' => 'Failed to save uploaded file'], 500);
+            return;
+        }
+        $sqlFile = $dest;
+    } else {
+        @rmdir($tmpDir);
+        sendJSON(['error' => 'Upload a .sql or .zip file containing a .sql backup'], 400);
+        return;
+    }
+    $usePhpRestore = false;
+    $psql = 'psql';
+    if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+        $psql = 'psql.exe';
+    }
+    $descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+    $env = $_ENV;
+    $env['PGPASSWORD'] = $params['password'];
+    $cmd = [
+        $psql,
+        '-h', $params['host'],
+        '-p', (string)$params['port'],
+        '-U', $params['user'],
+        '-d', $params['database'],
+        '-f', $sqlFile
+    ];
+    $proc = @proc_open($cmd, $descriptors, $pipes, null, $env);
+    if (!is_resource($proc)) {
+        $usePhpRestore = true;
+    } else {
+        $stderr = stream_get_contents($pipes[2] ?? null);
+        fclose($pipes[1] ?? null);
+        fclose($pipes[2] ?? null);
+        $code = proc_close($proc);
+        if ($code !== 0) {
+            $usePhpRestore = true;
+        }
+    }
+    if ($usePhpRestore) {
+        try {
+            $dsn = sprintf('pgsql:host=%s;port=%d;dbname=%s', $params['host'], $params['port'], $params['database']);
+            $pdo = new PDO($dsn, $params['user'], $params['password'], [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_TIMEOUT => 600,
+            ]);
+            $sql = file_get_contents($sqlFile);
+            if ($sql === false) {
+                throw new RuntimeException('Could not read SQL file');
+            }
+            foreach (restoreSplitSql($sql) as $statement) {
+                if (trim($statement) !== '') {
+                    $pdo->exec($statement);
+                }
+            }
+        } catch (Exception $e) {
+            if (is_dir($tmpDir)) {
+                array_map('unlink', glob($tmpDir . DIRECTORY_SEPARATOR . '*'));
+                @rmdir($tmpDir);
+            }
+            sendJSON(['error' => 'Restore failed (PHP): ' . $e->getMessage()], 500);
+            return;
+        }
+        if (is_dir($tmpDir)) {
+            array_map('unlink', glob($tmpDir . DIRECTORY_SEPARATOR . '*'));
+            @rmdir($tmpDir);
+        }
+        sendJSON(['success' => true, 'message' => 'Database restored successfully (PHP).']);
+        return;
+    }
+    if (is_dir($tmpDir)) {
+        array_map('unlink', glob($tmpDir . DIRECTORY_SEPARATOR . '*'));
+        @rmdir($tmpDir);
+    }
+    sendJSON(['success' => true, 'message' => 'Database restored successfully.']);
+}
 
 /**
  * Get Monitorv2 configuration
